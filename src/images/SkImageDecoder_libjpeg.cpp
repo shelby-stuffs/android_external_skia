@@ -574,7 +574,7 @@ SkImageDecoder::Result SkJPEGImageDecoder::onDecode(SkStream* stream, SkBitmap* 
             if ((*sCanDecodeHw)(stream, (int)mode)) {
                 // and then call HW Decoder
                 if ((*sOnJpegDecodeHw)(this, stream, bm, &streamBuf)) {
-                    return true;
+                    return kSuccess;
                 }
             }
         }
