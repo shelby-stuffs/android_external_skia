@@ -59,6 +59,7 @@ endif
 
 LOCAL_CFLAGS += \
     -O3 \
+	-funsafe-math-optimizations \
 	-Wno-unused-parameter \
 	-U_FORTIFY_SOURCE \
 	-D_FORTIFY_SOURCE=0 \
