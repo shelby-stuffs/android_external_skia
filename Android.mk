@@ -831,7 +831,9 @@ LOCAL_WHOLE_STATIC_LIBRARIES := libskia_static
 LOCAL_SHARED_LIBRARIES := \
         libcutils
 
+LOCAL_SDCLANG_LTO := true
 LOCAL_FDO_SUPPORT := true
+
 
 ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
         LOCAL_WHOLE_STATIC_LIBRARIES += libqc-skia
