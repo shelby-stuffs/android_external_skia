@@ -162,6 +162,8 @@ template <typename T> static inline T* SkSafeRef(T* obj) {
 template <typename T> static inline void SkSafeUnref(T* obj) {
     if (obj) {
         obj->unref();
+        //add to avoid using after free
+        obj = NULL;
     }
 }
 

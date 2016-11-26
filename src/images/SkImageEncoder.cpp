@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2009 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
@@ -14,18 +19,21 @@ SkImageEncoder::~SkImageEncoder() {}
 
 bool SkImageEncoder::encodeStream(SkWStream* stream, const SkBitmap& bm,
                                   int quality) {
+	MtkSkDebugf("encodeStream start\n");
     quality = SkMin32(100, SkMax32(0, quality));
     return this->onEncode(stream, bm, quality);
 }
 
 bool SkImageEncoder::encodeFile(const char file[], const SkBitmap& bm,
                                 int quality) {
+    MtkSkDebugf("encodeFile start\n");
     quality = SkMin32(100, SkMax32(0, quality));
     SkFILEWStream   stream(file);
     return this->onEncode(&stream, bm, quality);
 }
 
 SkData* SkImageEncoder::encodeData(const SkBitmap& bm, int quality) {
+	MtkSkDebugf("encodeData start\n");
     SkDynamicMemoryWStream stream;
     quality = SkMin32(100, SkMax32(0, quality));
     if (this->onEncode(&stream, bm, quality)) {

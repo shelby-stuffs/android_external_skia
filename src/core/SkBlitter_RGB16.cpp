@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 
 /*
  * Copyright 2006 The Android Open Source Project
@@ -523,6 +528,10 @@ void SkRGB16_Opaque_Blitter::blitRect(int x, int y, int width, int height) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+#if	defined(__ARM_HAVE_NEON_COMMON)
+extern void blend32_16_row_opt(SkPMColor src_expand, uint32_t scale, 
+                                       uint16_t device[], int width);
+#endif
 
 SkRGB16_Blitter::SkRGB16_Blitter(const SkBitmap& device, const SkPaint& paint)
     : INHERITED(device) {
@@ -569,6 +578,30 @@ const SkBitmap* SkRGB16_Blitter::justAnOpaqueColor(uint32_t* value) {
     return NULL;
 }
 
+static uint32_t pmcolor_to_expand16(SkPMColor c) {
+    unsigned r = SkGetPackedR32(c);
+    unsigned g = SkGetPackedG32(c);
+    unsigned b = SkGetPackedB32(c);
+    return (g << 24) | (r << 13) | (b << 2);
+}
+
+static inline void blend32_16_row(SkPMColor src, uint16_t dst[], int count) {
+    SkASSERT(count > 0);
+    uint32_t src_expand = pmcolor_to_expand16(src);
+    unsigned scale = SkAlpha255To256(0xFF - SkGetPackedA32(src)) >> 3;
+    
+#if defined(__ARM_HAVE_NEON_COMMON)
+			blend32_16_row_opt(src_expand, scale, dst, count);
+#else	
+  do {
+        uint32_t dst_expand = SkExpand_rgb_16(*dst) * scale;
+        *dst = SkCompact_rgb_16((src_expand + dst_expand) >> 5);
+        dst += 1;
+    } while (--count != 0);
+#endif
+
+}
+
 void SkRGB16_Blitter::blitH(int x, int y, int width) {
     SkASSERT(width > 0);
     SkASSERT(x + width <= fDevice.width());
@@ -599,10 +632,16 @@ void SkRGB16_Blitter::blitAntiH(int x, int y,
             unsigned scale5 = SkAlpha255To256(aa) * scale >> (8 + 3);
             uint32_t src32 =  srcExpanded * scale5;
             scale5 = 32 - scale5;
-            do {
+
+#if defined(__ARM_HAVE_NEON_COMMON)
+			blend32_16_row_opt(src32, scale5, device, count);
+            device += count;
+#else	
+ do {
                 uint32_t dst32 = SkExpand_rgb_16(*device) * scale5;
                 *device++ = SkCompact_rgb_16((src32 + dst32) >> 5);
             } while (--count != 0);
+#endif
             continue;
         }
         device += count;
@@ -863,15 +902,18 @@ void SkRGB16_Shader_Blitter::blitRect(int x, int y, int width, int height) {
             dst = (uint16_t*)((char*)dst + dstRB);
         } while (--height);
     } else {
-        do {
-            shaderContext->shadeSpan(x, y, buffer, width);
-            proc(dst, buffer, width, 0xFF, x, y);
-            y += 1;
-            dst = (uint16_t*)((char*)dst + dstRB);
-        } while (--height);
-    }
+    /*opt for shadeSpan*/
+    	if (shaderContext->shadeSpanRect_D565(x, y, dst, dstRB, width, height, proc)) {
+    		return;
+    	}
+	        do {
+	            shaderContext->shadeSpan(x, y, buffer, width);
+	            proc(dst, buffer, width, 0xFF, x, y);
+	            y += 1;
+	            dst = (uint16_t*)((char*)dst + dstRB);
+	        } while (--height);
+    	}
 }
-
 static inline int count_nonzero_span(const int16_t runs[], const SkAlpha aa[]) {
     int count = 0;
     for (;;) {

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2006 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
@@ -13,6 +18,15 @@
 #include "SkStream.h"
 #include "SkTemplates.h"
 #include "SkCanvas.h"
+#include "SkImageInfo.h"
+#include <stdio.h>
+#include <cutils/properties.h>
+#include <cutils/log.h>
+
+#define LOG_TAG "skia"
+
+#define ATRACE_TAG ATRACE_TAG_GRAPHICS
+#include <utils/Trace.h>
 
 SkImageDecoder::SkImageDecoder()
     : fPeeker(NULL)
@@ -23,7 +37,12 @@ SkImageDecoder::SkImageDecoder()
     , fDitherImage(true)
     , fSkipWritingZeroes(false)
     , fPreferQualityOverSpeed(false)
-    , fRequireUnpremultipliedColors(false) {
+    , fRequireUnpremultipliedColors(false) 
+    , fIsAllowMultiThreadRegionDecode(0) 
+    , fPreferSize(0)
+    , fPostProc(0) 
+    , fdc(NULL)
+    , fISOSpeedRatings(0) {
 }
 
 SkImageDecoder::~SkImageDecoder() {
@@ -125,20 +144,29 @@ SkColorType SkImageDecoder::getPrefColorType(SrcDepth srcDepth, bool srcHasAlpha
     return ct;
 }
 
+
 SkImageDecoder::Result SkImageDecoder::decode(SkStream* stream, SkBitmap* bm, SkColorType pref,
                                               Mode mode) {
-    // we reset this to false before calling onDecode
+	// we reset this to false before calling onDecode
     fShouldCancelDecode = false;
     // assign this, for use by getPrefColorType(), in case fUsePrefTable is false
     fDefaultPref = pref;
 
     // pass a temporary bitmap, so that if we return false, we are assured of
     // leaving the caller's bitmap untouched.
-    SkBitmap tmp;
-    const Result result = this->onDecode(stream, &tmp, mode);
-    if (kFailure != result) {
-        bm->swap(tmp);
+    SkBitmap    tmp;
+	if (this->getFormat() != kPNG_Format) {
+		MtkSkDebugf("onDecode start stream=%p,bm=%p,pref=%d,mode=%d,format=%s\n",
+				stream, bm, pref, mode, this->getFormatName());
+	}
+    const Result result = this->onDecode(stream, &tmp, mode);	
+    if (kFailure == result) {
+        return kFailure;
     }
+	if (this->getFormat() != kPNG_Format) {
+		MtkSkDebugf("onDecode return true,format=%s\n",this->getFormatName());
+	}		
+    bm->swap(tmp);
     return result;
 }
 
@@ -147,8 +175,12 @@ bool SkImageDecoder::decodeSubset(SkBitmap* bm, const SkIRect& rect, SkColorType
     fShouldCancelDecode = false;
     // assign this, for use by getPrefColorType(), in case fUsePrefTable is false
     fDefaultPref = pref;
-
-    return this->onDecodeSubset(bm, rect);
+    MtkSkDebugf("onDecodeSubset,bm=%p,pref=%d,format=%s\n", bm, pref,this->getFormatName());
+    if (! this->onDecodeSubset(bm, rect)) {
+        return false;
+    }
+    MtkSkDebugf("decodeSubset %s End,return true",this->getFormatName());
+    return true;
 }
 
 bool SkImageDecoder::buildTileIndex(SkStreamRewindable* stream, int *width, int *height) {
@@ -170,6 +202,17 @@ bool SkImageDecoder::cropBitmap(SkBitmap *dst, SkBitmap *src, int sampleSize,
                                 int srcX, int srcY) {
     int w = width / sampleSize;
     int h = height / sampleSize;
+
+    // if the destination has no pixels then we must allocate them.
+    if(sampleSize > 1 && width > 0 && w == 0) {
+		ALOGW("Skia::cropBitmap W/H %d %d->%d %d, Sample %d, force width != 0 !!!!!!\n", width, height,w, h, sampleSize );
+		w = 1;
+    }
+    if(sampleSize > 1 && height > 0 && h == 0) {
+		ALOGW("Skia::cropBitmap W/H %d %d->%d %d, Sample %d, force height != 0 !!!!!!\n", width, height,w, h, sampleSize );
+		h = 1;
+    }	
+
     if (src->colorType() == kIndex_8_SkColorType) {
         // kIndex8 does not allow drawing via an SkCanvas, as is done below.
         // Instead, use extractSubset. Note that this shares the SkPixelRef and
@@ -272,3 +315,47 @@ bool SkImageDecoder::decodeYUV8Planes(SkStream* stream, SkISize componentSizes[3
 
     return this->onDecodeYUV8Planes(stream, componentSizes, planes, rowBytes, colorSpace);
 }
+
+#ifdef MTK_JPEG_ImageDecoder
+void SkImageDecoder::setPreferSize(int size) {
+    if (size < 0) {
+        size = 0;
+    }
+    fPreferSize = size;
+}
+
+void SkImageDecoder::setPostProcFlag(int flag) {
+    fPostProc = flag;
+}
+#endif
+
+#ifdef MTK_IMAGE_DC_SUPPORT 
+void SkImageDecoder::setDynamicCon(void* pointer, int size) {
+    fdc = pointer;
+	fsize = size;
+	//XLOGD("setDynamicCon fsize=%d", fsize);
+}
+#endif
+
+#ifdef MTK_SKIA_MULTI_THREAD_JPEG_REGION
+bool SkImageDecoder::decodeSubset(SkBitmap* bm, const SkIRect& rect, SkColorType pref, 
+                                  int sampleSize, void* fdc) {
+    // we reset this to false before calling onDecodeSubset
+    fShouldCancelDecode = false;
+    // assign this, for use by getPrefColorType(), in case fUsePrefTable is false
+    fDefaultPref = pref;
+    MtkSkDebugf("multi onDecodeSubset,bm=%p,pref=%d,format=%s\n", bm, pref,this->getFormatName());
+    
+#ifdef MTK_IMAGE_DC_SUPPORT
+    if (! this->onDecodeSubset(bm, rect, sampleSize, fdc)) {
+        return false;
+    }
+#else
+    if (! this->onDecodeSubset(bm, rect, sampleSize, NULL)) {
+        return false;
+    }
+#endif
+    MtkSkDebugf("multi decodeSubset %s End,return true",this->getFormatName());
+    return true;
+}
+#endif  //MTK_SKIA_MULTI_THREAD_JPEG_REGION

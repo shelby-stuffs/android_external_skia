@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 
 /*
  * Copyright 2011 The Android Open Source Project
@@ -72,7 +77,7 @@ static void call_hline_blitter(SkBlitter* blitter, int x, int y, int count,
     int16_t runs[HLINE_STACK_BUFFER + 1];
     uint8_t  aa[HLINE_STACK_BUFFER];
 
-    aa[0] = ApplyGamma(gGammaTable, alpha);
+    //aa[0] = ApplyGamma(gGammaTable, alpha);
     do {
         int n = count;
         if (n > HLINE_STACK_BUFFER) {
@@ -80,6 +85,7 @@ static void call_hline_blitter(SkBlitter* blitter, int x, int y, int count,
         }
         runs[0] = SkToS16(n);
         runs[n] = 0;
+        aa[0] = ApplyGamma(gGammaTable, alpha);
         blitter->blitAntiH(x, y, aa, runs);
         x += n;
         count -= n;

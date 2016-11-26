@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 
 /*
  * Copyright 2006 The Android Open Source Project
@@ -35,6 +40,17 @@ private:
     int fCurrIndex;
     int fLastDrawIndex;
     SkBitmap fBackup;
+	//Change the static variable in onGetBitmap to member variable
+	//for avoiding multi-thread issue.  
+	SkColor paintingColor;
+protected:
+    //for add gif begin
+    //the following methods are intented for no one but Movie to use.
+    //please see Movie.cpp for information
+    virtual int getGifFrameDuration(int frameIndex);
+    virtual int getGifTotalFrameCount();
+    virtual bool setCurrFrame(int frameIndex);
+    //for add gif end 
 };
 
 static int Decode(GifFileType* fileType, GifByteType* out, int size) {
@@ -80,6 +96,35 @@ static SkMSec savedimage_duration(const SavedImage* image)
     }
     return 0;
 }
+//for add gif begin
+int SkGIFMovie::getGifFrameDuration(int frameIndex)
+{
+    //for wrong frame index, return 0
+    if (frameIndex < 0 || NULL == fGIF || frameIndex >= fGIF->ImageCount)
+        return 0;
+    return savedimage_duration(&fGIF->SavedImages[frameIndex]);
+}
+
+int SkGIFMovie::getGifTotalFrameCount()
+{
+    //if fGIF is not valid, return 0
+    if (NULL == fGIF)
+        return 0;
+    return fGIF->ImageCount < 0 ? 0 : fGIF->ImageCount;
+}
+
+bool SkGIFMovie::setCurrFrame(int frameIndex)
+{
+    if (NULL == fGIF)
+        return false;
+
+    if (frameIndex >= 0 && frameIndex < fGIF->ImageCount)
+        fCurrIndex = frameIndex;
+    else
+        fCurrIndex = 0;
+    return true;
+}
+//for add gif end
 
 bool SkGIFMovie::onGetInfo(Info* info)
 {
@@ -342,6 +387,7 @@ static void disposeFrameIfNeeded(SkBitmap* bm, const SavedImage* cur, const Save
 
 bool SkGIFMovie::onGetBitmap(SkBitmap* bm)
 {
+    MtkSkDebugf("gif_SkGifMovie_decoder onDecode, bm %p, fLastDrawIndex %d\n", bm, fLastDrawIndex);
     const GifFileType* gif = fGIF;
     if (NULL == gif)
         return false;
@@ -395,7 +441,7 @@ bool SkGIFMovie::onGetBitmap(SkBitmap* bm)
         bgColor = SkColorSetARGB(0xFF, col.Red, col.Green, col.Blue);
     }
 
-    static SkColor paintingColor = SkPackARGB32(0, 0, 0, 0);
+    paintingColor = SkPackARGB32(0, 0, 0, 0);
     // draw each frames - not intelligent way
     for (int i = startIndex; i <= lastIndex; i++) {
         const SavedImage* cur = &fGIF->SavedImages[i];
@@ -427,6 +473,7 @@ bool SkGIFMovie::onGetBitmap(SkBitmap* bm)
 
     // save index
     fLastDrawIndex = lastIndex;
+    MtkSkDebugf("gif_SkGifMovie_decoder onDecode finish successfully, fLastDrawIndex %d, L:%d!!!\n", fLastDrawIndex, __LINE__);
     return true;
 }
 

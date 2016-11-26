@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2010 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
@@ -158,6 +163,8 @@ void skjpeg_error_exit(j_common_ptr cinfo) {
     skjpeg_error_mgr* error = (skjpeg_error_mgr*)cinfo->err;
 
     (*error->output_message) (cinfo);
+    
+    SkDebugf("skia error skjpeg_error_exit,msgcode[%d]\n", (cinfo)->err->msg_code);
 
     /* Let the memory manager delete any temp files before we die */
     jpeg_destroy(cinfo);

@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 
 /*
  * Copyright 2013 Google Inc.
@@ -37,6 +42,7 @@ public:
 
     SkImageInfo imageInfo() const override;
 
+	void dumpBitmapWithPid(int preTag, int pid = 0);
 protected:
     bool onShouldDisableLCD(const SkPaint&) const override;
 

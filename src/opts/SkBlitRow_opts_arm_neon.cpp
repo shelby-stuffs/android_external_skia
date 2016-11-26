@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2012 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
@@ -222,6 +227,7 @@ void S32A_D565_Opaque_neon(uint16_t* SK_RESTRICT dst,
                       "subs       %[count], %[count], #8      \n\t"
                       "9:                                         \n\t"
                       "pld        [%[dst],#32]                \n\t"
+                      "pld        [%[src],#64]                \n\t"
                       // expand 0565 q12 to 8888 {d4-d7}
                       "vmovn.u16  d4, q12                     \n\t"
                       "vshr.u16   q11, q12, #5                \n\t"
@@ -442,7 +448,7 @@ void S32A_D565_Opaque_neon(uint16_t* SK_RESTRICT dst,
             "uqadd   v20.16b, v0.16b, v20.16b       \t\n"
             "uqadd   v6.16b, v2.16b, v6.16b         \t\n"
 #else
-#error "This function only supports BGRA and RGBA."
+#error "This function only supports BGRA and RGBA."      
 #endif
             "shll    v22.8h, v20.8b, #8             \t\n"
             "shll    v5.8h, v7.8b, #8               \t\n"
@@ -658,7 +664,6 @@ void S32A_D565_Blend_neon(uint16_t* SK_RESTRICT dst,
             vsrc.val[2] = d2;
             vsrc.val[3] = d3;
 #endif
-
 
             // deinterleave dst
             vdst_g = vshlq_n_u16(vdst, SK_R16_BITS);        // shift green to top of lanes
@@ -1442,6 +1447,7 @@ void S32A_D565_Opaque_Dither_neon (uint16_t * SK_RESTRICT dst,
 
 ///////////////////////////////////////////////////////////////////////////////
 
+
 void S32_D565_Opaque_Dither_neon(uint16_t* SK_RESTRICT dst,
                                  const SkPMColor* SK_RESTRICT src,
                                  int count, U8CPU alpha, int x, int y) {
@@ -1538,10 +1544,10 @@ const SkBlitRow::Proc16 sk_blitrow_platform_565_procs_arm_neon[] = {
     S32_D565_Opaque_neon,
     S32_D565_Blend_neon,
     S32A_D565_Opaque_neon,
-#if 0
+#ifdef SK_CPU_ARM32
     S32A_D565_Blend_neon,
 #else
-    NULL,   // https://code.google.com/p/skia/issues/detail?id=2797
+    S32A_D565_Opaque_neon,
 #endif
 
     // dither
@@ -1576,6 +1582,7 @@ const SkBlitRow::Proc32 sk_blitrow_platform_32_procs_arm_neon[] = {
 #else
     S32A_Opaque_BlitRow32_neon,     // S32A_Opaque,
 #endif
+
 #ifdef SK_CPU_ARM32
     S32A_Blend_BlitRow32_neon        // S32A_Blend
 #else

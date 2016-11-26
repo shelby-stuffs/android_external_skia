@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2006 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
@@ -14,6 +19,16 @@
 #include "SkRefCnt.h"
 #include "SkTRegistry.h"
 #include "SkTypes.h"
+
+#include "SkMutex.h"
+
+#ifdef MTK_SKIA_IMAGE_LOW_MEMORY_SIZE
+  #define MTK_MAX_SRC_JPEG_PROG_PIXELS (5*1024*1024)
+#else
+  #define MTK_MAX_SRC_JPEG_PROG_PIXELS (4096*4096)
+#endif
+
+#define MTK_JPEG_ImageDecoder	// MTK Jpeg Code Relative
 
 class SkStream;
 class SkStreamRewindable;
@@ -411,6 +426,56 @@ private:
     mutable bool            fShouldCancelDecode;
     bool                    fPreferQualityOverSpeed;
     bool                    fRequireUnpremultipliedColors;
+	
+public:
+	#ifdef MTK_JPEG_ImageDecoder
+    // prefer size, if set to > 0, tells the decoder to returen a bitmap that
+    // max dimension fit this value
+    int getPreferSize() const { return fPreferSize; }
+    void setPreferSize(int size);
+
+    // post process flag, tell decoder to enhance color/sharpness.
+    int getPostProcFlag() const { return fPostProc; }
+    void setPostProcFlag(int flag);
+#endif      
+
+#ifdef MTK_IMAGE_DC_SUPPORT
+	//Dynamic Contrast histogram information.
+	void* getDynamicCon() const {return fdc;}
+	void setDynamicCon(void* pointer, int size);
+#endif
+#ifdef MTK_SKIA_MULTI_THREAD_JPEG_REGION
+    bool decodeSubset(SkBitmap* bm, const SkIRect& subset, SkColorType pref, int sampleSize, void* fdc);
+#endif
+    bool isAllowMultiThreadRegionDecode() { return fIsAllowMultiThreadRegionDecode ;}
+    bool setIsAllowMultiThreadRegionDecode(bool enable) { fIsAllowMultiThreadRegionDecode = enable; return true ;}
+    void regionDecodeLock() { 
+      /* SkDebugf("SKIA_REGION: wait regionDecodeLock!!\n");0 */
+      fRegionDecodeMutex.acquire(); 
+      /* SkDebugf("SKIA_REGION: get regionDecodeLock!!\n"); */
+      return;
+    }
+    void regionDecodeUnlock() {
+      /* SkDebugf("SKIA_REGION: release regionDecodeUnlock!!\n"); */
+      fRegionDecodeMutex.release(); 
+      return;
+    } 
+
+protected:
+#ifdef MTK_SKIA_MULTI_THREAD_JPEG_REGION
+	virtual bool onDecodeSubset(SkBitmap* bitmap, const SkIRect& rect, int sampleSize, void* fdc) {
+		return false;
+	}
+#endif
+	bool					fIsAllowMultiThreadRegionDecode ;
+	SkMutex 				fRegionDecodeMutex ;
+	unsigned int				fISOSpeedRatings;    
+	
+private:
+	int 					fPreferSize;
+	int					fPostProc;
+	void* 				  	fdc;		  // use dynamic contrast
+	int					fsize;		  // use dynamic contrast
 };
 
 /** Calling newDecoder with a stream returns a new matching imagedecoder

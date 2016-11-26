@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2006 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
@@ -15,6 +20,8 @@
 #include "SkMatrix.h"
 #include "SkPaint.h"
 #include "../gpu/GrColor.h"
+#include "SkBlitRow.h"
+
 
 class SkPath;
 class SkPicture;
@@ -182,6 +189,9 @@ public:
         // Notification from blitter::blitMask in case we need to see the non-alpha channels
         virtual void set3DMask(const SkMask*) {}
 
+        virtual bool shadeSpanRect(int x, int y, SkPMColor dstC[], int rb, int count, int height);
+        virtual bool shadeSpanRect_D565(int x, int y, uint16_t* dst, 
+                                     int rb, int count, int height, SkBlitRow::Proc16 blit_proc) ;
     protected:
         // Reference to shader, so we don't have to dupe information.
         const SkShader& fShader;

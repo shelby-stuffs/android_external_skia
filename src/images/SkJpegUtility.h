@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 
 /*
  * Copyright 2010 The Android Open Source Project
@@ -42,7 +47,10 @@ struct skjpeg_source_mgr : jpeg_source_mgr {
     // has been cancelled.
     SkImageDecoder* fDecoder;
     enum {
+    #if 0
         kBufferSize = 1024
+    #endif
+        kBufferSize = 4096 
     };
     char    fBuffer[kBufferSize];
 };

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2010, The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,17 +60,25 @@ static bool webp_parse_header(SkStream* stream, int* width, int* height, int* al
     unsigned char buffer[WEBP_VP8_HEADER_SIZE];
     size_t bytesToRead = WEBP_VP8_HEADER_SIZE;
     size_t totalBytesRead = 0;
+    bool noBytesRead = false;
+    
     do {
         unsigned char* dst = buffer + totalBytesRead;
         const size_t bytesRead = stream->read(dst, bytesToRead);
         if (0 == bytesRead) {
-            SkASSERT(stream->isAtEnd());
-            break;
+            // Could not read any bytes. Check to see if we are at the end (exit
+            // condition), and continue reading if not. Important for streams
+            // that do not have all the data ready.
+            noBytesRead = true;
+            continue;
         }
         bytesToRead -= bytesRead;
         totalBytesRead += bytesRead;
         SkASSERT(bytesToRead + totalBytesRead == WEBP_VP8_HEADER_SIZE);
+#if 0
     } while (!stream->isAtEnd() && bytesToRead > 0);
+#endif
+    } while (!stream->isAtEnd() && (bytesToRead > 0 && !noBytesRead));
 
     WebPBitstreamFeatures features;
     VP8StatusCode status = WebPGetFeatures(buffer, totalBytesRead, &features);
@@ -417,6 +430,7 @@ SkImageDecoder::Result SkWEBPImageDecoder::onDecode(SkStream* stream, SkBitmap* 
     SkScaledBitmapSampler sampler(origWidth, origHeight, sampleSize);
     if (!setDecodeConfig(decodedBitmap, sampler.scaledWidth(),
                          sampler.scaledHeight())) {
+        SkDebugf("webpSwDec: setDecodeConfig fail %d %d , L:%d !!\n", sampler.scaledWidth(), sampler.scaledHeight(),__LINE__);
         return kFailure;
     }
 

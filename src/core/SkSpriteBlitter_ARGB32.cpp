@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 
 /*
  * Copyright 2006 The Android Open Source Project
@@ -14,6 +19,7 @@
 #include "SkTemplates.h"
 #include "SkUtils.h"
 #include "SkXfermode.h"
+#include "SkSpriteBlitter_S16_D32.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -300,6 +306,11 @@ SkSpriteBlitter* SkSpriteBlitter::ChooseD32(const SkBitmap& source, const SkPain
                 blitter = allocator->createT<Sprite_D32_S32>(source, alpha);
             }
             break;
+		case kRGB_565_SkColorType:
+			if (!xfermode && !filter) {
+            	blitter = allocator->createT<Sprite_D32_S16>(source, alpha);
+            }
+			break;
         default:
             break;
     }

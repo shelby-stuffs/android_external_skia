@@ -22,7 +22,7 @@
     #define PREAMBLE_ARG_Y
 #endif
 
-static void SCALE_NOFILTER_NAME(const SkBitmapProcState& s,
+void SCALE_NOFILTER_NAME(const SkBitmapProcState& s,
                                 uint32_t xy[], int count, int x, int y) {
     SkASSERT((s.fInvType & ~(SkMatrix::kTranslate_Mask |
                              SkMatrix::kScale_Mask)) == 0);

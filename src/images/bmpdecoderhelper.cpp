@@ -336,7 +336,7 @@ int BmpDecoderHelper::GetShort() {
 }
 
 uint8 BmpDecoderHelper::GetByte() {
-  CHECK(pos_ <= len_);
+  CHECK(pos_ >= 0 && pos_ <= len_);
   // We deliberately allow this off-by-one access to cater for BMPs with their
   // last byte missing.
   if (pos_ == len_) {

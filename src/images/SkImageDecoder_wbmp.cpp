@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 
 /*
  * Copyright 2006 The Android Open Source Project
@@ -102,6 +107,8 @@ static void expand_bits_to_bytes(uint8_t dst[], const uint8_t src[], int bits)
 SkImageDecoder::Result SkWBMPImageDecoder::onDecode(SkStream* stream, SkBitmap* decodedBitmap,
                                                     Mode mode)
 {
+    MtkSkDebugf("wbmp_decoder stream %p, decodedBitmap %p, mode %d\n", stream, decodedBitmap, mode);
+
     wbmp_head   head;
 
     if (!head.init(stream)) {
@@ -145,7 +152,8 @@ SkImageDecoder::Result SkWBMPImageDecoder::onDecode(SkStream* stream, SkBitmap* 
         src += srcRB;
     }
 
-    return kSuccess;
+    MtkSkDebugf("wbmp_decoder finish successfully, L:%d!!!\n",__LINE__);
+    return kSuccess;    
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 
 /*
  * Copyright 2006 The Android Open Source Project
@@ -47,6 +52,9 @@ public:
 
         uint32_t getFlags() const override { return fFlags; }
 
+        virtual bool shadeSpanRect(int x, int y, SkPMColor dstC[], int rb, int count, int height);
+        virtual bool shadeSpanRect_D565(int x, int y, uint16_t* dst, 
+												 int rb, int count, int height, SkBlitRow::Proc16 blit_proc);
     private:
         SkBitmapProcState*  fState;
         uint32_t            fFlags;

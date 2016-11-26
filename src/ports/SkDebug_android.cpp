@@ -30,3 +30,19 @@ void SkDebugf(const char format[], ...) {
 
     va_end(args1);
 }
+
+void MtkSkDebugf(const char format[], ...){
+#if defined(__ENG_LOAD)
+		va_list args;
+		va_start(args, format);
+		__android_log_vprint(ANDROID_LOG_DEBUG, LOG_TAG, format, args);
+
+		// Print debug output to stdout as well.  This is useful for command
+		// line applications (e.g. skia_launcher)
+		if (gSkDebugToStdOut) {
+			vprintf(format, args);
+		}
+
+		va_end(args);
+#endif
+}

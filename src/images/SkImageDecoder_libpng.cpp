@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2006 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
@@ -23,6 +28,8 @@
     #include "pngprefix.h"
 #endif
 #include "png.h"
+#include "pngstruct.h"
+
 
 /* These were dropped in libpng >= 1.4 */
 #ifndef png_infopp_NULL
@@ -41,6 +48,8 @@
 #define png_flush_ptr_NULL NULL
 #endif
 
+uint8_t** g_last_buf_ptr = NULL;
+
 #if defined(SK_DEBUG)
 #define DEFAULT_FOR_SUPPRESS_PNG_IMAGE_DECODER_WARNINGS false
 #else  // !defined(SK_DEBUG)
@@ -51,7 +60,6 @@ SK_CONF_DECLARE(bool, c_suppressPNGImageDecoderWarnings,
                 DEFAULT_FOR_SUPPRESS_PNG_IMAGE_DECODER_WARNINGS,
                 "Suppress most PNG warnings when calling image decode "
                 "functions.");
-
 
 
 class SkPNGImageIndex {
@@ -86,7 +94,9 @@ public:
     }
 
     virtual ~SkPNGImageDecoder() {
-        SkDELETE(fImageIndex);
+        if (fImageIndex) {
+            SkDELETE(fImageIndex);
+        }
     }
 
 protected:
@@ -306,7 +316,7 @@ bool SkPNGImageDecoder::onDecodeInit(SkStream* sk_stream, png_structp *png_ptrp,
 }
 
 SkImageDecoder::Result SkPNGImageDecoder::onDecode(SkStream* sk_stream, SkBitmap* decodedBitmap,
-                                                   Mode mode) {
+                                 Mode mode) {
     png_structp png_ptr;
     png_infop info_ptr;
 
@@ -314,11 +324,16 @@ SkImageDecoder::Result SkPNGImageDecoder::onDecode(SkStream* sk_stream, SkBitmap
         return kFailure;
     }
 
-    PNGAutoClean autoClean(png_ptr, info_ptr);
-
-    if (setjmp(png_jmpbuf(png_ptr))) {
-        return kFailure;
-    }
+	PNGAutoClean autoClean(png_ptr, info_ptr);
+    uint8_t* storage = NULL;
+	if (setjmp(png_jmpbuf(png_ptr))) {
+		if (storage) {
+			g_last_buf_ptr = &storage;//not delete! use avoid compile optimization. storage memory leak below when error.
+			sk_free(storage);
+			storage = NULL;
+		}
+		return kFailure;
+	}
 
     png_uint_32 origWidth, origHeight;
     int bitDepth, pngColorType, interlaceType;
@@ -339,6 +354,11 @@ SkImageDecoder::Result SkPNGImageDecoder::onDecode(SkStream* sk_stream, SkBitmap
     SkScaledBitmapSampler sampler(origWidth, origHeight, sampleSize);
     decodedBitmap->setInfo(SkImageInfo::Make(sampler.scaledWidth(), sampler.scaledHeight(),
                                              colorType, alphaType));
+
+    if ((origWidth > 300) && (origHeight > 300)) {
+        MtkSkDebugf("png decode,sk_stream=%p,decodedBitmap=%p,mode=%d,origWidth=%d,origHeight=%d\n",
+            sk_stream, decodedBitmap, mode, origWidth, origHeight);
+    }
 
     if (SkImageDecoder::kDecodeBounds_Mode == mode) {
         return kSuccess;
@@ -429,8 +449,9 @@ SkImageDecoder::Result SkPNGImageDecoder::onDecode(SkStream* sk_stream, SkBitmap
         const int height = decodedBitmap->height();
 
         if (number_passes > 1) {
-            SkAutoMalloc storage(origWidth * origHeight * srcBytesPerPixel);
-            uint8_t* base = (uint8_t*)storage.get();
+            size_t size = origWidth * origHeight * srcBytesPerPixel;
+            storage = (uint8_t*) (size ? sk_malloc_throw(size) : NULL);
+            uint8_t* base = storage;
             size_t rowBytes = origWidth * srcBytesPerPixel;
 
             for (int i = 0; i < number_passes; i++) {
@@ -448,8 +469,9 @@ SkImageDecoder::Result SkPNGImageDecoder::onDecode(SkStream* sk_stream, SkBitmap
                 base += sampler.srcDY() * rowBytes;
             }
         } else {
-            SkAutoMalloc storage(origWidth * srcBytesPerPixel);
-            uint8_t* srcRow = (uint8_t*)storage.get();
+            size_t size = origWidth * srcBytesPerPixel;
+            storage = (uint8_t*) (size ? sk_malloc_throw(size) : NULL);
+            uint8_t* srcRow = storage;
             skip_src_rows(png_ptr, srcRow, sampler.srcY0());
 
             for (int y = 0; y < height; y++) {
@@ -471,7 +493,10 @@ SkImageDecoder::Result SkPNGImageDecoder::onDecode(SkStream* sk_stream, SkBitmap
 
     /* read rest of file, and get additional chunks in info_ptr - REQUIRED */
     png_read_end(png_ptr, info_ptr);
-
+    if (storage) {
+        sk_free(storage);
+        storage = NULL;
+    }
     if (0 != theTranspColor) {
         reallyHasAlpha |= substituteTranspColor(decodedBitmap, theTranspColor);
     }
@@ -494,11 +519,14 @@ SkImageDecoder::Result SkPNGImageDecoder::onDecode(SkStream* sk_stream, SkBitmap
     if (!reallyHasAlpha) {
         decodedBitmap->setAlphaType(kOpaque_SkAlphaType);
     }
+
+    if ((origWidth > 300) && (origHeight > 300)) {
+        MtkSkDebugf("Decode PNG success");
+    }
     return kSuccess;
 }
 
-
-
+//add isSubset
 bool SkPNGImageDecoder::getBitmapColorType(png_structp png_ptr, png_infop info_ptr,
                                            SkColorType* colorTypep,
                                            bool* hasAlphap,
@@ -643,16 +671,16 @@ bool SkPNGImageDecoder::getBitmapColorType(png_structp png_ptr, png_infop info_p
 
     bool convertGrayToRGB = PNG_COLOR_TYPE_GRAY == colorType && *colorTypep != kAlpha_8_SkColorType;
 
-    // Unless the user is requesting A8, convert a grayscale image into RGB.
-    // GRAY_ALPHA will always be converted to RGB
-    if (convertGrayToRGB || colorType == PNG_COLOR_TYPE_GRAY_ALPHA) {
-        png_set_gray_to_rgb(png_ptr);
-    }
+		// Unless the user is requesting A8, convert a grayscale image into RGB.
+		// GRAY_ALPHA will always be converted to RGB
+		if (convertGrayToRGB || colorType == PNG_COLOR_TYPE_GRAY_ALPHA) {
+			png_set_gray_to_rgb(png_ptr);
+		}
 
-    // Add filler (or alpha) byte (after each RGB triplet) if necessary.
-    if (colorType == PNG_COLOR_TYPE_RGB || convertGrayToRGB) {
-        png_set_filler(png_ptr, 0xff, PNG_FILLER_AFTER);
-    }
+		// Add filler (or alpha) byte (after each RGB triplet) if necessary.
+		if (colorType == PNG_COLOR_TYPE_RGB || convertGrayToRGB) {
+			png_set_filler(png_ptr, 0xff, PNG_FILLER_AFTER);
+		}
 
     return true;
 }
@@ -740,6 +768,7 @@ bool SkPNGImageDecoder::onBuildTileIndex(SkStreamRewindable* sk_stream, int *wid
     }
 
     if (setjmp(png_jmpbuf(png_ptr)) != 0) {
+        SkDebugf("SkPNGImageDecoder::onBuildTileIndex Fail L:%d!!\n", __LINE__);	
         png_destroy_read_struct(&png_ptr, &info_ptr, png_infopp_NULL);
         return false;
     }
@@ -769,7 +798,15 @@ bool SkPNGImageDecoder::onDecodeSubset(SkBitmap* bm, const SkIRect& region) {
 
     png_structp png_ptr = fImageIndex->fPng_ptr;
     png_infop info_ptr = fImageIndex->fInfo_ptr;
+    uint8_t* storage = NULL;
     if (setjmp(png_jmpbuf(png_ptr))) {
+        SkDebugf("SkPNGImageDecoder::onDecodeSubset Fail L:%d!!\n", __LINE__);	
+		if (storage) {
+	        g_last_buf_ptr = &storage;//not delete! use avoid compile optimization. 
+			sk_free(storage);
+			storage = NULL;
+		}
+		//png_destroy_read_struct(&png_ptr, &info_ptr, png_infopp_NULL);
         return false;
     }
 
@@ -909,8 +946,9 @@ bool SkPNGImageDecoder::onDecodeSubset(SkBitmap* bm, const SkIRect& region) {
         const int height = decodedBitmap.height();
 
         if (number_passes > 1) {
-            SkAutoMalloc storage(origWidth * origHeight * srcBytesPerPixel);
-            uint8_t* base = (uint8_t*)storage.get();
+            size_t size = origWidth * origHeight * srcBytesPerPixel;
+            storage = (uint8_t*) (size ? sk_malloc_throw(size) : NULL);
+            uint8_t* base = storage;
             size_t rb = origWidth * srcBytesPerPixel;
 
             for (int i = 0; i < number_passes; i++) {
@@ -932,8 +970,9 @@ bool SkPNGImageDecoder::onDecodeSubset(SkBitmap* bm, const SkIRect& region) {
                 base += sampler.srcDY() * rb;
             }
         } else {
-            SkAutoMalloc storage(origWidth * srcBytesPerPixel);
-            uint8_t* srcRow = (uint8_t*)storage.get();
+            size_t size = origWidth * srcBytesPerPixel;
+            storage = (uint8_t*) (size ? sk_malloc_throw(size) : NULL);
+            uint8_t* srcRow = storage;
 
             png_configure_decoder(png_ptr, &actualTop, 0);
             skip_src_rows(png_ptr, srcRow, sampler.srcY0());
@@ -951,7 +990,10 @@ bool SkPNGImageDecoder::onDecodeSubset(SkBitmap* bm, const SkIRect& region) {
             }
         }
     }
-
+    if (storage) {
+        sk_free(storage);
+        storage = NULL;
+    }
     if (0 != theTranspColor) {
         reallyHasAlpha |= substituteTranspColor(&decodedBitmap, theTranspColor);
     }
@@ -984,6 +1026,9 @@ bool SkPNGImageDecoder::onDecodeSubset(SkBitmap* bm, const SkIRect& region) {
         bm->swap(decodedBitmap);
         return true;
     }
+    
+    MtkSkDebugf("PNG DecodeSubset Success");
+    
     return this->cropBitmap(bm, &decodedBitmap, sampleSize, region.x(), region.y(),
                             region.width(), region.height(), 0, rect.y());
 }
@@ -1252,6 +1297,7 @@ bool SkPNGImageEncoder::doEncode(SkWStream* stream, const SkBitmap& bitmap,
 
     /* clean up after the write, and free any memory allocated */
     png_destroy_write_struct(&png_ptr, &info_ptr);
+    MtkSkDebugf("Encode png success");
     return true;
 }
 

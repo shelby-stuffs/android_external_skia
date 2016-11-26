@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2006 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
@@ -16,6 +21,11 @@
 #include "SkUtils.h"
 
 #include "gif_lib.h"
+
+#include "SkPackBits.h"
+#include "SkImageEncoder.h"
+#include "SkString.h"
+
 
 class SkGIFImageDecoder : public SkImageDecoder {
 public:
@@ -152,12 +162,31 @@ static int find_transpIndex(const SavedImage& image, int colorCount) {
     return transpIndex;
 }
 
-static SkImageDecoder::Result error_return(const SkBitmap& bm, const char msg[]) {
-    if (!c_suppressGIFImageDecoderWarnings) {
-        SkDebugf("libgif error [%s] bitmap [%d %d] pixels %p colortable %p\n",
-                 msg, bm.width(), bm.height(), bm.getPixels(),
-                 bm.getColorTable());
+// return -1 if not found (i.e. we're completely opaque), add for KK 
+static int find_transpIndexKK(int count, ExtensionBlock* Blocks, int colorCount) {
+    int transpIndex = -1;
+    for (int i = 0; i < count; ++i) {
+        const ExtensionBlock* eb = Blocks + i;
+        if (eb->Function == 0xF9 && eb->ByteCount == 4) {
+            if (eb->Bytes[0] & 1) {
+                transpIndex = (unsigned char)eb->Bytes[3];
+                // check for valid transpIndex
+                if (transpIndex >= colorCount) {
+                    transpIndex = -1;
+                }
+                break;
+            }
+        }
     }
+    return transpIndex;
+}
+
+static SkImageDecoder::Result error_return(const SkBitmap& bm, const char msg[]) {
+	if (!c_suppressGIFImageDecoderWarnings) {
+		SkDebugf("libgif error [%s] bitmap [%d %d] pixels %p colortable %p\n",
+				msg, bm.width(), bm.height(), bm.getPixels(),
+				bm.getColorTable());
+	}
     return SkImageDecoder::kFailure;
 }
 
@@ -250,7 +279,8 @@ SkImageDecoder::Result SkGIFImageDecoder::onDecode(SkStream* sk_stream, SkBitmap
         return error_return(*bm, "DGifOpen");
     }
 
-    SkAutoTCallIProc<GifFileType, close_gif> acp(gif);
+    /// M: add for the DGifOpen memory leak which caused by MTK modify before
+    SkAutoTCallIProc<GifFileType, DGifCloseFile> acp(gif);
 
     SavedImage temp_save;
     temp_save.ExtensionBlocks=NULL;
@@ -283,6 +313,11 @@ SkImageDecoder::Result SkGIFImageDecoder::onDecode(SkStream* sk_stream, SkBitmap
 
             width = gif->SWidth;
             height = gif->SHeight;
+            #ifdef MTK_AOSP_ENHANCEMENT
+            if (width <= 0 || height <= 0) {
+                return error_return(*bm, "gif width or height <= 0");
+            }
+            #endif
 
             SavedImage* image = &gif->SavedImages[gif->ImageCount-1];
             const GifImageDesc& desc = image->ImageDesc;
@@ -356,7 +391,8 @@ SkImageDecoder::Result SkGIFImageDecoder::onDecode(SkStream* sk_stream, SkBitmap
                     colorCount = 256;
                     sk_memset32(colorPtr, SK_ColorWHITE, colorCount);
                 }
-                transpIndex = find_transpIndex(temp_save, colorCount);
+//                transpIndex = find_transpIndex(temp_save, colorCount);
+				transpIndex = find_transpIndexKK(gif->ExtensionBlockCount, gif->ExtensionBlocks, colorCount);
                 if (transpIndex >= 0) {
                     colorPtr[transpIndex] = SK_ColorTRANSPARENT; // ram in a transparent SkPMColor
                     fillIndex = transpIndex;

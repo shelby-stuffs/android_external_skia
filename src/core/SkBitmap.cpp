@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 
 /*
  * Copyright 2008 The Android Open Source Project
@@ -1047,6 +1052,8 @@ bool SkBitmap::deepCopyTo(SkBitmap* dst) const {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+extern void GetAlpha8888_opt(const SkPMColor* SK_RESTRICT src, 
+		  						    int width, uint8_t* SK_RESTRICT alpha);
 
 static bool GetBitmapAlpha(const SkBitmap& src, uint8_t* SK_RESTRICT alpha,
                            int alphaRowBytes) {
@@ -1078,9 +1085,13 @@ static bool GetBitmapAlpha(const SkBitmap& src, uint8_t* SK_RESTRICT alpha,
     } else if (kN32_SkColorType == colorType && !src.isOpaque()) {
         const SkPMColor* SK_RESTRICT s = src.getAddr32(0, 0);
         while (--h >= 0) {
-            for (int x = 0; x < w; x++) {
-                alpha[x] = SkGetPackedA32(s[x]);
-            }
+#if defined(__ARM_HAVE_NEON_COMMON) && defined(SK_CPU_LENDIAN)
+			GetAlpha8888_opt(s, w, alpha);
+#else			
+			for (int x = 0; x < w; x++) {
+				alpha[x] = SkGetPackedA32(s[x]);
+			}
+#endif
             s = (const SkPMColor*)((const char*)s + rb);
             alpha += alphaRowBytes;
         }

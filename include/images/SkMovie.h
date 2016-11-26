@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 
 /*
  * Copyright 2008 The Android Open Source Project
@@ -47,6 +52,15 @@ public:
         redraw).
     */
     bool setTime(SkMSec);
+
+    //for add gif
+    //the following 3 methods are intented for no one but Movie to use.
+    //please see Movie.cpp for information
+    virtual int getGifFrameDuration(int frameIndex);
+    virtual int getGifTotalFrameCount();
+    SkBitmap* createGifFrameBitmap(SkBitmap::Allocator* javaalloctor);
+    virtual bool setCurrFrame(int frameIndex);
+    //for and gif end
 
     // return the right bitmap for the current time code
     const SkBitmap& bitmap();

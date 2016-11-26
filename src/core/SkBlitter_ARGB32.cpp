@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2006 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
@@ -427,11 +432,13 @@ void SkARGB32_Shader_Blitter::blitRect(int x, int y, int width, int height) {
                 device = (uint32_t*)((char*)device + deviceRB);
             } while (--height > 0);
         } else {
-            do {
-                shaderContext->shadeSpan(x, y, device, width);
-                y += 1;
-                device = (uint32_t*)((char*)device + deviceRB);
-            } while (--height > 0);
+        	if (!shaderContext->shadeSpanRect(x, y, device, deviceRB, width, height)) {
+	            do {
+	                shaderContext->shadeSpan(x, y, device, width);
+	                y += 1;
+	                device = (uint32_t*)((char*)device + deviceRB);
+	            } while (--height > 0);
+        	}
         }
     } else {
         SkXfermode* xfer = fXfermode;

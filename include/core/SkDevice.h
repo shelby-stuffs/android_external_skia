@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2010 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
@@ -123,6 +128,7 @@ public:
         fAttachedToCanvas = false;
 #endif
     };
+	virtual void dumpBitmapWithPid(int preTag, int pid = 0);
 
 protected:
     enum TileUsage {

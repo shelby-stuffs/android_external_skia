@@ -41,7 +41,8 @@ ifneq ($(strip $(TARGET_FDO_CFLAGS)),)
 	LOCAL_CFLAGS += -O2
 endif
 
-LOCAL_ARM_MODE := thumb
+LOCAL_ARM_MODE := arm
+
 ifeq ($(TARGET_ARCH),arm)
 	ifeq ($(ARCH_ARM_HAVE_VFP),true)
 		LOCAL_CFLAGS += -DANDROID_LARGE_MEMORY_DEVICE
@@ -215,6 +216,9 @@ LOCAL_SRC_FILES := \
 	src/core/SkShader.cpp \
 	src/core/SkSpriteBlitter_ARGB32.cpp \
 	src/core/SkSpriteBlitter_RGB16.cpp \
+	src/core/SkBitmapProcShader_opt.cpp \
+	src/core/SkBitmap_debugger.cpp \
+	src/core/SkSpriteBlitter_S16_D32.cpp \
 	src/core/SkStream.cpp \
 	src/core/SkString.cpp \
 	src/core/SkStringUtils.cpp \
@@ -588,6 +592,8 @@ LOCAL_SRC_FILES := \
 	src/core/SkFlate.cpp
 
 LOCAL_SHARED_LIBRARIES := \
+	libcutils \
+	libutils \
 	liblog \
 	libGLESv2 \
 	libEGL \
@@ -652,6 +658,69 @@ LOCAL_EXPORT_C_INCLUDE_DIRS := \
 	$(LOCAL_PATH)/include/ports \
 	$(LOCAL_PATH)/include/utils \
 	$(LOCAL_PATH)/src/utils
+
+  LOCAL_CFLAGS += -DMTK_SKIA_MULTI_THREAD_JPEG_REGION
+#  LOCAL_CFLAGS += -DMTK_SKIA_DISABLE_MULTI_THREAD_JPEG_REGION
+#  LOCAL_CFLAGS += -DJPEG_DRAW_RECT
+
+ifeq ($(MTK_MIRAVISION_IMAGE_DC_SUPPORT),yes)
+  LOCAL_CFLAGS += -DMTK_IMAGE_DC_SUPPORT
+endif
+
+ifneq "$(strip $(MTK_EMULATOR_SUPPORT))" "yes"
+
+#ifeq ($(strip $(BOARD_USES_MTK_JPEG_HW_DECODER)),true)
+
+#MTK_PQ_SUPPORT=PQ_HW_VER_2
+#ifeq ($(strip $(MTK_PQ_SUPPORT)),PQ_HW_VER_2)
+ifneq (,$(filter $(strip $(MTK_PQ_SUPPORT)), PQ_HW_VER_2 PQ_HW_VER_3))
+  LOCAL_C_INCLUDES += \
+  $(TOP)/$(MTK_PATH_SOURCE)/hardware/almk/include \
+  $(TOP)/$(MTK_PATH_SOURCE)/hardware/jpeg/include \
+  $(TOP)/$(MTK_PATH_SOURCE)/hardware/dpframework/include \
+  $(TOP)/system/core/include/utils \
+
+  LOCAL_SHARED_LIBRARIES += libmhalImageCodec
+  LOCAL_SHARED_LIBRARIES += libdpframework
+#  LOCAL_SHARED_LIBRARIES += libalmkdrv
+
+  LOCAL_CFLAGS += -DMTK_JPEG_HW_DECODER
+  LOCAL_CFLAGS += -DMTK_JPEG_HW_REGION_RESIZER
+  LOCAL_CFLAGS += -DMTK_6572DISPLAY_ENHANCEMENT_SUPPORT
+#  LOCAL_CFLAGS += -DNO_SKREGION_DECODE
+
+#  LOCAL_CFLAGS += -DMTK_JPEG_HW_DECODER_658X
+#  LOCAL_CFLAGS += -DMTK_WEBP_HW_DECODER
+#  LOCAL_CFLAGS += -DMTK_WEBP_HW_DECODER_ENABLE
+
+ifeq ($(strip $(MTK_GMO_RAM_OPTIMIZE)),yes)
+  LOCAL_CFLAGS += -DMTK_SKIA_IMAGE_LOW_MEMORY_SIZE
+endif
+
+endif
+
+
+
+#endif
+endif
+
+ifeq ($(TARGET_BUILD_VARIANT),eng)
+    LOCAL_CFLAGS += -D__ENG_LOAD
+endif
+
+
+
+ifeq ($(ARCH_ARM_HAVE_NEON),true)
+	LOCAL_STATIC_LIBRARIES += libskia_opt
+	
+	LOCAL_CFLAGS += \
+	-D__ARM_HAVE_NEON_COMMON
+	
+	LOCAL_STATIC_LIBRARIES += libskia_graphics_opt
+endif
+
+
+
 
 LOCAL_MODULE := \
 	libskia
@@ -760,10 +829,17 @@ include $(BUILD_SHARED_LIBRARY)
 
 #############################################################
 # Build the skia tools
-#
 
 # benchmark (timings)
-include $(BASE_PATH)/bench/Android.mk
+
+#include $(BASE_PATH)/bench/Android.mk
+#include $(BASE_PATH)/tools/Android.mk
+
+# golden-master (fidelity / regression test)
+#include $(BASE_PATH)/gm/Android.mk
+
+# unit-tests
+#include $(BASE_PATH)/tests/Android.mk
 
 # diamond-master (one test to rule them all)
-include $(BASE_PATH)/dm/Android.mk
+#include $(BASE_PATH)/dm/Android.mk

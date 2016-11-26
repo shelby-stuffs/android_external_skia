@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2006 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
@@ -145,6 +150,10 @@ inline void operator delete(void* p) {
     #define SK_TO_STRING_VIRT() virtual void toString(SkString* str) const;
     #define SK_TO_STRING_PUREVIRT() virtual void toString(SkString* str) const = 0;
     #define SK_TO_STRING_OVERRIDE() void toString(SkString* str) const override;
+#endif
+
+#ifndef MtkDebug
+    void MtkSkDebugf(const char format[], ...);
 #endif
 
 template <bool>

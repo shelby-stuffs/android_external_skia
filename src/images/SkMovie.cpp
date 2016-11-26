@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 
 /*
  * Copyright 2011 Google Inc.
@@ -65,6 +70,55 @@ bool SkMovie::setTime(SkMSec time)
     }
     return changed;
 }
+
+//for add gif begin
+int SkMovie::getGifFrameDuration(int frameIndex)
+{
+    return 0;
+}
+
+int SkMovie::getGifTotalFrameCount()
+{
+    return 0;
+}
+
+bool SkMovie::setCurrFrame(int frameIndex)
+{
+    return true;
+}
+
+SkBitmap* SkMovie::createGifFrameBitmap(SkBitmap::Allocator* javaalloctor)
+{
+    //get default bitmap, create a new bitmap and returns.
+    SkBitmap *copyedBitmap = new SkBitmap();
+    bool copyDone = false;
+    if (fNeedBitmap)
+    {
+        if (!this->onGetBitmap(&fBitmap))   // failure
+            fBitmap.reset();
+    }
+    //now create a new bitmap from fBitmap
+    if (fBitmap.canCopyTo(kN32_SkColorType) )
+    {
+//LOGE("SkMovie:createGifFrameBitmap:fBitmap can copy to 8888 config, then copy...");
+        copyDone = fBitmap.copyTo(copyedBitmap, kN32_SkColorType,javaalloctor);
+    }
+    else
+    {
+        copyDone = false;
+//LOGE("SkMovie:createGifFrameBitmap:fBitmap can NOT copy to 8888 config");
+    }
+
+    if (copyDone)
+    {
+        return copyedBitmap;
+    }
+    else
+    {
+        return NULL;
+    }
+}
+//for add gif end
 
 const SkBitmap& SkMovie::bitmap()
 {
