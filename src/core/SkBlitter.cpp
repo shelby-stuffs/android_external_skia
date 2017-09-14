@@ -847,9 +847,9 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
         return alloc->make<SkA8_Coverage_Blitter>(device, *paint);
     }
 
-    if (SkBlitter* blitter = SkCreateRasterPipelineBlitter(device, *paint, matrix, alloc)) {
+    /*if (SkBlitter* blitter = SkCreateRasterPipelineBlitter(device, *paint, matrix, alloc)) {
         return blitter;
-    }
+    }*/
 
     if (nullptr == shader) {
         if (mode != SkBlendMode::kSrcOver) {
