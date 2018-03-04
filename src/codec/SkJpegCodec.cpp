@@ -560,7 +560,17 @@ static inline bool needs_swizzler_to_convert_from_cmyk(J_COLOR_SPACE jpegColorTy
 
 void SkJpegCodec::setupJpegDecoding(jpeg_decompress_struct* dinfo)
 {
+    /* We only prefer speed over quality for small/medium pictures,
+     * where the difference will be even less noticeable.
+     */
+    if(dinfo->image_width > kMedium_JpegDecodingSize ||
+        dinfo->image_height > kMedium_JpegDecodingSize) {
+        return;
+    }
 
+    dinfo->do_fancy_upsampling = FALSE;
+    dinfo->disable_merged_upsampling = TRUE;
+    dinfo->dct_method = JDCT_IFAST;
 }
 
 /*

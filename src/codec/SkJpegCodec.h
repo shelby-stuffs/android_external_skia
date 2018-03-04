@@ -20,12 +20,6 @@ extern "C" {
     #include "jpeglib.h"
 }
 
-#ifdef QTI_STRONG
-#define QTI_WEAK
-#else
-#define QTI_WEAK __attribute__((weak))
-#endif
-
 class JpegDecoderMgr;
 
 /*
@@ -126,6 +120,16 @@ private:
     int readRows(const SkImageInfo& dstInfo, void* dst, size_t rowBytes, int count, const Options&);
 
     /*
+     * Categorize JPEG image dimension.
+     * Can be used to apply different settings for different sizes.
+     */
+    enum JpegDecodingSize: JDIMENSION {
+        kSmall_JpegDecodingSize = 400,
+        kMedium_JpegDecodingSize = 1600
+    };
+    static void setupJpegDecoding(jpeg_decompress_struct* dinfo);
+
+    /*
      * Scanline decoding.
      */
     SkSampler* getSampler(bool createIfNecessary) override;
@@ -133,8 +137,6 @@ private:
             const Options& options) override;
     int onGetScanlines(void* dst, int count, size_t rowBytes) override;
     bool onSkipScanlines(int count) override;
-
-    void setupJpegDecoding(jpeg_decompress_struct* dinfo) QTI_WEAK;
 
     std::unique_ptr<JpegDecoderMgr>    fDecoderMgr;
 
