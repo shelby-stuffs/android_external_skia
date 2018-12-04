@@ -14,10 +14,6 @@
 #include "SkStream.h"
 #include "SkTemplates.h"
 
-extern "C" {
-    #include "jpeglib.h"
-}
-
 class JpegDecoderMgr;
 
 /*
@@ -50,7 +46,8 @@ protected:
 
     bool onQueryYUV8(SkYUVSizeInfo* sizeInfo, SkYUVColorSpace* colorSpace) const override;
 
-    Result onGetYUV8Planes(const SkYUVSizeInfo& sizeInfo, void* planes[3]) override;
+    Result onGetYUV8Planes(const SkYUVSizeInfo& sizeInfo,
+                           void* planes[SkYUVSizeInfo::kMaxCount]) override;
 
     SkEncodedImageFormat onGetEncodedFormat() const override {
         return SkEncodedImageFormat::kJPEG;
@@ -111,16 +108,6 @@ private:
                             bool needsCMYKToRGB);
     void allocateStorage(const SkImageInfo& dstInfo);
     int readRows(const SkImageInfo& dstInfo, void* dst, size_t rowBytes, int count, const Options&);
-
-    /*
-     * Categorize JPEG image dimension.
-     * Can be used to apply different settings for different sizes.
-     */
-    enum JpegDecodingSize: JDIMENSION {
-        kSmall_JpegDecodingSize = 400,
-        kMedium_JpegDecodingSize = 1600
-    };
-    static void setupJpegDecoding(jpeg_decompress_struct* dinfo);
 
     /*
      * Scanline decoding.
