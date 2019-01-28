@@ -318,7 +318,7 @@ static int gather_lines_and_quads(const SkPath& path,
                 if (convertConicsToQuads) {
                     SkScalar weight = iter.conicWeight();
                     SkAutoConicToQuads converter;
-                    const SkPoint* quadPts = converter.computeQuads(pathPts, weight, 0.5f);
+                    const SkPoint* quadPts = converter.computeQuads(pathPts, weight, 0.25f);
                     for (int i = 0; i < converter.countQuads(); ++i) {
                         addSrcChoppedQuad(quadPts + 2 * i, !verbsInContour && 0 == i);
                     }
@@ -514,7 +514,7 @@ static void intersect_lines(const SkPoint& ptA, const SkVector& normA,
 static void set_uv_quad(const SkPoint qpts[3], BezierVertex verts[kQuadNumVertices]) {
     // this should be in the src space, not dev coords, when we have perspective
     GrPathUtils::QuadUVMatrix DevToUV(qpts);
-    DevToUV.apply<kQuadNumVertices, sizeof(BezierVertex), sizeof(SkPoint)>(verts);
+    DevToUV.apply(verts, kQuadNumVertices, sizeof(BezierVertex), sizeof(SkPoint));
 }
 
 static void bloat_quad(const SkPoint qpts[3], const SkMatrix* toDevice,

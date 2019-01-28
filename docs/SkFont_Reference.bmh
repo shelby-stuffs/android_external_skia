@@ -1,0 +1,809 @@
+#Topic Font
+#Alias Font_Reference ##
+
+#Code
+#Populate
+##
+
+#PhraseDef font_metrics
+Typeface, Font_Size, Font_Scale_X,
+Font_Skew_X, Font_Hinting, Paint_Anti_Alias, Font_Embolden, Font_Force_Hinting,
+Font_Embedded_Bitmaps, Font_Hinting_Spacing, Font_Anti_Alias, Font_Linear,
+and Font_Subpixel
+##
+
+#Subtopic Advance
+# incomplete, should probably be in overview, not reference
+##
+#Subtopic Engine
+# incomplete, should probably be in overview, not reference
+##
+
+#Subtopic Size
+#Line # overall height in points ##
+Font_Size adjusts the overall text size in points.
+Font_Size can be set to any positive value or zero.
+Font_Size defaults to 12.
+Font_Size
+##
+
+#Subtopic Scale_X
+#Line # text horizontal scale ##
+Font_Scale_X adjusts the text horizontal scale.
+Text scaling approximates condensed and expanded type faces when the actual face
+is not available.
+Font_Scale_X can be set to any value.
+Font_Scale_X defaults to 1.
+##
+
+#Subtopic Skew_X
+#Line # text horizontal slant ##
+Font_Skew_X adjusts the text horizontal slant.
+Text skewing approximates italic and oblique type faces when the actual face
+is not available.
+Font_Skew_X can be set to any value.
+Font_Skew_X defaults to 0.
+##
+
+#Subtopic Embolden
+#Line # approximate font styles ##
+
+Font_Embolden approximates the bold font style accompanying a normal font when a bold font face
+is not available. Skia does not provide font substitution; it is up to the client to find the
+bold font face using the platform Font_Manager.
+
+Use Font_Skew_X to approximate an italic font style when the italic font face
+is not available.
+
+A FreeType based port may define SK_USE_FREETYPE_EMBOLDEN at compile time to direct
+the font engine to create the bold Glyphs. Otherwise, the extra bold is computed
+by increasing the stroke width and setting the SkPaint::Style to
+SkPaint::kStrokeAndFill_Style as needed.
+
+Font_Embolden is disabled by default.
+#Subtopic Embolden ##
+
+#Subtopic Hinting_Spacing
+#Line # glyph spacing affected by hinting ##
+
+If Hinting is set to SkFontHinting::kFull, Hinting_Spacing adjusts the character
+spacing by the difference of the hinted and unhinted Left_Side_Bearing and
+Right_Side_Bearing. Hinting_Spacing only applies to platforms that use
+FreeType as their Font_Engine.
+
+Hinting_Spacing is not related to text kerning, where the space between
+a specific pair of characters is adjusted using data in the font kerning tables.
+#Subtopic Hinting_Spacing ##
+
+#Subtopic Linear
+#Line # selects text rendering as Glyph or Path ##
+Font_Linear selects whether text is rendered as a Glyph or as a Path.
+If Font_Linear is set, it has the same effect as setting Hinting to SkFontHinting::kNormal.
+If Font_Linear is clear, it is the same as setting Hinting to SkFontHinting::kNone.
+#Subtopic Linear ##
+
+#Subtopic Subpixel
+#Line # uses pixel transparency to represent fractional offset ##
+#Substitute sub-pixel
+Font_Subpixel uses the pixel transparency to represent a fractional offset.
+As the opaqueness of the color increases, the edge of the glyph appears to move
+towards the outside of the pixel.
+#Subtopic Subpixel ##
+
+#Subtopic Anti_Alias
+#Line # text relying on the order of RGB stripes ##
+When set, Anti_Alias positions glyphs within a pixel, using alpha and
+possibly RGB striping. It can take advantage of the organization of RGB stripes
+that create a color, and relies on the small size of the stripe and visual perception
+to make the color fringing imperceptible.
+
+Anti_Alias can be enabled on devices that orient stripes horizontally
+or vertically, and that order the color components as RGB or BGR. Internally, the
+glyph cache may store multiple copies of the same glyph with different sub-pixel
+positions, requiring more memory.
+#Subtopic Anti_Alias ##
+
+#Subtopic Force_Hinting
+#Line # always adjust glyph paths ##
+
+If Hinting is set to SkFontHinting::kNormal or SkFontHinting::kFull, Force_Hinting
+instructs the Font_Manager to always hint Glyphs.
+Force_Hinting has no effect if Hinting is set to SkFontHinting::kNone or
+SkFontHinting::kSlight.
+
+Force_Hinting only affects platforms that use FreeType as the Font_Manager.
+#Subtopic Force_Hinting ##
+
+#Subtopic Embedded_Bitmaps
+#Line # custom sized bitmap Glyphs ##
+Embedded_Bitmaps allows selecting custom sized bitmap Glyphs.
+Embedded_Bitmaps when set chooses an embedded bitmap glyph over an outline contained
+in a font if the platform supports this option.
+
+FreeType selects the bitmap glyph if available when Embedded_Bitmaps is set, and selects
+the outline glyph if Embedded_Bitmaps is clear.
+Windows may select the bitmap glyph but is not required to do so.
+OS_X and iOS do not support this option.
+##
+
+# ------------------------------------------------------------------------------
+
+#Class SkFont
+
+SkFont controls options applied when drawing and measuring text.
+
+#Code
+#Populate
+##
+
+# ------------------------------------------------------------------------------
+
+#EnumClass Edging
+
+#Code
+#Populate
+##
+
+Whether edge pixels draw opaque or with partial transparency.
+
+#Const kAlias  0 # incomplete; replace '0' with member value
+#Line # no transparent pixels on glyph edges ##
+# incomplete; add description or delete
+##
+#Const kAntiAlias  0 # incomplete; replace '0' with member value
+#Line # may have transparent pixels on glyph edges ##
+# incomplete; add description or delete
+##
+#Const kSubpixelAntiAlias  0 # incomplete; replace '0' with member value
+#Line # glyph positioned in pixel using transparency ##
+# incomplete; add description or delete
+##
+
+# incomplete; add description or delete
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#EnumClass ##
+
+# ------------------------------------------------------------------------------
+
+#Method SkFont()
+#In Constructor
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method SkFont(sk_sp<SkTypeface> typeface, SkScalar size)
+#In Constructor
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method SkFont(sk_sp<SkTypeface> typeface, SkScalar size, SkScalar scaleX, SkScalar skewX)
+#In Constructor
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method bool operator==(const SkFont& font) const
+#In Operator
+#Line # compares fonts for equality ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method bool isForceAutoHinting() const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method bool isEmbeddedBitmaps() const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method bool isSubpixel() const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method bool isLinearMetrics() const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method bool isEmbolden() const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method void setForceAutoHinting(bool forceAutoHinting)
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method void setEmbeddedBitmaps(bool embeddedBitmaps)
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method void setSubpixel(bool subpixel)
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method void setLinearMetrics(bool linearMetrics)
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method void setEmbolden(bool embolden)
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method Edging getEdging() const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method void setEdging(Edging edging)
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method void setHinting(SkFontHinting hintingLevel)
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method SkFontHinting getHinting() const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method SkFont makeWithSize(SkScalar size) const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method SkTypeface* getTypeface() const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method SkScalar    getSize() const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method SkScalar    getScaleX() const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method SkScalar    getSkewX() const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method sk_sp<SkTypeface> refTypeface() const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method void setTypeface(sk_sp<SkTypeface> tf)
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method void setSize(SkScalar textSize)
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method void setScaleX(SkScalar scaleX)
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method void setSkewX(SkScalar skewX)
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method int textToGlyphs(const void* text, size_t byteLength, SkTextEncoding encoding,
+                     SkGlyphID glyphs[], int maxGlyphCount) const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method uint16_t unicharToGlyph(SkUnichar uni) const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method int countText(const void* text, size_t byteLength, SkTextEncoding encoding) const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method bool containsText(const void* text, size_t byteLength, SkTextEncoding encoding) const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method size_t breakText(const void* text, size_t length, SkTextEncoding encoding, SkScalar maxWidth,
+                     SkScalar* measuredWidth = nullptr) const
+#In  incomplete
+#Line # incomplete ##
+#Populate
+
+#Example
+    #Description
+    Line under "Breakfast" shows desired width, shorter than available characters.
+    Line under "Bre" shows measured width after breaking text.
+    ##
+    #Height 128
+    #Width 280
+        void draw(SkCanvas* canvas) {
+            SkPaint paint;
+            paint.setAntiAlias(true);
+            paint.setTextSize(50);
+            const char str[] = "Breakfast";
+            const int count = sizeof(str) - 1;
+            canvas->drawText(str, count, 25, 50, paint);
+            SkScalar measuredWidth;
+            SkFont font;
+            font.setSize(50);
+            int partialBytes = font.breakText(str, count, kUTF8_SkTextEncoding,
+                    100, &measuredWidth);
+            canvas->drawText(str, partialBytes, 25, 100, paint);
+            canvas->drawLine(25, 60, 25 + 100, 60, paint);
+            canvas->drawLine(25, 110, 25 + measuredWidth, 110, paint);
+        }
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method SkScalar measureText(const void* text, size_t byteLength, SkTextEncoding encoding,
+                         SkRect* bounds = nullptr) const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method bool getPath(uint16_t glyphID, SkPath* path) const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method void getPaths(const uint16_t glyphIDs[], int count,
+                  void (*glyphPathProc)(const SkPath* pathOrNull, const SkMatrix& mx, void* ctx),
+                  void* ctx) const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method SkScalar getMetrics(SkFontMetrics* metrics) const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method SkScalar getSpacing() const
+#In incomplete
+#Line # incomplete ##
+
+#Populate
+
+#Example
+// incomplete
+##
+
+#SeeAlso incomplete
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Class SkFont ##
+
+#Topic Font ##

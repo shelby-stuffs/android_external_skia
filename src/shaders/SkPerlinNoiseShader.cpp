@@ -768,7 +768,7 @@ private:
             , fNoiseSampler(std::move(noiseProxy))
             , fPaintingData(std::move(paintingData)) {
         this->setTextureSamplerCnt(2);
-        fCoordTransform.reset(matrix);
+        fCoordTransform = GrCoordTransform(matrix);
         this->addCoordTransform(&fCoordTransform);
     }
 
@@ -1191,7 +1191,7 @@ private:
             , fGradientSampler(std::move(gradientProxy))
             , fPaintingData(std::move(paintingData)) {
         this->setTextureSamplerCnt(2);
-        fCoordTransform.reset(matrix);
+        fCoordTransform = GrCoordTransform(matrix);
         this->addCoordTransform(&fCoordTransform);
     }
 
@@ -1538,5 +1538,5 @@ sk_sp<SkShader> SkPerlinNoiseShader::MakeImprovedNoise(SkScalar baseFrequencyX,
 }
 
 void SkPerlinNoiseShader::RegisterFlattenables() {
-    SK_REGISTER_FLATTENABLE(SkPerlinNoiseShaderImpl)
+    SK_REGISTER_FLATTENABLE(SkPerlinNoiseShaderImpl);
 }

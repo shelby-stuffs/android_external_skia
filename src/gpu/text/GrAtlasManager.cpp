@@ -17,7 +17,7 @@ GrAtlasManager::GrAtlasManager(GrProxyProvider* proxyProvider, GrGlyphCache* gly
             , fProxyProvider{proxyProvider}
             , fCaps{fProxyProvider->refCaps()}
             , fGlyphCache{glyphCache}
-            , fAtlasConfigs{fCaps->maxTextureSize(), maxTextureBytes} { }
+            , fAtlasConfig{fCaps->maxTextureSize(), maxTextureBytes} { }
 
 GrAtlasManager::~GrAtlasManager() = default;
 
@@ -33,6 +33,21 @@ static GrPixelConfig mask_format_to_pixel_config(GrMaskFormat format) {
             SkDEBUGFAIL("unsupported GrMaskFormat");
             return kAlpha_8_GrPixelConfig;
     }
+}
+
+static SkColorType mask_format_to_color_type(GrMaskFormat format) {
+    switch (format) {
+        case kA8_GrMaskFormat:
+            return kAlpha_8_SkColorType;
+        case kA565_GrMaskFormat:
+            return kRGB_565_SkColorType;
+        case kARGB_GrMaskFormat:
+            return kRGBA_8888_SkColorType;
+        default:
+            SkDEBUGFAIL("unsupported GrMaskFormat");
+            return kAlpha_8_SkColorType;
+    }
+
 }
 
 void GrAtlasManager::freeAll() {
@@ -62,8 +77,9 @@ void GrAtlasManager::addGlyphToBulkAndSetUseToken(GrDrawOpAtlas::BulkUseTokenUpd
                                                   GrGlyph* glyph,
                                                   GrDeferredUploadToken token) {
     SkASSERT(glyph);
-    updater->add(glyph->fID);
-    this->getAtlas(glyph->fMaskFormat)->setLastUseToken(glyph->fID, token);
+    if (updater->add(glyph->fID)) {
+        this->getAtlas(glyph->fMaskFormat)->setLastUseToken(glyph->fID, token);
+    }
 }
 
 #ifdef SK_DEBUG
@@ -154,19 +170,22 @@ void GrAtlasManager::setAtlasSizesToMinimum_ForTesting() {
     }
 
     // Set all the atlas sizes to 1x1 plot each.
-    new (&fAtlasConfigs) GrDrawOpAtlasConfig{};
+    new (&fAtlasConfig) GrDrawOpAtlasConfig{};
 }
 
 bool GrAtlasManager::initAtlas(GrMaskFormat format) {
     int index = MaskFormatToAtlasIndex(format);
     if (fAtlases[index] == nullptr) {
         GrPixelConfig config = mask_format_to_pixel_config(format);
-        SkISize atlasDimensions = fAtlasConfigs.atlasDimensions(format);
-        SkISize numPlots = fAtlasConfigs.numPlots(format);
+        SkColorType colorType = mask_format_to_color_type(format);
+        SkISize atlasDimensions = fAtlasConfig.atlasDimensions(format);
+        SkISize plotDimensions = fAtlasConfig.plotDimensions(format);
+
+        const GrBackendFormat format = fCaps->getBackendFormatFromColorType(colorType);
 
         fAtlases[index] = GrDrawOpAtlas::Make(
-                fProxyProvider, config, atlasDimensions.width(), atlasDimensions.height(),
-                numPlots.width(), numPlots.height(), fAllowMultitexturing,
+                fProxyProvider, format, config, atlasDimensions.width(), atlasDimensions.height(),
+                plotDimensions.width(), plotDimensions.height(), fAllowMultitexturing,
                 &GrGlyphCache::HandleEviction, fGlyphCache);
         if (!fAtlases[index]) {
             return false;

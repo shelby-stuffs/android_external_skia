@@ -196,9 +196,11 @@ void WindowRectanglesMaskGM::visualizeAlphaMask(GrContext* ctx, GrRenderTargetCo
                                                 const GrReducedClip& reducedClip, GrPaint&& paint) {
     const int padRight = (kDeviceRect.right() - kCoverRect.right()) / 2;
     const int padBottom = (kDeviceRect.bottom() - kCoverRect.bottom()) / 2;
+    const GrBackendFormat format =
+            ctx->contextPriv().caps()->getBackendFormatFromColorType(kAlpha_8_SkColorType);
     sk_sp<GrRenderTargetContext> maskRTC(
         ctx->contextPriv().makeDeferredRenderTargetContextWithFallback(
-                                                         SkBackingFit::kExact,
+                                                         format, SkBackingFit::kExact,
                                                          kCoverRect.width() + padRight,
                                                          kCoverRect.height() + padBottom,
                                                          kAlpha_8_GrPixelConfig, nullptr));
@@ -264,10 +266,7 @@ void WindowRectanglesMaskGM::stencilCheckerboard(GrRenderTargetContext* rtc, boo
 }
 
 void WindowRectanglesMaskGM::fail(SkCanvas* canvas) {
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    paint.setTextSize(20);
-    sk_tool_utils::set_portable_typeface(&paint);
+    SkFont font(sk_tool_utils::create_portable_typeface(), 20);
 
     SkString errorMsg;
     errorMsg.printf("Requires GPU with %i window rectangles", kNumWindows);
@@ -275,9 +274,9 @@ void WindowRectanglesMaskGM::fail(SkCanvas* canvas) {
     canvas->clipRect(SkRect::Make(kCoverRect));
     canvas->clear(SK_ColorWHITE);
 
-    SkTextUtils::DrawString(canvas, errorMsg, SkIntToScalar((kCoverRect.left() + kCoverRect.right())/2),
-                     SkIntToScalar((kCoverRect.top() + kCoverRect.bottom())/2 - 10), paint,
-                            SkTextUtils::kCenter_Align);
+    SkTextUtils::DrawString(canvas, errorMsg.c_str(), SkIntToScalar((kCoverRect.left() + kCoverRect.right())/2),
+                     SkIntToScalar((kCoverRect.top() + kCoverRect.bottom())/2 - 10),
+                            font, SkPaint(), SkTextUtils::kCenter_Align);
 }
 
 DEF_GM( return new WindowRectanglesMaskGM(); )

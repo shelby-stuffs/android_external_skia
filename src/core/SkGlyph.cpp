@@ -8,6 +8,8 @@
 #include "SkGlyph.h"
 
 #include "SkArenaAlloc.h"
+#include "SkMakeUnique.h"
+#include "SkScalerContext.h"
 
 void SkGlyph::initWithGlyphID(SkPackedGlyphID glyph_id) {
     fID             = glyph_id;
@@ -110,5 +112,19 @@ size_t SkGlyph::copyImageData(const SkGlyph& from, SkArenaAlloc* alloc) {
     }
 
     return 0u;
+}
+
+SkPath* SkGlyph::addPath(SkScalerContext* scalerContext, SkArenaAlloc* alloc) {
+    if (!this->isEmpty()) {
+        if (fPathData == nullptr) {
+            fPathData = alloc->make<SkGlyph::PathData>();
+            if (scalerContext->getPath(this->getPackedID(), &fPathData->fPath)) {
+                fPathData->fPath.updateBoundsCache();
+                fPathData->fPath.getGenerationID();
+                fPathData->fHasPath = true;
+            }
+        }
+    }
+    return this->path();
 }
 

@@ -1029,7 +1029,10 @@ static void test_cross_context_image(skiatest::Reporter* reporter, const GrConte
 
 DEF_GPUTEST(SkImage_MakeCrossContextFromEncodedRelease, reporter, options) {
     sk_sp<SkData> data = GetResourceAsData("images/mandrill_128.png");
-    SkASSERT(data.get());
+    if (!data) {
+       ERRORF(reporter, "missing resource");
+       return;
+    }
 
     test_cross_context_image(reporter, options, "SkImage_MakeCrossContextFromEncodedRelease",
                              [&data](GrContext* ctx) {
@@ -1040,8 +1043,10 @@ DEF_GPUTEST(SkImage_MakeCrossContextFromEncodedRelease, reporter, options) {
 DEF_GPUTEST(SkImage_MakeCrossContextFromPixmapRelease, reporter, options) {
     SkBitmap bitmap;
     SkPixmap pixmap;
-    SkAssertResult(GetResourceAsBitmap("images/mandrill_128.png", &bitmap) && bitmap.peekPixels(&pixmap));
-
+    if (!GetResourceAsBitmap("images/mandrill_128.png", &bitmap) || !bitmap.peekPixels(&pixmap)) {
+        ERRORF(reporter, "missing resource");
+        return;
+    }
     test_cross_context_image(reporter, options, "SkImage_MakeCrossContextFromPixmapRelease",
                              [&pixmap](GrContext* ctx) {
         return SkImage::MakeCrossContextFromPixmap(ctx, pixmap, false, nullptr);
@@ -1163,13 +1168,13 @@ DEF_TEST(Image_ColorSpace, r) {
     REPORTER_ASSERT(r, srgb.get() == image->colorSpace());
 
     image = GetResourceAsImage("images/webp-color-profile-lossy.webp");
-    SkColorSpaceTransferFn fn;
+    skcms_TransferFunction fn;
     bool success = image->colorSpace()->isNumericalTransferFn(&fn);
     REPORTER_ASSERT(r, success);
-    REPORTER_ASSERT(r, color_space_almost_equal(1.8f, fn.fG));
+    REPORTER_ASSERT(r, color_space_almost_equal(1.8f, fn.g));
 
-    sk_sp<SkColorSpace> rec2020 = SkColorSpace::MakeRGB(SkColorSpace::kSRGB_RenderTargetGamma,
-                                                        SkColorSpace::kRec2020_Gamut);
+    sk_sp<SkColorSpace> rec2020 = SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB,
+                                                        SkNamedGamut::kRec2020);
     image = create_picture_image(rec2020);
     REPORTER_ASSERT(r, SkColorSpace::Equals(rec2020.get(), image->colorSpace()));
 
@@ -1190,11 +1195,10 @@ DEF_TEST(Image_ColorSpace, r) {
 }
 
 DEF_TEST(Image_makeColorSpace, r) {
-    sk_sp<SkColorSpace> p3 = SkColorSpace::MakeRGB(SkColorSpace::kSRGB_RenderTargetGamma,
-                                                   SkColorSpace::kDCIP3_D65_Gamut);
-    SkColorSpaceTransferFn fn;
-    fn.fA = 1.f; fn.fB = 0.f; fn.fC = 0.f; fn.fD = 0.f; fn.fE = 0.f; fn.fF = 0.f; fn.fG = 1.8f;
-    sk_sp<SkColorSpace> adobeGamut = SkColorSpace::MakeRGB(fn, SkColorSpace::kAdobeRGB_Gamut);
+    sk_sp<SkColorSpace> p3 = SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB, SkNamedGamut::kDCIP3);
+    skcms_TransferFunction fn;
+    fn.a = 1.f; fn.b = 0.f; fn.c = 0.f; fn.d = 0.f; fn.e = 0.f; fn.f = 0.f; fn.g = 1.8f;
+    sk_sp<SkColorSpace> adobeGamut = SkColorSpace::MakeRGB(fn, SkNamedGamut::kAdobeRGB);
 
     SkBitmap srgbBitmap;
     srgbBitmap.allocPixels(SkImageInfo::MakeS32(1, 1, kOpaque_SkAlphaType));

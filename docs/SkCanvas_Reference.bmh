@@ -3955,7 +3955,7 @@ void draw(SkCanvas* canvas) {
 }
 ##
 
-#SeeAlso drawString drawPosText drawPosTextH drawTextBlob drawTextRSXform
+#SeeAlso drawString drawTextBlob
 
 ##
 
@@ -3971,7 +3971,7 @@ void draw(SkCanvas* canvas) {
    canvas->drawString("a small hello", 20, 20, paint);
 ##
 
-#SeeAlso drawText drawPosText drawPosTextH drawTextBlob drawTextRSXform
+#SeeAlso drawText drawTextBlob
 
 ##
 
@@ -3984,88 +3984,7 @@ void draw(SkCanvas* canvas) {
    canvas->drawString(string, 20, 20, paint);
 ##
 
-#SeeAlso drawText drawPosText drawPosTextH drawTextBlob drawTextRSXform
-
-##
-
-# ------------------------------------------------------------------------------
-
-#Method void drawPosText(const void* text, size_t byteLength, const SkPoint pos[],
-                     const SkPaint& paint)
-#In Draw_Text
-#In Draw
-#Line # draws text at array of (x, y) positions ##
-#Populate
-
-#Example
-#Height 120
-void draw(SkCanvas* canvas) {
-  const char hello[] = "HeLLo!";
-  const SkPoint pos[] = { {40, 100}, {82, 95}, {115, 110}, {130, 95}, {145, 85},
-    {172, 100} };
-  SkPaint paint;
-  paint.setTextSize(60);
-  canvas->drawPosText(hello, strlen(hello), pos, paint);
-}
-##
-
-#SeeAlso drawText drawPosTextH drawTextBlob drawTextRSXform
-
-##
-
-# ------------------------------------------------------------------------------
-
-#Method void drawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[], SkScalar constY,
-                      const SkPaint& paint)
-#In Draw_Text
-#In Draw
-#Line # draws text at x positions with common baseline ##
-#Populate
-
-#Example
-#Height 40
-    void draw(SkCanvas* canvas) {
-        SkScalar xpos[] = { 20, 40, 80, 160 };
-        SkPaint paint;
-        canvas->drawPosTextH("XXXX", 4, xpos, 20, paint);
-    }
-##
-
-#SeeAlso drawText drawPosText drawTextBlob drawTextRSXform
-
-##
-
-# ------------------------------------------------------------------------------
-
-#Method void drawTextRSXform(const void* text, size_t byteLength, const SkRSXform xform[],
-                         const SkRect* cullRect, const SkPaint& paint)
-#In Draw_Text
-#In Draw
-#Line # draws text with array of RSXform ##
-#Populate
-
-#Example
-void draw(SkCanvas* canvas) {
-    const int iterations = 26;
-    SkRSXform transforms[iterations];
-    char alphabet[iterations];
-    SkScalar angle = 0;
-    SkScalar scale = 1;
-    for (size_t i = 0; i < SK_ARRAY_COUNT(transforms); ++i) {
-        const SkScalar s = SkScalarSin(angle) * scale;
-        const SkScalar c = SkScalarCos(angle) * scale;
-        transforms[i] = SkRSXform::Make(-c, -s, -s * 16, c * 16);
-        angle += .45;
-        scale += .2;
-        alphabet[i] = 'A' + i;
-    }
-    SkPaint paint;
-    canvas->translate(110, 138);
-    canvas->drawTextRSXform(alphabet, sizeof(alphabet), transforms, nullptr, paint);
-}
-##
-
-#SeeAlso drawText drawPosText drawTextBlob
+#SeeAlso drawText drawTextBlob
 
 ##
 
@@ -4078,9 +3997,9 @@ void draw(SkCanvas* canvas) {
 Draws Text_Blob blob at (x, y), using Clip, Matrix, and Paint paint.
 
 blob contains Glyphs, their positions, and paint attributes specific to text:
-#paint_font_metrics#.
+#font_metrics#.
 
-Paint_Text_Encoding must be set to SkPaint::kGlyphID_TextEncoding.
+Paint_Text_Encoding must be set to kGlyphID_SkTextEncoding.
 
 Elements of paint: Anti_Alias, Blend_Mode, Color including Color_Alpha,
 Color_Filter, Paint_Dither, Draw_Looper, Mask_Filter, Path_Effect, Shader, and
@@ -4102,15 +4021,17 @@ void draw(SkCanvas* canvas) {
     uint16_t glyphs[len];
     SkPaint paint;
     paint.textToGlyphs(bunny, len, glyphs);
-    paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
+    paint.setTextEncoding(kGlyphID_SkTextEncoding);
+    SkFont font;
     int runs[] = { 3, 1, 3 };
     SkPoint textPos = { 20, 100 };
     int glyphIndex = 0;
     for (auto runLen : runs) {
-        paint.setTextSize(1 == runLen ? 20 : 50);
+        font.setSize(1 == runLen ? 20 : 50);
         const SkTextBlobBuilder::RunBuffer& run =
-                textBlobBuilder.allocRun(paint, runLen, textPos.fX, textPos.fY);
+                textBlobBuilder.allocRun(font, runLen, textPos.fX, textPos.fY);
         memcpy(run.glyphs, &glyphs[glyphIndex], sizeof(glyphs[0]) * runLen);
+        paint.setTextSize(1 == runLen ? 20 : 50);
         textPos.fX += paint.measureText(&glyphs[glyphIndex], sizeof(glyphs[0]) * runLen, nullptr);
         glyphIndex += runLen;
     }
@@ -4120,7 +4041,7 @@ void draw(SkCanvas* canvas) {
 }
 ##
 
-#SeeAlso drawText drawPosText drawPosTextH
+#SeeAlso drawText
 
 ##
 
@@ -4131,9 +4052,9 @@ void draw(SkCanvas* canvas) {
 Draws Text_Blob blob at (x, y), using Clip, Matrix, and Paint paint.
 
 blob contains Glyphs, their positions, and paint attributes specific to text:
-#paint_font_metrics#.
+#font_metrics#.
 
-Paint_Text_Encoding must be set to SkPaint::kGlyphID_TextEncoding.
+Paint_Text_Encoding must be set to kGlyphID_SkTextEncoding.
 
 Elements of paint: Path_Effect, Mask_Filter, Shader, Color_Filter,
 Image_Filter, and Draw_Looper; apply to blob.
@@ -4146,26 +4067,24 @@ Image_Filter, and Draw_Looper; apply to blob.
 #Example
 #Height 120
 #Description
-Paint attributes unrelated to text, like color, have no effect on paint in allocated Text_Blob.
 Paint attributes related to text, like text size, have no effect on paint passed to drawTextBlob.
 ##
     void draw(SkCanvas* canvas) {
         SkTextBlobBuilder textBlobBuilder;
-        SkPaint paint;
-        paint.setTextSize(50);
-        paint.setColor(SK_ColorRED);
-        paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
+        SkFont font;
+        font.setSize(50);
         const SkTextBlobBuilder::RunBuffer& run =
-                textBlobBuilder.allocRun(paint, 1, 20, 100);
+                textBlobBuilder.allocRun(font, 1, 20, 100);
         run.glyphs[0] = 20;
         sk_sp<const SkTextBlob> blob = textBlobBuilder.make();
+        SkPaint paint;
         paint.setTextSize(10);
         paint.setColor(SK_ColorBLUE);
         canvas->drawTextBlob(blob.get(), 0, 0, paint);
     }
 ##
 
-#SeeAlso drawText drawPosText drawPosTextH
+#SeeAlso drawText
 
 ##
 

@@ -38,8 +38,15 @@ public:
     bool onKey(sk_app::Window::Key key, sk_app::Window::InputState state, uint32_t modifiers) override;
     bool onChar(SkUnichar c, uint32_t modifiers) override;
 
-    struct SkPaintFields {
+    struct SkFontFields {
         bool fTypeface = false;
+        bool fTextSize = false;
+        SkScalar fTextSizeRange[2] = { 0, 20 };
+        bool fTextScaleX = false;
+        bool fTextSkewX = false;
+        bool fHinting = false;
+    };
+    struct SkPaintFields {
         bool fPathEffect = false;
         bool fShader = false;
         bool fMaskFilter = false;
@@ -47,10 +54,6 @@ public:
         bool fDrawLooper = false;
         bool fImageFilter = false;
 
-        bool fTextSize = false;
-        SkScalar fTextSizeRange[2] = { 0, 20 };
-        bool fTextScaleX = false;
-        bool fTextSkewX = false;
         bool fColor = false;
         bool fWidth = false;
         bool fMiterLimit = false;
@@ -70,20 +73,16 @@ public:
         const bool fOriginalSkUseDeltaAA = gSkUseDeltaAA;
         const bool fOriginalSkForceDeltaAA = gSkForceDeltaAA;
 
-        bool fTextAlign = false;
         bool fCapType = false;
         bool fJoinType = false;
         bool fStyle = false;
-        bool fTextEncoding = false;
-        bool fHinting = false;
         bool fFilterQuality = false;
     };
 private:
     enum class ColorMode {
-        kLegacy,                                 // N32, no color management
-        kColorManagedSRGB8888_NonLinearBlending, // N32, sRGB transfer function, nonlinear blending
-        kColorManagedSRGB8888,                   // N32, sRGB transfer function, linear blending
-        kColorManagedLinearF16,                  // F16, linear transfer function, linear blending
+        kLegacy,            // 8888, no color management
+        kColorManaged8888,  // 8888 with color management
+        kColorManagedF16,   // F16 with color management
     };
 
     void initSlides();
@@ -139,7 +138,7 @@ private:
     // Color properties for slide rendering
     ColorMode              fColorMode;
     SkColorSpacePrimaries  fColorSpacePrimaries;
-    SkColorSpaceTransferFn fColorSpaceTransferFn;
+    skcms_TransferFunction fColorSpaceTransferFn;
 
     // transform data
     SkScalar               fZoomLevel;
@@ -160,6 +159,10 @@ private:
     // identity unless the window initially scales the content to fit the screen.
     SkMatrix               fDefaultMatrix;
 
+    bool                   fTiled;
+    bool                   fDrawTileBoundaries;
+    SkSize                 fTileScale;
+
     enum PerspectiveMode {
         kPerspective_Off,
         kPerspective_Real,
@@ -172,6 +175,8 @@ private:
 
     SkPaint fPaint;
     SkPaintFields fPaintOverrides;
+    SkFont fFont;
+    SkFontFields fFontOverrides;
     bool fPixelGeometryOverrides = false;
 };
 

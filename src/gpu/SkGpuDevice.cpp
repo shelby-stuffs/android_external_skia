@@ -164,10 +164,12 @@ sk_sp<GrRenderTargetContext> SkGpuDevice::MakeRenderTargetContext(
     if (kUnknown_GrPixelConfig == config) {
         return nullptr;
     }
+    GrBackendFormat format =
+            context->contextPriv().caps()->getBackendFormatFromColorType(origInfo.colorType());
     // This method is used to create SkGpuDevice's for SkSurface_Gpus. In this case
     // they need to be exact.
     return context->contextPriv().makeDeferredRenderTargetContext(
-                                    SkBackingFit::kExact,
+                                    format, SkBackingFit::kExact,
                                     origInfo.width(), origInfo.height(),
                                     config, origInfo.refColorSpace(), sampleCount,
                                     mipMapped, origin, surfaceProps, budgeted);
@@ -1228,6 +1230,14 @@ sk_sp<SkSpecialImage> SkGpuDevice::makeSpecial(const SkImage* image) {
 }
 
 sk_sp<SkSpecialImage> SkGpuDevice::snapSpecial() {
+    // If we are wrapping a vulkan secondary command buffer, then we can't snap off a special image
+    // since it would require us to make a copy of the underlying VkImage which we don't have access
+    // to. Additionaly we can't stop and start the render pass that is used with the secondary
+    // command buffer.
+    if (this->accessRenderTargetContext()->wrapsVkSecondaryCB()) {
+        return nullptr;
+    }
+
     sk_sp<GrTextureProxy> proxy(this->accessRenderTargetContext()->asTextureProxyRef());
     if (!proxy) {
         // When the device doesn't have a texture, we create a temporary texture.
@@ -1236,6 +1246,7 @@ sk_sp<SkSpecialImage> SkGpuDevice::snapSpecial() {
         proxy = GrSurfaceProxy::Copy(fContext.get(),
                                      this->accessRenderTargetContext()->asSurfaceProxy(),
                                      GrMipMapped::kNo,
+                                     SkBackingFit::kApprox,
                                      SkBudgeted::kYes);
         if (!proxy) {
             return nullptr;
@@ -1250,6 +1261,37 @@ sk_sp<SkSpecialImage> SkGpuDevice::snapSpecial() {
                                                kNeedNewImageUniqueID_SpecialImage,
                                                std::move(proxy),
                                                ii.refColorSpace(),
+                                               &this->surfaceProps());
+}
+
+sk_sp<SkSpecialImage> SkGpuDevice::snapBackImage(const SkIRect& subset) {
+    GrRenderTargetContext* rtc = this->accessRenderTargetContext();
+
+    // If we are wrapping a vulkan secondary command buffer, then we can't snap off a special image
+    // since it would require us to make a copy of the underlying VkImage which we don't have access
+    // to. Additionaly we can't stop and start the render pass that is used with the secondary
+    // command buffer.
+    if (rtc->wrapsVkSecondaryCB()) {
+        return nullptr;
+    }
+
+
+    GrContext* ctx = this->context();
+    SkASSERT(rtc->asSurfaceProxy());
+
+    auto srcProxy =
+            GrSurfaceProxy::Copy(ctx, rtc->asSurfaceProxy(), rtc->mipMapped(), subset,
+                                 SkBackingFit::kApprox, rtc->asSurfaceProxy()->isBudgeted());
+    if (!srcProxy) {
+        return nullptr;
+    }
+
+    // Note, can't move srcProxy since we also refer to this in the 2nd parameter
+    return SkSpecialImage::MakeDeferredFromGpu(fContext.get(),
+                                               SkIRect::MakeSize(srcProxy->isize()),
+                                               kNeedNewImageUniqueID_SpecialImage,
+                                               srcProxy,
+                                               this->imageInfo().refColorSpace(),
                                                &this->surfaceProps());
 }
 
@@ -1452,19 +1494,18 @@ void SkGpuDevice::drawBitmapLattice(const SkBitmap& bitmap,
     this->drawProducerLattice(&maker, std::move(iter), dst, paint);
 }
 
-void SkGpuDevice::drawImageSet(const SkCanvas::ImageSetEntry set[], int count, float alpha,
+void SkGpuDevice::drawImageSet(const SkCanvas::ImageSetEntry set[], int count,
                                SkFilterQuality filterQuality, SkBlendMode mode) {
     SkASSERT(count > 0);
     if (mode != SkBlendMode::kSrcOver ||
         !fContext->contextPriv().caps()->dynamicStateArrayGeometryProcessorTextureSupport()) {
-        INHERITED::drawImageSet(set, count, alpha, filterQuality, mode);
+        INHERITED::drawImageSet(set, count, filterQuality, mode);
         return;
     }
     GrSamplerState sampler;
     sampler.setFilterMode(kNone_SkFilterQuality == filterQuality ? GrSamplerState::Filter::kNearest
                                                                  : GrSamplerState::Filter::kBilerp);
     SkAutoTArray<GrRenderTargetContext::TextureSetEntry> textures(count);
-    GrColor color = GrColorPackA4(SkToUInt(SkTClamp(SkScalarRoundToInt(alpha * 255), 0, 255)));
     // We accumulate compatible proxies until we find an an incompatible one or reach the end and
     // issue the accumulated 'n' draws starting at 'base'.
     int base = 0, n = 0;
@@ -1474,8 +1515,8 @@ void SkGpuDevice::drawImageSet(const SkCanvas::ImageSetEntry set[], int count, f
                     set[base].fImage->colorSpace(), set[base].fImage->alphaType(),
                     fRenderTargetContext->colorSpaceInfo().colorSpace(), kPremul_SkAlphaType);
             fRenderTargetContext->drawTextureSet(this->clip(), textures.get() + base, n,
-                                                 sampler.filter(), color, this->ctm(),
-                                                 std::move(textureXform), nullptr);
+                                                 sampler.filter(), this->ctm(),
+                                                 std::move(textureXform));
         }
     };
     for (int i = 0; i < count; ++i) {
@@ -1505,10 +1546,11 @@ void SkGpuDevice::drawImageSet(const SkCanvas::ImageSetEntry set[], int count, f
         }
         textures[i].fSrcRect = set[i].fSrcRect;
         textures[i].fDstRect = set[i].fDstRect;
+        textures[i].fAlpha = set[i].fAlpha;
         textures[i].fAAFlags = SkToGrQuadAAFlags(set[i].fAAFlags);
         if (n > 0 &&
-            (textures[i].fProxy->textureType() != textures[base].fProxy->textureType() ||
-             textures[i].fProxy->config() != textures[base].fProxy->config() ||
+            (!GrTextureProxy::ProxiesAreCompatibleAsDynamicState(textures[i].fProxy.get(),
+                                                                 textures[base].fProxy.get()) ||
              set[i].fImage->alphaType() != set[base].fImage->alphaType() ||
              !SkColorSpace::Equals(set[i].fImage->colorSpace(), set[base].fImage->colorSpace()))) {
             draw();
@@ -1690,9 +1732,7 @@ void SkGpuDevice::drawGlyphRunList(const SkGlyphRunList& glyphRunList) {
 
     // Check for valid input
     const SkMatrix& ctm = this->ctm();
-    const SkPaint& paint = glyphRunList.paint();
-    if (!ctm.isFinite() || !SkScalarIsFinite(paint.getTextSize()) ||
-        !SkScalarIsFinite(paint.getTextScaleX()) || !SkScalarIsFinite(paint.getTextSkewX())) {
+    if (!ctm.isFinite() || !glyphRunList.allFontsFinite()) {
         return;
     }
 
@@ -1707,7 +1747,7 @@ void SkGpuDevice::drawDrawable(SkDrawable* drawable, const SkMatrix* matrix, SkC
         const SkMatrix& ctm = canvas->getTotalMatrix();
         const SkMatrix& combinedMatrix = matrix ? SkMatrix::Concat(ctm, *matrix) : ctm;
         std::unique_ptr<SkDrawable::GpuDrawHandler> gpuDraw =
-                drawable->snapGpuDrawHandler(api, combinedMatrix);
+                drawable->snapGpuDrawHandler(api, combinedMatrix, canvas->getDeviceClipBounds());
         if (gpuDraw) {
             fRenderTargetContext->drawDrawable(std::move(gpuDraw), drawable->getBounds());
             return;
@@ -1749,14 +1789,21 @@ SkBaseDevice* SkGpuDevice::onCreateDevice(const CreateInfo& cinfo, const SkPaint
                                                             : SkBackingFit::kExact;
 
     GrPixelConfig config = fRenderTargetContext->colorSpaceInfo().config();
+    const GrBackendFormat& origFormat = fRenderTargetContext->asSurfaceProxy()->backendFormat();
+    GrBackendFormat format = origFormat.makeTexture2D();
+    if (!format.isValid()) {
+        return nullptr;
+    }
     if (kRGBA_1010102_GrPixelConfig == config) {
         // If the original device is 1010102, fall back to 8888 so that we have a usable alpha
         // channel in the layer.
         config = kRGBA_8888_GrPixelConfig;
+        format =
+            fContext->contextPriv().caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType);
     }
 
     sk_sp<GrRenderTargetContext> rtc(fContext->contextPriv().makeDeferredRenderTargetContext(
-            fit, cinfo.fInfo.width(), cinfo.fInfo.height(), config,
+            format, fit, cinfo.fInfo.width(), cinfo.fInfo.height(), config,
             fRenderTargetContext->colorSpaceInfo().refColorSpace(),
             fRenderTargetContext->numStencilSamples(), GrMipMapped::kNo,
             kBottomLeft_GrSurfaceOrigin, &props));

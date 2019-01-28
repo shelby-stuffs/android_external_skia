@@ -8,6 +8,7 @@
 #include "SkGlyphCache.h"
 
 #include "SkGraphics.h"
+#include "SkMakeUnique.h"
 #include "SkMutex.h"
 #include "SkOnce.h"
 #include "SkPath.h"
@@ -33,14 +34,6 @@ SkGlyphCache::SkGlyphCache(
 {
     SkASSERT(fScalerContext != nullptr);
     fMemoryUsed = sizeof(*this);
-}
-
-SkGlyphCache::~SkGlyphCache() {
-    fGlyphMap.foreach([](SkGlyph* g) {
-        if (g->fPathData) {
-            delete g->fPathData->fPath;
-        }
-    });
 }
 
 const SkDescriptor& SkGlyphCache::getDescriptor() const {
@@ -76,10 +69,6 @@ SkGlyphID SkGlyphCache::unicharToGlyph(SkUnichar charCode) {
         rec->fPackedGlyphID = SkPackedGlyphID(glyphID);
         return glyphID;
     }
-}
-
-SkUnichar SkGlyphCache::glyphToUnichar(SkGlyphID glyphID) {
-    return fScalerContext->glyphIDToChar(glyphID);
 }
 
 unsigned SkGlyphCache::getGlyphCount() const {
@@ -188,6 +177,7 @@ SkGlyph* SkGlyphCache::allocateNewGlyph(SkPackedGlyphID packedGlyphID, MetricsTy
 const void* SkGlyphCache::findImage(const SkGlyph& glyph) {
     if (glyph.fWidth > 0 && glyph.fWidth < kMaxGlyphWidth) {
         if (nullptr == glyph.fImage) {
+            SkDEBUGCODE(SkMask::Format oldFormat = (SkMask::Format)glyph.fMaskFormat);
             size_t  size = const_cast<SkGlyph&>(glyph).allocImage(&fAlloc);
             // check that alloc() actually succeeded
             if (glyph.fImage) {
@@ -198,6 +188,7 @@ const void* SkGlyphCache::findImage(const SkGlyph& glyph) {
                 // is smaller, and if so, strink the alloc size in fImageAlloc.
                 fMemoryUsed += size;
             }
+            SkASSERT(oldFormat == glyph.fMaskFormat);
         }
     }
     return glyph.fImage;
@@ -212,7 +203,7 @@ void SkGlyphCache::initializeImage(const volatile void* data, size_t size, SkGly
         size_t allocSize = glyph->allocImage(&fAlloc);
         // check that alloc() actually succeeded
         if (glyph->fImage) {
-            SkAssertResult(size == allocSize);
+            SkASSERT(size == allocSize);
             memcpy(glyph->fImage, const_cast<const void*>(data), allocSize);
             fMemoryUsed += size;
         }
@@ -220,24 +211,25 @@ void SkGlyphCache::initializeImage(const volatile void* data, size_t size, SkGly
 }
 
 const SkPath* SkGlyphCache::findPath(const SkGlyph& glyph) {
-    if (glyph.fWidth) {
-        if (glyph.fPathData == nullptr) {
-            SkGlyph::PathData* pathData = fAlloc.make<SkGlyph::PathData>();
-            const_cast<SkGlyph&>(glyph).fPathData = pathData;
-            pathData->fIntercept = nullptr;
-            SkPath* path = new SkPath;
-            if (fScalerContext->getPath(glyph.getPackedID(), path)) {
-                path->updateBoundsCache();
-                path->getGenerationID();
-                pathData->fPath = path;
-                fMemoryUsed += compute_path_size(*path);
-            } else {
-                pathData->fPath = nullptr;
-                delete path;
+
+    if (!glyph.isEmpty()) {
+        // If the path already exists, return it.
+        if (glyph.fPathData != nullptr) {
+            if (glyph.fPathData->fHasPath) {
+                return &glyph.fPathData->fPath;
             }
+            return nullptr;
         }
+
+        const_cast<SkGlyph&>(glyph).addPath(fScalerContext.get(), &fAlloc);
+        if (glyph.fPathData != nullptr) {
+            fMemoryUsed += compute_path_size(glyph.fPathData->fPath);
+        }
+
+        return glyph.path();
     }
-    return glyph.fPathData ? glyph.fPathData->fPath : nullptr;
+
+    return nullptr;
 }
 
 bool SkGlyphCache::initializePath(SkGlyph* glyph, const volatile void* data, size_t size) {
@@ -248,14 +240,12 @@ bool SkGlyphCache::initializePath(SkGlyph* glyph, const volatile void* data, siz
     if (glyph->fWidth) {
         SkGlyph::PathData* pathData = fAlloc.make<SkGlyph::PathData>();
         glyph->fPathData = pathData;
-        pathData->fIntercept = nullptr;
-        SkPath* path = new SkPath;
-        if (!path->readFromMemory(const_cast<const void*>(data), size)) {
-            delete path;
+        auto path = skstd::make_unique<SkPath>();
+        if (!pathData->fPath.readFromMemory(const_cast<const void*>(data), size)) {
             return false;
         }
-        pathData->fPath = path;
-        fMemoryUsed += compute_path_size(*path);
+        fMemoryUsed += compute_path_size(glyph->fPathData->fPath);
+        pathData->fHasPath = true;
     }
 
     return true;
@@ -414,7 +404,7 @@ void SkGlyphCache::findIntercepts(const SkScalar bounds[2], SkScalar scale, SkSc
     intercept->fInterval[0] = SK_ScalarMax;
     intercept->fInterval[1] = SK_ScalarMin;
     glyph->fPathData->fIntercept = intercept;
-    const SkPath* path = glyph->fPathData->fPath;
+    const SkPath* path = &(glyph->fPathData->fPath);
     const SkRect& pathBounds = path->getBounds();
     if (*(&pathBounds.fBottom - yAxis) < bounds[0] || bounds[1] < *(&pathBounds.fTop - yAxis)) {
         return;
@@ -482,6 +472,14 @@ void SkGlyphCache::dump() const {
     SkDebugf("%s\n", msg.c_str());
 }
 
+bool SkGlyphCache::hasImage(const SkGlyph& glyph) {
+    return !glyph.isEmpty() && this->findImage(glyph) != nullptr;
+}
+
+bool SkGlyphCache::hasPath(const SkGlyph& glyph) {
+    return !glyph.isEmpty() && this->findPath(glyph) != nullptr;
+}
+
 #ifdef SK_DEBUG
 void SkGlyphCache::forceValidate() const {
     size_t memoryUsed = sizeof(*this);
@@ -490,8 +488,8 @@ void SkGlyphCache::forceValidate() const {
         if (glyph.fImage) {
             memoryUsed += glyph.computeImageSize();
         }
-        if (glyph.fPathData && glyph.fPathData->fPath) {
-            memoryUsed += compute_path_size(*glyph.fPathData->fPath);
+        if (glyph.fPathData) {
+            memoryUsed += compute_path_size(glyph.fPathData->fPath);
         }
     });
     SkASSERT(fMemoryUsed == memoryUsed);
@@ -502,7 +500,6 @@ void SkGlyphCache::validate() const {
     forceValidate();
 #endif
 }
-
 #endif
 
 

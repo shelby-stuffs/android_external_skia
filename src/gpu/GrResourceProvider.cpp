@@ -226,12 +226,13 @@ sk_sp<GrTexture> GrResourceProvider::refScratchTexture(const GrSurfaceDesc& desc
 
 sk_sp<GrTexture> GrResourceProvider::wrapBackendTexture(const GrBackendTexture& tex,
                                                         GrWrapOwnership ownership,
+                                                        GrIOType ioType,
                                                         bool purgeImmediately) {
     ASSERT_SINGLE_OWNER
     if (this->isAbandoned()) {
         return nullptr;
     }
-    return fGpu->wrapBackendTexture(tex, ownership, purgeImmediately);
+    return fGpu->wrapBackendTexture(tex, ownership, ioType, purgeImmediately);
 }
 
 sk_sp<GrTexture> GrResourceProvider::wrapRenderableBackendTexture(const GrBackendTexture& tex,
@@ -249,6 +250,14 @@ sk_sp<GrRenderTarget> GrResourceProvider::wrapBackendRenderTarget(
 {
     ASSERT_SINGLE_OWNER
     return this->isAbandoned() ? nullptr : fGpu->wrapBackendRenderTarget(backendRT);
+}
+
+sk_sp<GrRenderTarget> GrResourceProvider::wrapVulkanSecondaryCBAsRenderTarget(
+        const SkImageInfo& imageInfo, const GrVkDrawableInfo& vkInfo) {
+    ASSERT_SINGLE_OWNER
+    return this->isAbandoned() ? nullptr : fGpu->wrapVulkanSecondaryCBAsRenderTarget(imageInfo,
+                                                                                     vkInfo);
+
 }
 
 void GrResourceProvider::assignUniqueKeyToResource(const GrUniqueKey& key,
@@ -275,7 +284,7 @@ sk_sp<const GrBuffer> GrResourceProvider::findOrMakeStaticBuffer(GrBufferType in
     }
     if (auto buffer = this->createBuffer(size, intendedType, kStatic_GrAccessPattern, Flags::kNone,
                                          data)) {
-        // We shouldn't bin and/or cachestatic buffers.
+        // We shouldn't bin and/or cache static buffers.
         SkASSERT(buffer->sizeInBytes() == size);
         SkASSERT(!buffer->resourcePriv().getScratchKey().isValid());
         SkASSERT(!buffer->resourcePriv().hasPendingIO_debugOnly());

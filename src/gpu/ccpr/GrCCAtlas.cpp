@@ -16,6 +16,7 @@
 #include "GrTextureProxy.h"
 #include "SkMakeUnique.h"
 #include "SkMathPriv.h"
+#include <atomic>
 
 class GrCCAtlas::Node {
 public:
@@ -72,6 +73,13 @@ GrCCAtlas::GrCCAtlas(GrPixelConfig pixelConfig, const Specs& specs, const GrCaps
 
     fTopNode = skstd::make_unique<Node>(nullptr, 0, 0, fWidth, fHeight);
 
+    // TODO: don't have this rely on the GrPixelConfig
+    GrSRGBEncoded srgbEncoded = GrSRGBEncoded::kNo;
+    GrColorType colorType = GrPixelConfigToColorTypeAndEncoding(pixelConfig, &srgbEncoded);
+
+    const GrBackendFormat format =
+            caps.getBackendFormatFromGrColorType(colorType, srgbEncoded);
+
     fTextureProxy = GrProxyProvider::MakeFullyLazyProxy(
             [this, pixelConfig](GrResourceProvider* resourceProvider) {
                     if (!resourceProvider) {
@@ -87,7 +95,7 @@ GrCCAtlas::GrCCAtlas(GrPixelConfig pixelConfig, const Specs& specs, const GrCaps
                     }
                     return fBackingTexture;
             },
-            GrProxyProvider::Renderable::kYes, kTextureOrigin, pixelConfig, caps);
+            format, GrProxyProvider::Renderable::kYes, kTextureOrigin, pixelConfig, caps);
 }
 
 GrCCAtlas::~GrCCAtlas() {
@@ -147,8 +155,8 @@ void GrCCAtlas::setStrokeBatchID(int id) {
 }
 
 static uint32_t next_atlas_unique_id() {
-    static int32_t nextID;
-    return sk_atomic_inc(&nextID);
+    static std::atomic<uint32_t> nextID;
+    return nextID++;
 }
 
 const GrUniqueKey& GrCCAtlas::getOrAssignUniqueKey(GrOnFlushResourceProvider* onFlushRP) {

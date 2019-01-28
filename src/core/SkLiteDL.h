@@ -30,6 +30,7 @@ public:
     void save();
     void saveLayer(const SkRect*, const SkPaint*, const SkImageFilter*, const SkImage*,
                    const SkMatrix*, SkCanvas::SaveLayerFlags);
+    void saveBehind(const SkRect*);
     void restore();
 
     void    concat (const SkMatrix&);
@@ -55,10 +56,6 @@ public:
     void drawDrawable       (SkDrawable*, const SkMatrix*);
     void drawPicture        (const SkPicture*, const SkMatrix*, const SkPaint*);
 
-    void drawText       (const void*, size_t, SkScalar, SkScalar, const SkPaint&);
-    void drawPosText    (const void*, size_t, const SkPoint[], const SkPaint&);
-    void drawPosTextH   (const void*, size_t, const SkScalar[], SkScalar, const SkPaint&);
-    void drawTextRSXform(const void*, size_t, const SkRSXform[], const SkRect*, const SkPaint&);
     void drawTextBlob   (const SkTextBlob*, SkScalar,SkScalar, const SkPaint&);
 
     void drawImage    (sk_sp<const SkImage>, SkScalar,SkScalar,             const SkPaint*);
@@ -67,8 +64,7 @@ public:
                        SkCanvas::SrcRectConstraint);
     void drawImageLattice(sk_sp<const SkImage>, const SkCanvas::Lattice&,
                           const SkRect&, const SkPaint*);
-    void drawImageSet(const SkCanvas::ImageSetEntry[], int count, float alpha, SkFilterQuality,
-                      SkBlendMode);
+    void drawImageSet(const SkCanvas::ImageSetEntry[], int count, SkFilterQuality, SkBlendMode);
 
     void drawPatch(const SkPoint[12], const SkColor[4], const SkPoint[4],
                    SkBlendMode, const SkPaint&);

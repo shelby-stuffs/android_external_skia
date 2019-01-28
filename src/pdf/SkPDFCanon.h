@@ -34,24 +34,24 @@ public:
     SkPDFCanon& operator=(SkPDFCanon&&);
     SkPDFCanon& operator=(const SkPDFCanon&) = delete;
 
-    SkTHashMap<SkPDFImageShaderKey, sk_sp<SkPDFObject>> fImageShaderMap;
+    SkTHashMap<SkPDFImageShaderKey, SkPDFIndirectReference> fImageShaderMap;
 
     SkPDFGradientShader::HashMap fGradientPatternMap;
 
-    SkTHashMap<SkBitmapKey, sk_sp<SkPDFObject>> fPDFBitmapMap;
+    SkTHashMap<SkBitmapKey, SkPDFIndirectReference> fPDFBitmapMap;
 
     SkTHashMap<uint32_t, std::unique_ptr<SkAdvancedTypefaceMetrics>> fTypefaceMetrics;
     SkTHashMap<uint32_t, std::vector<SkString>> fType1GlyphNames;
     SkTHashMap<uint32_t, std::vector<SkUnichar>> fToUnicodeMap;
-    SkTHashMap<uint32_t, sk_sp<SkPDFDict>> fFontDescriptors;
-    SkTHashMap<uint64_t, sk_sp<SkPDFFont>> fFontMap;
+    SkTHashMap<uint32_t, SkPDFIndirectReference> fFontDescriptors;
+    SkTHashMap<uint32_t, SkPDFIndirectReference> fType3FontDescriptors;
+    SkTHashMap<uint64_t, SkPDFFont> fFontMap;
 
-    SkTHashMap<SkPDFStrokeGraphicState, sk_sp<SkPDFDict>> fStrokeGSMap;
-    SkTHashMap<SkPDFFillGraphicState, sk_sp<SkPDFDict>> fFillGSMap;
+    SkTHashMap<SkPDFStrokeGraphicState, SkPDFIndirectReference> fStrokeGSMap;
+    SkTHashMap<SkPDFFillGraphicState, SkPDFIndirectReference> fFillGSMap;
 
-    sk_sp<SkPDFStream> fInvertFunction;
-    sk_sp<SkPDFDict> fNoSmaskGraphicState;
-    sk_sp<SkPDFArray> fRangeObject;
+    SkPDFIndirectReference fInvertFunction;
+    SkPDFIndirectReference fNoSmaskGraphicState;
 };
 
 #endif  // SkPDFCanon_DEFINED

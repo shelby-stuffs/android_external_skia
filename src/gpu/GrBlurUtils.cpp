@@ -175,10 +175,13 @@ static sk_sp<GrTextureProxy> create_mask_GPU(GrContext* context,
                                              const SkMatrix& origViewMatrix,
                                              const GrShape& shape,
                                              int sampleCnt) {
+    GrBackendFormat format =
+            context->contextPriv().caps()->getBackendFormatFromColorType(kAlpha_8_SkColorType);
     sk_sp<GrRenderTargetContext> rtContext(
         context->contextPriv().makeDeferredRenderTargetContextWithFallback(
-            SkBackingFit::kApprox, maskRect.width(), maskRect.height(), kAlpha_8_GrPixelConfig,
-            nullptr, sampleCnt, GrMipMapped::kNo, kTopLeft_GrSurfaceOrigin));
+            format, SkBackingFit::kApprox, maskRect.width(), maskRect.height(),
+            kAlpha_8_GrPixelConfig, nullptr, sampleCnt, GrMipMapped::kNo,
+            kTopLeft_GrSurfaceOrigin));
     if (!rtContext) {
         return nullptr;
     }
@@ -282,6 +285,7 @@ static void draw_shape_with_mask_filter(GrContext* context,
         // left to do.
         return;
     }
+    assert_alive(paint);
 
     // If the path is hairline, ignore inverse fill.
     bool inverseFilled = shape->inverseFilled() &&
@@ -418,6 +422,7 @@ static void draw_shape_with_mask_filter(GrContext* context,
                 // This path is completely drawn
                 return;
             }
+            assert_alive(paint);
         }
     }
 

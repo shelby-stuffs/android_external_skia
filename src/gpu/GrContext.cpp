@@ -6,7 +6,6 @@
  */
 
 #include "GrContext.h"
-#include <unordered_map>
 #include "GrBackendSemaphore.h"
 #include "GrClip.h"
 #include "GrContextOptions.h"
@@ -39,6 +38,8 @@
 #include "effects/GrSkSLFP.h"
 #include "ccpr/GrCoverageCountingPathRenderer.h"
 #include "text/GrTextBlobCache.h"
+#include <atomic>
+#include <unordered_map>
 
 #define ASSERT_OWNED_PROXY(P) \
     SkASSERT(!(P) || !((P)->peekTexture()) || (P)->peekTexture()->getContext() == this)
@@ -58,11 +59,11 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-static int32_t gNextID = 1;
 static int32_t next_id() {
+    static std::atomic<int32_t> nextID{1};
     int32_t id;
     do {
-        id = sk_atomic_inc(&gNextID);
+        id = nextID++;
     } while (id == SK_InvalidGenID);
     return id;
 }
@@ -83,7 +84,7 @@ bool GrContext::initCommon(const GrContextOptions& options) {
 
     if (fGpu) {
         fCaps = fGpu->refCaps();
-        fResourceCache = new GrResourceCache(fCaps.get(), fUniqueID);
+        fResourceCache = new GrResourceCache(fCaps.get(), &fSingleOwner, fUniqueID);
         fResourceProvider = new GrResourceProvider(fGpu.get(), fResourceCache, &fSingleOwner,
                                                    options.fExplicitlyAllocateGPUResources);
         fProxyProvider =
@@ -203,8 +204,8 @@ SkSurfaceCharacterization GrContextThreadSafeProxy::createCharacterization(
         isMipMapped = false;
     }
 
-    GrPixelConfig config = kUnknown_GrPixelConfig;
-    if (!fCaps->getConfigFromBackendFormat(backendFormat, ii.colorType(), &config)) {
+    GrPixelConfig config = fCaps->getConfigFromBackendFormat(backendFormat, ii.colorType());
+    if (config == kUnknown_GrPixelConfig) {
         return SkSurfaceCharacterization(); // return an invalid characterization
     }
 
@@ -234,6 +235,7 @@ SkSurfaceCharacterization GrContextThreadSafeProxy::createCharacterization(
                                      SkSurfaceCharacterization::Textureable(true),
                                      SkSurfaceCharacterization::MipMapped(isMipMapped),
                                      SkSurfaceCharacterization::UsesGLFBO0(willUseGLFBO0),
+                                     SkSurfaceCharacterization::VulkanSecondaryCBCompatible(false),
                                      surfaceProps);
 }
 
@@ -265,6 +267,9 @@ bool GrContext::abandoned() const {
 void GrContext::releaseResourcesAndAbandonContext() {
     ASSERT_SINGLE_OWNER
 
+    if (this->abandoned()) {
+        return;
+    }
     fProxyProvider->abandon();
     fResourceProvider->abandon();
 
@@ -403,6 +408,7 @@ static bool valid_premul_config(GrPixelConfig config) {
         case kRGBA_4444_GrPixelConfig:          return true;
         case kRGBA_8888_GrPixelConfig:          return true;
         case kRGB_888_GrPixelConfig:            return false;
+        case kRG_88_GrPixelConfig:              return false;
         case kBGRA_8888_GrPixelConfig:          return true;
         case kSRGBA_8888_GrPixelConfig:         return true;
         case kSBGRA_8888_GrPixelConfig:         return true;
@@ -429,6 +435,7 @@ static bool valid_premul_color_type(GrColorType ct) {
         case GrColorType::kABGR_4444:    return true;
         case GrColorType::kRGBA_8888:    return true;
         case GrColorType::kRGB_888x:     return false;
+        case GrColorType::kRG_88:        return false;
         case GrColorType::kBGRA_8888:    return true;
         case GrColorType::kRGBA_1010102: return true;
         case GrColorType::kGray_8:       return false;
@@ -496,7 +503,8 @@ bool GrContextPriv::writeSurfacePixels(GrSurfaceContext* dst, int left, int top,
             fContext->contextPriv().caps()->isConfigTexturable(kRGBA_8888_GrPixelConfig) &&
             fContext->validPMUPMConversionExists();
 
-    if (!fContext->contextPriv().caps()->surfaceSupportsWritePixels(dstSurface) ||
+    const GrCaps* caps = this->caps();
+    if (!caps->surfaceSupportsWritePixels(dstSurface) ||
         canvas2DFastPath) {
         // We don't expect callers that are skipping flushes to require an intermediate draw.
         SkASSERT(!(pixelOpsFlags & kDontFlush_PixelOpsFlag));
@@ -505,12 +513,25 @@ bool GrContextPriv::writeSurfacePixels(GrSurfaceContext* dst, int left, int top,
         }
 
         GrSurfaceDesc desc;
-        desc.fConfig = canvas2DFastPath ? kRGBA_8888_GrPixelConfig : dstProxy->config();
         desc.fWidth = width;
         desc.fHeight = height;
         desc.fSampleCnt = 1;
+
+        GrBackendFormat format;
+        if (canvas2DFastPath) {
+            desc.fConfig = kRGBA_8888_GrPixelConfig;
+            format =
+              fContext->contextPriv().caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType);
+        } else {
+            desc.fConfig =  dstProxy->config();
+            format = dstProxy->backendFormat().makeTexture2D();
+            if (!format.isValid()) {
+                return false;
+            }
+        }
+
         auto tempProxy = this->proxyProvider()->createProxy(
-                desc, kTopLeft_GrSurfaceOrigin, SkBackingFit::kApprox, SkBudgeted::kYes);
+                format, desc, kTopLeft_GrSurfaceOrigin, SkBackingFit::kApprox, SkBudgeted::kYes);
         if (!tempProxy) {
             return false;
         }
@@ -683,8 +704,23 @@ bool GrContextPriv::readSurfacePixels(GrSurfaceContext* src, int left, int top, 
         desc.fWidth = width;
         desc.fHeight = height;
         desc.fSampleCnt = 1;
+
+        GrBackendFormat format;
+        if (canvas2DFastPath) {
+            desc.fFlags = kRenderTarget_GrSurfaceFlag;
+            desc.fConfig = kRGBA_8888_GrPixelConfig;
+            format = this->caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType);
+        } else {
+            desc.fFlags = kNone_GrSurfaceFlags;
+            desc.fConfig = srcProxy->config();
+            format = srcProxy->backendFormat().makeTexture2D();
+            if (!format.isValid()) {
+                return false;
+            }
+        }
+
         auto tempProxy = this->proxyProvider()->createProxy(
-                desc, kTopLeft_GrSurfaceOrigin, SkBackingFit::kApprox, SkBudgeted::kYes);
+                format, desc, kTopLeft_GrSurfaceOrigin, SkBackingFit::kApprox, SkBudgeted::kYes);
         if (!tempProxy) {
             return false;
         }
@@ -864,7 +900,8 @@ sk_sp<GrSurfaceContext> GrContextPriv::makeWrappedSurfaceContext(sk_sp<GrSurface
     }
 }
 
-sk_sp<GrSurfaceContext> GrContextPriv::makeDeferredSurfaceContext(const GrSurfaceDesc& dstDesc,
+sk_sp<GrSurfaceContext> GrContextPriv::makeDeferredSurfaceContext(const GrBackendFormat& format,
+                                                                  const GrSurfaceDesc& dstDesc,
                                                                   GrSurfaceOrigin origin,
                                                                   GrMipMapped mipMapped,
                                                                   SkBackingFit fit,
@@ -873,10 +910,10 @@ sk_sp<GrSurfaceContext> GrContextPriv::makeDeferredSurfaceContext(const GrSurfac
                                                                   const SkSurfaceProps* props) {
     sk_sp<GrTextureProxy> proxy;
     if (GrMipMapped::kNo == mipMapped) {
-        proxy = this->proxyProvider()->createProxy(dstDesc, origin, fit, isDstBudgeted);
+        proxy = this->proxyProvider()->createProxy(format, dstDesc, origin, fit, isDstBudgeted);
     } else {
         SkASSERT(SkBackingFit::kExact == fit);
-        proxy = this->proxyProvider()->createMipMapProxy(dstDesc, origin, isDstBudgeted);
+        proxy = this->proxyProvider()->createMipMapProxy(format, dstDesc, origin, isDstBudgeted);
     }
     if (!proxy) {
         return nullptr;
@@ -897,7 +934,8 @@ sk_sp<GrTextureContext> GrContextPriv::makeBackendTextureContext(const GrBackend
                                                                  sk_sp<SkColorSpace> colorSpace) {
     ASSERT_SINGLE_OWNER_PRIV
 
-    sk_sp<GrSurfaceProxy> proxy = this->proxyProvider()->wrapBackendTexture(tex, origin);
+    sk_sp<GrSurfaceProxy> proxy = this->proxyProvider()->wrapBackendTexture(
+            tex, origin, kBorrow_GrWrapOwnership, kRW_GrIOType);
     if (!proxy) {
         return nullptr;
     }
@@ -960,6 +998,20 @@ sk_sp<GrRenderTargetContext> GrContextPriv::makeBackendTextureAsRenderTargetRend
                                                            props);
 }
 
+sk_sp<GrRenderTargetContext> GrContextPriv::makeVulkanSecondaryCBRenderTargetContext(
+        const SkImageInfo& imageInfo, const GrVkDrawableInfo& vkInfo, const SkSurfaceProps* props) {
+    ASSERT_SINGLE_OWNER_PRIV
+    sk_sp<GrSurfaceProxy> proxy(
+            this->proxyProvider()->wrapVulkanSecondaryCBAsRenderTarget(imageInfo, vkInfo));
+    if (!proxy) {
+        return nullptr;
+    }
+
+    return this->drawingManager()->makeRenderTargetContext(std::move(proxy),
+                                                           imageInfo.refColorSpace(),
+                                                           props);
+}
+
 void GrContextPriv::addOnFlushCallbackObject(GrOnFlushCallbackObject* onFlushCBObject) {
     fContext->fDrawingManager->addOnFlushCallbackObject(onFlushCBObject);
 }
@@ -999,6 +1051,7 @@ static inline GrPixelConfig GrPixelConfigFallback(GrPixelConfig config) {
 }
 
 sk_sp<GrRenderTargetContext> GrContextPriv::makeDeferredRenderTargetContextWithFallback(
+                                                                 const GrBackendFormat& format,
                                                                  SkBackingFit fit,
                                                                  int width, int height,
                                                                  GrPixelConfig config,
@@ -1008,17 +1061,28 @@ sk_sp<GrRenderTargetContext> GrContextPriv::makeDeferredRenderTargetContextWithF
                                                                  GrSurfaceOrigin origin,
                                                                  const SkSurfaceProps* surfaceProps,
                                                                  SkBudgeted budgeted) {
+    GrBackendFormat localFormat = format;
     SkASSERT(sampleCnt > 0);
     if (0 == fContext->contextPriv().caps()->getRenderTargetSampleCount(sampleCnt, config)) {
         config = GrPixelConfigFallback(config);
+        // TODO: First we should be checking the getRenderTargetSampleCount from the GrBackendFormat
+        // and not GrPixelConfig. Besides that, we should implement the fallback in the caps, but
+        // for now we just convert the fallback pixel config to an SkColorType and then get the
+        // GrBackendFormat from that.
+        SkColorType colorType;
+        if (!GrPixelConfigToColorType(config, &colorType)) {
+            return nullptr;
+        }
+        localFormat = fContext->fCaps->getBackendFormatFromColorType(colorType);
     }
 
-    return this->makeDeferredRenderTargetContext(fit, width, height, config, std::move(colorSpace),
-                                                 sampleCnt, mipMapped, origin, surfaceProps,
-                                                 budgeted);
+    return this->makeDeferredRenderTargetContext(localFormat, fit, width, height, config,
+                                                 std::move(colorSpace), sampleCnt, mipMapped,
+                                                 origin, surfaceProps, budgeted);
 }
 
 sk_sp<GrRenderTargetContext> GrContextPriv::makeDeferredRenderTargetContext(
+                                                        const GrBackendFormat& format,
                                                         SkBackingFit fit,
                                                         int width, int height,
                                                         GrPixelConfig config,
@@ -1042,9 +1106,9 @@ sk_sp<GrRenderTargetContext> GrContextPriv::makeDeferredRenderTargetContext(
 
     sk_sp<GrTextureProxy> rtp;
     if (GrMipMapped::kNo == mipMapped) {
-        rtp = fContext->fProxyProvider->createProxy(desc, origin, fit, budgeted);
+        rtp = fContext->fProxyProvider->createProxy(format, desc, origin, fit, budgeted);
     } else {
-        rtp = fContext->fProxyProvider->createMipMapProxy(desc, origin, budgeted);
+        rtp = fContext->fProxyProvider->createMipMapProxy(format, desc, origin, budgeted);
     }
     if (!rtp) {
         return nullptr;

@@ -323,7 +323,8 @@ static void set_key_on_proxy(GrProxyProvider* proxyProvider,
             // If we had an originalProxy with a valid key, that means there already is a proxy in
             // the cache which matches the key, but it does not have mip levels and we require them.
             // Thus we must remove the unique key from that proxy.
-            proxyProvider->removeUniqueKeyFromProxy(key, originalProxy);
+            SkASSERT(originalProxy->getUniqueKey() == key);
+            proxyProvider->removeUniqueKeyFromProxy(originalProxy);
         }
         proxyProvider->assignUniqueKeyToProxy(key, proxy);
     }
@@ -418,6 +419,11 @@ sk_sp<GrTextureProxy> SkImage_Lazy::lockTextureProxy(
     //    the texture we fall through here and have the CPU generate the mip maps for us.
     if (!proxy && !willBeMipped && !ctx->contextPriv().disableGpuYUVConversion()) {
         const GrSurfaceDesc desc = GrImageInfoToSurfaceDesc(fInfo);
+
+        SkColorType colorType = fInfo.colorType();
+        GrBackendFormat format =
+                ctx->contextPriv().caps()->getBackendFormatFromColorType(colorType);
+
         ScopedGenerator generator(fSharedGenerator);
         Generator_GrYUVProvider provider(generator);
 
@@ -429,7 +435,7 @@ sk_sp<GrTextureProxy> SkImage_Lazy::lockTextureProxy(
 
         // TODO: Update to create the mipped surface in the YUV generator and draw the base
         // layer directly into the mipped surface.
-        proxy = provider.refAsTextureProxy(ctx, desc, generatorColorSpace, thisColorSpace);
+        proxy = provider.refAsTextureProxy(ctx, format, desc, generatorColorSpace, thisColorSpace);
         if (proxy) {
             SK_HISTOGRAM_ENUMERATION("LockTexturePath", kYUV_LockTexturePath,
                                      kLockTexturePathCount);

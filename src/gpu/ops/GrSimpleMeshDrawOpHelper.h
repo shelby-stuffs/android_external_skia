@@ -53,8 +53,10 @@ public:
 
     GrDrawOp::FixedFunctionFlags fixedFunctionFlags() const;
 
+    // noneAACompatibleWithCoverage should be set to true if the op can properly render a non-AA
+    // primitive merged into a coverage-based op.
     bool isCompatible(const GrSimpleMeshDrawOpHelper& that, const GrCaps&, const SkRect& thisBounds,
-                      const SkRect& thatBounds) const;
+                      const SkRect& thatBounds, bool noneAACompatibleWithCoverage = false) const;
 
     /**
      * Finalizes the processor set and determines whether the destination must be provided
@@ -114,6 +116,10 @@ public:
 #endif
     GrAAType aaType() const { return static_cast<GrAAType>(fAAType); }
 
+    void setAAType(GrAAType aaType) {
+      fAAType = static_cast<unsigned>(aaType);
+    }
+
 protected:
     uint32_t pipelineFlags() const { return fPipelineFlags; }
 
@@ -165,7 +171,8 @@ public:
     using GrSimpleMeshDrawOpHelper::compatibleWithAlphaAsCoverage;
 
     bool isCompatible(const GrSimpleMeshDrawOpHelperWithStencil& that, const GrCaps&,
-                      const SkRect& thisBounds, const SkRect& thatBounds) const;
+                      const SkRect& thisBounds, const SkRect& thatBounds,
+                      bool noneAACompatibleWithCoverage = false) const;
 
     PipelineAndFixedDynamicState makePipeline(GrMeshDrawOp::Target*,
                                               int numPrimitiveProcessorTextures = 0);
@@ -174,6 +181,7 @@ public:
     SkString dumpInfo() const;
 #endif
     GrAAType aaType() const { return INHERITED::aaType(); }
+    void setAAType(GrAAType aaType) { INHERITED::setAAType(aaType); }
 
 private:
     const GrUserStencilSettings* fStencilSettings;
@@ -194,9 +202,9 @@ std::unique_ptr<GrDrawOp> GrSimpleMeshDrawOpHelper::FactoryHelper(GrContext* con
     } else {
         char* mem = (char*) pool->allocate(sizeof(Op) + sizeof(GrProcessorSet));
         char* setMem = mem + sizeof(Op);
+        auto color = paint.getColor4f();
         makeArgs.fProcessorSet = new (setMem) GrProcessorSet(std::move(paint));
-
-        return std::unique_ptr<GrDrawOp>(new (mem) Op(makeArgs, paint.getColor4f(),
+        return std::unique_ptr<GrDrawOp>(new (mem) Op(makeArgs, color,
                                                       std::forward<OpArgs>(opArgs)...));
     }
 }

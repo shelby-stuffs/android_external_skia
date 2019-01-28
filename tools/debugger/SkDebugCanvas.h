@@ -113,9 +113,8 @@ public:
 
 protected:
     void willSave() override;
-
     SaveLayerStrategy getSaveLayerStrategy(const SaveLayerRec &) override;
-
+    bool onDoSaveBehind(const SkRect*) override;
     void willRestore() override;
 
     void didConcat(const SkMatrix &) override;
@@ -124,14 +123,6 @@ protected:
 
     void onDrawAnnotation(const SkRect&, const char[], SkData*) override;
     void onDrawDRRect(const SkRRect&, const SkRRect&, const SkPaint&) override;
-    void onDrawText(const void* text, size_t byteLength, SkScalar x, SkScalar y,
-                    const SkPaint&) override;
-    void onDrawPosText(const void* text, size_t byteLength, const SkPoint pos[],
-                       const SkPaint&) override;
-    void onDrawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[],
-                        SkScalar constY, const SkPaint&) override;
-    void onDrawTextRSXform(const void* text, size_t byteLength, const SkRSXform[], const SkRect*,
-                           const SkPaint&) override;
     void onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                         const SkPaint& paint) override;
 
@@ -158,8 +149,7 @@ protected:
                             const SkRect& dst, const SkPaint* paint) override;
     void onDrawImageRect(const SkImage*, const SkRect* src, const SkRect& dst,
                          const SkPaint*, SrcRectConstraint) override;
-    void onDrawImageSet(const ImageSetEntry[], int count, float alpha, SkFilterQuality,
-                        SkBlendMode) override;
+    void onDrawImageSet(const ImageSetEntry[], int count, SkFilterQuality, SkBlendMode) override;
     void onDrawBitmapNine(const SkBitmap&, const SkIRect& center, const SkRect& dst,
                           const SkPaint*) override;
     void onDrawImageNine(const SkImage*, const SkIRect& center, const SkRect& dst,

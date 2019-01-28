@@ -48,13 +48,16 @@ protected:
     }
 
     void onDraw(SkCanvas* canvas) override {
-        sk_sp<SkColorSpace> wideGamut = SkColorSpace::MakeRGB(SkColorSpace::kSRGB_RenderTargetGamma,
-                                                              SkColorSpace::kAdobeRGB_Gamut);
+        sk_sp<SkColorSpace> wideGamut = SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB,
+                                                              SkNamedGamut::kAdobeRGB);
         sk_sp<SkColorSpace> wideGamutLinear = wideGamut->makeLinearGamma();
 
         // Lazy images
         sk_sp<SkImage> opaqueImage = GetResourceAsImage("images/mandrill_128.png");
         sk_sp<SkImage> premulImage = GetResourceAsImage("images/color_wheel.png");
+        if (!opaqueImage || !premulImage) {
+            return;
+        }
         canvas->drawImage(opaqueImage, 0.0f, 0.0f);
         canvas->drawImage(make_color_space(opaqueImage, wideGamut), 128.0f, 0.0f);
         canvas->drawImage(make_color_space(opaqueImage, wideGamutLinear), 256.0f, 0.0f);

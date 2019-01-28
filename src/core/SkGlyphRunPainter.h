@@ -24,6 +24,8 @@ public:
     virtual ~SkGlyphCacheInterface() = default;
     virtual SkVector rounding() const = 0;
     virtual const SkGlyph& getGlyphMetrics(SkGlyphID glyphID, SkPoint position) = 0;
+    virtual bool hasImage(const SkGlyph& glyph) = 0;
+    virtual bool hasPath(const SkGlyph& glyph) = 0;
 };
 
 class SkGlyphCacheCommon {
@@ -70,16 +72,17 @@ public:
             const SkGlyphRunList& glyphRunList, const SkMatrix& deviceMatrix,
             const BitmapDevicePainter* bitmapDevice);
 
-    template <typename PerGlyphT, typename PerPathT>
+    template <typename PerEmptyT, typename PerGlyphT, typename PerPathT>
     void drawGlyphRunAsBMPWithPathFallback(
             SkGlyphCacheInterface* cache, const SkGlyphRun& glyphRun,
             SkPoint origin, const SkMatrix& deviceMatrix,
-            PerGlyphT&& perGlyph, PerPathT&& perPath);
+            PerEmptyT&& perEmpty, PerGlyphT&& perGlyph, PerPathT&& perPath);
 
     enum NeedsTransform : bool { kTransformDone = false, kDoTransform = true };
 
     using ARGBFallback =
     std::function<void(const SkPaint& fallbackPaint, // The run paint maybe with a new text size
+                       const SkFont& fallbackFont,
                        SkSpan<const SkGlyphID> fallbackGlyphIDs, // Colored glyphs
                        SkSpan<const SkPoint> fallbackPositions,  // Positions of above glyphs
                        SkScalar fallbackTextScale,               // Scale factor for glyph
@@ -92,24 +95,26 @@ public:
     // For each glyph that is not ARGB call perPath. If the glyph is ARGB then store the glyphID
     // and the position in fallback vectors. After all the glyphs are processed, pass the
     // fallback glyphIDs and positions to fallbackARGB.
-    template <typename PerPath>
+    template <typename PerEmptyT, typename PerPath>
     void drawGlyphRunAsPathWithARGBFallback(
             SkGlyphCacheInterface* cache, const SkGlyphRun& glyphRun,
-            SkPoint origin, const SkMatrix& viewMatrix, SkScalar textScale,
-            PerPath&& perPath, ARGBFallback&& fallbackARGB);
+            SkPoint origin, const SkPaint& paint, const SkMatrix& viewMatrix, SkScalar textScale,
+            PerEmptyT&& perEmpty, PerPath&& perPath, ARGBFallback&& fallbackARGB);
 
-    template <typename PerSDFT, typename PerPathT>
+    template <typename PerEmptyT, typename PerSDFT, typename PerPathT>
     void drawGlyphRunAsSDFWithARGBFallback(
             SkGlyphCacheInterface* cache, const SkGlyphRun& glyphRun,
-            SkPoint origin, const SkMatrix& viewMatrix, SkScalar textRatio,
-            PerSDFT&& perSDF, PerPathT&& perPath, ARGBFallback&& perFallback);
+            SkPoint origin, const SkPaint& runPaint, const SkMatrix& viewMatrix, SkScalar textRatio,
+            PerEmptyT&& perEmpty, PerSDFT&& perSDF, PerPathT&& perPath, ARGBFallback&& perFallback);
+
+    // TODO: Make this the canonical check for Skia.
+    static bool ShouldDrawAsPath(const SkPaint& paint, const SkFont& font, const SkMatrix& matrix);
 
 private:
-    static bool ShouldDrawAsPath(const SkPaint& paint, const SkMatrix& matrix);
     void ensureBitmapBuffers(size_t runSize);
 
     void processARGBFallback(
-            SkScalar maxGlyphDimension, const SkPaint& runPaint, SkPoint origin,
+            SkScalar maxGlyphDimension, const SkPaint& fallbackPaint, const SkFont& fallbackFont,
             const SkMatrix& viewMatrix, SkScalar textScale, ARGBFallback argbFallback);
 
     // The props as on the actual device.

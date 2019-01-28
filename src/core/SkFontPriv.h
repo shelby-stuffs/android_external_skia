@@ -12,6 +12,11 @@
 #include "SkMatrix.h"
 #include "SkTypeface.h"
 
+class SkGlyph;
+class SkGlyphCache;
+class SkReadBuffer;
+class SkWriteBuffer;
+
 class SkFontPriv {
 public:
     /**
@@ -45,6 +50,56 @@ public:
     typedef const SkGlyph& (*GlyphCacheProc)(SkGlyphCache*, const char**, const char*);
 
     static GlyphCacheProc GetGlyphCacheProc(SkTextEncoding encoding, bool needFullMetrics);
+
+    /**
+        Returns the union of bounds of all glyphs.
+        Returned dimensions are computed by font manager from font data,
+        ignoring SkPaint::Hinting. Includes font metrics, but not fake bold or SkPathEffect.
+
+        If text size is large, text scale is one, and text skew is zero,
+        returns the bounds as:
+        { SkFontMetrics::fXMin, SkFontMetrics::fTop, SkFontMetrics::fXMax, SkFontMetrics::fBottom }.
+
+        @return  union of bounds of all glyphs
+     */
+    static SkRect GetFontBounds(const SkFont&);
+
+    static bool IsFinite(const SkFont& font) {
+        return SkScalarIsFinite(font.fSize) &&
+               SkScalarIsFinite(font.fScaleX) &&
+               SkScalarIsFinite(font.fSkewX);
+    }
+
+    // Returns the number of elements (characters or glyphs) in the array.
+    static int CountTextElements(const void* text, size_t byteLength, SkTextEncoding);
+
+    static void GlyphsToUnichars(const SkFont&, const uint16_t glyphs[], int count, SkUnichar[]);
+
+    static void Flatten(const SkFont&, SkWriteBuffer& buffer);
+    static bool Unflatten(SkFont*, SkReadBuffer& buffer);
+};
+
+class SkAutoToGlyphs {
+public:
+    SkAutoToGlyphs(const SkFont& font, const void* text, size_t length, SkTextEncoding encoding) {
+        if (encoding == kGlyphID_SkTextEncoding || length == 0) {
+            fGlyphs = reinterpret_cast<const uint16_t*>(text);
+            fCount = length >> 1;
+        } else {
+            fCount = font.countText(text, length, encoding);
+            fStorage.reset(fCount);
+            font.textToGlyphs(text, length, encoding, fStorage.get(), fCount);
+            fGlyphs = fStorage.get();
+        }
+    }
+
+    int count() const { return fCount; }
+    const uint16_t* glyphs() const { return fGlyphs; }
+
+private:
+    SkAutoSTArray<32, uint16_t> fStorage;
+    const uint16_t* fGlyphs;
+    int             fCount;
 };
 
 #endif

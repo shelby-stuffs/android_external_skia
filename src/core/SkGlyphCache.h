@@ -35,7 +35,6 @@ public:
     SkGlyphCache(const SkDescriptor& desc,
                  std::unique_ptr<SkScalerContext> scaler,
                  const SkFontMetrics&);
-    ~SkGlyphCache() override;
 
     const SkDescriptor& getDescriptor() const;
 
@@ -74,10 +73,6 @@ public:
         existing cache entry. If not, ask the scalercontext to compute it for us.
     */
     SkGlyphID unicharToGlyph(SkUnichar);
-
-    /** Map the glyph to its Unicode equivalent. Unmappable glyphs map to a character code of zero.
-    */
-    SkUnichar glyphToUnichar(SkGlyphID);
 
     /** Returns the number of glyphs for this strike.
     */
@@ -138,6 +133,10 @@ public:
     SkVector rounding() const override;
 
     const SkGlyph& getGlyphMetrics(SkGlyphID glyphID, SkPoint position) override;
+
+    bool hasImage(const SkGlyph& glyph) override;
+
+    bool hasPath(const SkGlyph& glyph) override;
 
     /** Return the approx RAM usage for this cache. */
     size_t getMemoryUsed() const { return fMemoryUsed; }

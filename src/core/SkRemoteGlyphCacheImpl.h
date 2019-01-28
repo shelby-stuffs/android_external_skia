@@ -38,11 +38,15 @@ public:
 
     const SkGlyph& findGlyph(SkPackedGlyphID);
 
-    void setPaint(const SkPaint& paint);
+    void setFontAndEffects(const SkFont& font, SkScalerContextEffects effects);
 
     SkVector rounding() const override;
 
     const SkGlyph& getGlyphMetrics(SkGlyphID glyphID, SkPoint position) override;
+
+    bool hasImage(const SkGlyph& glyph) override;
+
+    bool hasPath(const SkGlyph& glyph) override;
 
 private:
     bool hasPendingGlyphs() const {
@@ -51,6 +55,7 @@ private:
     void writeGlyphPath(const SkPackedGlyphID& glyphID, Serializer* serializer) const;
 
     void ensureScalerContext();
+    void resetScalerContext();
 
     // The set of glyphs cached on the remote client.
     SkTHashSet<SkPackedGlyphID> fCachedGlyphImages;
@@ -76,13 +81,16 @@ private:
     // The context built using fDeviceDescriptor
     std::unique_ptr<SkScalerContext> fContext;
 
-    // This field is set everytime getOrCreateCache. This allows the code to maintain the fContext
-    // as lazy as possible.
-    const SkPaint* fPaint{nullptr};
+    // These fields are set everytime getOrCreateCache. This allows the code to maintain the
+    // fContext as lazy as possible.
+    const SkFont* fFont{nullptr};
+    SkScalerContextEffects fEffects;
 
     // FallbackTextHelper cases require glyph metrics when analyzing a glyph run, in which case
     // we cache them here.
     SkTHashMap<SkPackedGlyphID, SkGlyph> fGlyphMap;
+
+    SkArenaAlloc fAlloc{256};
 };
 
 class SkTextBlobCacheDiffCanvas::TrackLayerDevice : public SkNoPixelsDevice {
@@ -96,17 +104,21 @@ protected:
     void drawGlyphRunList(const SkGlyphRunList& glyphRunList) override;
 
 private:
-    void processGlyphRun(const SkPoint& origin, const SkGlyphRun& glyphRun);
+    void processGlyphRun(
+            const SkPoint& origin, const SkGlyphRun& glyphRun, const SkPaint& runPaint);
 
     void processGlyphRunForMask(
-            const SkGlyphRun& glyphRun, const SkMatrix& runMatrix, SkPoint origin);
+            const SkGlyphRun& glyphRun, const SkMatrix& runMatrix,
+            SkPoint origin, const SkPaint& paint);
 
     void processGlyphRunForPaths(
-            const SkGlyphRun& glyphRun, const SkMatrix& runMatrix, SkPoint origin);
+            const SkGlyphRun& glyphRun, const SkMatrix& runMatrix,
+            SkPoint origin, const SkPaint& paint);
 
 #if SK_SUPPORT_GPU
     bool maybeProcessGlyphRunForDFT(
-            const SkGlyphRun& glyphRun, const SkMatrix& runMatrix, SkPoint origin);
+            const SkGlyphRun& glyphRun, const SkMatrix& runMatrix,
+            SkPoint origin, const SkPaint& paint);
 #endif
 
     SkStrikeServer* const fStrikeServer;
