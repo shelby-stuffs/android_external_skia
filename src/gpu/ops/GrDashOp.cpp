@@ -8,8 +8,6 @@
 #include "GrDashOp.h"
 #include "GrAppliedClip.h"
 #include "GrCaps.h"
-#include "GrContext.h"
-#include "GrContextPriv.h"
 #include "GrCoordTransform.h"
 #include "GrDefaultGeoProcFactory.h"
 #include "GrDrawOpTest.h"
@@ -18,6 +16,8 @@
 #include "GrOpFlushState.h"
 #include "GrProcessor.h"
 #include "GrQuad.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "GrStyle.h"
 #include "GrVertexWriter.h"
 #include "SkGr.h"
@@ -162,7 +162,7 @@ static void setup_dashed_rect(const SkRect& rect, GrVertexWriter& vertices, cons
         SkScalar radius = SkScalarHalf(strokeWidth) - 0.5f;
         SkScalar centerX = SkScalarHalf(endInterval);
 
-        vertices.writeQuad(GrQuad(rect, matrix),
+        vertices.writeQuad(GrQuad::MakeFromRect(rect, matrix),
                            GrVertexWriter::TriStripFromRect(dashRect),
                            intervalLength,
                            radius,
@@ -175,7 +175,7 @@ static void setup_dashed_rect(const SkRect& rect, GrVertexWriter& vertices, cons
         rectParam.set(halfOffLen                 + 0.5f, -halfStroke + 0.5f,
                       halfOffLen + startInterval - 0.5f,  halfStroke - 0.5f);
 
-        vertices.writeQuad(GrQuad(rect, matrix),
+        vertices.writeQuad(GrQuad::MakeFromRect(rect, matrix),
                            GrVertexWriter::TriStripFromRect(dashRect),
                            intervalLength,
                            rectParam);
@@ -209,7 +209,7 @@ public:
         SkScalar fPerpendicularScale;
     };
 
-    static std::unique_ptr<GrDrawOp> Make(GrContext* context,
+    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
                                           GrPaint&& paint,
                                           const LineData& geometry,
                                           SkPaint::Cap cap,
@@ -586,7 +586,7 @@ private:
                             draws[i].fLineLength, draws[i].fHalfDevStroke, draws[i].fIntervals[0],
                             draws[i].fIntervals[1], draws[i].fStrokeWidth, capType);
                 } else {
-                    vertices.writeQuad(GrQuad(rects[rectIndex], geom.fSrcRotInv));
+                    vertices.writeQuad(GrQuad::MakeFromRect(rects[rectIndex], geom.fSrcRotInv));
                 }
             }
             rectIndex++;
@@ -599,7 +599,7 @@ private:
                             draws[i].fIntervals[0], draws[i].fHalfDevStroke, draws[i].fIntervals[0],
                             draws[i].fIntervals[1], draws[i].fStrokeWidth, capType);
                 } else {
-                    vertices.writeQuad(GrQuad(rects[rectIndex], geom.fSrcRotInv));
+                    vertices.writeQuad(GrQuad::MakeFromRect(rects[rectIndex], geom.fSrcRotInv));
                 }
             }
             rectIndex++;
@@ -612,18 +612,21 @@ private:
                             draws[i].fIntervals[0], draws[i].fHalfDevStroke, draws[i].fIntervals[0],
                             draws[i].fIntervals[1], draws[i].fStrokeWidth, capType);
                 } else {
-                    vertices.writeQuad(GrQuad(rects[rectIndex], geom.fSrcRotInv));
+                    vertices.writeQuad(GrQuad::MakeFromRect(rects[rectIndex], geom.fSrcRotInv));
                 }
             }
             rectIndex++;
         }
+        helper.recordDraw(target, std::move(gp));
+    }
+
+    void onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) override {
         uint32_t pipelineFlags = 0;
         if (AAMode::kCoverageWithMSAA == fAAMode) {
             pipelineFlags |= GrPipeline::kHWAntialias_Flag;
         }
-        auto pipe = target->makePipeline(pipelineFlags, std::move(fProcessorSet),
-                                         target->detachAppliedClip());
-        helper.recordDraw(target, std::move(gp), pipe.fPipeline, pipe.fFixedDynamicState);
+        flushState->executeDrawsAndUploadsForMeshDrawOp(
+                this, chainBounds, std::move(fProcessorSet), pipelineFlags);
     }
 
     CombineResult onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
@@ -679,7 +682,7 @@ private:
     typedef GrMeshDrawOp INHERITED;
 };
 
-std::unique_ptr<GrDrawOp> GrDashOp::MakeDashLineOp(GrContext* context,
+std::unique_ptr<GrDrawOp> GrDashOp::MakeDashLineOp(GrRecordingContext* context,
                                                    GrPaint&& paint,
                                                    const SkMatrix& viewMatrix,
                                                    const SkPoint pts[2],

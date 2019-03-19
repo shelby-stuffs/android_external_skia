@@ -7,7 +7,6 @@
 
 #include "GrAAConvexPathRenderer.h"
 #include "GrCaps.h"
-#include "GrContext.h"
 #include "GrDrawOpTest.h"
 #include "GrGeometryProcessor.h"
 #include "GrPathUtils.h"
@@ -671,7 +670,7 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrContext* context,
+    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
                                           GrPaint&& paint,
                                           const SkMatrix& viewMatrix,
                                           const SkPath& path,
@@ -714,7 +713,6 @@ public:
 
 private:
     void onPrepareDraws(Target* target) override {
-        auto pipe = fHelper.makePipeline(target);
         int instanceCount = fPaths.count();
 
         SkMatrix invert;
@@ -795,9 +793,12 @@ private:
                 firstIndex += draw.fIndexCnt;
                 firstVertex += draw.fVertexCnt;
             }
-            target->draw(quadProcessor, pipe.fPipeline, pipe.fFixedDynamicState, nullptr, meshes,
-                         draws.count());
+            target->recordDraw(quadProcessor, meshes, draws.count());
         }
+    }
+
+    void onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) override {
+        fHelper.executeDrawsAndUploads(this, flushState, chainBounds);
     }
 
     CombineResult onCombineIfPossible(GrOp* t, const GrCaps& caps) override {

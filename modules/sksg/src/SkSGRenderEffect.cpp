@@ -39,11 +39,14 @@ SkRect ImageFilterEffect::onRevalidate(InvalidationController* ic, const SkMatri
     return filter->computeFastBounds(this->INHERITED::onRevalidate(ic, ctm));
 }
 
-void ImageFilterEffect::onRender(SkCanvas* canvas, const RenderContext* ctx) const {
-    // TODO: hoist these checks to RenderNode?
-    if (this->bounds().isEmpty())
-        return;
+const RenderNode* ImageFilterEffect::onNodeAt(const SkPoint& p) const {
+    // TODO: map p through the filter DAG and dispatch to descendants?
+    // For now, image filters occlude hit-testing.
+    SkASSERT(this->bounds().contains(p.x(), p.y()));
+    return this;
+}
 
+void ImageFilterEffect::onRender(SkCanvas* canvas, const RenderContext* ctx) const {
     // Note: we're using the source content bounds for saveLayer, not our local/filtered bounds.
     const auto filter_ctx =
         ScopedRenderContext(canvas, ctx).setFilterIsolation(this->getChild()->bounds(),
@@ -100,6 +103,28 @@ sk_sp<SkImageFilter> DropShadowImageFilter::onRevalidateFilter() {
     return SkDropShadowImageFilter::Make(fOffset.x(), fOffset.y(),
                                          fSigma.x(), fSigma.y(),
                                          fColor, mode, this->refInput(0));
+}
+
+sk_sp<BlendModeEffect> BlendModeEffect::Make(sk_sp<RenderNode> child, SkBlendMode mode) {
+    return child ? sk_sp<BlendModeEffect>(new BlendModeEffect(std::move(child), mode))
+                 : nullptr;
+}
+
+BlendModeEffect::BlendModeEffect(sk_sp<RenderNode> child, SkBlendMode mode)
+    : INHERITED(std::move(child))
+    , fMode(mode) {}
+
+BlendModeEffect::~BlendModeEffect() = default;
+
+void BlendModeEffect::onRender(SkCanvas* canvas, const RenderContext* ctx) const {
+    const auto local_ctx = ScopedRenderContext(canvas, ctx).modulateBlendMode(fMode);
+
+    this->INHERITED::onRender(canvas, local_ctx);
+}
+
+const RenderNode* BlendModeEffect::onNodeAt(const SkPoint& p) const {
+    // TODO: we likely need to do something more sophisticated than delegate to descendants here.
+    return this->INHERITED::onNodeAt(p);
 }
 
 } // namespace sksg

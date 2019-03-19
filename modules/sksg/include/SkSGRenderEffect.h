@@ -10,6 +10,7 @@
 
 #include "SkSGEffectNode.h"
 
+#include "SkBlendMode.h"
 #include "SkColor.h"
 
 #include <memory>
@@ -64,6 +65,7 @@ public:
 
 protected:
     void onRender(SkCanvas*, const RenderContext*) const override;
+    const RenderNode* onNodeAt(const SkPoint&)     const override;
 
     SkRect onRevalidate(InvalidationController*, const SkMatrix&) override;
 
@@ -103,6 +105,30 @@ private:
     Mode                 fMode   = Mode::kShadowAndForeground;
 
     using INHERITED = ImageFilter;
+};
+
+/**
+ * Applies a SkBlendMode to descendant render nodes.
+ */
+class BlendModeEffect final : public EffectNode {
+public:
+    ~BlendModeEffect() override;
+
+    static sk_sp<BlendModeEffect> Make(sk_sp<RenderNode> child,
+                                       SkBlendMode = SkBlendMode::kSrcOver);
+
+    SG_ATTRIBUTE(Mode, SkBlendMode, fMode)
+
+protected:
+    void onRender(SkCanvas*, const RenderContext*) const override;
+    const RenderNode* onNodeAt(const SkPoint&)     const override;
+
+private:
+    BlendModeEffect(sk_sp<RenderNode>, SkBlendMode);
+
+    SkBlendMode fMode;
+
+    using INHERITED = EffectNode;
 };
 
 } // namespace sksg

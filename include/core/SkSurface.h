@@ -36,6 +36,7 @@ class GrBackendRenderTarget;
 class GrBackendSemaphore;
 class GrBackendTexture;
 class GrContext;
+class GrRecordingContext;
 class GrRenderTarget;
 
 /** \class SkSurface
@@ -243,7 +244,7 @@ public:
         @param colorSpace               range of colors
         @param surfaceProps             LCD striping orientation and setting for device independent
                                         fonts; may be nullptr
-        @param renderTargetReleaseProc  function called when texture can be released
+        @param releaseProc              function called when texture can be released
         @param releaseContext           state passed to textureReleaseProc
         @return                         SkSurface if all parameters are valid; otherwise, nullptr
     */
@@ -253,7 +254,7 @@ public:
                                                 SkColorType colorType,
                                                 sk_sp<SkColorSpace> colorSpace,
                                                 const SkSurfaceProps* surfaceProps,
-                                                TextureReleaseProc textureReleaseProc = nullptr,
+                                                RenderTargetReleaseProc releaseProc = nullptr,
                                                 ReleaseContext releaseContext = nullptr);
 
     /** Wraps a GPU-backed texture into SkSurface. Caller must ensure backendTexture is
@@ -295,7 +296,8 @@ public:
                                                             const SkSurfaceProps* surfaceProps);
 
 #if defined(SK_BUILD_FOR_ANDROID) && __ANDROID_API__ >= 26
-    /** Creates SkSurface from Android hardware buffer.
+    /** Private.
+        Creates SkSurface from Android hardware buffer.
         Returned SkSurface takes a reference on the buffer. The ref on the buffer will be released
         when the SkSurface is destroyed and there is no pending work on the GPU involving the
         buffer.
@@ -415,7 +417,7 @@ public:
         @param budgeted          one of: SkBudgeted::kNo, SkBudgeted::kYes
         @return                  SkSurface if all parameters are valid; otherwise, nullptr
     */
-    static sk_sp<SkSurface> MakeRenderTarget(GrContext* context,
+    static sk_sp<SkSurface> MakeRenderTarget(GrRecordingContext* context,
                                              const SkSurfaceCharacterization& characterization,
                                              SkBudgeted budgeted);
 

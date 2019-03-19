@@ -33,6 +33,10 @@ public:
         return *fDescriptor.getDesc();
     }
 
+    SkStrikeSpec strikeSpec() const override {
+        return SkStrikeSpec(this->getDescriptor(), *fTypeface, fEffects);
+    }
+
     void setTypefaceAndEffects(const SkTypeface* typeface, SkScalerContextEffects effects);
 
     SkVector rounding() const override;
@@ -97,6 +101,7 @@ private:
 class SkTextBlobCacheDiffCanvas::TrackLayerDevice : public SkNoPixelsDevice {
 public:
     TrackLayerDevice(const SkIRect& bounds, const SkSurfaceProps& props, SkStrikeServer* server,
+                     sk_sp<SkColorSpace> colorSpace,
                      const SkTextBlobCacheDiffCanvas::Settings& settings);
 
     SkBaseDevice* onCreateDevice(const CreateInfo& cinfo, const SkPaint*) override;

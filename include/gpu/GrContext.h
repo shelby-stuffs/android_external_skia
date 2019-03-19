@@ -23,10 +23,8 @@ class GrBackendSemaphore;
 class GrCaps;
 class GrContextPriv;
 class GrContextThreadSafeProxy;
-class GrDrawingManager;
 class GrFragmentProcessor;
 struct GrGLInterface;
-class GrStrikeCache;
 class GrGpu;
 struct GrMockOptions;
 class GrPath;
@@ -37,7 +35,6 @@ class GrSamplerState;
 class GrSkSLFPFactoryCache;
 class GrSurfaceProxy;
 class GrSwizzle;
-class GrTextBlobCache;
 class GrTextContext;
 class GrTextureProxy;
 struct GrVkBackendContext;
@@ -289,9 +286,9 @@ public:
 protected:
     GrContext(GrBackendApi, const GrContextOptions&, int32_t contextID = SK_InvalidGenID);
 
-    GrContext* asDirectContext() override { return this; }
-
     bool init(sk_sp<const GrCaps>, sk_sp<GrSkSLFPFactoryCache>) override;
+
+    GrContext* asDirectContext() override { return this; }
 
     virtual GrAtlasManager* onGetAtlasManager() = 0;
 
@@ -307,14 +304,9 @@ private:
     GrResourceCache*                        fResourceCache;
     GrResourceProvider*                     fResourceProvider;
 
-    GrStrikeCache*                          fGlyphCache;
-    std::unique_ptr<GrTextBlobCache>        fTextBlobCache;
-
     bool                                    fDidTestPMConversions;
     // true if the PM/UPM conversion succeeded; false otherwise
     bool                                    fPMUPMConversionsRoundTrip;
-
-    std::unique_ptr<GrDrawingManager>       fDrawingManager;
 
     GrContextOptions::PersistentCache*      fPersistentCache;
 
@@ -333,12 +325,6 @@ private:
      * did we find a pair of round-trip preserving conversion effects?
      */
     bool validPMUPMConversionExists();
-
-    /**
-     * A callback similar to the above for use by the TextBlobCache
-     * TODO move textblob draw calls below context so we can use the call above.
-     */
-    static void TextBlobCacheOverBudgetCB(void* data);
 
     typedef GrRecordingContext INHERITED;
 };

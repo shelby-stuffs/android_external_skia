@@ -10,6 +10,7 @@
 
 #include "SkSGNode.h"
 
+#include "SkBlendMode.h"
 #include "SkColorFilter.h"
 
 class SkCanvas;
@@ -29,17 +30,23 @@ public:
     // Render the node and its descendants to the canvas.
     void render(SkCanvas*, const RenderContext* = nullptr) const;
 
+    // Perform a front-to-back hit-test, and return the RenderNode located at |point|.
+    // Normally, hit-testing stops at leaf Draw nodes.
+    const RenderNode* nodeAt(const SkPoint& point) const;
+
 protected:
     explicit RenderNode(uint32_t inval_traits = 0);
 
     virtual void onRender(SkCanvas*, const RenderContext*) const = 0;
+    virtual const RenderNode* onNodeAt(const SkPoint& p)   const = 0;
 
     // Paint property overrides.
     // These are deferred until we can determine whether they can be applied to the individual
     // draw paints, or whether they require content isolation (applied to a layer).
     struct RenderContext {
         sk_sp<SkColorFilter> fColorFilter;
-        float                fOpacity = 1;
+        float                fOpacity   = 1;
+        SkBlendMode          fBlendMode = SkBlendMode::kSrcOver;
 
         // Returns true if the paint was modified.
         bool modulatePaint(SkPaint*) const;
@@ -68,6 +75,7 @@ protected:
         // Add (cumulative) paint overrides to a render node sub-DAG.
         ScopedRenderContext&& modulateOpacity(float opacity);
         ScopedRenderContext&& modulateColorFilter(sk_sp<SkColorFilter>);
+        ScopedRenderContext&& modulateBlendMode(SkBlendMode);
 
         // Force content isolation for a node sub-DAG by applying the RenderContext
         // overrides via a layer.

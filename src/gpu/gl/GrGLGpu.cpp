@@ -870,6 +870,7 @@ static inline GrGLint config_alignment(GrPixelConfig config) {
             return 2;
         case kRGBA_8888_GrPixelConfig:
         case kRGB_888_GrPixelConfig:  // We're really talking about GrColorType::kRGB_888x here.
+        case kRGB_888X_GrPixelConfig:
         case kBGRA_8888_GrPixelConfig:
         case kSRGBA_8888_GrPixelConfig:
         case kSBGRA_8888_GrPixelConfig:
@@ -2969,6 +2970,7 @@ static void get_gl_swizzle_values(const GrSwizzle& swizzle, GrGLenum glValues[4]
             case 'g': glValues[i] = GR_GL_GREEN; break;
             case 'b': glValues[i] = GR_GL_BLUE;  break;
             case 'a': glValues[i] = GR_GL_ALPHA; break;
+            case '1': glValues[i] = GR_GL_ONE;   break;
             default:  SK_ABORT("Unsupported component");
         }
     }

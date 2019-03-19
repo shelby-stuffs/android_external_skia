@@ -49,7 +49,16 @@ GrContext::GrContext(GrBackendApi backend, const GrContextOptions& options, int3
         : INHERITED(backend, options, contextID) {
     fResourceCache = nullptr;
     fResourceProvider = nullptr;
-    fGlyphCache = nullptr;
+}
+
+GrContext::~GrContext() {
+    ASSERT_SINGLE_OWNER
+
+    if (this->drawingManager()) {
+        this->drawingManager()->cleanup();
+    }
+    delete fResourceProvider;
+    delete fResourceCache;
 }
 
 bool GrContext::init(sk_sp<const GrCaps> caps, sk_sp<GrSkSLFPFactoryCache> FPFactoryCache) {
@@ -61,12 +70,15 @@ bool GrContext::init(sk_sp<const GrCaps> caps, sk_sp<GrSkSLFPFactoryCache> FPFac
         return false;
     }
 
+    SkASSERT(this->drawingManager());
     SkASSERT(this->caps());
+    SkASSERT(this->getGlyphCache());
+    SkASSERT(this->getTextBlobCache());
 
     if (fGpu) {
         fResourceCache = new GrResourceCache(this->caps(), this->singleOwner(), this->contextID());
         fResourceProvider = new GrResourceProvider(fGpu.get(), fResourceCache, this->singleOwner(),
-                                                   this->options().fExplicitlyAllocateGPUResources);
+                                                   this->explicitlyAllocateGPUResources());
     }
 
     if (fResourceCache) {
@@ -74,48 +86,6 @@ bool GrContext::init(sk_sp<const GrCaps> caps, sk_sp<GrSkSLFPFactoryCache> FPFac
     }
 
     fDidTestPMConversions = false;
-
-    GrPathRendererChain::Options prcOptions;
-    prcOptions.fAllowPathMaskCaching = this->options().fAllowPathMaskCaching;
-#if GR_TEST_UTILS
-    prcOptions.fGpuPathRenderers = this->options().fGpuPathRenderers;
-#endif
-    if (this->options().fDisableCoverageCountingPaths) {
-        prcOptions.fGpuPathRenderers &= ~GpuPathRenderers::kCoverageCounting;
-    }
-    if (this->options().fDisableDistanceFieldPaths) {
-        prcOptions.fGpuPathRenderers &= ~GpuPathRenderers::kSmall;
-    }
-
-    if (!fResourceCache) {
-        // DDL TODO: remove this crippling of the path renderer chain
-        // Disable the small path renderer bc of the proxies in the atlas. They need to be
-        // unified when the opLists are added back to the destination drawing manager.
-        prcOptions.fGpuPathRenderers &= ~GpuPathRenderers::kSmall;
-        prcOptions.fGpuPathRenderers &= ~GpuPathRenderers::kStencilAndCover;
-    }
-
-    GrTextContext::Options textContextOptions;
-    textContextOptions.fMaxDistanceFieldFontSize = this->options().fGlyphsAsPathsFontSize;
-    textContextOptions.fMinDistanceFieldFontSize = this->options().fMinDistanceFieldFontSize;
-    textContextOptions.fDistanceFieldVerticesAlwaysHaveW = false;
-#if SK_SUPPORT_ATLAS_TEXT
-    if (GrContextOptions::Enable::kYes == this->options().fDistanceFieldGlyphVerticesAlwaysHaveW) {
-        textContextOptions.fDistanceFieldVerticesAlwaysHaveW = true;
-    }
-#endif
-
-    bool explicitlyAllocatingResources = fResourceProvider
-                                            ? fResourceProvider->explicitlyAllocateGPUResources()
-                                            : false;
-    fDrawingManager.reset(new GrDrawingManager(this, prcOptions, textContextOptions,
-                                               this->singleOwner(), explicitlyAllocatingResources,
-                                               this->options().fSortRenderTargets,
-                                               this->options().fReduceOpListSplitting));
-
-    fGlyphCache = new GrStrikeCache(this->caps(), this->options().fGlyphCacheTextureMaximumBytes);
-
-    fTextBlobCache.reset(new GrTextBlobCache(TextBlobCacheOverBudgetCB, this, this->contextID()));
 
     // DDL TODO: we need to think through how the task group & persistent cache
     // get passed on to/shared between all the DDLRecorders created with this context.
@@ -126,17 +96,6 @@ bool GrContext::init(sk_sp<const GrCaps> caps, sk_sp<GrSkSLFPFactoryCache> FPFac
     fPersistentCache = this->options().fPersistentCache;
 
     return true;
-}
-
-GrContext::~GrContext() {
-    ASSERT_SINGLE_OWNER
-
-    if (fDrawingManager) {
-        fDrawingManager->cleanup();
-    }
-    delete fResourceProvider;
-    delete fResourceCache;
-    delete fGlyphCache;
 }
 
 sk_sp<GrContextThreadSafeProxy> GrContext::threadSafeProxy() {
@@ -156,17 +115,13 @@ void GrContext::abandonContext() {
 
     // Need to cleanup the drawing manager first so all the render targets
     // will be released/forgotten before they too are abandoned.
-    fDrawingManager->cleanup();
+    this->drawingManager()->cleanup();
 
     // abandon first to so destructors
     // don't try to free the resources in the API.
     fResourceCache->abandonAll();
 
     fGpu->disconnect(GrGpu::DisconnectType::kAbandon);
-
-    fGlyphCache->freeAll();
-    fTextBlobCache->freeAll();
-
 }
 
 void GrContext::releaseResourcesAndAbandonContext() {
@@ -180,15 +135,12 @@ void GrContext::releaseResourcesAndAbandonContext() {
 
     // Need to cleanup the drawing manager first so all the render targets
     // will be released/forgotten before they too are abandoned.
-    fDrawingManager->cleanup();
+    this->drawingManager()->cleanup();
 
     // Release all resources in the backend 3D API.
     fResourceCache->releaseAll();
 
     fGpu->disconnect(GrGpu::DisconnectType::kCleanup);
-
-    fGlyphCache->freeAll();
-    fTextBlobCache->freeAll();
 }
 
 void GrContext::resetGLTextureBindings() {
@@ -206,9 +158,11 @@ void GrContext::resetContext(uint32_t state) {
 void GrContext::freeGpuResources() {
     ASSERT_SINGLE_OWNER
 
-    fGlyphCache->freeAll();
+    // TODO: the glyph cache doesn't hold any GpuResources so this call should not be needed here.
+    // Some slack in the GrTextBlob's implementation requires it though. That could be fixed.
+    this->getGlyphCache()->freeAll();
 
-    fDrawingManager->freeGpuResources();
+    this->drawingManager()->freeGpuResources();
 
     fResourceCache->purgeAllUnlocked();
 }
@@ -217,7 +171,10 @@ void GrContext::purgeUnlockedResources(bool scratchResourcesOnly) {
     ASSERT_SINGLE_OWNER
     fResourceCache->purgeUnlockedResources(scratchResourcesOnly);
     fResourceCache->purgeAsNeeded();
-    fTextBlobCache->purgeStaleBlobs();
+
+    // The textBlob Cache doesn't actually hold any GPU resource but this is a convenient
+    // place to purge stale blobs
+    this->getTextBlobCache()->purgeStaleBlobs();
 }
 
 void GrContext::performDeferredCleanup(std::chrono::milliseconds msNotUsed) {
@@ -228,11 +185,13 @@ void GrContext::performDeferredCleanup(std::chrono::milliseconds msNotUsed) {
     fResourceCache->purgeAsNeeded();
     fResourceCache->purgeResourcesNotUsedSince(purgeTime);
 
-    if (auto ccpr = fDrawingManager->getCoverageCountingPathRenderer()) {
+    if (auto ccpr = this->drawingManager()->getCoverageCountingPathRenderer()) {
         ccpr->purgeCacheEntriesOlderThan(this->proxyProvider(), purgeTime);
     }
 
-    fTextBlobCache->purgeStaleBlobs();
+    // The textBlob Cache doesn't actually hold any GPU resource but this is a convenient
+    // place to purge stale blobs
+    this->getTextBlobCache()->purgeStaleBlobs();
 }
 
 void GrContext::purgeUnlockedResources(size_t bytesToPurge, bool preferScratchResources) {
@@ -274,23 +233,11 @@ int GrContext::maxSurfaceSampleCountForColorType(SkColorType colorType) const {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void GrContext::TextBlobCacheOverBudgetCB(void* data) {
-    SkASSERT(data);
-    // TextBlobs are drawn at the SkGpuDevice level, therefore they cannot rely on
-    // GrRenderTargetContext to perform a necessary flush.  The solution is to move drawText calls
-    // to below the GrContext level, but this is not trivial because they call drawPath on
-    // SkGpuDevice.
-    GrContext* context = reinterpret_cast<GrContext*>(data);
-    context->flush();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 void GrContext::flush() {
     ASSERT_SINGLE_OWNER
     RETURN_IF_ABANDONED
 
-    fDrawingManager->flush(nullptr);
+    this->drawingManager()->flush(nullptr);
 }
 
 GrSemaphoresSubmitted GrContext::flushAndSignalSemaphores(int numSemaphores,
@@ -300,7 +247,7 @@ GrSemaphoresSubmitted GrContext::flushAndSignalSemaphores(int numSemaphores,
         return GrSemaphoresSubmitted::kNo;
     }
 
-    return fDrawingManager->flush(nullptr, numSemaphores, signalSemaphores);
+    return this->drawingManager()->flush(nullptr, numSemaphores, signalSemaphores);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -373,6 +320,6 @@ void GrContext::dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const {
     ASSERT_SINGLE_OWNER
     fResourceCache->dumpMemoryStatistics(traceMemoryDump);
     traceMemoryDump->dumpNumericValue("skia/gr_text_blob_cache", "size", "bytes",
-                                      fTextBlobCache->usedBytes());
+                                      this->getTextBlobCache()->usedBytes());
 }
 

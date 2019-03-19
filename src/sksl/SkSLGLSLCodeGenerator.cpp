@@ -460,9 +460,9 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
         (*fFunctionClasses)["abs"]         = FunctionClass::kAbs;
         (*fFunctionClasses)["atan"]        = FunctionClass::kAtan;
         (*fFunctionClasses)["determinant"] = FunctionClass::kDeterminant;
-        (*fFunctionClasses)["dFdx"]        = FunctionClass::kDerivative;
-        (*fFunctionClasses)["dFdy"]        = FunctionClass::kDerivative;
-        (*fFunctionClasses)["fwidth"]      = FunctionClass::kDerivative;
+        (*fFunctionClasses)["dFdx"]        = FunctionClass::kDFdx;
+        (*fFunctionClasses)["dFdy"]        = FunctionClass::kDFdy;
+        (*fFunctionClasses)["fwidth"]      = FunctionClass::kFwidth;
         (*fFunctionClasses)["fma"]         = FunctionClass::kFMA;
         (*fFunctionClasses)["fract"]       = FunctionClass::kFract;
         (*fFunctionClasses)["inverse"]     = FunctionClass::kInverse;
@@ -517,7 +517,15 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
                     }
                 }
                 break;
-            case FunctionClass::kDerivative:
+            case FunctionClass::kDFdy:
+                if (fProgram.fSettings.fFlipY) {
+                    // Flipping Y also negates the Y derivatives.
+                    this->write("-dFdy");
+                    nameWritten = true;
+                }
+                // fallthru
+            case FunctionClass::kDFdx:
+            case FunctionClass::kFwidth:
                 if (!fFoundDerivatives &&
                     fProgram.fSettings.fCaps->shaderDerivativeExtensionString()) {
                     SkASSERT(fProgram.fSettings.fCaps->shaderDerivativeSupport());
@@ -840,10 +848,23 @@ void GLSLCodeGenerator::writeFieldAccess(const FieldAccess& f) {
 }
 
 void GLSLCodeGenerator::writeSwizzle(const Swizzle& swizzle) {
+    int last = swizzle.fComponents.back();
+    if (last == SKSL_SWIZZLE_0 || last == SKSL_SWIZZLE_1) {
+        this->writeType(swizzle.fType);
+        this->write("(");
+    }
     this->writeExpression(*swizzle.fBase, kPostfix_Precedence);
     this->write(".");
     for (int c : swizzle.fComponents) {
-        this->write(&("x\0y\0z\0w\0"[c * 2]));
+        if (c >= 0) {
+            this->write(&("x\0y\0z\0w\0"[c * 2]));
+        }
+    }
+    if (last == SKSL_SWIZZLE_0) {
+        this->write(", 0)");
+    }
+    else if (last == SKSL_SWIZZLE_1) {
+        this->write(", 1)");
     }
 }
 

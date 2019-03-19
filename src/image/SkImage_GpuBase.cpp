@@ -204,7 +204,7 @@ bool SkImage_GpuBase::onReadPixels(const SkImageInfo& dstInfo, void* dstPixels, 
     return true;
 }
 
-sk_sp<GrTextureProxy> SkImage_GpuBase::asTextureProxyRef(GrContext* context,
+sk_sp<GrTextureProxy> SkImage_GpuBase::asTextureProxyRef(GrRecordingContext* context,
                                                          const GrSamplerState& params,
                                                          SkScalar scaleAdjust[2]) const {
     if (!fContext->priv().matches(context)) {
@@ -427,12 +427,6 @@ sk_sp<GrTextureProxy> SkImage_GpuBase::MakePromiseImageLazyProxy(
         ~PromiseLazyInstantiateCallback() = default;
 
         sk_sp<GrSurface> operator()(GrResourceProvider* resourceProvider) {
-            if (!resourceProvider) {
-                if (fDelayedReleaseTexture) {
-                    fDelayedReleaseTexture.reset();
-                }
-                return nullptr;
-            }
             if (fDelayedReleaseTexture) {
                 return fDelayedReleaseTexture;
             }

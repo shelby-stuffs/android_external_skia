@@ -10,6 +10,7 @@
 #include "GrContext.h"
 #include "GrContextPriv.h"
 #include "ImageSlide.h"
+#include "ParticlesSlide.h"
 #include "Resources.h"
 #include "SKPSlide.h"
 #include "SampleSlide.h"
@@ -523,8 +524,8 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
     fImGuiGamutPaint.setColor(SK_ColorWHITE);
     fImGuiGamutPaint.setFilterQuality(kLow_SkFilterQuality);
 
-    fWindow->attach(backend_type_for_window(fBackendType));
     this->setCurrentSlide(this->startupSlide());
+    fWindow->attach(backend_type_for_window(fBackendType));
 }
 
 void Viewer::initSlides() {
@@ -631,6 +632,15 @@ void Viewer::initSlides() {
         sk_sp<Slide> slide(new SampleSlide(factory));
         if (!SkCommandLineFlags::ShouldSkip(FLAGS_match, slide->getName().c_str())) {
             fSlides.push_back(slide);
+        }
+    }
+
+    // Particle demo
+    {
+        // TODO: Convert this to a sample
+        sk_sp<Slide> slide(new ParticlesSlide());
+        if (!SkCommandLineFlags::ShouldSkip(FLAGS_match, slide->getName().c_str())) {
+            fSlides.push_back(std::move(slide));
         }
     }
 
@@ -1875,7 +1885,7 @@ void Viewer::drawImGui() {
             SkImageInfo info = SkImageInfo::MakeN32Premul(1, 1);
             if (fLastImage->readPixels(info, &pixel, info.minRowBytes(), xInt, yInt)) {
                 ImGui::SameLine();
-                ImGui::Text("(X, Y): %d, %d RGBA: %x %x %x %x",
+                ImGui::Text("(X, Y): %d, %d RGBA: %X %X %X %X",
                             xInt, yInt,
                             SkGetPackedR32(pixel), SkGetPackedG32(pixel),
                             SkGetPackedB32(pixel), SkGetPackedA32(pixel));

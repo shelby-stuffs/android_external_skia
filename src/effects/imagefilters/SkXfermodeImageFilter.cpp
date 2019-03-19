@@ -16,9 +16,11 @@
 #include "SkSpecialSurface.h"
 #include "SkWriteBuffer.h"
 #if SK_SUPPORT_GPU
+#include "GrCaps.h"
 #include "GrClip.h"
 #include "GrColorSpaceXform.h"
-#include "GrContext.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "GrRenderTargetContext.h"
 #include "GrTextureProxy.h"
 
@@ -260,7 +262,7 @@ sk_sp<SkSpecialImage> SkXfermodeImageFilter_Base::filterImageGPU(
                                                    const OutputProperties& outputProperties) const {
     SkASSERT(source->isTextureBacked());
 
-    GrContext* context = source->getContext();
+    auto context = source->getContext();
 
     sk_sp<GrTextureProxy> backgroundProxy, foregroundProxy;
 
