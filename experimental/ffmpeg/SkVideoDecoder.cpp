@@ -6,8 +6,10 @@
  */
 
 #include "experimental/ffmpeg/SkVideoDecoder.h"
+#include "include/core/SkBitmap.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkStream.h"
 #include "include/core/SkYUVAPixmaps.h"
 
 static SkYUVColorSpace get_yuvspace(AVColorSpace space) {
@@ -178,7 +180,7 @@ static sk_sp<SkImage> make_yuv_420(GrRecordingContext* rContext,
     auto yuvaPixmaps = SkYUVAPixmaps::FromExternalPixmaps(yuvaInfo, pixmaps);
 
     return SkImage::MakeFromYUVAPixmaps(
-            rContext, yuvaPixmaps, GrMipMapped::kNo, false, std::move(cs));
+            rContext, yuvaPixmaps, GrMipmapped::kNo, false, std::move(cs));
 }
 
 // Init with illegal values, so our first compare will fail, forcing us to compute

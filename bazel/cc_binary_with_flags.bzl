@@ -7,8 +7,10 @@ It is based off of https://github.com/bazelbuild/examples/tree/main/rules/starla
 """
 
 _bool_flags = [
-    "//bazel/common_config_settings:use_icu",
+    "//bazel/common_config_settings:enable_sksl_tracing",
+    "//bazel/common_config_settings:enable_skslc",
     "//bazel/common_config_settings:is_skia_dev_build",
+    "//bazel/common_config_settings:use_icu",
 ]
 
 _string_flags = [
@@ -131,6 +133,9 @@ def cc_binary_with_flags(name, set_flags = {}, **kwargs):
         set_flags = set_flags,
         testonly = kwargs.get("testonly", False),
     )
+    tags = kwargs.get("tags", [])
+    tags.append("manual")  # We want to exclude this helper binary from bazel build foo/...
+    kwargs["tags"] = tags
     native.cc_binary(
         name = cc_binary_name,
         **kwargs

@@ -58,7 +58,7 @@ byte ordering.
 | `String`               | a `uint8` length, followed by a `uint16` offset [^1]                    |
 | `ProgramKind`          | a `uint8` mapping to a value in the `SkSL::ProgramKind` enum            |
 | `VariableStorage`      | a `uint8` mapping to a value in the `SkSL::VariableStorage` enum        |
-| `Operator`             | a `uint8` mapping to a value in the `SkSL::Token::Kind` enum            |
+| `Operator`             | a `uint8` mapping to a value in the `SkSL::Operator::Kind` enum         |
 | `FieldAccessOwnerKind` | a `uint8` mapping to a value in the `SkSL::FieldAccessOwnerKind` enum   |
 | `VariableRefKind`      | a `uint8` mapping to a value in the `SkSL::VariableRefKind` enum        |
 | `SwizzleComponent`     | a `uint8` mapping to a value in the `SkSL::SwizzleComponent::Type` enum |
@@ -621,7 +621,7 @@ Represents a reference to the variable `var`.
 | `kSymbolTable_Command`      | symbolTable    |
 | `uint8`                     | statementCount |
 | `Statement[statementCount]` | statements     |
-| `bool`                      | isScope        |
+| `uint8`                     | blockKind      |
 
 A block of statements.
 
@@ -692,16 +692,6 @@ Represents `for (initializer; test; next) body;`.
 
 Represents `if (test) ifTrue; else ifFalse;` (or `@if`, if `isStatic` is true).
 `ifFalse` may be `kVoid_Command` to represent the absence of an `else` statement.
-
----
-
-#### kInlineMarker_Command
-
-| Type                   | Field Name |
-|------------------------|------------|
-| `SymbolId`             | function   |
-
-Represents an `SkSL::InlineMarker`, which is inserted before an inlined function’s code.
 
 ---
 

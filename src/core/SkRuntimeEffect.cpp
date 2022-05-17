@@ -37,21 +37,43 @@
 
 #if SK_SUPPORT_GPU
 #include "include/gpu/GrRecordingContext.h"
-#include "src/gpu/GrColorInfo.h"
-#include "src/gpu/GrFPArgs.h"
-#include "src/gpu/GrImageInfo.h"
-#include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/SurfaceFillContext.h"
-#include "src/gpu/effects/GrMatrixEffect.h"
-#include "src/gpu/effects/GrSkSLFP.h"
+#include "src/gpu/ganesh/GrColorInfo.h"
+#include "src/gpu/ganesh/GrFPArgs.h"
+#include "src/gpu/ganesh/GrImageInfo.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/SurfaceFillContext.h"
+#include "src/gpu/ganesh/effects/GrMatrixEffect.h"
+#include "src/gpu/ganesh/effects/GrSkSLFP.h"
 #include "src/image/SkImage_Gpu.h"
 #endif
 
 #include <algorithm>
 
+#if defined(SK_BUILD_FOR_DEBUGGER)
+    #define SK_LENIENT_SKSL_DESERIALIZATION 1
+#else
+    #define SK_LENIENT_SKSL_DESERIALIZATION 0
+#endif
+
 using ChildType = SkRuntimeEffect::ChildType;
 
 #ifdef SK_ENABLE_SKSL
+
+static bool flattenable_is_valid_as_child(const SkFlattenable* f) {
+    if (!f) { return true; }
+    switch (f->getFlattenableType()) {
+        case SkFlattenable::kSkShader_Type:
+        case SkFlattenable::kSkColorFilter_Type:
+        case SkFlattenable::kSkBlender_Type:
+            return true;
+        default:
+            return false;
+    }
+}
+
+SkRuntimeEffect::ChildPtr::ChildPtr(sk_sp<SkFlattenable> f) : fChild(std::move(f)) {
+    SkASSERT(flattenable_is_valid_as_child(fChild.get()));
+}
 
 static sk_sp<SkSL::SkVMDebugTrace> make_skvm_debug_trace(SkRuntimeEffect* effect,
                                                          const SkIPoint& coord) {
@@ -114,26 +136,40 @@ static bool verify_child_effects(const std::vector<SkRuntimeEffect::Child>& refl
     return true;
 }
 
+/**
+ * If `effect` is specified, then the number and type of child objects are validated against the
+ * children() of `effect`. If it's nullptr, this is skipped, allowing deserialization of children,
+ * even when the effect could not be constructed (ie, due to malformed SkSL).
+ */
 static bool read_child_effects(SkReadBuffer& buffer,
                                const SkRuntimeEffect* effect,
                                SkTArray<SkRuntimeEffect::ChildPtr>* children) {
     size_t childCount = buffer.read32();
-    if (!buffer.validate(childCount == effect->children().size())) {
+    if (effect && !buffer.validate(childCount == effect->children().size())) {
         return false;
     }
 
     children->reset();
     children->reserve_back(childCount);
 
-    for (const auto& child : effect->children()) {
-        if (child.type == ChildType::kShader) {
-            children->emplace_back(buffer.readShader());
-        } else if (child.type == ChildType::kColorFilter) {
-            children->emplace_back(buffer.readColorFilter());
-        } else if (child.type == ChildType::kBlender) {
-            children->emplace_back(buffer.readBlender());
-        } else {
+    for (size_t i = 0; i < childCount; i++) {
+        sk_sp<SkFlattenable> obj(buffer.readRawFlattenable());
+        if (!flattenable_is_valid_as_child(obj.get())) {
+            buffer.validate(false);
             return false;
+        }
+        children->push_back(std::move(obj));
+    }
+
+    // If we are validating against an effect, make sure any (non-null) children are the right type
+    if (effect) {
+        auto childInfo = effect->children();
+        SkASSERT(childInfo.size() == children->size());
+        for (size_t i = 0; i < childCount; i++) {
+            std::optional<ChildType> ct = (*children)[i].type();
+            if (ct.has_value() && (*ct) != childInfo[i].type) {
+                buffer.validate(false);
+            }
         }
     }
 
@@ -214,7 +250,7 @@ sk_sp<SkRuntimeEffect> SkRuntimeEffect::MakeFromDSL(std::unique_ptr<SkSL::Progra
                                                     SkSL::ErrorReporter* errors) {
     Result result = MakeFromDSL(std::move(program), options, kind);
     if (!result.effect) {
-        errors->error(result.errorText.c_str(), SkSL::PositionInfo(nullptr, -1));
+        errors->error(result.errorText.c_str(), SkSL::Position());
     }
     return std::move(result.effect);
 }
@@ -239,20 +275,15 @@ SkRuntimeEffect::Result SkRuntimeEffect::MakeInternal(std::unique_ptr<SkSL::Prog
 
     uint32_t flags = 0;
     switch (kind) {
-        case SkSL::ProgramKind::kRuntimeColorFilter: flags |= kAllowColorFilter_Flag; break;
-        case SkSL::ProgramKind::kRuntimeShader:      flags |= kAllowShader_Flag;      break;
-        case SkSL::ProgramKind::kRuntimeBlender:     flags |= kAllowBlender_Flag;     break;
+        case SkSL::ProgramKind::kRuntimeColorFilter:   flags |= kAllowColorFilter_Flag; break;
+        case SkSL::ProgramKind::kRuntimeShader:        flags |= kAllowShader_Flag;      break;
+        case SkSL::ProgramKind::kRuntimeBlender:       flags |= kAllowBlender_Flag;     break;
+        case SkSL::ProgramKind::kPrivateRuntimeShader: flags |= kAllowShader_Flag;      break;
         default: SkUNREACHABLE;
     }
 
     if (sampleCoordsUsage.fRead || sampleCoordsUsage.fWrite) {
         flags |= kUsesSampleCoords_Flag;
-    }
-
-    // TODO(skia:12202): When we can layer modules, implement this restriction by moving the
-    // declaration of sk_FragCoord to a private module.
-    if (!options.allowFragCoord && SkSL::Analysis::ReferencesFragCoords(*program)) {
-        RETURN_FAILURE("unknown identifier 'sk_FragCoord'");
     }
 
     // Color filters and blends are not allowed to depend on position (local or device) in any way.
@@ -325,10 +356,7 @@ SkRuntimeEffect::Result SkRuntimeEffect::MakeInternal(std::unique_ptr<SkSL::Prog
                     type = &type->componentType();
                 }
 
-                if (!init_uniform_type(ctx, type, &uni)) {
-                    RETURN_FAILURE("Invalid uniform type: '%s'", type->displayName().c_str());
-                }
-
+                SkAssertResult(init_uniform_type(ctx, type, &uni));
                 if (var.modifiers().fLayout.fFlags & SkSL::Layout::Flag::kColor_Flag) {
                     uni.flags |= Uniform::kColor_Flag;
                 }
@@ -369,7 +397,7 @@ sk_sp<SkRuntimeEffect> SkRuntimeEffect::makeUnoptimizedClone() {
     Options options;
     options.forceNoInline = true;
     options.enforceES2Restrictions = false;
-    options.allowFragCoord = true;
+    options.usePrivateRTShaderModule = true;
 
     // We do know the original ProgramKind, so we don't need to re-derive it.
     SkSL::ProgramKind kind = fBaseProgram->fConfig->fKind;
@@ -413,7 +441,9 @@ SkRuntimeEffect::Result SkRuntimeEffect::MakeForColorFilter(SkString sksl, const
 }
 
 SkRuntimeEffect::Result SkRuntimeEffect::MakeForShader(SkString sksl, const Options& options) {
-    auto result = MakeFromSource(std::move(sksl), options, SkSL::ProgramKind::kRuntimeShader);
+    auto programKind = options.usePrivateRTShaderModule ? SkSL::ProgramKind::kPrivateRuntimeShader
+                                                        : SkSL::ProgramKind::kRuntimeShader;
+    auto result = MakeFromSource(std::move(sksl), options, programKind);
     SkASSERT(!result.effect || result.effect->allowShader());
     return result;
 }
@@ -433,7 +463,9 @@ SkRuntimeEffect::Result SkRuntimeEffect::MakeForColorFilter(std::unique_ptr<SkSL
 
 SkRuntimeEffect::Result SkRuntimeEffect::MakeForShader(std::unique_ptr<SkSL::Program> program,
                                                        const Options& options) {
-    auto result = MakeFromDSL(std::move(program), options, SkSL::ProgramKind::kRuntimeShader);
+    auto programKind = options.usePrivateRTShaderModule ? SkSL::ProgramKind::kPrivateRuntimeShader
+                                                        : SkSL::ProgramKind::kRuntimeShader;
+    auto result = MakeFromDSL(std::move(program), options, programKind);
     SkASSERT(!result.effect || result.effect->allowShader());
     return result;
 }
@@ -441,8 +473,9 @@ SkRuntimeEffect::Result SkRuntimeEffect::MakeForShader(std::unique_ptr<SkSL::Pro
 sk_sp<SkRuntimeEffect> SkRuntimeEffect::MakeForShader(std::unique_ptr<SkSL::Program> program,
                                                       const Options& options,
                                                       SkSL::ErrorReporter* errors) {
-    auto result = MakeFromDSL(std::move(program), options, SkSL::ProgramKind::kRuntimeShader,
-            errors);
+    auto programKind = options.usePrivateRTShaderModule ? SkSL::ProgramKind::kPrivateRuntimeShader
+                                                        : SkSL::ProgramKind::kRuntimeShader;
+    auto result = MakeFromDSL(std::move(program), options, programKind, errors);
     SkASSERT(!result || result->allowShader());
     return result;
 }
@@ -554,14 +587,14 @@ SkRuntimeEffect::SkRuntimeEffect(std::unique_ptr<SkSL::Program> baseProgram,
     // be accounted for in `fHash`. If you've added a new field to Options and caused the static-
     // assert below to trigger, please incorporate your field into `fHash` and update KnownOptions
     // to match the layout of Options.
-    struct KnownOptions { bool forceNoInline, enforceES2Restrictions, allowFragCoord; };
+    struct KnownOptions { bool forceNoInline, enforceES2Restrictions, usePrivateRTShaderModule; };
     static_assert(sizeof(Options) == sizeof(KnownOptions));
     fHash = SkOpts::hash_fn(&options.forceNoInline,
                       sizeof(options.forceNoInline), fHash);
     fHash = SkOpts::hash_fn(&options.enforceES2Restrictions,
                       sizeof(options.enforceES2Restrictions), fHash);
-    fHash = SkOpts::hash_fn(&options.allowFragCoord,
-                      sizeof(options.allowFragCoord), fHash);
+    fHash = SkOpts::hash_fn(&options.usePrivateRTShaderModule,
+                      sizeof(options.usePrivateRTShaderModule), fHash);
 
     fFilterColorProgram = SkFilterColorProgram::Make(this);
 }
@@ -1084,14 +1117,23 @@ sk_sp<SkFlattenable> SkRuntimeColorFilter::CreateProc(SkReadBuffer& buffer) {
     sk_sp<SkData> uniforms = buffer.readByteArrayAsData();
 
     auto effect = SkMakeCachedRuntimeEffect(SkRuntimeEffect::MakeForColorFilter, std::move(sksl));
+#if !SK_LENIENT_SKSL_DESERIALIZATION
     if (!buffer.validate(effect != nullptr)) {
         return nullptr;
     }
+#endif
 
     SkSTArray<4, SkRuntimeEffect::ChildPtr> children;
     if (!read_child_effects(buffer, effect.get(), &children)) {
         return nullptr;
     }
+
+#if SK_LENIENT_SKSL_DESERIALIZATION
+    if (!effect) {
+        SkDebugf("Serialized SkSL failed to compile. Ignoring/dropping SkSL color filter.\n");
+        return nullptr;
+    }
+#endif
 
     return effect->makeColorFilter(std::move(uniforms), SkMakeSpan(children));
 }
@@ -1219,14 +1261,32 @@ sk_sp<SkFlattenable> SkRTShader::CreateProc(SkReadBuffer& buffer) {
     }
 
     auto effect = SkMakeCachedRuntimeEffect(SkRuntimeEffect::MakeForShader, std::move(sksl));
+#if !SK_LENIENT_SKSL_DESERIALIZATION
     if (!buffer.validate(effect != nullptr)) {
         return nullptr;
     }
+#endif
 
     SkSTArray<4, SkRuntimeEffect::ChildPtr> children;
     if (!read_child_effects(buffer, effect.get(), &children)) {
         return nullptr;
     }
+
+#if SK_LENIENT_SKSL_DESERIALIZATION
+    if (!effect) {
+        // If any children were SkShaders, return the first one. This is a reasonable fallback.
+        for (int i = 0; i < children.count(); i++) {
+            if (children[i].shader()) {
+                SkDebugf("Serialized SkSL failed to compile. Replacing shader with child %d.\n", i);
+                return sk_ref_sp(children[i].shader());
+            }
+        }
+
+        // We don't know what to do, so just return nullptr (but *don't* poison the buffer).
+        SkDebugf("Serialized SkSL failed to compile. Ignoring/dropping SkSL shader.\n");
+        return nullptr;
+    }
+#endif
 
     return effect->makeShader(std::move(uniforms), SkMakeSpan(children), localMPtr);
 }
@@ -1304,14 +1364,23 @@ sk_sp<SkFlattenable> SkRuntimeBlender::CreateProc(SkReadBuffer& buffer) {
     sk_sp<SkData> uniforms = buffer.readByteArrayAsData();
 
     auto effect = SkMakeCachedRuntimeEffect(SkRuntimeEffect::MakeForBlender, std::move(sksl));
+#if !SK_LENIENT_SKSL_DESERIALIZATION
     if (!buffer.validate(effect != nullptr)) {
         return nullptr;
     }
+#endif
 
     SkSTArray<4, SkRuntimeEffect::ChildPtr> children;
     if (!read_child_effects(buffer, effect.get(), &children)) {
         return nullptr;
     }
+
+#if SK_LENIENT_SKSL_DESERIALIZATION
+    if (!effect) {
+        SkDebugf("Serialized SkSL failed to compile. Ignoring/dropping SkSL blender.\n");
+        return nullptr;
+    }
+#endif
 
     return effect->makeBlender(std::move(uniforms), SkMakeSpan(children));
 }

@@ -2,8 +2,8 @@
 #
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-import("//gn/skia.gni")
-import("//gn/toolchain/wasm.gni")
+import("../../gn/skia.gni")
+import("../../gn/toolchain/wasm.gni")
 import("canvaskit.gni")
 
 # These targets depend on components that are only declared if
@@ -61,20 +61,34 @@ if (skia_enable_tools) {
   }
 }
 
+component("debugger") {
+  include_dirs = [ "../.." ]
+  sources = [
+    "../../tools/SkSharingProc.cpp",
+    "../../tools/UrlDataManager.cpp",
+    "../../tools/debugger/DebugCanvas.cpp",
+    "../../tools/debugger/DebugLayerManager.cpp",
+    "../../tools/debugger/DrawCommand.cpp",
+    "../../tools/debugger/JsonWriteBuffer.cpp",
+  ]
+}
+
 action("create_notomono_cpp") {
   script = "../../tools/embed_resources.py"
 
   inputs = [ "fonts/NotoMono-Regular.ttf" ]
 
-  outputs =
-      [ "$root_out_dir/modules/canvaskit/fonts/NotoMono-Regular.ttf.ninja.cpp" ]
+  output_path =
+      "$root_out_dir/modules/canvaskit/fonts/NotoMono-Regular.ttf.ninja.cpp"
+
+  outputs = [ output_path ]
 
   args = [
     "--name=SK_EMBEDDED_FONTS",
     "--input",
     rebase_path("fonts/NotoMono-Regular.ttf"),
     "--output",
-    "modules/canvaskit/fonts/NotoMono-Regular.ttf.ninja.cpp",
+    rebase_path(output_path),
     "--align=4",
   ]
 }
@@ -127,6 +141,11 @@ skia_wasm_lib("canvaskit") {
   }
   if (skia_canvaskit_include_viewer) {
     sources += [ "viewer_bindings.cpp" ]
+    # TODO(kjlubick): remove this
+  }
+  if (skia_canvaskit_enable_debugger) {
+    sources += [ "debugger_bindings.cpp" ]
+    deps += [ ":debugger" ]
   }
   if (skia_canvaskit_enable_embedded_font) {
     sources += [
@@ -253,6 +272,13 @@ skia_wasm_lib("canvaskit") {
     ]
   }
 
+  if (skia_canvaskit_enable_debugger) {
+    ldflags += [
+      "--pre-js",
+      rebase_path("debugger.js"),
+    ]
+  }
+
   if (skia_canvaskit_enable_canvas_bindings) {
     ldflags += [
       "--pre-js",
@@ -345,14 +371,17 @@ skia_wasm_lib("canvaskit") {
   if (skia_canvaskit_enable_rt_shader) {
     defines += [ "CK_INCLUDE_RUNTIME_EFFECT" ]
   }
-  if (skia_canvaskit_enable_sksl_trace) {
-    defines += [ "CK_INCLUDE_SKSL_TRACE" ]
-  }
   if (!skia_canvaskit_enable_alias_font) {
     defines += [ "CANVASKIT_NO_ALIAS_FONT" ]
   }
-
+  if (skia_canvaskit_legacy_draw_vertices_blend_mode) {
+    # https://github.com/flutter/flutter/issues/98531
+    defines += [ "SK_LEGACY_IGNORE_DRAW_VERTICES_BLEND_WITH_NO_SHADER" ]
+  }
   if (!skia_canvaskit_enable_font) {
     defines += [ "CK_NO_FONTS" ]
+  }
+  if (skia_enable_sksl_tracing) {
+    defines += [ "SKSL_ENABLE_TRACING" ]
   }
 }

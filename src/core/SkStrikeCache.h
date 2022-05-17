@@ -103,6 +103,13 @@ public:
         return glyphs;
     }
 
+    SkSpan<const SkGlyph*> prepareDrawables(SkSpan<const SkGlyphID> glyphIDs,
+                                            const SkGlyph* results[]) {
+        auto [glyphs, increase] = fScalerCache.prepareDrawables(glyphIDs, results);
+        this->updateDelta(increase);
+        return glyphs;
+    }
+
     void prepareForDrawingMasksCPU(SkDrawableGlyphBuffer* accepted) {
         size_t increase = fScalerCache.prepareForDrawingMasksCPU(accepted);
         this->updateDelta(increase);
@@ -120,8 +127,13 @@ public:
         return fStrikeSpec;
     }
 
+    void verifyPinnedStrike() const {
+        SkASSERT_RELEASE(fPinner == nullptr || !fPinner->canDelete());
+    }
+
 #if SK_SUPPORT_GPU
-    sk_sp<GrTextStrike> findOrCreateGrStrike(GrStrikeCache* grStrikeCache) const;
+    sk_sp<sktext::gpu::TextStrike> findOrCreateTextStrike(
+            sktext::gpu::StrikeCache* gpuStrikeCache) const;
 #endif
 
     void prepareForMaskDrawing(

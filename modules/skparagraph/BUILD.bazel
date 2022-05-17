@@ -1,9 +1,16 @@
+load("//bazel:macros.bzl", "cc_library", "exports_files_legacy")
+
+licenses(["notice"])
+
+exports_files_legacy()
+
 cc_library(
     name = "skparagraph",
     hdrs = ["//modules/skparagraph/include:hdrs"],
     visibility = ["//:__subpackages__"],
     deps = [
         "//modules/skparagraph/src:Decorations_src",
+        "//modules/skparagraph/src:FontArguments_src",
         "//modules/skparagraph/src:FontCollection_src",
         "//modules/skparagraph/src:OneLineShaper_src",
         "//modules/skparagraph/src:ParagraphBuilderImpl_src",

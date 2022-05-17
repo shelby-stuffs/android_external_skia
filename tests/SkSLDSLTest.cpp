@@ -5,20 +5,51 @@
  * found in the LICENSE file.
  */
 
+#include "include/gpu/GrDirectContext.h"
+#include "include/private/SkSLDefines.h"
 #include "include/private/SkSLIRNode.h"
+#include "include/private/SkSLModifiers.h"
+#include "include/private/SkSLProgramElement.h"
+#include "include/private/SkSLProgramKind.h"
+#include "include/private/SkSLStatement.h"
+#include "include/private/SkTArray.h"
 #include "include/sksl/DSL.h"
+#include "include/sksl/DSLBlock.h"
+#include "include/sksl/DSLCore.h"
+#include "include/sksl/DSLExpression.h"
+#include "include/sksl/DSLFunction.h"
+#include "include/sksl/DSLLayout.h"
+#include "include/sksl/DSLModifiers.h"
 #include "include/sksl/DSLRuntimeEffects.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
+#include "include/sksl/DSLStatement.h"
+#include "include/sksl/DSLType.h"
+#include "include/sksl/DSLVar.h"
+#include "include/sksl/DSLWrapper.h"
+#include "include/sksl/SkSLErrorReporter.h"
+#include "include/sksl/SkSLPosition.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/dsl/priv/DSLWriter.h"
 #include "src/sksl/ir/SkSLBlock.h"
+#include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLVariable.h"
-
 #include "tests/Test.h"
+#include "tools/gpu/GrContextFactory.h"
 
+#include <ctype.h>
+#include <stdlib.h>
+#include <cstdint>
 #include <limits>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 using namespace SkSL::dsl;
 
@@ -69,7 +100,7 @@ public:
         SetErrorReporter(fOldReporter);
     }
 
-    void handleError(std::string_view msg, SkSL::PositionInfo pos) override {
+    void handleError(std::string_view msg, SkSL::Position pos) override {
         REPORTER_ASSERT(fReporter, fMsg, "Received unexpected extra error: %.*s\n",
                 (int)msg.length(), msg.data());
         REPORTER_ASSERT(fReporter, !fMsg || msg == fMsg,
@@ -1259,14 +1290,16 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLDecrement, r, ctxInfo) {
 DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLCall, r, ctxInfo) {
     AutoDSLContext context(ctxInfo.directContext()->priv().getGpu());
     {
-        DSLExpression sqrt(SkSL::ThreadContext::Compiler().convertIdentifier(/*line=*/-1, "sqrt"));
+        DSLExpression sqrt(SkSL::ThreadContext::Compiler().convertIdentifier(SkSL::Position(),
+                "sqrt"));
         SkTArray<DSLWrapper<DSLExpression>> args;
         args.emplace_back(16);
         EXPECT_EQUAL(sqrt(std::move(args)), "4.0");  // sqrt(16) gets optimized to 4
     }
 
     {
-        DSLExpression pow(SkSL::ThreadContext::Compiler().convertIdentifier(/*line=*/-1, "pow"));
+        DSLExpression pow(SkSL::ThreadContext::Compiler().convertIdentifier(SkSL::Position(),
+                "pow"));
         DSLVar a(kFloat_Type, "a");
         DSLVar b(kFloat_Type, "b");
         SkTArray<DSLWrapper<DSLExpression>> args;
@@ -1671,7 +1704,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLSwitch, r, ctxInfo) {
                 "switch (b) {}");
 
     EXPECT_EQUAL(Switch(b, Default(), Case(0), Case(1)),
-                "switch (b) { default: case 0: case 1: }");
+                "switch (b) { default: ; case 0: ; case 1: ; }");
 
     {
         ExpectError error(r, "duplicate case value '0'");
@@ -2086,8 +2119,8 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLInlining, r, ctxInfo) {
                  "layout(location = 0, index = 0, builtin = 10001) out half4 sk_FragColor;"
                  "layout(builtin = 17)in bool sk_Clockwise;"
                  "void main() {"
-                 "/* inlined: sqr */;"
-                 "/* inlined: sqr */;"
+                 ";"
+                 ";"
                  "(sk_FragColor = (4.0 , half4(half(9.0))));"
                  "}");
     REPORTER_ASSERT(r, *program->fSource == source);
@@ -2140,7 +2173,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLPrototypes, r, ctxInfo) {
             "layout (builtin = 17) in bool sk_Clockwise;"
             "float sqr(float x);"
             "void main() {"
-            "/* inlined: sqr */;"
+            ";"
             "25.0;"
             "}");
     }

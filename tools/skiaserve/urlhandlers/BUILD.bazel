@@ -1,4 +1,8 @@
-load("//bazel:macros.bzl", "generated_cc_atom")
+load("//bazel:macros.bzl", "exports_files_legacy", "generated_cc_atom")
+
+licenses(["notice"])
+
+exports_files_legacy()
 
 generated_cc_atom(
     name = "BreakHandler_src",
@@ -6,6 +10,8 @@ generated_cc_atom(
     visibility = ["//:__subpackages__"],
     deps = [
         ":UrlHandler_hdr",
+        "//src/utils:SkJSONWriter_hdr",
+        "//tools/debugger:DrawCommand_hdr",
         "//tools/skiaserve:Request_hdr",
         "//tools/skiaserve:Response_hdr",
     ],

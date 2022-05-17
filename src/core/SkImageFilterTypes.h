@@ -8,6 +8,7 @@
 #ifndef SkImageFilterTypes_DEFINED
 #define SkImageFilterTypes_DEFINED
 
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkMatrix.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkSpecialSurface.h"
@@ -24,6 +25,10 @@ class SkSurfaceProps;
 // SkSpecialImage. It is possible to avoid the use of the readability templates, although they are
 // strongly encouraged.
 namespace skif {
+
+// Rounds in/out but with a tolerance.
+SkIRect RoundOut(SkRect);
+SkIRect RoundIn(SkRect);
 
 // skif::IVector and skif::Vector represent plain-old-data types for storing direction vectors, so
 // that the coordinate-space templating system defined below can have a separate type id for
@@ -401,8 +406,8 @@ public:
     }
 
     LayerSpace<SkIRect> round() const { return LayerSpace<SkIRect>(fData.round()); }
-    LayerSpace<SkIRect> roundIn() const { return LayerSpace<SkIRect>(fData.roundIn()); }
-    LayerSpace<SkIRect> roundOut() const { return LayerSpace<SkIRect>(fData.roundOut()); }
+    LayerSpace<SkIRect> roundIn() const { return LayerSpace<SkIRect>(RoundIn(fData)); }
+    LayerSpace<SkIRect> roundOut() const { return LayerSpace<SkIRect>(RoundOut(fData)); }
 
     bool intersect(const LayerSpace<SkRect>& r) { return fData.intersect(r.fData); }
     void join(const LayerSpace<SkRect>& r) { fData.join(r.fData); }
@@ -463,7 +468,8 @@ public:
         SkAssertResult(this->adjustLayerSpace(SkMatrix::Translate(-origin.x(), -origin.y())));
     }
 
-    const SkMatrix& deviceMatrix() const { return fLayerToDevMatrix; }
+    const SkMatrix& layerToDevice() const { return fLayerToDevMatrix; }
+    const SkMatrix& deviceToLayer() const { return fDevToLayerMatrix; }
     const SkMatrix& layerMatrix() const { return fParamToLayerMatrix; }
     SkMatrix totalMatrix() const {
         return SkMatrix::Concat(fLayerToDevMatrix, fParamToLayerMatrix);

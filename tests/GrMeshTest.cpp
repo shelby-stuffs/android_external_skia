@@ -7,27 +7,30 @@
 
 #include "tests/Test.h"
 
+
+#include "include/core/SkBitmap.h"
+#include "include/core/SkColorSpace.h"
+#include "include/gpu/GrDirectContext.h"
+#include "src/gpu/KeyBuilder.h"
+#include "src/gpu/ResourceKey.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGeometryProcessor.h"
+#include "src/gpu/ganesh/GrImageInfo.h"
+#include "src/gpu/ganesh/GrMemoryPool.h"
+#include "src/gpu/ganesh/GrOpFlushState.h"
+#include "src/gpu/ganesh/GrOpsRenderPass.h"
+#include "src/gpu/ganesh/GrProgramInfo.h"
+#include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
+#include "src/gpu/ganesh/glsl/GrGLSLVarying.h"
+#include "src/gpu/ganesh/glsl/GrGLSLVertexGeoBuilder.h"
+#include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
+#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
+
 #include <array>
 #include <memory>
 #include <vector>
-#include "include/core/SkBitmap.h"
-#include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrCaps.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGeometryProcessor.h"
-#include "src/gpu/GrImageInfo.h"
-#include "src/gpu/GrMemoryPool.h"
-#include "src/gpu/GrOpFlushState.h"
-#include "src/gpu/GrOpsRenderPass.h"
-#include "src/gpu/GrProgramInfo.h"
-#include "src/gpu/GrResourceProvider.h"
-#include "src/gpu/KeyBuilder.h"
-#include "src/gpu/ResourceKey.h"
-#include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
-#include "src/gpu/glsl/GrGLSLVarying.h"
-#include "src/gpu/glsl/GrGLSLVertexGeoBuilder.h"
-#include "src/gpu/ops/GrSimpleMeshDrawOpHelper.h"
-#include "src/gpu/v1/SurfaceDrawContext_v1.h"
 
 #if 0
 #include "tools/ToolUtils.h"
@@ -572,7 +575,7 @@ GrOpsRenderPass* DrawMeshHelper::bindPipeline(GrPrimitiveType primitiveType, boo
                                                        hasVertexBuffer);
 
     GrProgramInfo programInfo(fState->caps(), fState->writeView(), fState->usesMSAASurface(),
-                              pipeline, &GrUserStencilSettings::kUnused, mtp, primitiveType, 0,
+                              pipeline, &GrUserStencilSettings::kUnused, mtp, primitiveType,
                               fState->renderPassBarriers(), fState->colorLoadOp());
 
     fState->opsRenderPass()->bindPipeline(programInfo, SkRect::MakeIWH(kImageWidth, kImageHeight));

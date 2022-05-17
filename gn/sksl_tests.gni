@@ -63,6 +63,9 @@ sksl_error_tests = [
   "/sksl/errors/FunctionParameterOfVoid.rts",
   "/sksl/errors/GenericArgumentMismatch.rts",
   "/sksl/errors/IfTypeMismatch.rts",
+  "/sksl/errors/IllegalRecursionComplex.rts",
+  "/sksl/errors/IllegalRecursionMutual.rts",
+  "/sksl/errors/IllegalRecursionSimple.rts",
   "/sksl/errors/IncompleteExpression.rts",
   "/sksl/errors/IncompleteFunctionCall.rts",
   "/sksl/errors/InterfaceBlockMemberReservedName.sksl",
@@ -278,7 +281,12 @@ sksl_metal_tests = [
 ]
 
 sksl_spirv_tests = [
+  "/sksl/shared/Switch.sksl",
+  "/sksl/shared/SwitchDefaultOnly.sksl",
+  "/sksl/shared/SwitchWithFallthrough.sksl",
+  "/sksl/shared/SwitchWithLoops.sksl",
   "/sksl/spirv/ConstantVectorFromVector.sksl",
+  "/sksl/spirv/ConstantVectorize.sksl",
   "/sksl/spirv/InterfaceBlockPushConstant.sksl",
   "/sksl/spirv/LayoutMultipleOf4.sksl",
   "/sksl/spirv/LayoutOutOfOrder.sksl",
@@ -294,6 +302,8 @@ sksl_spirv_tests = [
   "/sksl/errors/Ossfuzz37469.sksl",
   "/sksl/errors/UndefinedFunction.rts",
 ]
+
+sksl_wgsl_tests = [ "/sksl/shared/HelloWorld.sksl" ]
 
 sksl_shared_tests = [
   "/sksl/intrinsics/AbsFloat.sksl",
@@ -319,6 +329,7 @@ sksl_shared_tests = [
   "/sksl/intrinsics/Determinant.sksl",
   "/sksl/intrinsics/DFdx.sksl",
   "/sksl/intrinsics/DFdy.sksl",
+  "/sksl/intrinsics/DFdyNoRTFlip.sksl",
   "/sksl/intrinsics/Distance.sksl",
   "/sksl/intrinsics/Dot.sksl",
   "/sksl/intrinsics/Equal.sksl",
@@ -394,6 +405,7 @@ sksl_shared_tests = [
   "/sksl/shared/Caps.sksl",
   "/sksl/shared/CastsRoundTowardZero.sksl",
   "/sksl/shared/Clockwise.sksl",
+  "/sksl/shared/ClockwiseNoRTFlip.sksl",
   "/sksl/shared/CommaMixedTypes.sksl",
   "/sksl/shared/CommaSideEffects.sksl",
   "/sksl/shared/ComplexDelete.sksl",
@@ -410,12 +422,14 @@ sksl_shared_tests = [
   "/sksl/shared/DependentInitializers.sksl",
   "/sksl/shared/DerivativesUnused.sksl",
   "/sksl/shared/Discard.sksl",
+  "/sksl/shared/DoubleNegation.sksl",
   "/sksl/shared/DoWhileControlFlow.sksl",
   "/sksl/shared/EmptyBlocksES2.sksl",
   "/sksl/shared/EmptyBlocksES3.sksl",
   "/sksl/shared/ForLoopControlFlow.sksl",
   "/sksl/shared/ForLoopMultipleInit.sksl",
   "/sksl/shared/FragCoords.sksl",
+  "/sksl/shared/FragCoordsNoRTFlip.sksl",
   "/sksl/shared/FunctionAnonymousParameters.sksl",
   "/sksl/shared/FunctionArgTypeMatch.sksl",
   "/sksl/shared/FunctionReturnTypeMatch.sksl",
@@ -427,6 +441,7 @@ sksl_shared_tests = [
   "/sksl/shared/Hex.sksl",
   "/sksl/shared/HexUnsigned.sksl",
   "/sksl/shared/InoutParameters.sksl",
+  "/sksl/shared/InoutParamsAreDistinct.sksl",
   "/sksl/shared/InstanceID.vert",
   "/sksl/shared/InterfaceBlockNamed.sksl",
   "/sksl/shared/InterfaceBlockNamedArray.sksl",
@@ -461,6 +476,7 @@ sksl_shared_tests = [
   "/sksl/shared/Ossfuzz41000.sksl",
   "/sksl/shared/OutParams.sksl",
   "/sksl/shared/OutParamsAreDistinct.sksl",
+  "/sksl/shared/OutParamsAreDistinctFromGlobal.sksl",
   "/sksl/shared/OutParamsTricky.sksl",
   "/sksl/shared/Overflow.sksl",
   "/sksl/shared/RectangleTexture.sksl",
@@ -529,10 +545,12 @@ sksl_folding_tests = [
   "/sksl/folding/MatrixFoldingES2.sksl",
   "/sksl/folding/MatrixFoldingES3.sksl",
   "/sksl/folding/Negation.sksl",
+  "/sksl/folding/PreserveSideEffects.sksl",
   "/sksl/folding/SelfAssignment.sksl",
   "/sksl/folding/ShortCircuitBoolFolding.sksl",
   "/sksl/folding/SwizzleFolding.sksl",
   "/sksl/folding/SwitchCaseFolding.sksl",
+  "/sksl/folding/TernaryFolding.sksl",
   "/sksl/folding/VectorScalarFolding.sksl",
   "/sksl/folding/VectorVectorFolding.sksl",
 ]
@@ -652,6 +670,7 @@ sksl_rte_tests = [
   "/sksl/runtime/LargeProgram_ZeroIterFor.rts",
   "/sksl/runtime/LoopInt.rts",
   "/sksl/runtime/LoopFloat.rts",
+  "/sksl/runtime/MultipleCallsInOneStatement.rts",
   "/sksl/runtime/PrecisionQualifiers.rts",
   "/sksl/runtime/QualifierOrder.rts",
   "/sksl/runtime/RecursiveComparison_Structs.rts",
@@ -674,9 +693,6 @@ sksl_rte_error_tests = [
   "/sksl/runtime_errors/IllegalIndexing.rts",
   "/sksl/runtime_errors/IllegalOperators.rts",
   "/sksl/runtime_errors/IllegalPrecisionQualifiers.rts",
-  "/sksl/runtime_errors/IllegalRecursionComplex.rts",
-  "/sksl/runtime_errors/IllegalRecursionMutual.rts",
-  "/sksl/runtime_errors/IllegalRecursionSimple.rts",
   "/sksl/runtime_errors/IllegalShaderSampling.rts",
   "/sksl/runtime_errors/IllegalShaderUse.rts",
   "/sksl/runtime_errors/IllegalStatements.rts",
@@ -684,12 +700,15 @@ sksl_rte_error_tests = [
   "/sksl/runtime_errors/InvalidColorFilterFeatures.rtcf",
   "/sksl/runtime_errors/InvalidColorFilterMain.rtcf",
   "/sksl/runtime_errors/InvalidShaderMain.rts",
+  "/sksl/runtime_errors/InvalidUniformTypes.rts",
   "/sksl/runtime_errors/LoopConditionErrors.rts",
   "/sksl/runtime_errors/LoopExpressionErrors.rts",
   "/sksl/runtime_errors/LoopInitializerErrors.rts",
   "/sksl/runtime_errors/LoopStructureErrors.rts",
   "/sksl/runtime_errors/Ossfuzz36655.rts",
   "/sksl/runtime_errors/Ossfuzz38131.rts",
+  "/sksl/runtime_errors/Ossfuzz45279.rts",
+  "/sksl/runtime_errors/PrivateRTShader.rts",
   "/sksl/runtime_errors/ProgramTooLarge_BlocklessLoops.rts",
   "/sksl/runtime_errors/ProgramTooLarge_Extreme.rts",
   "/sksl/runtime_errors/ProgramTooLarge_FlatLoop.rts",
@@ -728,6 +747,13 @@ sksl_glsl_settings_tests_sources = sksl_blend_tests + sksl_settings_tests
 # generate a .metal output file.
 sksl_metal_tests_sources =
     sksl_metal_tests + sksl_blend_tests + sksl_shared_tests
+
+# Tests in sksl_wgsl_tests_sources will be compiled with --settings on, and are expected to generate
+# a .wgsl output file.
+# TODO(skia:13092): WGSL support is WIP and the test sources added here are copies of a subset of
+# shared test sources to track development progress. Eventually we want this to at a minimum equal
+# sksl_shared_tests.
+sksl_wgsl_tests_sources = sksl_wgsl_tests
 
 # Tests in sksl_spirv_tests_sources will be compiled with --settings on, and are expected to
 # generate a .asm.(frag|vert|geom) output file.

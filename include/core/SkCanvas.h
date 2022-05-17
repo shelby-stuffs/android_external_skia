@@ -28,10 +28,10 @@
 #include "include/core/SkTypes.h"
 #include "include/private/SkDeque.h"
 #include "include/private/SkMacros.h"
-#include "include/private/SkTOptional.h"
 
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #ifndef SK_SUPPORT_LEGACY_GETTOTALMATRIX
@@ -59,12 +59,15 @@ class SkPixmap;
 class SkRegion;
 class SkRRect;
 struct SkRSXform;
-struct SkCustomMesh;
+class SkCustomMesh;
 class SkSpecialImage;
 class SkSurface;
 class SkSurface_Base;
 class SkTextBlob;
 class SkVertices;
+
+namespace skgpu::graphite { class Recorder; }
+namespace SkRecords { class Draw; }
 
 /** \class SkCanvas
     SkCanvas provides an interface for drawing, and how the drawing is clipped and transformed.
@@ -296,6 +299,12 @@ public:
         example: https://fiddle.skia.org/c/@Canvas_recordingContext
      */
     virtual GrRecordingContext* recordingContext();
+
+    /** Returns Recorder for the GPU surface associated with SkCanvas.
+
+        @return  Recorder, if available; nullptr otherwise
+     */
+    virtual skgpu::graphite::Recorder* recorder();
 
     /** Sometimes a canvas is owned by a surface. If it is, getSurface() will return a bare
      *  pointer to that surface, else this will return nullptr.
@@ -1435,7 +1444,8 @@ public:
     /** \enum SkCanvas::SrcRectConstraint
         SrcRectConstraint controls the behavior at the edge of source SkRect,
         provided to drawImageRect() when there is any filtering. If kStrict is set,
-        then extra code is used to ensure it nevers samples outside of the src-rect.
+        then extra code is used to ensure it never samples outside of the src-rect.
+        kStrict_SrcRectConstraint disables the use of mipmaps and anisotropic filtering.
     */
     enum SrcRectConstraint {
         kStrict_SrcRectConstraint, //!< sample only inside bounds; slower
@@ -1966,7 +1976,7 @@ public:
                          SkBlendMode::kModulate if nullptr.
         @param paint     specifies the SkShader, used as SkVertices texture, may be nullptr
     */
-    void drawCustomMesh(SkCustomMesh cm, sk_sp<SkBlender> blender, const SkPaint& paint);
+    void drawCustomMesh(const SkCustomMesh& cm, sk_sp<SkBlender> blender, const SkPaint& paint);
 #endif
 
     /** Draws a Coons patch: the interpolation of four cubics with shared corners,
@@ -2190,7 +2200,7 @@ protected:
 
 #ifndef SK_ENABLE_EXPERIMENTAL_CUSTOM_MESH
     // Define this in protected so we can still access internally for testing.
-    void drawCustomMesh(SkCustomMesh cm, sk_sp<SkBlender> blender, const SkPaint& paint);
+    void drawCustomMesh(const SkCustomMesh& cm, sk_sp<SkBlender> blender, const SkPaint& paint);
 #endif
 
     // NOTE: If you are adding a new onDraw virtual to SkCanvas, PLEASE add an override to
@@ -2234,7 +2244,7 @@ protected:
     virtual void onDrawVerticesObject(const SkVertices* vertices, SkBlendMode mode,
                                       const SkPaint& paint);
 #ifdef SK_ENABLE_SKSL
-    virtual void onDrawCustomMesh(SkCustomMesh, sk_sp<SkBlender>, const SkPaint&);
+    virtual void onDrawCustomMesh(const SkCustomMesh&, sk_sp<SkBlender>, const SkPaint&);
 #endif
     virtual void onDrawAnnotation(const SkRect& rect, const char key[], SkData* value);
     virtual void onDrawShadowRec(const SkPath&, const SkDrawShadowRec&);
@@ -2263,12 +2273,12 @@ protected:
 #if SK_SUPPORT_GPU
     /** Experimental
      */
-    virtual sk_sp<GrSlug> doConvertBlobToSlug(
-            const SkTextBlob& blob, SkPoint origin, const SkPaint& paint);
+    virtual sk_sp<GrSlug> onConvertGlyphRunListToSlug(
+            const SkGlyphRunList& glyphRunList, const SkPaint& paint);
 
     /** Experimental
      */
-    virtual void doDrawSlug(GrSlug* slug);
+    virtual void onDrawSlug(const GrSlug* slug);
 #endif
 
 private:
@@ -2352,15 +2362,15 @@ private:
         void reset(SkBaseDevice* device);
     };
 
-    SkDeque     fMCStack;
-    // points to top of stack
-    MCRec*      fMCRec;
-
     // the first N recs that can fit here mean we won't call malloc
     static constexpr int kMCRecSize      = 96; // most recent measurement
     static constexpr int kMCRecCount     = 32; // common depth for save/restores
 
     intptr_t fMCRecStorage[kMCRecSize * kMCRecCount / sizeof(intptr_t)];
+
+    SkDeque     fMCStack;
+    // points to top of stack
+    MCRec*      fMCRec;
 
     // Installed via init()
     sk_sp<SkBaseDevice> fBaseDevice;
@@ -2394,6 +2404,10 @@ private:
     friend class SkPictureRecord;   // predrawNotify (why does it need it? <reed>)
     friend class SkOverdrawCanvas;
     friend class SkRasterHandleAllocator;
+    friend class SkRecords::Draw;
+    template <typename Key>
+    friend class SkTestCanvas;
+
 protected:
     // For use by SkNoDrawCanvas (via SkCanvasVirtualEnforcer, which can't be a friend)
     SkCanvas(const SkIRect& bounds);
@@ -2416,7 +2430,7 @@ private:
     /** Experimental
      * Draw an GrSlug given the current canvas state.
      */
-    void drawSlug(GrSlug* slug);
+    void drawSlug(const GrSlug* slug);
 #endif
 
     /** Experimental

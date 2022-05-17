@@ -1,4 +1,8 @@
-load("//bazel:macros.bzl", "generated_cc_atom")
+load("//bazel:macros.bzl", "exports_files_legacy", "generated_cc_atom")
+
+licenses(["notice"])
+
+exports_files_legacy()
 
 generated_cc_atom(
     name = "GLTestContext_hdr",
@@ -6,7 +10,7 @@ generated_cc_atom(
     visibility = ["//:__subpackages__"],
     deps = [
         "//include/gpu/gl:GrGLInterface_hdr",
-        "//src/gpu/gl:GrGLUtil_hdr",
+        "//src/gpu/ganesh/gl:GrGLUtil_hdr",
         "//tools/gpu:TestContext_hdr",
     ],
 )
@@ -18,7 +22,7 @@ generated_cc_atom(
     deps = [
         ":GLTestContext_hdr",
         "//include/gpu:GrDirectContext_hdr",
-        "//src/gpu/gl:GrGLUtil_hdr",
+        "//src/gpu/ganesh/gl:GrGLUtil_hdr",
         "//tools/gpu:GpuTimer_hdr",
     ],
 )

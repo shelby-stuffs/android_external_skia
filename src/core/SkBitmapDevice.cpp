@@ -523,24 +523,26 @@ void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, cons
 
 void SkBitmapDevice::onDrawGlyphRunList(SkCanvas* canvas,
                                         const SkGlyphRunList& glyphRunList,
-                                        const SkPaint& paint) {
+                                        const SkPaint& initialPaint,
+                                        const SkPaint& drawingPaint) {
     SkASSERT(!glyphRunList.hasRSXForm());
-    LOOP_TILER( drawGlyphRunList(canvas, &fGlyphPainter, glyphRunList, paint), nullptr )
+    LOOP_TILER( drawGlyphRunList(canvas, &fGlyphPainter, glyphRunList, drawingPaint), nullptr )
 }
 
 void SkBitmapDevice::drawVertices(const SkVertices* vertices,
                                   sk_sp<SkBlender> blender,
-                                  const SkPaint& paint) {
+                                  const SkPaint& paint,
+                                  bool skipColorXform) {
 #ifdef SK_LEGACY_IGNORE_DRAW_VERTICES_BLEND_WITH_NO_SHADER
     if (!paint.getShader()) {
         blender = SkBlender::Mode(SkBlendMode::kDst);
     }
 #endif
-    BDDraw(this).drawVertices(vertices, std::move(blender), paint);
+    BDDraw(this).drawVertices(vertices, std::move(blender), paint, skipColorXform);
 }
 
 #ifdef SK_ENABLE_SKSL
-void SkBitmapDevice::drawCustomMesh(SkCustomMesh, sk_sp<SkBlender>, const SkPaint&) {
+void SkBitmapDevice::drawCustomMesh(const SkCustomMesh&, sk_sp<SkBlender>, const SkPaint&) {
     // TODO: Implement
 }
 #endif

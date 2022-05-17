@@ -763,6 +763,23 @@ namespace skvm {
 
     I32 Builder::splat(int n) { return {this, push(Op::splat, NA,NA,NA,NA, n) }; }
 
+    template <typename F32_or_I32>
+    void Builder::canonicalizeIdOrder(F32_or_I32& x, F32_or_I32& y) {
+        bool immX = fProgram[x.id].op == Op::splat;
+        bool immY = fProgram[y.id].op == Op::splat;
+        if (immX != immY) {
+            if (immX) {
+                // Prefer (val, imm) over (imm, val).
+                std::swap(x, y);
+            }
+            return;
+        }
+        if (x.id > y.id) {
+            // Prefer (lower-ID, higher-ID) over (higher-ID, lower-ID).
+            std::swap(x, y);
+        }
+    }
+
     // Be careful peepholing float math!  Transformations you might expect to
     // be legal can fail in the face of NaN/Inf, e.g. 0*x is not always 0.
     // Float peepholes must pass this equivalence test for all ~4B floats:
@@ -780,8 +797,8 @@ namespace skvm {
 
     F32 Builder::add(F32 x, F32 y) {
         if (float X,Y; this->allImm(x.id,&X, y.id,&Y)) { return splat(X+Y); }
+        this->canonicalizeIdOrder(x, y);
         if (this->isImm(y.id, 0.0f)) { return x; }   // x+0 == x
-        if (this->isImm(x.id, 0.0f)) { return y; }   // 0+y == y
 
         if (fFeatures.fma) {
             if (fProgram[x.id].op == Op::mul_f32) {
@@ -791,7 +808,7 @@ namespace skvm {
                 return {this, this->push(Op::fma_f32, fProgram[y.id].x, fProgram[y.id].y, x.id)};
             }
         }
-        return {this, this->push(Op::add_f32, std::min(x.id, y.id), std::max(x.id, y.id))};
+        return {this, this->push(Op::add_f32, x.id, y.id)};
     }
 
     F32 Builder::sub(F32 x, F32 y) {
@@ -810,9 +827,9 @@ namespace skvm {
 
     F32 Builder::mul(F32 x, F32 y) {
         if (float X,Y; this->allImm(x.id,&X, y.id,&Y)) { return splat(X*Y); }
+        this->canonicalizeIdOrder(x, y);
         if (this->isImm(y.id, 1.0f)) { return x; }  // x*1 == x
-        if (this->isImm(x.id, 1.0f)) { return y; }  // 1*y == y
-        return {this, this->push(Op::mul_f32, std::min(x.id, y.id), std::max(x.id, y.id))};
+        return {this, this->push(Op::mul_f32, x.id, y.id)};
     }
 
     F32 Builder::fast_mul(F32 x, F32 y) {
@@ -1011,9 +1028,9 @@ namespace skvm {
     SK_ATTRIBUTE(no_sanitize("signed-integer-overflow"))
     I32 Builder::add(I32 x, I32 y) {
         if (int X,Y; this->allImm(x.id,&X, y.id,&Y)) { return splat(X+Y); }
-        if (this->isImm(x.id, 0)) { return y; }
-        if (this->isImm(y.id, 0)) { return x; }
-        return {this, this->push(Op::add_i32, std::min(x.id, y.id), std::max(x.id, y.id))};
+        this->canonicalizeIdOrder(x, y);
+        if (this->isImm(y.id, 0)) { return x; }  // x+0 == x
+        return {this, this->push(Op::add_i32, x.id, y.id)};
     }
     SK_ATTRIBUTE(no_sanitize("signed-integer-overflow"))
     I32 Builder::sub(I32 x, I32 y) {
@@ -1024,11 +1041,10 @@ namespace skvm {
     SK_ATTRIBUTE(no_sanitize("signed-integer-overflow"))
     I32 Builder::mul(I32 x, I32 y) {
         if (int X,Y; this->allImm(x.id,&X, y.id,&Y)) { return splat(X*Y); }
-        if (this->isImm(x.id, 0)) { return splat(0); }
-        if (this->isImm(y.id, 0)) { return splat(0); }
-        if (this->isImm(x.id, 1)) { return y; }
-        if (this->isImm(y.id, 1)) { return x; }
-        return {this, this->push(Op::mul_i32, std::min(x.id, y.id), std::max(x.id, y.id))};
+        this->canonicalizeIdOrder(x, y);
+        if (this->isImm(y.id, 0)) { return splat(0); }  // x*0 == 0
+        if (this->isImm(y.id, 1)) { return x; }         // x*1 == x
+        return {this, this->push(Op::mul_i32, x.id, y.id)};
     }
 
     SK_ATTRIBUTE(no_sanitize("shift"))
@@ -1050,11 +1066,13 @@ namespace skvm {
 
     I32 Builder:: eq(F32 x, F32 y) {
         if (float X,Y; this->allImm(x.id,&X, y.id,&Y)) { return splat(X==Y ? ~0 : 0); }
-        return {this, this->push(Op::eq_f32, std::min(x.id, y.id), std::max(x.id, y.id))};
+        this->canonicalizeIdOrder(x, y);
+        return {this, this->push(Op::eq_f32, x.id, y.id)};
     }
     I32 Builder::neq(F32 x, F32 y) {
         if (float X,Y; this->allImm(x.id,&X, y.id,&Y)) { return splat(X!=Y ? ~0 : 0); }
-        return {this, this->push(Op::neq_f32, std::min(x.id, y.id), std::max(x.id, y.id))};
+        this->canonicalizeIdOrder(x, y);
+        return {this, this->push(Op::neq_f32, x.id, y.id)};
     }
     I32 Builder::lt(F32 x, F32 y) {
         if (float X,Y; this->allImm(x.id,&X, y.id,&Y)) { return splat(Y> X ? ~0 : 0); }
@@ -1076,7 +1094,8 @@ namespace skvm {
     I32 Builder:: eq(I32 x, I32 y) {
         if (x.id == y.id) { return splat(~0); }
         if (int X,Y; this->allImm(x.id,&X, y.id,&Y)) { return splat(X==Y ? ~0 : 0); }
-        return {this, this->push(Op:: eq_i32, std::min(x.id, y.id), std::max(x.id, y.id))};
+        this->canonicalizeIdOrder(x, y);
+        return {this, this->push(Op:: eq_i32, x.id, y.id)};
     }
     I32 Builder::neq(I32 x, I32 y) {
         if (int X,Y; this->allImm(x.id,&X, y.id,&Y)) { return splat(X!=Y ? ~0 : 0); }
@@ -1094,30 +1113,42 @@ namespace skvm {
     I32 Builder:: lt(I32 x, I32 y) { return y>x; }
     I32 Builder::lte(I32 x, I32 y) { return y>=x; }
 
+    Val Builder::holdsBitNot(Val id) {
+        // We represent `~x` as `x ^ ~0`.
+        if (fProgram[id].op == Op::bit_xor && this->isImm(fProgram[id].y, ~0)) {
+            return fProgram[id].x;
+        }
+        return NA;
+    }
+
     I32 Builder::bit_and(I32 x, I32 y) {
         if (x.id == y.id) { return x; }
         if (int X,Y; this->allImm(x.id,&X, y.id,&Y)) { return splat(X&Y); }
-        if (this->isImm(y.id, 0)) { return splat(0); }   // (x & false) == false
-        if (this->isImm(x.id, 0)) { return splat(0); }   // (false & y) == false
-        if (this->isImm(y.id,~0)) { return x; }          // (x & true) == x
-        if (this->isImm(x.id,~0)) { return y; }          // (true & y) == y
-        return {this, this->push(Op::bit_and, std::min(x.id, y.id), std::max(x.id, y.id))};
+        this->canonicalizeIdOrder(x, y);
+        if (this->isImm(y.id, 0)) { return splat(0); }         // (x & false) == false
+        if (this->isImm(y.id,~0)) { return x; }                // (x & true) == x
+        if (Val notX = this->holdsBitNot(x.id); notX != NA) {  // (~x & y) == bit_clear(y, ~x)
+            return bit_clear(y, {this, notX});
+        }
+        if (Val notY = this->holdsBitNot(y.id); notY != NA) {  // (x & ~y) == bit_clear(x, ~y)
+            return bit_clear(x, {this, notY});
+        }
+        return {this, this->push(Op::bit_and, x.id, y.id)};
     }
     I32 Builder::bit_or(I32 x, I32 y) {
         if (x.id == y.id) { return x; }
         if (int X,Y; this->allImm(x.id,&X, y.id,&Y)) { return splat(X|Y); }
+        this->canonicalizeIdOrder(x, y);
         if (this->isImm(y.id, 0)) { return x; }           // (x | false) == x
-        if (this->isImm(x.id, 0)) { return y; }           // (false | y) == y
         if (this->isImm(y.id,~0)) { return splat(~0); }   // (x | true) == true
-        if (this->isImm(x.id,~0)) { return splat(~0); }   // (true | y) == true
-        return {this, this->push(Op::bit_or, std::min(x.id, y.id), std::max(x.id, y.id))};
+        return {this, this->push(Op::bit_or, x.id, y.id)};
     }
     I32 Builder::bit_xor(I32 x, I32 y) {
         if (x.id == y.id) { return splat(0); }
         if (int X,Y; this->allImm(x.id,&X, y.id,&Y)) { return splat(X^Y); }
+        this->canonicalizeIdOrder(x, y);
         if (this->isImm(y.id, 0)) { return x; }   // (x ^ false) == x
-        if (this->isImm(x.id, 0)) { return y; }   // (false ^ y) == y
-        return {this, this->push(Op::bit_xor, std::min(x.id, y.id), std::max(x.id, y.id))};
+        return {this, this->push(Op::bit_xor, x.id, y.id)};
     }
 
     I32 Builder::bit_clear(I32 x, I32 y) {
@@ -1132,10 +1163,14 @@ namespace skvm {
     I32 Builder::select(I32 x, I32 y, I32 z) {
         if (y.id == z.id) { return y; }
         if (int X,Y,Z; this->allImm(x.id,&X, y.id,&Y, z.id,&Z)) { return splat(X?Y:Z); }
-        if (this->isImm(x.id,~0)) { return y; }               // true  ? y : z == y
-        if (this->isImm(x.id, 0)) { return z; }               // false ? y : z == z
-        if (this->isImm(y.id, 0)) { return bit_clear(z,x); }  //     x ? 0 : z == ~x&z
-        if (this->isImm(z.id, 0)) { return bit_and  (y,x); }  //     x ? y : 0 ==  x&y
+        if (this->isImm(x.id,~0)) { return y; }                // (true  ? y : z) == y
+        if (this->isImm(x.id, 0)) { return z; }                // (false ? y : z) == z
+        if (this->isImm(y.id, 0)) { return bit_clear(z,x); }   //     (x ? 0 : z) == ~x&z
+        if (this->isImm(z.id, 0)) { return bit_and  (y,x); }   //     (x ? y : 0) ==  x&y
+        if (Val notX = this->holdsBitNot(x.id); notX != NA) {  //    (!x ? y : z) == (x ? z : y)
+            x.id = notX;
+            std::swap(y, z);
+        }
         return {this, this->push(Op::select, x.id, y.id, z.id)};
     }
 
@@ -2324,20 +2359,20 @@ namespace skvm {
 
     // https://static.docs.arm.com/ddi0596/a/DDI_0596_ARM_a64_instruction_set_architecture.pdf
 
-    static int operator"" _mask(unsigned long long bits) { return (1<<(int)bits)-1; }
+    static int mask(unsigned long long bits) { return (1<<(int)bits)-1; }
 
     void Assembler::op(uint32_t hi, V m, uint32_t lo, V n, V d) {
-        this->word( (hi & 11_mask) << 21
-                  | (m  &  5_mask) << 16
-                  | (lo &  6_mask) << 10
-                  | (n  &  5_mask) <<  5
-                  | (d  &  5_mask) <<  0);
+        this->word( (hi & mask(11)) << 21
+                  | (m  & mask(5)) << 16
+                  | (lo & mask(6)) << 10
+                  | (n  & mask(5)) <<  5
+                  | (d  & mask(5)) <<  0);
     }
     void Assembler::op(uint32_t op22, V n, V d, int imm) {
-        this->word( (op22 & 22_mask) << 10
+        this->word( (op22 & mask(22)) << 10
                   | imm  // size and location depends on the instruction
-                  | (n    &  5_mask) <<  5
-                  | (d    &  5_mask) <<  0);
+                  | (n    & mask(5)) <<  5
+                  | (d    & mask(5)) <<  0);
     }
 
     void Assembler::and16b(V d, V n, V m) { this->op(0b0'1'0'01110'00'1, m, 0b00011'1, n, d); }
@@ -2382,19 +2417,19 @@ namespace skvm {
     void Assembler::zip24s(V d, V n, V m) { this->op(0b0'1'001110'10'0, m, 0b0'1'11'10, n, d); }
 
     void Assembler::sli4s(V d, V n, int imm5) {
-        this->op(0b0'1'1'011110'0100'000'01010'1,    n, d, ( imm5 & 5_mask)<<16);
+        this->op(0b0'1'1'011110'0100'000'01010'1,    n, d, ( imm5 & mask(5))<<16);
     }
     void Assembler::shl4s(V d, V n, int imm5) {
-        this->op(0b0'1'0'011110'0100'000'01010'1,    n, d, ( imm5 & 5_mask)<<16);
+        this->op(0b0'1'0'011110'0100'000'01010'1,    n, d, ( imm5 & mask(5))<<16);
     }
     void Assembler::sshr4s(V d, V n, int imm5) {
-        this->op(0b0'1'0'011110'0100'000'00'0'0'0'1, n, d, (-imm5 & 5_mask)<<16);
+        this->op(0b0'1'0'011110'0100'000'00'0'0'0'1, n, d, (-imm5 & mask(5))<<16);
     }
     void Assembler::ushr4s(V d, V n, int imm5) {
-        this->op(0b0'1'1'011110'0100'000'00'0'0'0'1, n, d, (-imm5 & 5_mask)<<16);
+        this->op(0b0'1'1'011110'0100'000'00'0'0'0'1, n, d, (-imm5 & mask(5))<<16);
     }
     void Assembler::ushr8h(V d, V n, int imm4) {
-        this->op(0b0'1'1'011110'0010'000'00'0'0'0'1, n, d, (-imm4 & 4_mask)<<16);
+        this->op(0b0'1'1'011110'0010'000'00'0'0'0'1, n, d, (-imm4 & mask(4))<<16);
     }
 
     void Assembler::scvtf4s (V d, V n) { this->op(0b0'1'0'01110'0'0'10000'11101'10, n,d); }
@@ -2415,106 +2450,106 @@ namespace skvm {
     void Assembler::uminv4s(V d, V n) { this->op(0b0'1'1'01110'10'11000'1'1010'10, n,d); }
 
     void Assembler::brk(int imm16) {
-        this->op(0b11010100'001'00000000000, (imm16 & 16_mask) << 5);
+        this->op(0b11010100'001'00000000000, (imm16 & mask(16)) << 5);
     }
 
     void Assembler::ret(X n) { this->op(0b1101011'0'0'10'11111'0000'0'0, n, (X)0); }
 
     void Assembler::add(X d, X n, int imm12) {
-        this->op(0b1'0'0'10001'00'000000000000, n,d, (imm12 & 12_mask) << 10);
+        this->op(0b1'0'0'10001'00'000000000000, n,d, (imm12 & mask(12)) << 10);
     }
     void Assembler::sub(X d, X n, int imm12) {
-        this->op(0b1'1'0'10001'00'000000000000, n,d, (imm12 & 12_mask) << 10);
+        this->op(0b1'1'0'10001'00'000000000000, n,d, (imm12 & mask(12)) << 10);
     }
     void Assembler::subs(X d, X n, int imm12) {
-        this->op(0b1'1'1'10001'00'000000000000, n,d, (imm12 & 12_mask) << 10);
+        this->op(0b1'1'1'10001'00'000000000000, n,d, (imm12 & mask(12)) << 10);
     }
 
     void Assembler::add(X d, X n, X m, Shift shift, int imm6) {
         SkASSERT(shift != ROR);
 
-        int imm = (imm6  & 6_mask) << 0
-                | (m     & 5_mask) << 6
-                | (0     & 1_mask) << 11
-                | (shift & 2_mask) << 12;
+        int imm = (imm6  & mask(6)) << 0
+                | (m     & mask(5)) << 6
+                | (0     & mask(1)) << 11
+                | (shift & mask(2)) << 12;
         this->op(0b1'0'0'01011'00'0'00000'000000, n,d, imm << 10);
     }
 
     void Assembler::b(Condition cond, Label* l) {
         const int imm19 = this->disp19(l);
-        this->op(0b0101010'0'00000000000000, (X)0, (V)cond, (imm19 & 19_mask) << 5);
+        this->op(0b0101010'0'00000000000000, (X)0, (V)cond, (imm19 & mask(19)) << 5);
     }
     void Assembler::cbz(X t, Label* l) {
         const int imm19 = this->disp19(l);
-        this->op(0b1'011010'0'00000000000000, (X)0, t, (imm19 & 19_mask) << 5);
+        this->op(0b1'011010'0'00000000000000, (X)0, t, (imm19 & mask(19)) << 5);
     }
     void Assembler::cbnz(X t, Label* l) {
         const int imm19 = this->disp19(l);
-        this->op(0b1'011010'1'00000000000000, (X)0, t, (imm19 & 19_mask) << 5);
+        this->op(0b1'011010'1'00000000000000, (X)0, t, (imm19 & mask(19)) << 5);
     }
 
     void Assembler::ldrd(X dst, X src, int imm12) {
-        this->op(0b11'111'0'01'01'000000000000, src, dst, (imm12 & 12_mask) << 10);
+        this->op(0b11'111'0'01'01'000000000000, src, dst, (imm12 & mask(12)) << 10);
     }
     void Assembler::ldrs(X dst, X src, int imm12) {
-        this->op(0b10'111'0'01'01'000000000000, src, dst, (imm12 & 12_mask) << 10);
+        this->op(0b10'111'0'01'01'000000000000, src, dst, (imm12 & mask(12)) << 10);
     }
     void Assembler::ldrh(X dst, X src, int imm12) {
-        this->op(0b01'111'0'01'01'000000000000, src, dst, (imm12 & 12_mask) << 10);
+        this->op(0b01'111'0'01'01'000000000000, src, dst, (imm12 & mask(12)) << 10);
     }
     void Assembler::ldrb(X dst, X src, int imm12) {
-        this->op(0b00'111'0'01'01'000000000000, src, dst, (imm12 & 12_mask) << 10);
+        this->op(0b00'111'0'01'01'000000000000, src, dst, (imm12 & mask(12)) << 10);
     }
 
     void Assembler::ldrq(V dst, X src, int imm12) {
-        this->op(0b00'111'1'01'11'000000000000, src, dst, (imm12 & 12_mask) << 10);
+        this->op(0b00'111'1'01'11'000000000000, src, dst, (imm12 & mask(12)) << 10);
     }
     void Assembler::ldrd(V dst, X src, int imm12) {
-        this->op(0b11'111'1'01'01'000000000000, src, dst, (imm12 & 12_mask) << 10);
+        this->op(0b11'111'1'01'01'000000000000, src, dst, (imm12 & mask(12)) << 10);
     }
     void Assembler::ldrs(V dst, X src, int imm12) {
-        this->op(0b10'111'1'01'01'000000000000, src, dst, (imm12 & 12_mask) << 10);
+        this->op(0b10'111'1'01'01'000000000000, src, dst, (imm12 & mask(12)) << 10);
     }
     void Assembler::ldrh(V dst, X src, int imm12) {
-        this->op(0b01'111'1'01'01'000000000000, src, dst, (imm12 & 12_mask) << 10);
+        this->op(0b01'111'1'01'01'000000000000, src, dst, (imm12 & mask(12)) << 10);
     }
     void Assembler::ldrb(V dst, X src, int imm12) {
-        this->op(0b00'111'1'01'01'000000000000, src, dst, (imm12 & 12_mask) << 10);
+        this->op(0b00'111'1'01'01'000000000000, src, dst, (imm12 & mask(12)) << 10);
     }
 
     void Assembler::strs(X src, X dst, int imm12) {
-        this->op(0b10'111'0'01'00'000000000000, dst, src, (imm12 & 12_mask) << 10);
+        this->op(0b10'111'0'01'00'000000000000, dst, src, (imm12 & mask(12)) << 10);
     }
 
     void Assembler::strq(V src, X dst, int imm12) {
-        this->op(0b00'111'1'01'10'000000000000, dst, src, (imm12 & 12_mask) << 10);
+        this->op(0b00'111'1'01'10'000000000000, dst, src, (imm12 & mask(12)) << 10);
     }
     void Assembler::strd(V src, X dst, int imm12) {
-        this->op(0b11'111'1'01'00'000000000000, dst, src, (imm12 & 12_mask) << 10);
+        this->op(0b11'111'1'01'00'000000000000, dst, src, (imm12 & mask(12)) << 10);
     }
     void Assembler::strs(V src, X dst, int imm12) {
-        this->op(0b10'111'1'01'00'000000000000, dst, src, (imm12 & 12_mask) << 10);
+        this->op(0b10'111'1'01'00'000000000000, dst, src, (imm12 & mask(12)) << 10);
     }
     void Assembler::strh(V src, X dst, int imm12) {
-        this->op(0b01'111'1'01'00'000000000000, dst, src, (imm12 & 12_mask) << 10);
+        this->op(0b01'111'1'01'00'000000000000, dst, src, (imm12 & mask(12)) << 10);
     }
     void Assembler::strb(V src, X dst, int imm12) {
-        this->op(0b00'111'1'01'00'000000000000, dst, src, (imm12 & 12_mask) << 10);
+        this->op(0b00'111'1'01'00'000000000000, dst, src, (imm12 & mask(12)) << 10);
     }
 
     void Assembler::movs(X dst, V src, int lane) {
         int imm5 = (lane << 3) | 0b100;
-        this->op(0b0'0'0'01110000'00000'0'01'1'1'1, src, dst, (imm5 & 5_mask) << 16);
+        this->op(0b0'0'0'01110000'00000'0'01'1'1'1, src, dst, (imm5 & mask(5)) << 16);
     }
     void Assembler::inss(V dst, X src, int lane) {
         int imm5 = (lane << 3) | 0b100;
-        this->op(0b0'1'0'01110000'00000'0'0011'1, src, dst, (imm5 & 5_mask) << 16);
+        this->op(0b0'1'0'01110000'00000'0'0011'1, src, dst, (imm5 & mask(5)) << 16);
     }
 
 
     void Assembler::ldrq(V dst, Label* l) {
         const int imm19 = this->disp19(l);
-        this->op(0b10'011'1'00'00000000000000, (V)0, dst, (imm19 & 19_mask) << 5);
+        this->op(0b10'011'1'00'00000000000000, (V)0, dst, (imm19 & mask(19)) << 5);
     }
 
     void Assembler::dup4s(V dst, X src) {
@@ -2568,8 +2603,8 @@ namespace skvm {
                     disp += delta/4;  // delta is in bytes, we want instructions.
 
                     // Put it all back together, preserving the high 8 bits and low 5.
-                    inst = ((disp << 5) &  (19_mask << 5))
-                         | ((inst     ) & ~(19_mask << 5));
+                    inst = ((disp << 5) &  (mask(19) << 5))
+                         | ((inst     ) & ~(mask(19) << 5));
                     memcpy(fCode + ref, &inst, 4);
                 }
             }

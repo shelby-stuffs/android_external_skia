@@ -9,9 +9,9 @@
 #define SKSL_DSLWRITER
 
 #include "include/core/SkTypes.h"
+
 #if !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU
-#include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
+#include "src/gpu/ganesh/glsl/GrGLSLUniformHandler.h"
 #endif // !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU
 
 #include <memory>

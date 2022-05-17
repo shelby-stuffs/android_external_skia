@@ -8,7 +8,6 @@
 #include "tools/skqp/src/skqp.h"
 
 #include "gm/gm.h"
-
 #include "include/core/SkGraphics.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"

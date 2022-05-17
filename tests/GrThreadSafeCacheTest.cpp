@@ -12,18 +12,18 @@
 #include "include/utils/SkRandom.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkMessageBus.h"
-#include "src/gpu/GrDefaultGeoProcFactory.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
-#include "src/gpu/GrMemoryPool.h"
-#include "src/gpu/GrOpFlushState.h"
-#include "src/gpu/GrProxyProvider.h"
-#include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrResourceProvider.h"
-#include "src/gpu/GrStyle.h"
-#include "src/gpu/GrThreadSafeCache.h"
-#include "src/gpu/ops/GrDrawOp.h"
-#include "src/gpu/v1/SurfaceDrawContext_v1.h"
+#include "src/gpu/ganesh/GrDefaultGeoProcFactory.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrMemoryPool.h"
+#include "src/gpu/ganesh/GrOpFlushState.h"
+#include "src/gpu/ganesh/GrProxyProvider.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/GrStyle.h"
+#include "src/gpu/ganesh/GrThreadSafeCache.h"
+#include "src/gpu/ganesh/ops/GrDrawOp.h"
+#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 #include "tests/Test.h"
 #include "tests/TestUtils.h"
 #include "tools/gpu/ProxyUtils.h"
@@ -47,7 +47,7 @@ static std::unique_ptr<skgpu::v1::SurfaceDrawContext> new_SDC(GrRecordingContext
                                                {wh, wh},
                                                SkSurfaceProps(),
                                                1,
-                                               GrMipMapped::kNo,
+                                               GrMipmapped::kNo,
                                                GrProtected::kNo,
                                                kImageOrigin,
                                                SkBudgeted::kYes);
@@ -198,7 +198,6 @@ public:
                          {1.0f, 1.0f, 1.0f, 1.0f},
                          SkRect::MakeWH(wh, wh),
                          SkRect::MakeWH(wh, wh),
-                         GrAA::kNo,
                          GrQuadAAFlags::kNone,
                          SkCanvas::kFast_SrcRectConstraint,
                          SkMatrix::I(),
@@ -391,7 +390,7 @@ public:
                                                                  GrRenderable::kNo);
 
         return GrSurface::ComputeSize(format, {wh, wh}, /*colorSamplesPerPixel=*/1,
-                                      GrMipMapped::kNo, /*binSize=*/false);
+                                      GrMipmapped::kNo, /*binSize=*/false);
     }
 
 private:

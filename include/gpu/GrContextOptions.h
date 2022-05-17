@@ -14,7 +14,7 @@
 #include "include/gpu/GrDriverBugWorkarounds.h"
 #include "include/gpu/GrTypes.h"
 #include "include/gpu/ShaderErrorHandler.h"
-#include "include/private/GrTypesPriv.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 
 #include <vector>
 
@@ -170,13 +170,6 @@ struct SK_API GrContextOptions {
     bool fAvoidStencilBuffers = false;
 
     /**
-     * If true, texture fetches from mip-mapped textures will be biased to read larger MIP levels.
-     * This has the effect of sharpening those textures, at the cost of some aliasing, and possible
-     * performance impact.
-     */
-    bool fSharpenMipmappedTextures = false;
-
-    /**
      * Enables driver workaround to use draws instead of HW clears, e.g. glClear on the GL backend.
      */
     Enable fUseDrawInsteadOfClear = Enable::kDefault;
@@ -253,6 +246,7 @@ struct SK_API GrContextOptions {
 
     /**
      * If true, and if supported, enables hardware tessellation in the caps.
+     * DEPRECATED: This value is ignored; experimental hardware tessellation is always disabled.
      */
     bool fEnableExperimentalHardwareTessellation = false;
 
@@ -260,7 +254,9 @@ struct SK_API GrContextOptions {
      * If true, then add 1 pixel padding to all glyph masks in the atlas to support bi-lerp
      * rendering of all glyphs. This must be set to true to use GrSlug.
      */
-    #if defined(SK_EXPERIMENTAL_SIMULATE_DRAWGLYPHRUNLIST_WITH_SLUG)
+    #if defined(SK_EXPERIMENTAL_SIMULATE_DRAWGLYPHRUNLIST_WITH_SLUG) || \
+        defined(SK_EXPERIMENTAL_SIMULATE_DRAWGLYPHRUNLIST_WITH_SLUG_SERIALIZE) || \
+        defined(SK_EXPERIMENTAL_SIMULATE_DRAWGLYPHRUNLIST_WITH_SLUG_STRIKE_SERIALIZE)
     bool fSupportBilerpFromGlyphAtlas = true;
     #else
     bool fSupportBilerpFromGlyphAtlas = false;
@@ -283,6 +279,12 @@ struct SK_API GrContextOptions {
      */
 
     /**
+     * Testing-only mode to exercise allocation failures in the flush-time callback objects.
+     * For now it only simulates allocation failure during the preFlush callback.
+     */
+    bool fFailFlushTimeCallbacks = false;
+
+    /**
      * Prevents use of dual source blending, to test that all xfer modes work correctly without it.
      */
     bool fSuppressDualSourceBlending = false;
@@ -297,12 +299,6 @@ struct SK_API GrContextOptions {
      * Prevents the use of framebuffer fetches, for testing dst reads and texture barriers.
      */
     bool fSuppressFramebufferFetch = false;
-
-    /**
-     * If greater than zero and less than the actual hardware limit, overrides the maximum number of
-     * tessellation segments supported by the caps.
-     */
-    int  fMaxTessellationSegmentsOverride = 0;
 
     /**
      * If true, then all paths are processed as if "setIsVolatile" had been called.
@@ -341,11 +337,6 @@ struct SK_API GrContextOptions {
      * A value of -1 means use the default limit value.
      */
     int fResourceCacheLimitOverride = -1;
-
-    /**
-     * If true, then always try to use hardware tessellation, regardless of how small a path may be.
-     */
-    bool fAlwaysPreferHardwareTessellation = false;
 
     /**
      * Maximum width and height of internal texture atlases.

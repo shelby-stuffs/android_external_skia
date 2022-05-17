@@ -9,29 +9,30 @@
 
 #include "include/core/SkTypes.h"
 
+#include "include/core/SkColorSpace.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/private/SkChecksum.h"
 #include "include/utils/SkRandom.h"
-#include "src/gpu/GrAutoLocaleSetter.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrDrawOpTest.h"
-#include "src/gpu/GrDrawingManager.h"
-#include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/GrPipeline.h"
-#include "src/gpu/GrProxyProvider.h"
-#include "src/gpu/GrXferProcessor.h"
 #include "src/gpu/KeyBuilder.h"
-#include "src/gpu/effects/GrBlendFragmentProcessor.h"
-#include "src/gpu/effects/GrPorterDuffXferProcessor.h"
-#include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
-#include "src/gpu/glsl/GrGLSLProgramBuilder.h"
-#include "src/gpu/ops/GrDrawOp.h"
-#include "src/gpu/v1/SurfaceDrawContext_v1.h"
+#include "src/gpu/ganesh/GrAutoLocaleSetter.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrDrawOpTest.h"
+#include "src/gpu/ganesh/GrDrawingManager.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrPipeline.h"
+#include "src/gpu/ganesh/GrProxyProvider.h"
+#include "src/gpu/ganesh/GrXferProcessor.h"
+#include "src/gpu/ganesh/effects/GrBlendFragmentProcessor.h"
+#include "src/gpu/ganesh/effects/GrPorterDuffXferProcessor.h"
+#include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
+#include "src/gpu/ganesh/glsl/GrGLSLProgramBuilder.h"
+#include "src/gpu/ganesh/ops/GrDrawOp.h"
+#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 #include "tests/Test.h"
 #include "tools/gpu/GrContextFactory.h"
 
 #ifdef SK_GL
-#include "src/gpu/gl/GrGLGpu.h"
+#include "src/gpu/ganesh/gl/GrGLGpu.h"
 #endif
 
 /*
@@ -246,13 +247,13 @@ bool GrDrawingManager::ProgramUnitTest(GrDirectContext* direct, int maxStages, i
     GrProcessorTestData::ViewInfo views[2];
 
     // setup arbitrary textures
-    GrMipmapped mipMapped = GrMipmapped(caps->mipmapSupport());
+    GrMipmapped mipmapped = GrMipmapped(caps->mipmapSupport());
     {
         static constexpr SkISize kDims = {34, 18};
         const GrBackendFormat format = caps->getDefaultBackendFormat(GrColorType::kRGBA_8888,
                                                                      GrRenderable::kYes);
         auto proxy = proxyProvider->createProxy(format, kDims, GrRenderable::kYes, 1,
-                                                mipMapped, SkBackingFit::kExact, SkBudgeted::kNo,
+                                                mipmapped, SkBackingFit::kExact, SkBudgeted::kNo,
                                                 GrProtected::kNo, GrInternalSurfaceFlags::kNone);
         skgpu::Swizzle swizzle = caps->getReadSwizzle(format, GrColorType::kRGBA_8888);
         views[0] = {{std::move(proxy), kBottomLeft_GrSurfaceOrigin, swizzle},
@@ -262,7 +263,7 @@ bool GrDrawingManager::ProgramUnitTest(GrDirectContext* direct, int maxStages, i
         static constexpr SkISize kDims = {16, 22};
         const GrBackendFormat format = caps->getDefaultBackendFormat(GrColorType::kAlpha_8,
                                                                      GrRenderable::kNo);
-        auto proxy = proxyProvider->createProxy(format, kDims, GrRenderable::kNo, 1, mipMapped,
+        auto proxy = proxyProvider->createProxy(format, kDims, GrRenderable::kNo, 1, mipmapped,
                                                 SkBackingFit::kExact, SkBudgeted::kNo,
                                                 GrProtected::kNo, GrInternalSurfaceFlags::kNone);
         skgpu::Swizzle swizzle = caps->getReadSwizzle(format, GrColorType::kAlpha_8);

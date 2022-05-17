@@ -1,4 +1,8 @@
-load("//bazel:macros.bzl", "generated_cc_atom", "select_multi")
+load("//bazel:macros.bzl", "cc_library", "exports_files_legacy", "generated_cc_atom", "select_multi")
+
+licenses(["notice"])
+
+exports_files_legacy()
 
 cc_library(
     name = "core_srcs",
@@ -49,6 +53,7 @@ generated_cc_atom(
     hdrs = ["SkImageEncoderFns.h"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//include/core:SkColorSpace_hdr",
         "//include/core:SkColor_hdr",
         "//include/core:SkICC_hdr",
         "//include/core:SkTypes_hdr",

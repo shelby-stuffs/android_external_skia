@@ -1,4 +1,8 @@
-load("//bazel:macros.bzl", "generated_cc_atom")
+load("//bazel:macros.bzl", "exports_files_legacy", "generated_cc_atom")
+
+licenses(["notice"])
+
+exports_files_legacy()
 
 generated_cc_atom(
     name = "fm_src",
@@ -20,13 +24,15 @@ generated_cc_atom(
         "//modules/skresources/include:SkResources_hdr",
         "//modules/svg/include:SkSVGDOM_hdr",
         "//modules/svg/include:SkSVGNode_hdr",
+        "//modules/svg/include:SkSVGOpenTypeSVGDecoder_hdr",
         "//src/core:SkColorSpacePriv_hdr",
         "//src/core:SkMD5_hdr",
         "//src/core:SkOSFile_hdr",
         "//src/core:SkTaskGroup_hdr",
-        "//src/gpu:GrDirectContextPriv_hdr",
-        "//src/gpu:GrGpu_hdr",
+        "//src/gpu/ganesh:GrDirectContextPriv_hdr",
+        "//src/gpu/ganesh:GrGpu_hdr",
         "//src/utils:SkOSPath_hdr",
+        "//tests:TestHarness_hdr",
         "//tests:Test_hdr",
         "//tools:AutoreleasePool_hdr",
         "//tools:CrashHandler_hdr",

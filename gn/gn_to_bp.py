@@ -11,6 +11,7 @@ from __future__ import print_function
 
 import os
 import pprint
+import shutil
 import string
 import subprocess
 import tempfile
@@ -113,6 +114,7 @@ cc_defaults {
         ],
         local_include_dirs: [
           "third_party/vulkanmemoryallocator/",
+          "vma_android/include",
         ],
       },
     },
@@ -447,7 +449,10 @@ cc_library_shared {
 android_test {
     name: "CtsSkQPTestCases",
     defaults: ["cts_defaults"],
-    test_suites: ["cts"],
+    test_suites: [
+        "general-tests",
+        "cts",
+    ],
 
     libs: ["android.test.runner.stubs"],
     jni_libs: ["libskqp_jni"],
@@ -491,6 +496,8 @@ def generate_args(target_os, enable_gpu, renderengine = False):
 
     'skia_use_fontconfig':                  'false',
     'skia_include_multiframe_procs':        'false',
+    # Required for some SKSL tests
+    'skia_enable_sksl_tracing':             'true',
   }
   d['target_os'] = target_os
   if target_os == '"android"':
@@ -648,8 +655,11 @@ skqp_includes.update(strip_slashes(js_skqp['targets']['//:public']['include_dirs
 
 gn_to_bp_utils.GrabDependentValues(js_skqp, '//:libskqp_app', 'sources',
                                    skqp_srcs, None)
+# We are exlcuding gpu here to get rid of the includes that are being added from
+# vulkanmemoryallocator. This does not seem to remove any other incldues from gpu so things
+# should work out fine for now
 gn_to_bp_utils.GrabDependentValues(js_skqp, '//:libskqp_app', 'include_dirs',
-                                   skqp_includes, ['//:gif'])
+                                   skqp_includes, ['//:gif', '//:gpu'])
 gn_to_bp_utils.GrabDependentValues(js_skqp, '//:libskqp_app', 'cflags',
                                    skqp_cflags, None)
 gn_to_bp_utils.GrabDependentValues(js_skqp, '//:libskqp_app', 'cflags_cc',
@@ -686,6 +696,11 @@ mkdir_if_not_exists('mac/include/config/')
 mkdir_if_not_exists('win/include/config/')
 mkdir_if_not_exists('renderengine/include/config/')
 mkdir_if_not_exists('skqp/include/config/')
+mkdir_if_not_exists('vma_android/include')
+
+shutil.copy('third_party/externals/vulkanmemoryallocator/include/vk_mem_alloc.h',
+            'vma_android/include')
+shutil.copy('third_party/externals/vulkanmemoryallocator/LICENSE.txt', 'vma_android/')
 
 platforms = { 'IOS', 'MAC', 'WIN', 'ANDROID', 'UNIX' }
 

@@ -93,7 +93,6 @@ OpDecorate %126 RelaxedPrecision
 OpDecorate %127 RelaxedPrecision
 OpDecorate %128 RelaxedPrecision
 OpDecorate %129 RelaxedPrecision
-OpDecorate %130 RelaxedPrecision
 %float = OpTypeFloat 32
 %v4float = OpTypeVector %float 4
 %_ptr_Output_v4float = OpTypePointer Output %v4float
@@ -106,7 +105,7 @@ OpDecorate %130 RelaxedPrecision
 %11 = OpVariable %_ptr_Uniform__UniformBuffer Uniform
 %v2float = OpTypeVector %float 2
 %_ptr_Function_v2float = OpTypePointer Function %v2float
-%15 = OpTypeFunction %float %_ptr_Function_v2float %_ptr_Function_v2float
+%16 = OpTypeFunction %float %_ptr_Function_v2float %_ptr_Function_v2float
 %float_2 = OpConstant %float 2
 %_ptr_Function_float = OpTypePointer Function %float
 %void = OpTypeVoid
@@ -118,7 +117,7 @@ OpDecorate %130 RelaxedPrecision
 %int_1 = OpConstant %int 1
 %float_1 = OpConstant %float 1
 %v3float = OpTypeVector %float 3
-%blend_overlay_component_Qhh2h2 = OpFunction %float None %15
+%blend_overlay_component_Qhh2h2 = OpFunction %float None %16
 %17 = OpFunctionParameter %_ptr_Function_v2float
 %18 = OpFunctionParameter %_ptr_Function_v2float
 %19 = OpLabel
@@ -238,7 +237,6 @@ OpStore %_0_result %106
 %128 = OpLoad %v4float %_0_result
 %129 = OpVectorShuffle %v4float %128 %127 4 5 6 3
 OpStore %_0_result %129
-%130 = OpLoad %v4float %_0_result
-OpStore %sk_FragColor %130
+OpStore %sk_FragColor %129
 OpReturn
 OpFunctionEnd

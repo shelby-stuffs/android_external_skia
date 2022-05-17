@@ -1,4 +1,8 @@
-load("//bazel:macros.bzl", "generated_cc_atom")
+load("//bazel:macros.bzl", "cc_library", "exports_files_legacy", "generated_cc_atom")
+
+licenses(["notice"])
+
+exports_files_legacy()
 
 # TODO(kjlubick) make these sources dependent on target platform, as necessary
 
@@ -157,6 +161,7 @@ generated_cc_atom(
     deps = [
         "//include/core:SkData_hdr",
         "//include/core:SkTypes_hdr",
+        "//include/third_party/skcms:skcms_hdr",
         "//src/core:SkUtils_hdr",
     ],
 )
