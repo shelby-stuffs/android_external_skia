@@ -57,6 +57,7 @@ const (
 	ISOLATE_SDK_LINUX_NAME     = "Housekeeper-PerCommit-IsolateAndroidSDKLinux"
 	ISOLATE_WIN_TOOLCHAIN_NAME = "Housekeeper-PerCommit-IsolateWinToolchain"
 
+	DEBIAN_11_OS                   = "Debian-11.2"
 	DEFAULT_OS_DEBIAN              = "Debian-10.10"
 	DEFAULT_OS_LINUX_GCE           = "Debian-10.3"
 	OLD_OS_LINUX_GCE               = "Debian-9.8"
@@ -82,6 +83,11 @@ const (
 
 	// Name prefix for upload jobs.
 	PREFIX_UPLOAD = "Upload"
+
+	// This will have to kept in sync with the kMin_Version in
+	// src/core/SkPicturePriv.h
+	// See the comment in that file on how to find the version to use here.
+	oldestSupportedSkpVersion = 293
 )
 
 var (
@@ -497,11 +503,18 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_TASK_DRIVERS, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython",
-			"skia/go.mod",
-			"skia/go.sum",
+			// Deps needed to use Bazel
+			"skia/.bazelrc",
+			"skia/.bazelversion",
+			"skia/BUILD.bazel",
+			"skia/WORKSPACE.bazel",
+			"skia/bazel",
+			"skia/go_repositories.bzl",
+			"skia/requirements.txt",
+			"skia/toolchain",
+			// Actually needed to build the task drivers
+			"skia/infra/bots/BUILD.bazel",
 			"skia/infra/bots/build_task_drivers.sh",
-			"skia/infra/bots/run_recipe.py",
 			"skia/infra/bots/task_drivers",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
@@ -598,7 +611,7 @@ func (b *taskBuilder) kitchenTaskNoBundle(recipe string, outputDir string) {
 	if outputDir != OUTPUT_NONE {
 		b.output(outputDir)
 	}
-	python := "cipd_bin_packages/vpython3${EXECUTABLE_SUFFIX}"
+	const python = "cipd_bin_packages/vpython3${EXECUTABLE_SUFFIX}"
 	b.cmd(python, "-u", "skia/infra/bots/run_recipe.py", "${ISOLATED_OUTDIR}", recipe, b.getRecipeProps(), b.cfg.Project)
 	// Most recipes want this isolate; they can override if necessary.
 	b.cas(CAS_RUN_RECIPE)
@@ -659,10 +672,11 @@ func (b *jobBuilder) deriveCompileTaskName() string {
 			ignore := []string{
 				"Skpbench", "AbandonGpuContext", "PreAbandonGpuContext", "Valgrind",
 				"ReleaseAndAbandonGpuContext", "FSAA", "FAAA", "FDAA", "NativeFonts", "GDI",
-				"NoGPUThreads", "ProcDump", "DDL1", "DDL3", "OOPRDDL", "T8888",
+				"NoGPUThreads", "DDL1", "DDL3", "OOPRDDL", "T8888",
 				"DDLTotal", "DDLRecord", "9x9", "BonusConfigs", "SkottieTracing", "SkottieWASM",
 				"GpuTess", "DMSAAStats", "Mskp", "Docker", "PDF", "SkVM", "Puppeteer",
-				"SkottieFrames", "RenderSKP", "CanvasPerf", "AllPathsVolatile", "WebGL2", "i5"}
+				"SkottieFrames", "RenderSKP", "CanvasPerf", "AllPathsVolatile", "WebGL2", "i5",
+				"OldestSupportedSkpVersion"}
 			keep := make([]string, 0, len(ec))
 			for _, part := range ec {
 				if !In(part, ignore) {
@@ -688,6 +702,9 @@ func (b *jobBuilder) deriveCompileTaskName() string {
 			// GCC compiles are now on a Docker container. We use the same OS and
 			// version to compile as to test.
 			ec = append(ec, "Docker")
+		} else if b.matchOs("Debian11") {
+			// We compile using the Debian11 machines in the skolo.
+			task_os = "Debian11"
 		} else if b.matchOs("Ubuntu", "Debian") {
 			task_os = COMPILE_TASK_NAME_OS_LINUX
 		} else if b.matchOs("Mac") {
@@ -751,6 +768,7 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 			"ChromeOS":   "ChromeOS",
 			"Debian9":    DEFAULT_OS_LINUX_GCE, // Runs in Deb9 Docker.
 			"Debian10":   DEFAULT_OS_LINUX_GCE,
+			"Debian11":   DEBIAN_11_OS,
 			"Mac":        DEFAULT_OS_MAC,
 			"Mac10.12":   "Mac-10.12",
 			"Mac10.13":   "Mac-10.13.6",
@@ -885,6 +903,8 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 					"RadeonHD7770":  "1002:683d-26.20.13031.18002",
 					"RadeonR9M470X": "1002:6646-26.20.13031.18002",
 					"QuadroP400":    "10de:1cb3-30.0.15.1179",
+					"RadeonVega6":   "1002:1636-30.0.15021.1001",
+					"RTX3060":       "10de:2489-30.0.15.1165",
 				}[b.parts["cpu_or_gpu_value"]]
 				if !ok {
 					log.Fatalf("Entry %q not found in Win GPU mapping.", b.parts["cpu_or_gpu_value"])
@@ -898,14 +918,17 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 					"IntelHD405":    "8086:22b1",
 					"IntelIris640":  "8086:5926",
 					"QuadroP400":    "10de:1cb3-510.60.02",
+					"RTX3060":       "10de:2489-460.91.03",
 				}[b.parts["cpu_or_gpu_value"]]
 				if !ok {
 					log.Fatalf("Entry %q not found in Ubuntu GPU mapping.", b.parts["cpu_or_gpu_value"])
 				}
 				d["gpu"] = gpu
 
-				// The Debian10 machines in the skolo are 10.10, not 10.3.
-				if b.matchOs("Debian") {
+				if b.matchOs("Debian11") {
+					d["os"] = DEBIAN_11_OS
+				} else if b.matchOs("Debian") {
+					// The Debian10 machines in the skolo are 10.10, not 10.3.
 					d["os"] = DEFAULT_OS_DEBIAN
 				}
 
@@ -956,7 +979,12 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 			}
 		}
 	} else {
-		d["gpu"] = "none"
+		if d["os"] == DEBIAN_11_OS {
+			// The Debain11 compile machines in the skolo have GPUs, but we
+			// still use them for compiles also.
+		} else {
+			d["gpu"] = "none"
+		}
 		if d["os"] == DEFAULT_OS_LINUX_GCE {
 			if b.extraConfig("CanvasKit", "CMake", "Docker", "PathKit") || b.role("BuildStats", "CodeSize") {
 				b.linuxGceDimensions(MACHINE_TYPE_MEDIUM)
@@ -1007,44 +1035,16 @@ func (b *jobBuilder) bundleRecipes() string {
 func (b *jobBuilder) buildTaskDrivers(goos, goarch string) string {
 	name := BUILD_TASK_DRIVERS_PREFIX + "_" + goos + "_" + goarch
 	b.addTask(name, func(b *taskBuilder) {
-		b.usesGo()
 		b.cmd("/bin/bash", "skia/infra/bots/build_task_drivers.sh",
 			specs.PLACEHOLDER_ISOLATED_OUTDIR,
-			goos,
-			goarch)
-		b.linuxGceDimensions(MACHINE_TYPE_SMALL)
-		b.addToPATH("cipd_bin_packages", "cipd_bin_packages/bin")
+			goos+"_"+goarch)
+		b.linuxGceDimensions(MACHINE_TYPE_MEDIUM)
+		b.cipd(b.MustGetCipdPackageFromAsset("bazelisk"))
+		b.addToPATH("bazelisk")
 		b.idempotent()
 		b.cas(CAS_TASK_DRIVERS)
 	})
 	return name
-}
-
-// updateGoDeps generates the task to update Go dependencies.
-func (b *jobBuilder) updateGoDeps() {
-	b.addTask(b.Name, func(b *taskBuilder) {
-		b.usesGo()
-		b.asset("protoc")
-		b.cmd(
-			"./update_go_deps",
-			"--project_id", "skia-swarming-bots",
-			"--task_id", specs.PLACEHOLDER_TASK_ID,
-			"--task_name", b.Name,
-			"--workdir", ".",
-			"--gerrit_project", "skia",
-			"--gerrit_url", "https://skia-review.googlesource.com",
-			"--repo", specs.PLACEHOLDER_REPO,
-			"--revision", specs.PLACEHOLDER_REVISION,
-			"--patch_issue", specs.PLACEHOLDER_ISSUE,
-			"--patch_set", specs.PLACEHOLDER_PATCHSET,
-			"--patch_server", specs.PLACEHOLDER_CODEREVIEW_SERVER,
-		)
-		b.dep(b.buildTaskDrivers("linux", "amd64"))
-		b.linuxGceDimensions(MACHINE_TYPE_MEDIUM)
-		b.addToPATH("cipd_bin_packages", "cipd_bin_packages/bin")
-		b.cas(CAS_EMPTY)
-		b.serviceAccount(b.cfg.ServiceAccountRecreateSKPs)
-	})
 }
 
 // createDockerImage creates the specified docker image. Returns the name of the
@@ -1183,11 +1183,13 @@ func (b *jobBuilder) compile() string {
 	name := b.deriveCompileTaskName()
 	if b.extraConfig("WasmGMTests") {
 		b.compileWasmGMTests(name)
+	} else if b.compiler("BazelClang") {
+		b.compileWithBazel(name)
 	} else {
 		b.addTask(name, func(b *taskBuilder) {
 			recipe := "compile"
 			casSpec := CAS_COMPILE
-			if b.extraConfig("NoDEPS", "CMake", "CommandBuffer", "Flutter") {
+			if b.extraConfig("NoDEPS", "CMake", "Flutter") {
 				recipe = "sync_and_compile"
 				casSpec = CAS_RUN_RECIPE
 				b.recipeProps(EXTRA_PROPS)
@@ -1205,6 +1207,10 @@ func (b *jobBuilder) compile() string {
 			if b.extraConfig("Docker", "LottieWeb", "CMake") || b.compiler("EMCC") {
 				b.usesDocker()
 				b.cache(CACHES_DOCKER...)
+			}
+			if b.extraConfig("Dawn") {
+				// https://dawn.googlesource.com/dawn/+/516701da8184655a47c92a573cc84da7db5e69d4/generator/dawn_version_generator.py#21
+				b.usesGit()
 			}
 
 			// Android bots require a toolchain.
@@ -1248,9 +1254,6 @@ func (b *jobBuilder) compile() string {
 				})
 				b.asset("ccache_mac")
 				b.usesCCache()
-				if b.extraConfig("CommandBuffer") {
-					b.timeout(2 * time.Hour)
-				}
 				if b.extraConfig("iOS") {
 					b.asset("provisioning_profile_ios")
 				}
@@ -1265,6 +1268,48 @@ func (b *jobBuilder) compile() string {
 	}
 
 	return name
+}
+
+// compileWithBazel uses RBE to compile Skia.
+func (b *jobBuilder) compileWithBazel(name string) {
+	if b.extraConfig("IWYU") {
+		b.addTask(name, func(b *taskBuilder) {
+			b.cmd("./bazel_check_includes",
+				"--project_id", "skia-swarming-bots",
+				"--task_id", specs.PLACEHOLDER_TASK_ID,
+				"--task_name", b.Name,
+			)
+			b.linuxGceDimensions(MACHINE_TYPE_MEDIUM)
+			b.cipd(b.MustGetCipdPackageFromAsset("bazelisk"))
+			b.addToPATH("bazelisk")
+			b.idempotent()
+			b.cas(CAS_COMPILE)
+			b.dep(b.buildTaskDrivers("linux", "amd64"))
+			b.attempts(1)
+			b.serviceAccount(b.cfg.ServiceAccountCompile)
+		})
+	} else {
+		log.Fatalf("Unsupported Bazel task " + name)
+	}
+}
+
+// compileWithBazel uses RBE to compile Skia.
+func (b *jobBuilder) checkGeneratedBazelFiles() {
+	b.addTask("Housekeeper-PerCommit-CheckGeneratedBazelFiles", func(b *taskBuilder) {
+		b.cmd("./check_generated_bazel_files",
+			"--project_id", "skia-swarming-bots",
+			"--task_id", specs.PLACEHOLDER_TASK_ID,
+			"--task_name", b.Name,
+		)
+		b.linuxGceDimensions(MACHINE_TYPE_MEDIUM)
+		b.cipd(b.MustGetCipdPackageFromAsset("bazelisk"))
+		b.addToPATH("bazelisk")
+		b.idempotent()
+		b.cas(CAS_COMPILE)
+		b.dep(b.buildTaskDrivers("linux", "amd64"))
+		b.attempts(1)
+		b.serviceAccount(b.cfg.ServiceAccountCompile) // needed for logging
+	})
 }
 
 // recreateSKPs generates a RecreateSKPs task.
@@ -1503,6 +1548,8 @@ func (b *taskBuilder) commonTestPerfAssets() {
 		b.asset("skp", "mskp")
 	} else if b.os("Android", "ChromeOS", "iOS") {
 		b.asset("skp", "svg", "skimage")
+	} else if b.extraConfig("OldestSupportedSkpVersion") {
+		b.assetWithVersion("skp", oldestSupportedSkpVersion)
 	} else {
 		// for desktop machines
 		b.asset("skimage", "skp", "svg")
@@ -1519,9 +1566,6 @@ func (b *taskBuilder) commonTestPerfAssets() {
 		if b.matchGpu("Intel") {
 			b.asset("mesa_intel_driver_linux")
 		}
-	}
-	if b.matchOs("Win") && b.extraConfig("ProcDump") {
-		b.asset("procdump_win")
 	}
 }
 

@@ -16,9 +16,11 @@
 #include <tuple>
 
 #if SK_SUPPORT_GPU
-#include "src/gpu/text/GrSDFTControl.h"
-class GrStrikeCache;
-class GrTextStrike;
+#include "src/gpu/ganesh/text/GrSDFTControl.h"
+namespace sktext::gpu {
+class StrikeCache;
+class TextStrike;
+}
 #endif
 
 class SkFont;
@@ -78,7 +80,7 @@ public:
             const SkMatrix& deviceMatrix,
             const GrSDFTControl& control);
 
-    sk_sp<GrTextStrike> findOrCreateGrStrike(GrStrikeCache* cache) const;
+    sk_sp<sktext::gpu::TextStrike> findOrCreateTextStrike(sktext::gpu::StrikeCache* cache) const;
 #endif
 
     SkScopedStrikeForGPU findOrCreateScopedStrike(SkStrikeForGPUCacheInterface* cache) const;
@@ -132,6 +134,20 @@ public:
     const SkGlyph* glyph(SkGlyphID glyphID);
     void findIntercepts(const SkScalar bounds[2], SkScalar scale, SkScalar xPos,
                         const SkGlyph* glyph, SkScalar* array, int* count);
+
+private:
+    inline static constexpr int kTypicalGlyphCount = 20;
+    SkAutoSTArray<kTypicalGlyphCount, const SkGlyph*> fGlyphs;
+    sk_sp<SkStrike> fStrike;
+};
+
+class SkBulkGlyphMetricsAndDrawables {
+public:
+    explicit SkBulkGlyphMetricsAndDrawables(const SkStrikeSpec& spec);
+    explicit SkBulkGlyphMetricsAndDrawables(sk_sp<SkStrike>&& strike);
+    ~SkBulkGlyphMetricsAndDrawables();
+    SkSpan<const SkGlyph*> glyphs(SkSpan<const SkGlyphID> glyphIDs);
+    const SkGlyph* glyph(SkGlyphID glyphID);
 
 private:
     inline static constexpr int kTypicalGlyphCount = 20;

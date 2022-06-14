@@ -7,24 +7,25 @@
 
 #include "tests/Test.h"
 
+#include "include/core/SkColorSpace.h"
 #include "include/gpu/mock/GrMockTypes.h"
 #include "src/core/SkRectPriv.h"
-#include "src/gpu/GrClip.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrMemoryPool.h"
-#include "src/gpu/GrOnFlushResourceProvider.h"
-#include "src/gpu/GrProxyProvider.h"
-#include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrResourceProvider.h"
-#include "src/gpu/GrSurfaceProxy.h"
-#include "src/gpu/GrSurfaceProxyPriv.h"
-#include "src/gpu/GrTexture.h"
-#include "src/gpu/GrTextureProxy.h"
-#include "src/gpu/GrTextureProxyPriv.h"
-#include "src/gpu/effects/GrTextureEffect.h"
-#include "src/gpu/mock/GrMockGpu.h"
-#include "src/gpu/ops/GrDrawOp.h"
-#include "src/gpu/v1/SurfaceDrawContext_v1.h"
+#include "src/gpu/ganesh/GrClip.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrMemoryPool.h"
+#include "src/gpu/ganesh/GrOnFlushResourceProvider.h"
+#include "src/gpu/ganesh/GrProxyProvider.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxyPriv.h"
+#include "src/gpu/ganesh/GrTexture.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
+#include "src/gpu/ganesh/GrTextureProxyPriv.h"
+#include "src/gpu/ganesh/effects/GrTextureEffect.h"
+#include "src/gpu/ganesh/mock/GrMockGpu.h"
+#include "src/gpu/ganesh/ops/GrDrawOp.h"
+#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 
 // This test verifies that lazy proxy callbacks get invoked during flush, after onFlush callbacks,
 // but before Ops are executed. It also ensures that lazy proxy callbacks are invoked both for
@@ -42,9 +43,16 @@ public:
         REPORTER_ASSERT(fReporter, fHasClipTexture);
     }
 
-    void preFlush(GrOnFlushResourceProvider*, SkSpan<const uint32_t>) override {
+    bool preFlush(GrOnFlushResourceProvider* onFlushRP, SkSpan<const uint32_t>) override {
+#if GR_TEST_UTILS
+        if (onFlushRP->failFlushTimeCallbacks()) {
+            return false;
+        }
+#endif
+
         REPORTER_ASSERT(fReporter, !fHasOpTexture);
         REPORTER_ASSERT(fReporter, !fHasClipTexture);
+        return true;
     }
 
     void postFlush(GrDeferredUploadToken, SkSpan<const uint32_t>) override {
@@ -91,15 +99,15 @@ public:
                             return {};
                         } else {
                             static constexpr SkISize kDimensions = {1234, 567};
-                            sk_sp<GrTexture> texture = rp->createTexture(
-                                    kDimensions,
-                                    desc.fFormat,
-                                    desc.fTextureType,
-                                    desc.fRenderable,
-                                    desc.fSampleCnt,
-                                    desc.fMipmapped,
-                                    desc.fBudgeted,
-                                    desc.fProtected);
+                            sk_sp<GrTexture> texture = rp->createTexture(kDimensions,
+                                                                         desc.fFormat,
+                                                                         desc.fTextureType,
+                                                                         desc.fRenderable,
+                                                                         desc.fSampleCnt,
+                                                                         desc.fMipmapped,
+                                                                         desc.fBudgeted,
+                                                                         desc.fProtected,
+                                                                         /*label=*/{});
                             REPORTER_ASSERT(fTest->fReporter, texture);
                             return texture;
                         }
@@ -252,7 +260,8 @@ DEF_GPUTEST(LazyProxyReleaseTest, reporter, /* options */) {
                                                              1,
                                                              GrMipmapped::kNo,
                                                              SkBudgeted::kNo,
-                                                             GrProtected::kNo);
+                                                             GrProtected::kNo,
+                                                             /*label=*/{});
     using LazyInstantiationResult = GrSurfaceProxy::LazyCallbackResult;
     for (bool doInstantiate : {true, false}) {
         for (bool releaseCallback : {false, true}) {
@@ -364,7 +373,8 @@ private:
                                               desc.fSampleCnt,
                                               desc.fMipmapped,
                                               desc.fBudgeted,
-                                              desc.fProtected),
+                                              desc.fProtected,
+                                              /*label=*/{}),
                             true, GrSurfaceProxy::LazyInstantiationKeyMode::kUnsynced};
                 },
                 format, dims, GrMipmapped::kNo, GrMipmapStatus::kNotAllocated,

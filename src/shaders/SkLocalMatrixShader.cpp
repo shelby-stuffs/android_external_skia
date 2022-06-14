@@ -11,8 +11,12 @@
 #include "src/shaders/SkLocalMatrixShader.h"
 
 #if SK_SUPPORT_GPU
-#include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/effects/GrMatrixEffect.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/effects/GrMatrixEffect.h"
+#endif
+
+#ifdef SK_ENABLE_SKSL
+#include "src/core/SkKeyHelpers.h"
 #endif
 
 #if SK_SUPPORT_GPU
@@ -20,6 +24,16 @@ std::unique_ptr<GrFragmentProcessor> SkLocalMatrixShader::asFragmentProcessor(
         const GrFPArgs& args) const {
     return as_SB(fProxyShader)->asFragmentProcessor(
         GrFPArgs::WithPreLocalMatrix(args, this->getLocalMatrix()));
+}
+#endif
+
+#ifdef SK_ENABLE_SKSL
+void SkLocalMatrixShader::addToKey(const SkKeyContext& keyContext,
+                             SkPaintParamsKeyBuilder* builder,
+                             SkPipelineDataGatherer* gatherer) const {
+    LocalMatrixShaderBlock::LMShaderData lmShaderData(fProxyShader.get(), this->getLocalMatrix());
+
+    LocalMatrixShaderBlock::AddToKey(keyContext, builder, gatherer, lmShaderData);
 }
 #endif
 

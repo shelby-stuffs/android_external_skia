@@ -11,8 +11,17 @@
 #include "include/core/SkCustomMesh.h"
 
 #ifdef SK_ENABLE_SKSL
-#include "include/private/GrTypesPriv.h"
+#include "include/core/SkData.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkSLTypeShared.h"
+
+#if SK_SUPPORT_GPU
+#include "include/gpu/GrDirectContext.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpuBuffer.h"
+#include "src/gpu/ganesh/GrResourceCache.h"
+#include "src/gpu/ganesh/GrResourceProvider.h"
+#endif
 
 struct SkCustomMeshSpecificationPriv {
     using Varying   = SkCustomMeshSpecification::Varying;
@@ -80,11 +89,108 @@ struct SkCustomMeshSpecificationPriv {
     }
 };
 
-bool SkValidateCustomMesh(const SkCustomMesh&);
+struct SkCustomMeshPriv {
+    class Buffer {
+    public:
+        virtual ~Buffer() = 0;
 
-std::unique_ptr<const char[]> SkCopyCustomMeshVB(const SkCustomMesh& cm);
+        Buffer() = default;
+        Buffer(const Buffer&) = delete;
 
-std::unique_ptr<const uint16_t[]> SkCopyCustomMeshIB(const SkCustomMesh& cm);
+        Buffer& operator=(const Buffer&) = delete;
+
+        virtual sk_sp<const SkData> asData() const { return nullptr; }
+
+#if SK_SUPPORT_GPU
+        virtual sk_sp<const GrGpuBuffer> asGpuBuffer() const { return nullptr; }
+#endif
+
+        virtual size_t size() const = 0;
+    };
+
+    class IB : public Buffer, public SkCustomMesh::IndexBuffer  {};
+    class VB : public Buffer, public SkCustomMesh::VertexBuffer {};
+
+    template <typename Base> class CpuBuffer final : public Base {
+    public:
+        CpuBuffer()           = default;
+        ~CpuBuffer() override = default;
+
+        static sk_sp<Base> Make(sk_sp<const SkData> data);
+
+        sk_sp<const SkData> asData() const override { return fData; }
+
+        size_t size() const override { return fData->size(); }
+
+    private:
+        sk_sp<const SkData> fData;
+    };
+
+    using CpuIndexBuffer  = CpuBuffer<IB>;
+    using CpuVertexBuffer = CpuBuffer<VB>;
+
+#if SK_SUPPORT_GPU
+    template <typename Base, GrGpuBufferType> class GpuBuffer final : public Base {
+    public:
+        GpuBuffer() = default;
+
+        ~GpuBuffer() override;
+
+        static sk_sp<Base> Make(GrDirectContext*, sk_sp<const SkData>);
+
+        sk_sp<const GrGpuBuffer> asGpuBuffer() const override { return fBuffer; }
+
+        size_t size() const override { return fBuffer->size(); }
+
+    private:
+        sk_sp<GrGpuBuffer> fBuffer;
+        GrDirectContext::DirectContextID fContextID;
+    };
+
+    using GpuIndexBuffer  = GpuBuffer<IB, GrGpuBufferType::kIndex >;
+    using GpuVertexBuffer = GpuBuffer<VB, GrGpuBufferType::kVertex>;
+#endif  // SK_SUPPORT_GPU
+};
+
+inline SkCustomMeshPriv::Buffer::~Buffer() = default;
+
+template <typename Base>
+sk_sp<Base> SkCustomMeshPriv::CpuBuffer<Base>::Make(sk_sp<const SkData> data) {
+    SkASSERT(data);
+
+    auto result = new CpuBuffer<Base>;
+    result->fData = std::move(data);
+    return sk_sp<Base>(result);
+}
+#if SK_SUPPORT_GPU
+
+template <typename Base, GrGpuBufferType Type>
+SkCustomMeshPriv::GpuBuffer<Base, Type>::~GpuBuffer() {
+    GrResourceCache::ReturnResourceFromThread(std::move(fBuffer), fContextID);
+}
+
+template <typename Base, GrGpuBufferType Type>
+sk_sp<Base> SkCustomMeshPriv::GpuBuffer<Base, Type>::Make(GrDirectContext* dc,
+                                                          sk_sp<const SkData> data) {
+    SkASSERT(dc);
+    SkASSERT(data);
+
+    sk_sp<GrGpuBuffer> buffer = dc->priv().resourceProvider()->createBuffer(
+            data->size(),
+            Type,
+            kStatic_GrAccessPattern,
+            data->data());
+    if (!buffer) {
+        return nullptr;
+    }
+
+    auto result = new GpuBuffer;
+    result->fBuffer    = std::move(buffer);
+    result->fContextID = dc->directContextID();
+    return sk_sp<Base>(result);
+}
+
+#endif  // SK_SUPPORT_GPU
 
 #endif  // SK_ENABLE_SKSL
 

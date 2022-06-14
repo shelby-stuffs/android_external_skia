@@ -11,6 +11,7 @@
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkData.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
 #include "include/effects/SkBlenders.h"
 #include "include/effects/SkRuntimeEffect.h"
@@ -19,14 +20,14 @@
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkTLazy.h"
-#include "src/gpu/GrCaps.h"
-#include "src/gpu/GrColor.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/GrImageInfo.h"
 #include "src/gpu/KeyBuilder.h"
-#include "src/gpu/SurfaceFillContext.h"
-#include "src/gpu/effects/GrSkSLFP.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrColor.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrImageInfo.h"
+#include "src/gpu/ganesh/SurfaceFillContext.h"
+#include "src/gpu/ganesh/effects/GrSkSLFP.h"
 #include "tests/Test.h"
 
 #include <algorithm>
@@ -41,11 +42,6 @@ void test_invalid_effect(skiatest::Reporter* r, const char* src, const char* exp
 };
 
 #define EMPTY_MAIN "half4 main(float2 p) { return half4(0); }"
-
-DEF_TEST(SkRuntimeEffectInvalid_LimitedUniformTypes, r) {
-    // Runtime SkSL supports a limited set of uniform types. No bool, for example:
-    test_invalid_effect(r, "uniform bool b;" EMPTY_MAIN, "uniform");
-}
 
 DEF_TEST(SkRuntimeEffectInvalid_NoInVariables, r) {
     // 'in' variables aren't allowed at all:
@@ -257,7 +253,7 @@ DEF_TEST(SkRuntimeEffectForShader, r) {
                  "unknown identifier 'sk_FragCoord'");
 
     SkRuntimeEffect::Options optionsWithFragCoord;
-    SkRuntimeEffectPriv::EnableFragCoord(&optionsWithFragCoord);
+    SkRuntimeEffectPriv::UsePrivateRTShaderModule(&optionsWithFragCoord);
     test_valid("half4 main(float2 p) { return sk_FragCoord.xy01; }", optionsWithFragCoord);
 
     // Sampling a child shader requires that we pass explicit coords
@@ -314,7 +310,7 @@ public:
 
     void build(const char* src) {
         SkRuntimeEffect::Options options;
-        SkRuntimeEffectPriv::EnableFragCoord(&options);
+        SkRuntimeEffectPriv::UsePrivateRTShaderModule(&options);
         auto [effect, errorText] = SkRuntimeEffect::MakeForShader(SkString(src), options);
         if (!effect) {
             REPORT_FAILURE(fReporter, "effect",
@@ -685,7 +681,6 @@ enter half4 main(float2 p)
   p.x = 1.5
   p.y = 1.5
   scope +1
-   line 4
    scope +1
     line 5
     [main].result.x = 1
@@ -906,7 +901,7 @@ DEF_TEST(SkRuntimeEffectThreaded, r) {
     for (auto& thread : threads) {
         thread = std::thread([r]() {
             SkRuntimeEffect::Options options;
-            SkRuntimeEffectPriv::EnableFragCoord(&options);
+            SkRuntimeEffectPriv::UsePrivateRTShaderModule(&options);
             auto [effect, error] = SkRuntimeEffect::MakeForShader(SkString(kSource), options);
             REPORTER_ASSERT(r, effect);
         });

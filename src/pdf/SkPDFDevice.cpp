@@ -958,21 +958,22 @@ void SkPDFDevice::internalDrawGlyphRun(
 
 void SkPDFDevice::onDrawGlyphRunList(SkCanvas*,
                                      const SkGlyphRunList& glyphRunList,
-                                     const SkPaint& paint) {
+                                     const SkPaint& initialPaint,
+                                     const SkPaint& drawingPaint) {
     SkASSERT(!glyphRunList.hasRSXForm());
     for (const SkGlyphRun& glyphRun : glyphRunList) {
-        this->internalDrawGlyphRun(glyphRun, glyphRunList.origin(), paint);
+        this->internalDrawGlyphRun(glyphRun, glyphRunList.origin(), drawingPaint);
     }
 }
 
-void SkPDFDevice::drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&) {
+void SkPDFDevice::drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) {
     if (this->hasEmptyClip()) {
         return;
     }
     // TODO: implement drawVertices
 }
 
-void SkPDFDevice::drawCustomMesh(SkCustomMesh, sk_sp<SkBlender>, const SkPaint&) {
+void SkPDFDevice::drawCustomMesh(const SkCustomMesh&, sk_sp<SkBlender>, const SkPaint&) {
     if (this->hasEmptyClip()) {
         return;
     }

@@ -9,8 +9,8 @@
 #define GrRecordingContext_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/GrImageContext.h"
 #include "include/private/SkTArray.h"
+#include "include/private/gpu/ganesh/GrImageContext.h"
 
 #if GR_GPU_STATS && GR_TEST_UTILS
 #include <map>
@@ -26,12 +26,15 @@ class GrProgramDesc;
 class GrProgramInfo;
 class GrProxyProvider;
 class GrRecordingContextPriv;
-class GrSubRunAllocator;
 class GrSurfaceProxy;
 class GrTextBlobRedrawCoordinator;
 class GrThreadSafeCache;
 class SkArenaAlloc;
 class SkJSONWriter;
+
+namespace sktext::gpu {
+class SubRunAllocator;
+}
 
 #if GR_TEST_UTILS
 class SkString;
@@ -90,7 +93,9 @@ public:
      * rendering is supported for the color type. 0 is returned if rendering to this color type
      * is not supported at all.
      */
-    SK_API int maxSurfaceSampleCountForColorType(SkColorType) const;
+    SK_API int maxSurfaceSampleCountForColorType(SkColorType colorType) const {
+        return INHERITED::maxSurfaceSampleCountForColorType(colorType);
+    }
 
     // Provides access to functions that aren't part of the public API.
     GrRecordingContextPriv priv();
@@ -100,17 +105,19 @@ public:
     // GrRecordingContext. Arenas does not maintain ownership of the pools it groups together.
     class Arenas {
     public:
-        Arenas(SkArenaAlloc*, GrSubRunAllocator*);
+        Arenas(SkArenaAlloc*, sktext::gpu::SubRunAllocator*);
 
         // For storing pipelines and other complex data as-needed by ops
         SkArenaAlloc* recordTimeAllocator() { return fRecordTimeAllocator; }
 
         // For storing GrTextBlob SubRuns
-        GrSubRunAllocator* recordTimeSubRunAllocator() { return fRecordTimeSubRunAllocator; }
+        sktext::gpu::SubRunAllocator* recordTimeSubRunAllocator() {
+            return fRecordTimeSubRunAllocator;
+        }
 
     private:
         SkArenaAlloc* fRecordTimeAllocator;
-        GrSubRunAllocator* fRecordTimeSubRunAllocator;
+        sktext::gpu::SubRunAllocator* fRecordTimeSubRunAllocator;
     };
 
 protected:
@@ -131,7 +138,7 @@ protected:
     private:
         bool fDDLRecording;
         std::unique_ptr<SkArenaAlloc> fRecordTimeAllocator;
-        std::unique_ptr<GrSubRunAllocator> fRecordTimeSubRunAllocator;
+        std::unique_ptr<sktext::gpu::SubRunAllocator> fRecordTimeSubRunAllocator;
     };
 
     GrRecordingContext(sk_sp<GrContextThreadSafeProxy>, bool ddlRecording);

@@ -1,4 +1,8 @@
-load("//bazel:macros.bzl", "generated_cc_atom")
+load("//bazel:macros.bzl", "exports_files_legacy", "generated_cc_atom")
+
+licenses(["notice"])
+
+exports_files_legacy()
 
 generated_cc_atom(
     name = "SkAnnotation_hdr",
@@ -90,7 +94,6 @@ generated_cc_atom(
         ":SkTypes_hdr",
         "//include/private:SkDeque_hdr",
         "//include/private:SkMacros_hdr",
-        "//include/private:SkTOptional_hdr",
     ],
 )
 
@@ -141,7 +144,7 @@ generated_cc_atom(
     hdrs = ["SkColor.h"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":SkImageInfo_hdr",
+        ":SkAlphaType_hdr",
         ":SkScalar_hdr",
         ":SkTypes_hdr",
     ],
@@ -274,6 +277,7 @@ generated_cc_atom(
     hdrs = ["SkFontArguments.h"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":SkColor_hdr",
         ":SkScalar_hdr",
         ":SkTypes_hdr",
     ],
@@ -354,7 +358,6 @@ generated_cc_atom(
     hdrs = ["SkImageEncoder.h"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":SkBitmap_hdr",
         ":SkData_hdr",
         ":SkEncodedImageFormat_hdr",
         ":SkPixmap_hdr",
@@ -383,7 +386,6 @@ generated_cc_atom(
         ":SkImageInfo_hdr",
         ":SkImage_hdr",
         ":SkYUVAPixmaps_hdr",
-        "//include/private:SkTOptional_hdr",
     ],
 )
 
@@ -392,9 +394,11 @@ generated_cc_atom(
     hdrs = ["SkImageInfo.h"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":SkColorSpace_hdr",
+        ":SkAlphaType_hdr",
+        ":SkColorType_hdr",
         ":SkMath_hdr",
         ":SkRect_hdr",
+        ":SkRefCnt_hdr",
         ":SkSize_hdr",
         "//include/private:SkTFitsIn_hdr",
         "//include/private:SkTo_hdr",
@@ -406,7 +410,6 @@ generated_cc_atom(
     hdrs = ["SkImage.h"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":SkImageEncoder_hdr",
         ":SkImageInfo_hdr",
         ":SkRefCnt_hdr",
         ":SkSamplingOptions_hdr",
@@ -414,7 +417,7 @@ generated_cc_atom(
         ":SkShader_hdr",
         ":SkTileMode_hdr",
         "//include/gpu:GrTypes_hdr",
-        "//include/private:SkTOptional_hdr",
+        "//include/gpu/graphite:GraphiteTypes_hdr",
     ],
 )
 
@@ -494,7 +497,6 @@ generated_cc_atom(
         ":SkBlendMode_hdr",
         ":SkColor_hdr",
         ":SkRefCnt_hdr",
-        "//include/private:SkTOptional_hdr",
         "//include/private:SkTo_hdr",
     ],
 )
@@ -507,6 +509,7 @@ generated_cc_atom(
         ":SkMatrix_hdr",
         ":SkPathTypes_hdr",
         ":SkPath_hdr",
+        ":SkRefCnt_hdr",
         "//include/private:SkTDArray_hdr",
     ],
 )
@@ -547,7 +550,7 @@ generated_cc_atom(
     deps = [
         ":SkMatrix_hdr",
         ":SkPathTypes_hdr",
-        "//include/private:SkPathRef_hdr",
+        ":SkRefCnt_hdr",
         "//include/private:SkTo_hdr",
     ],
 )
@@ -933,14 +936,38 @@ generated_cc_atom(
 generated_cc_atom(
     name = "SkCustomMesh_hdr",
     hdrs = ["SkCustomMesh.h"],
+    enforce_iwyu = True,
     visibility = ["//:__subpackages__"],
     deps = [
-        ":SkColorSpace_hdr",
-        ":SkImageInfo_hdr",
+        ":SkAlphaType_hdr",
         ":SkRect_hdr",
         ":SkRefCnt_hdr",
         ":SkSpan_hdr",
         ":SkString_hdr",
+        ":SkTypes_hdr",
+    ],
+)
+
+generated_cc_atom(
+    name = "SkAlphaType_hdr",
+    hdrs = ["SkAlphaType.h"],
+    visibility = ["//:__subpackages__"],
+)
+
+generated_cc_atom(
+    name = "SkColorType_hdr",
+    hdrs = ["SkColorType.h"],
+    visibility = ["//:__subpackages__"],
+    deps = [":SkTypes_hdr"],
+)
+
+generated_cc_atom(
+    name = "SkOpenTypeSVGDecoder_hdr",
+    hdrs = ["SkOpenTypeSVGDecoder.h"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":SkColor_hdr",
+        ":SkSpan_hdr",
         ":SkTypes_hdr",
     ],
 )

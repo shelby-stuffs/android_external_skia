@@ -7,7 +7,7 @@ if (is_fuchsia) {
   import("//build/fuchsia/sdk.gni")
 }
 if (is_wasm) {
-  import("//gn/toolchain/wasm.gni")
+  import("../toolchain/wasm.gni")
 }
 
 declare_args() {
@@ -25,12 +25,12 @@ declare_args() {
 if (is_ios && xcode_sysroot == "") {
   if (is_tvos) {
     sdk = "appletvos"
-    if (target_cpu == "x86" || target_cpu == "x64") {
+    if (ios_use_simulator) {
       sdk = "appletvsimulator"
     }
   } else {
     sdk = "iphoneos"
-    if (target_cpu == "x86" || target_cpu == "x64") {
+    if (ios_use_simulator) {
       sdk = "iphonesimulator"
     }
   }
@@ -52,6 +52,7 @@ config("default") {
   cflags = []
   cflags_c = []
   cflags_cc = []
+  cflags_objcc = []
   defines = []
   ldflags = []
   libs = []
@@ -271,14 +272,14 @@ config("default") {
   }
 
   if (is_wasm) {
-    cflags += [
-      "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot",
-      "-sMAIN_MODULE=1",
-    ]
+    cflags += [ "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot" ]
     ldflags += [ "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot" ]
   }
 
-  if (sanitize != "" && sanitize != "MSVC") {
+  if (is_win && !is_clang && sanitize == "ASAN") {
+    sanitizers = "address"
+    cflags += [ "/fsanitize=$sanitizers" ]
+  } else if (sanitize != "" && sanitize != "MSVC") {
     # You can either pass the sanitizers directly, e.g. "address,undefined",
     # or pass one of the couple common aliases used by the bots.
     sanitizers = sanitize
@@ -338,17 +339,22 @@ config("default") {
       cflags_cc += [ "-fno-aligned-allocation" ]
     }
   }
+
+  cflags_objcc += cflags_cc
 }
 
 # See skia:9731.
 config("recover_pointer_overflow") {
-  cflags = [ "-fsanitize-recover=pointer-overflow" ]
+  if (sanitize == "ASAN" && !(is_win && !is_clang)) {
+    cflags = [ "-fsanitize-recover=pointer-overflow" ]
+  }
 }
 
 config("no_exceptions") {
   # Exceptions are disabled by default on Windows.  (Use /EHsc to enable them.)
   if (!is_win) {
     cflags_cc = [ "-fno-exceptions" ]
+    cflags_objcc = cflags_cc
   }
 }
 
@@ -491,6 +497,7 @@ config("warnings") {
       "-Wno-shadow-field-in-constructor",
       "-Wno-shadow-uncaptured-local",
       "-Wno-zero-as-null-pointer-constant",  # VK_NULL_HANDLE is defined as 0
+      "-Wno-declaration-after-statement",
 
       # https://quuxplusone.github.io/blog/2020/08/26/wrange-loop-analysis/
       # https://bugzilla.mozilla.org/show_bug.cgi?id=1683213
@@ -542,6 +549,8 @@ config("warnings") {
       "-Wdeprecated-writable-str",
     ]
   }
+
+  cflags_objcc += cflags_cc
 }
 config("warnings_for_public_headers") {
   if (is_clang) {
@@ -587,6 +596,7 @@ config("no_rtti") {
       cflags_cc = [ "/GR-" ]
     } else {
       cflags_cc = [ "-fno-rtti" ]
+      cflags_objcc = cflags_cc
     }
   }
 }

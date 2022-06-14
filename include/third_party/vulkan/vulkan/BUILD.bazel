@@ -1,4 +1,16 @@
-load("//bazel:macros.bzl", "generated_cc_atom")
+load("//bazel:macros.bzl", "exports_files_legacy", "generated_cc_atom")
+
+licenses(["notice"])
+
+exports_files_legacy()
+
+exports_files(
+    [
+        "vulkan_core.h",
+        "vk_platform.h",
+    ],
+    ["//include/third_party/vulkan:__pkg__"],
+)
 
 generated_cc_atom(
     name = "vk_platform_hdr",
@@ -16,12 +28,22 @@ generated_cc_atom(
     name = "vulkan_core_hdr",
     hdrs = ["vulkan_core.h"],
     visibility = ["//:__subpackages__"],
+    deps = ["//include/third_party/vulkan/vulkan:vk_platform_hdr"],
 )
 
 generated_cc_atom(
     name = "vulkan_hdr",
     hdrs = ["vulkan.h"],
     visibility = ["//:__subpackages__"],
+    deps = [
+        "//include/third_party/vulkan/vulkan:vk_platform_hdr",
+        "//include/third_party/vulkan/vulkan:vulkan_android_hdr",
+        "//include/third_party/vulkan/vulkan:vulkan_core_hdr",
+        "//include/third_party/vulkan/vulkan:vulkan_ios_hdr",
+        "//include/third_party/vulkan/vulkan:vulkan_macos_hdr",
+        "//include/third_party/vulkan/vulkan:vulkan_win32_hdr",
+        "//include/third_party/vulkan/vulkan:vulkan_xcb_hdr",
+    ],
 )
 
 generated_cc_atom(

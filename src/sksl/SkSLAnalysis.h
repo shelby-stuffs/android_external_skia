@@ -8,10 +8,9 @@
 #ifndef SkSLAnalysis_DEFINED
 #define SkSLAnalysis_DEFINED
 
-#include "include/core/SkSpan.h"
-#include "include/private/SkSLDefines.h"
 #include "include/private/SkSLSampleUsage.h"
 
+#include <stdint.h>
 #include <memory>
 #include <set>
 
@@ -19,18 +18,20 @@ namespace SkSL {
 
 class ErrorReporter;
 class Expression;
-class ForStatement;
 class FunctionDeclaration;
 class FunctionDefinition;
-struct LoadedModule;
-struct Program;
+class Position;
 class ProgramElement;
 class ProgramUsage;
 class Statement;
-struct LoopUnrollInfo;
 class Variable;
 class VariableReference;
 enum class VariableRefKind : int8_t;
+struct ForLoopPositions;
+struct LoadedModule;
+struct LoopUnrollInfo;
+struct ParsedModule;
+struct Program;
 
 /**
  * Provides utilities for analyzing SkSL statically before it's composed into a full program.
@@ -65,12 +66,13 @@ bool CallsColorTransformIntrinsics(const Program& program);
 bool ReturnsOpaqueColor(const FunctionDefinition& function);
 
 /**
- * Computes the size of the program in a completely flattened state--loops fully unrolled,
+ * Checks for recursion or overly-deep function-call chains, and rejects programs which have them.
+ * Also, computes the size of the program in a completely flattened state--loops fully unrolled,
  * function calls inlined--and rejects programs that exceed an arbitrary upper bound. This is
  * intended to prevent absurdly large programs from overwhemling SkVM. Only strict-ES2 mode is
  * supported; complex control flow is not SkVM-compatible (and this becomes the halting problem)
  */
-bool CheckProgramUnrolledSize(const Program& program);
+bool CheckProgramStructure(const Program& program, bool enforceSizeLimit);
 
 /**
  * Detect an orphaned variable declaration outside of a scope, e.g. if (true) int a;. Returns
@@ -93,7 +95,7 @@ bool SwitchCaseContainsUnconditionalExit(Statement& stmt);
 bool SwitchCaseContainsConditionalExit(Statement& stmt);
 
 std::unique_ptr<ProgramUsage> GetUsage(const Program& program);
-std::unique_ptr<ProgramUsage> GetUsage(const LoadedModule& module);
+std::unique_ptr<ProgramUsage> GetUsage(const LoadedModule& module, const ParsedModule& base);
 
 bool StatementWritesToVariable(const Statement& stmt, const Variable& var);
 
@@ -165,7 +167,8 @@ bool IsConstantIndexExpression(const Expression& expr,
  * If the requirements are not met, the problem is reported via `errors` (if not nullptr), and
  * null is returned.
  */
-std::unique_ptr<LoopUnrollInfo> GetLoopUnrollInfo(int line,
+std::unique_ptr<LoopUnrollInfo> GetLoopUnrollInfo(Position pos,
+                                                  const ForLoopPositions& positions,
                                                   const Statement* loopInitializer,
                                                   const Expression* loopTest,
                                                   const Expression* loopNext,

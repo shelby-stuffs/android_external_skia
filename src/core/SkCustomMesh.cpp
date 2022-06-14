@@ -8,19 +8,35 @@
 #include "include/core/SkCustomMesh.h"
 
 #ifdef SK_ENABLE_SKSL
-
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkData.h"
+#include "include/core/SkMath.h"
+#include "include/private/SkOpts_spi.h"
+#include "include/private/SkSLProgramElement.h"
+#include "include/private/SkSLProgramKind.h"
 #include "src/core/SkCustomMeshPriv.h"
-#include "src/gpu/GrShaderCaps.h"
+#include "src/core/SkSafeMath.h"
+#include "src/sksl/SkSLAnalysis.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLSharedCompiler.h"
+#include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLProgram.h"
-#include "src/sksl/ir/SkSLVarDeclarations.h"
+#include "src/sksl/ir/SkSLType.h"
+#include "src/sksl/ir/SkSLVariable.h"
 
 #include <locale>
+#include <string>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 
 using Attribute = SkCustomMeshSpecification::Attribute;
 using Varying   = SkCustomMeshSpecification::Varying;
+
+using IndexBuffer  = SkCustomMesh::IndexBuffer;
+using VertexBuffer = SkCustomMesh::VertexBuffer;
 
 #define RETURN_FAILURE(...) return Result{nullptr, SkStringPrintf(__VA_ARGS__)}
 
@@ -168,6 +184,27 @@ check_vertex_offsets_and_stride(SkSpan<const Attribute> attributes,
         }
     }
     RETURN_SUCCESS;
+}
+
+SkCustomMeshSpecification::Result SkCustomMeshSpecification::Make(
+        SkSpan<const Attribute> attributes,
+        size_t                  vertexStride,
+        SkSpan<const Varying>   varyings,
+        const SkString&         vs,
+        const SkString&         fs) {
+    return Make(attributes, vertexStride, varyings, vs, fs,
+                SkColorSpace::MakeSRGB(), kPremul_SkAlphaType);
+}
+
+SkCustomMeshSpecification::Result SkCustomMeshSpecification::Make(
+        SkSpan<const Attribute> attributes,
+        size_t                  vertexStride,
+        SkSpan<const Varying>   varyings,
+        const SkString&         vs,
+        const SkString&         fs,
+        sk_sp<SkColorSpace>     cs) {
+    return Make(attributes, vertexStride, varyings, vs, fs,
+                std::move(cs), kPremul_SkAlphaType);
 }
 
 SkCustomMeshSpecification::Result SkCustomMeshSpecification::Make(
@@ -337,4 +374,142 @@ SkCustomMeshSpecification::SkCustomMeshSpecification(SkSpan<const Attribute>    
     auto atInt = static_cast<uint32_t>(fAlphaType);
     fHash = SkOpts::hash_fn(&atInt, sizeof(atInt), fHash);
 }
+
+SkCustomMesh::SkCustomMesh()  = default;
+SkCustomMesh::~SkCustomMesh() = default;
+
+SkCustomMesh::SkCustomMesh(const SkCustomMesh&) = default;
+SkCustomMesh::SkCustomMesh(SkCustomMesh&&)      = default;
+
+SkCustomMesh& SkCustomMesh::operator=(const SkCustomMesh&) = default;
+SkCustomMesh& SkCustomMesh::operator=(SkCustomMesh&&)      = default;
+
+sk_sp<IndexBuffer> SkCustomMesh::MakeIndexBuffer(GrDirectContext* dc, sk_sp<const SkData> data) {
+    if (!data) {
+        return nullptr;
+    }
+    if (!dc) {
+        return SkCustomMeshPriv::CpuIndexBuffer::Make(std::move(data));
+    }
+#if SK_SUPPORT_GPU
+    return SkCustomMeshPriv::GpuIndexBuffer::Make(dc, std::move(data));
+#endif
+    return nullptr;
+}
+
+sk_sp<VertexBuffer> SkCustomMesh::MakeVertexBuffer(GrDirectContext* dc, sk_sp<const SkData> data) {
+    if (!data) {
+        return nullptr;
+    }
+    if (!dc) {
+        return SkCustomMeshPriv::CpuVertexBuffer::Make(std::move(data));
+    }
+#if SK_SUPPORT_GPU
+    return SkCustomMeshPriv::GpuVertexBuffer::Make(dc, std::move(data));
+#endif
+    return nullptr;
+}
+
+SkCustomMesh SkCustomMesh::Make(sk_sp<SkCustomMeshSpecification> spec,
+                                Mode mode,
+                                sk_sp<VertexBuffer> vb,
+                                size_t vertexCount,
+                                size_t vertexOffset,
+                                const SkRect& bounds) {
+    SkCustomMesh cm;
+    cm.fSpec    = std::move(spec);
+    cm.fMode    = mode;
+    cm.fVB      = std::move(vb);
+    cm.fVCount  = vertexCount;
+    cm.fVOffset = vertexOffset;
+    cm.fBounds  = bounds;
+    return cm.validate() ? cm : SkCustomMesh{};
+}
+
+SkCustomMesh SkCustomMesh::MakeIndexed(sk_sp<SkCustomMeshSpecification> spec,
+                                        Mode mode,
+                                        sk_sp<VertexBuffer> vb,
+                                        size_t vertexCount,
+                                        size_t vertexOffset,
+                                        sk_sp<IndexBuffer> ib,
+                                        size_t indexCount,
+                                        size_t indexOffset,
+                                        const SkRect& bounds) {
+    SkCustomMesh cm;
+    cm.fSpec    = std::move(spec);
+    cm.fMode    = mode;
+    cm.fVB      = std::move(vb);
+    cm.fVCount  = vertexCount;
+    cm.fVOffset = vertexOffset;
+    cm.fIB      = std::move(ib);
+    cm.fICount  = indexCount;
+    cm.fIOffset = indexOffset;
+    cm.fBounds  = bounds;
+    return cm.validate() ? cm : SkCustomMesh{};
+}
+
+bool SkCustomMesh::isValid() const {
+    bool valid = SkToBool(fSpec);
+    SkASSERT(valid == this->validate());
+    return valid;
+}
+
+static size_t min_vcount_for_mode(SkCustomMesh::Mode mode) {
+    switch (mode) {
+        case SkCustomMesh::Mode::kTriangles:     return 3;
+        case SkCustomMesh::Mode::kTriangleStrip: return 3;
+    }
+    SkUNREACHABLE;
+}
+
+bool SkCustomMesh::validate() const {
+    if (!fSpec) {
+        return false;
+    }
+
+    if (!fVB) {
+        return false;
+    }
+
+    if (!fVCount) {
+        return false;
+    }
+
+    auto vb = static_cast<SkCustomMeshPriv::VB*>(fVB.get());
+    auto ib = static_cast<SkCustomMeshPriv::IB*>(fIB.get());
+
+    SkSafeMath sm;
+    size_t vsize = sm.mul(fSpec->stride(), fVCount);
+    if (sm.add(vsize, fVOffset) > vb->size()) {
+        return false;
+    }
+
+    if (fVOffset%fSpec->stride() != 0) {
+        return false;
+    }
+
+    if (ib) {
+        if (fICount < min_vcount_for_mode(fMode)) {
+            return false;
+        }
+        size_t isize = sm.mul(sizeof(uint16_t), fICount);
+        if (sm.add(isize, fIOffset) > ib->size()) {
+            return false;
+        }
+        // If we allow 32 bit indices then this should enforce 4 byte alignment in that case.
+        if (!SkIsAlign2(fIOffset)) {
+            return false;
+        }
+    } else {
+        if (fVCount < min_vcount_for_mode(fMode)) {
+            return false;
+        }
+        if (fICount || fIOffset) {
+            return false;
+        }
+    }
+
+    return sm.ok();
+}
+
 #endif //SK_ENABLE_SKSL

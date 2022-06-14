@@ -54,12 +54,17 @@
 #if SK_SUPPORT_GPU
 #include "include/gpu/GrDirectContext.h"
 #include "include/private/chromium/GrSlug.h"
-#include "src/gpu/BaseDevice.h"
-#include "src/gpu/SkGr.h"
+#include "src/gpu/ganesh/BaseDevice.h"
+#include "src/gpu/ganesh/SkGr.h"
+#include "src/utils/SkTestCanvas.h"
 #if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK)
-#   include "src/gpu/GrRenderTarget.h"
-#   include "src/gpu/GrRenderTargetProxy.h"
+#   include "src/gpu/ganesh/GrRenderTarget.h"
+#   include "src/gpu/ganesh/GrRenderTargetProxy.h"
 #endif
+#endif
+
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/Device.h"
 #endif
 
 #define RETURN_ON_NULL(ptr)     do { if (nullptr == (ptr)) return; } while (0)
@@ -949,13 +954,13 @@ void SkCanvas::internalDrawDeviceWithFilter(SkBaseDevice* src,
     }
 
     if (filterInput) {
-        const bool use_nn = draw_layer_as_sprite(mapping.deviceMatrix(),
-                                                 filterInput->subset().size());
+        const bool use_nn =
+                draw_layer_as_sprite(mapping.layerToDevice(), filterInput->subset().size());
         SkSamplingOptions sampling{use_nn ? SkFilterMode::kNearest : SkFilterMode::kLinear};
         if (filter) {
             dst->drawFilteredImage(mapping, filterInput.get(), filter, sampling, paint);
         } else {
-            dst->drawSpecial(filterInput.get(), mapping.deviceMatrix(), sampling, paint);
+            dst->drawSpecial(filterInput.get(), mapping.layerToDevice(), sampling, paint);
         }
     }
 }
@@ -1109,19 +1114,12 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
     // The setDeviceCoordinateSystem applies the prior device's global transform since
     // 'newLayerMapping' only defines the transforms between the two devices and it must be updated
     // to the global coordinate system.
-    if (!newDevice->setDeviceCoordinateSystem(priorDevice->deviceToGlobal() *
-                                              SkM44(newLayerMapping.deviceMatrix()),
-                                              SkM44(newLayerMapping.layerMatrix()),
-                                              layerBounds.left(), layerBounds.top())) {
-        // If we made it this far and the coordinate system is invalid, we most likely had a valid
-        // mapping until being combined with the previous device-to-global matrix, at which point
-        // it overflowed or floating point rounding caused it to no longer be invertible. There's
-        // not much we can do but clean up the layer and mark the clip as empty. This tends to come
-        // up in fuzzer-generated inputs, so this policy is not unreasonable and helps avoids UB.
-        newDevice = nullptr;
-        abortLayer();
-        return;
-    }
+    newDevice->setDeviceCoordinateSystem(
+            priorDevice->deviceToGlobal() * SkM44(newLayerMapping.layerToDevice()),
+            SkM44(newLayerMapping.deviceToLayer()) * priorDevice->globalToDevice(),
+            SkM44(newLayerMapping.layerMatrix()),
+            layerBounds.left(),
+            layerBounds.top());
 
     if (initBackdrop) {
         SkPaint backdropPaint;
@@ -1706,13 +1704,24 @@ GrBackendRenderTarget SkCanvas::topLayerBackendRenderTarget() const {
 
 GrRecordingContext* SkCanvas::recordingContext() {
 #if SK_SUPPORT_GPU
-    if (auto gpuDevice = this->topDevice()->asGpuDevice()) {
+    if (auto gpuDevice = this->topDevice()->asGaneshDevice()) {
         return gpuDevice->recordingContext();
     }
 #endif
 
     return nullptr;
 }
+
+skgpu::graphite::Recorder* SkCanvas::recorder() {
+#ifdef SK_GRAPHITE_ENABLED
+    if (auto graphiteDevice = this->topDevice()->asGraphiteDevice()) {
+        return graphiteDevice->recorder();
+    }
+#endif
+
+    return nullptr;
+}
+
 
 void SkCanvas::drawDRRect(const SkRRect& outer, const SkRRect& inner,
                           const SkPaint& paint) {
@@ -1809,9 +1818,11 @@ void SkCanvas::drawVertices(const SkVertices* vertices, SkBlendMode mode, const 
 }
 
 #ifdef SK_ENABLE_SKSL
-void SkCanvas::drawCustomMesh(SkCustomMesh cm, sk_sp<SkBlender> blender, const SkPaint& paint) {
+void SkCanvas::drawCustomMesh(const SkCustomMesh& cm,
+                              sk_sp<SkBlender> blender,
+                              const SkPaint& paint) {
     TRACE_EVENT0("skia", TRACE_FUNC);
-    RETURN_ON_FALSE(SkValidateCustomMesh(cm));
+    RETURN_ON_FALSE(cm.isValid());
     if (!blender) {
         blender = SkBlender::Mode(SkBlendMode::kModulate);
     }
@@ -2237,14 +2248,29 @@ void SkCanvas::onDrawImage2(const SkImage* image, SkScalar x, SkScalar y,
     auto layer = this->aboutToDraw(this, realPaint, &bounds);
     if (layer) {
         this->topDevice()->drawImageRect(image, nullptr, bounds, sampling,
-                                         layer->paint(), kStrict_SrcRectConstraint);
+                                         layer->paint(), kFast_SrcRectConstraint);
     }
+}
+
+static SkSamplingOptions clean_sampling_for_constraint(
+        const SkSamplingOptions& sampling,
+        SkCanvas::SrcRectConstraint constraint) {
+    if (constraint == SkCanvas::kStrict_SrcRectConstraint) {
+        if (sampling.mipmap != SkMipmapMode::kNone) {
+            return SkSamplingOptions(sampling.filter);
+        }
+        if (sampling.isAniso()) {
+            return SkSamplingOptions(SkFilterMode::kLinear);
+        }
+    }
+    return sampling;
 }
 
 void SkCanvas::onDrawImageRect2(const SkImage* image, const SkRect& src, const SkRect& dst,
                                 const SkSamplingOptions& sampling, const SkPaint* paint,
                                 SrcRectConstraint constraint) {
     SkPaint realPaint = clean_paint_for_drawImage(paint);
+    SkSamplingOptions realSampling = clean_sampling_for_constraint(sampling, constraint);
 
     if (this->internalQuickReject(dst, realPaint)) {
         return;
@@ -2254,7 +2280,7 @@ void SkCanvas::onDrawImageRect2(const SkImage* image, const SkRect& src, const S
                                    image->isOpaque() ? kOpaque_ShaderOverrideOpacity
                                                      : kNotOpaque_ShaderOverrideOpacity);
     if (layer) {
-        this->topDevice()->drawImageRect(image, &src, dst, sampling, layer->paint(), constraint);
+        this->topDevice()->drawImageRect(image, &src, dst, realSampling, layer->paint(), constraint);
     }
 }
 
@@ -2309,7 +2335,7 @@ void SkCanvas::onDrawGlyphRunList(const SkGlyphRunList& glyphRunList, const SkPa
     }
     auto layer = this->aboutToDraw(this, paint, &bounds);
     if (layer) {
-        this->topDevice()->drawGlyphRunList(this, glyphRunList, layer->paint());
+        this->topDevice()->drawGlyphRunList(this, glyphRunList, paint, layer->paint());
     }
 }
 
@@ -2317,38 +2343,40 @@ void SkCanvas::onDrawGlyphRunList(const SkGlyphRunList& glyphRunList, const SkPa
 sk_sp<GrSlug> SkCanvas::convertBlobToSlug(
         const SkTextBlob& blob, SkPoint origin, const SkPaint& paint) {
     TRACE_EVENT0("skia", TRACE_FUNC);
-
-    return this->doConvertBlobToSlug(blob, origin, paint);
+    auto glyphRunList = fScratchGlyphRunBuilder->blobToGlyphRunList(blob, origin);
+    return this->onConvertGlyphRunListToSlug(glyphRunList, paint);
 }
 
 sk_sp<GrSlug>
-SkCanvas::doConvertBlobToSlug(const SkTextBlob& blob, SkPoint origin, const SkPaint& paint) {
-    auto glyphRunList = fScratchGlyphRunBuilder->blobToGlyphRunList(blob, origin);
+SkCanvas::onConvertGlyphRunListToSlug(const SkGlyphRunList& glyphRunList, const SkPaint& paint) {
     SkRect bounds = glyphRunList.sourceBounds();
     if (bounds.isEmpty() || !bounds.isFinite() || paint.nothingToDraw()) {
         return nullptr;
     }
     auto layer = this->aboutToDraw(this, paint, &bounds);
     if (layer) {
-        return this->topDevice()->convertGlyphRunListToSlug(glyphRunList, layer->paint());
+        return this->topDevice()->convertGlyphRunListToSlug(glyphRunList, paint, layer->paint());
     }
     return nullptr;
 }
 
-void SkCanvas::drawSlug(GrSlug* slug) {
+void SkCanvas::drawSlug(const GrSlug* slug) {
     TRACE_EVENT0("skia", TRACE_FUNC);
     if (slug) {
-        this->doDrawSlug(slug);
+        this->onDrawSlug(slug);
     }
 }
 
-void SkCanvas::doDrawSlug(GrSlug* slug) {
+void SkCanvas::onDrawSlug(const GrSlug* slug) {
     SkRect bounds = slug->sourceBounds();
-    if (this->internalQuickReject(bounds, slug->paint())) {
+    if (this->internalQuickReject(bounds, slug->initialPaint())) {
         return;
     }
 
-    this->topDevice()->drawSlug(this, slug);
+    auto layer = this->aboutToDraw(this, slug->initialPaint(), &bounds);
+    if (layer) {
+        this->topDevice()->drawSlug(this, slug, layer->paint());
+    }
 }
 #endif
 
@@ -2431,6 +2459,10 @@ void SkCanvas::drawGlyphs(int count, const SkGlyphID glyphs[], const SkRSXform x
     this->onDrawGlyphRunList(glyphRunList, paint);
 }
 
+#if SK_SUPPORT_GPU && GR_TEST_UTILS
+bool gSkBlobAsSlugTesting = false;
+#endif
+
 void SkCanvas::drawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                             const SkPaint& paint) {
     TRACE_EVENT0("skia", TRACE_FUNC);
@@ -2449,7 +2481,23 @@ void SkCanvas::drawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
         RETURN_ON_FALSE(r.fGlyphCount <= glyphsLeft);
         totalGlyphCount += r.fGlyphCount;
     }
-    this->onDrawTextBlob(blob, x, y, paint);
+
+#if SK_SUPPORT_GPU && GR_TEST_UTILS
+    // Draw using text blob normally or if the blob has RSX form because slugs can't convert that
+    // form.
+    if (!gSkBlobAsSlugTesting ||
+        this->topDevice()->asGaneshDevice() == nullptr ||
+        SkTextBlobPriv::HasRSXForm(*blob))
+#endif
+    {
+        this->onDrawTextBlob(blob, x, y, paint);
+    }
+#if SK_SUPPORT_GPU && GR_TEST_UTILS
+    else {
+        auto slug = GrSlug::ConvertBlob(this, *blob, {x, y}, paint);
+        slug->draw(this);
+    }
+#endif
 }
 
 void SkCanvas::onDrawVerticesObject(const SkVertices* vertices, SkBlendMode bmode,
@@ -2468,10 +2516,12 @@ void SkCanvas::onDrawVerticesObject(const SkVertices* vertices, SkBlendMode bmod
 }
 
 #ifdef SK_ENABLE_SKSL
-void SkCanvas::onDrawCustomMesh(SkCustomMesh cm, sk_sp<SkBlender> blender, const SkPaint& paint) {
+void SkCanvas::onDrawCustomMesh(const SkCustomMesh& cm,
+                                sk_sp<SkBlender> blender,
+                                const SkPaint& paint) {
     SkPaint simplePaint = clean_paint_for_drawVertices(paint);
 
-    if (this->internalQuickReject(cm.bounds, simplePaint)) {
+    if (this->internalQuickReject(cm.bounds(), simplePaint)) {
         return;
     }
 
@@ -2598,6 +2648,7 @@ void SkCanvas::onDrawEdgeAAImageSet2(const ImageSetEntry imageSet[], int count,
     }
 
     SkPaint realPaint = clean_paint_for_drawImage(paint);
+    SkSamplingOptions realSampling = clean_sampling_for_constraint(sampling, constraint);
 
     // We could calculate the set's dstRect union to always check quickReject(), but we can't reject
     // individual entries and Chromium's occlusion culling already makes it likely that at least one
@@ -2627,8 +2678,8 @@ void SkCanvas::onDrawEdgeAAImageSet2(const ImageSetEntry imageSet[], int count,
 
     auto layer = this->aboutToDraw(this, realPaint, setBoundsValid ? &setBounds : nullptr);
     if (layer) {
-        this->topDevice()->drawEdgeAAImageSet(imageSet, count, dstClips, preViewMatrices, sampling,
-                                              layer->paint(), constraint);
+        this->topDevice()->drawEdgeAAImageSet(imageSet, count, dstClips, preViewMatrices,
+                                              realSampling, layer->paint(), constraint);
     }
 }
 
@@ -2840,4 +2891,27 @@ SkRasterHandleAllocator::MakeCanvas(std::unique_ptr<SkRasterHandleAllocator> all
     return hndl ? std::unique_ptr<SkCanvas>(new SkCanvas(bm, std::move(alloc), hndl)) : nullptr;
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////
+#if SK_SUPPORT_GPU && GR_TEST_UTILS
+SkTestCanvas<SkSlugTestKey>::SkTestCanvas(SkCanvas* canvas)
+        : SkCanvas(sk_ref_sp(canvas->baseDevice())) {}
+
+void SkTestCanvas<SkSlugTestKey>::onDrawGlyphRunList(
+        const SkGlyphRunList& glyphRunList, const SkPaint& paint) {
+    SkRect bounds = glyphRunList.sourceBounds();
+    if (this->internalQuickReject(bounds, paint)) {
+        return;
+    }
+    auto layer = this->aboutToDraw(this, paint, &bounds);
+    if (layer) {
+        if (glyphRunList.hasRSXForm()) {
+            this->SkCanvas::onDrawGlyphRunList(glyphRunList, layer->paint());
+        } else {
+            auto slug = this->onConvertGlyphRunListToSlug(glyphRunList, layer->paint());
+            this->drawSlug(slug.get());
+        }
+    }
+}
+#endif
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
