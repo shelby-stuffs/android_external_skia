@@ -9,6 +9,7 @@
 
 #include "src/gpu/graphite/DrawGeometry.h"
 #include "src/gpu/graphite/DrawWriter.h"
+#include "src/gpu/graphite/render/DynamicInstancesPatchAllocator.h"
 #include "src/gpu/graphite/render/StencilAndCoverDSS.h"
 
 #include "src/gpu/tessellate/AffineMatrix.h"
@@ -19,40 +20,14 @@ namespace skgpu::graphite {
 
 namespace {
 
-// TODO: This can be shared by the other path tessellators if PatchWriter can provide the correct
-// index count based on its traits (curve, wedge, or stroke).
-// Satisfies API requirements for PatchAllocator template to PatchWriter, using
-// DrawWriter::DynamicInstances.
-struct DrawWriterAllocator {
-    DrawWriterAllocator(size_t stride, // required for PatchAllocator
-                        DrawWriter& writer,
-                        BindBufferInfo fixedVertexBuffer,
-                        BindBufferInfo fixedIndexBuffer,
-                        unsigned int reserveCount)
-            : fInstances(writer, fixedVertexBuffer, fixedIndexBuffer) {
-        SkASSERT(writer.instanceStride() == stride);
-        // TODO: Is it worth re-reserving large chunks after this preallocation is used up? Or will
-        // appending 1 at a time be fine since it's coming from a large vertex buffer alloc anyway?
-        fInstances.reserve(reserveCount);
-    }
-
-    VertexWriter append() {
-        // TODO (skbug.com/13056): Actually compute optimal minimum required index count based on
-        // PatchWriter's tracked segment count^4.
-        static constexpr unsigned int kMaxIndexCount =
-                3 * NumCurveTrianglesAtResolveLevel(kMaxFixedResolveLevel);
-        return fInstances.append(kMaxIndexCount, 1);
-    }
-
-    DrawWriter::DynamicInstances fInstances;
-};
+using namespace skgpu::tess;
 
 // No fan point or stroke params, since this is for filled curves (not strokes or wedges)
 // No explicit curve type, since we assume infinity is supported on GPUs using graphite
 // No color or wide color attribs, since it might always be part of the PaintParams
 // or we'll add a color-only fast path to RenderStep later.
 static constexpr PatchAttribs kAttribs = PatchAttribs::kPaintDepth;
-using Writer = PatchWriter<DrawWriterAllocator,
+using Writer = PatchWriter<DynamicInstancesPatchAllocator<FixedCountCurves>,
                            Required<PatchAttribs::kPaintDepth>,
                            AddTrianglesWhenChopping,
                            DiscardFlatCurves>;
@@ -104,7 +79,7 @@ void TessellateCurvesRenderStep::writeVertices(DrawWriter* dw, const DrawGeometr
     // uniform data to upload, dependent on push constants or storage buffers for good batching)
 
     // Currently no additional transform is applied by the GPU.
-    wangs_formula::VectorXform shaderXform(SkMatrix::I());
+    writer.setShaderTransform(wangs_formula::VectorXform{});
     // TODO: This doesn't handle perspective yet, and ideally wouldn't go through SkMatrix.
     // It may not be relevant, though, if transforms are applied on the GPU and we only need to
     // determine an approximate 2x2 for 'shaderXform' and Wang's formula evaluation.
@@ -123,7 +98,7 @@ void TessellateCurvesRenderStep::writeVertices(DrawWriter* dw, const DrawGeometr
                 auto [p0, p1] = m.map2Points(pts);
                 auto p2 = m.map1Point(pts+2);
 
-                writer.writeQuadratic(p0, p1, p2, shaderXform);
+                writer.writeQuadratic(p0, p1, p2);
                 break;
             }
 
@@ -131,7 +106,7 @@ void TessellateCurvesRenderStep::writeVertices(DrawWriter* dw, const DrawGeometr
                 auto [p0, p1] = m.map2Points(pts);
                 auto p2 = m.map1Point(pts+2);
 
-                writer.writeConic(p0, p1, p2, *w, shaderXform);
+                writer.writeConic(p0, p1, p2, *w);
                 break;
             }
 
@@ -139,7 +114,7 @@ void TessellateCurvesRenderStep::writeVertices(DrawWriter* dw, const DrawGeometr
                 auto [p0, p1] = m.map2Points(pts);
                 auto [p2, p3] = m.map2Points(pts+2);
 
-                writer.writeCubic(p0, p1, p2, p3, shaderXform);
+                writer.writeCubic(p0, p1, p2, p3);
                 break;
             }
 

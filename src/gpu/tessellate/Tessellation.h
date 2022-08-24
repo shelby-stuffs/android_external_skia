@@ -18,73 +18,34 @@ class SkMatrix;
 class SkPath;
 struct SkRect;
 
-namespace skgpu {
-
-// Use familiar type names from SkSL.
-template<int N> using vec = skvx::Vec<N, float>;
-using float2 = vec<2>;
-using float4 = vec<4>;
-
-template<int N> using ivec = skvx::Vec<N, int32_t>;
-using int2 = ivec<2>;
-using int4 = ivec<4>;
-
-template<int N> using uvec = skvx::Vec<N, uint32_t>;
-using uint2 = uvec<2>;
-using uint4 = uvec<4>;
-
-#define AI SK_MAYBE_UNUSED SK_ALWAYS_INLINE
-
-AI float dot(float2 a, float2 b) {
-    float2 ab = a*b;
-    return ab.x() + ab.y();
-}
-
-AI float cross(float2 a, float2 b) {
-    float2 x = a * b.yx();
-    return x[0] - x[1];
-}
-
-// This does not return b when t==1, but it otherwise seems to get better precision than
-// "a*(1 - t) + b*t" for things like chopping cubics on exact cusp points.
-// The responsibility falls on the caller to check that t != 1 before calling.
-template<int N>
-AI vec<N> mix(vec<N> a, vec<N> b, vec<N> T) {
-    SkASSERT(all((0 <= T) & (T < 1)));
-    return (b - a)*T + a;
-}
-
-template<int N>
-AI vec<N> mix(vec<N> a, vec<N> b, float T) {
-    return mix(a, b, vec<N>(T));
-}
-
-AI constexpr float pow2(float x) { return x*x; }
-AI constexpr float pow4(float x) { return pow2(x*x); }
-
-#undef AI
+namespace skgpu::tess {
 
 // Don't allow linearized segments to be off by more than 1/4th of a pixel from the true curve.
-constexpr static float kTessellationPrecision = 4;
+constexpr static float kPrecision = 4;
 
 // This is the maximum number of subdivisions of a Bezier curve that can be represented in the fixed
 // count vertex and index buffers. If rendering a curve that requires more subdivisions, it must be
 // chopped.
-constexpr static int kMaxFixedResolveLevel = 5;
+constexpr static int kMaxResolveLevel = 5;
 
 // This is the maximum number of parametric segments (linear sections) that a curve can be split
 // into. This is the same for path filling and stroking, although fixed-count stroking also uses
 // additional vertices to handle radial segments, joins, and caps. Additionally the fixed-count
 // path filling algorithms snap their dynamic vertex counts to powers-of-two, whereas the stroking
 // algorithm does not.
-constexpr static int kMaxParametricSegments = 1 << kMaxFixedResolveLevel;
+constexpr static int kMaxParametricSegments = 1 << kMaxResolveLevel;
+constexpr static int kMaxParametricSegments_p2 = kMaxParametricSegments * kMaxParametricSegments;
+constexpr static int kMaxParametricSegments_p4 = kMaxParametricSegments_p2 *
+                                                 kMaxParametricSegments_p2;
 
 // Don't tessellate paths that might have an individual curve that requires more than 1024 segments.
 // (See wangs_formula::worst_case_cubic). If this is the case, call "PreChopPathCurves" first.
 // Standard chopping, when Wang's formula is between kMaxParametricSegments and
 // kMaxTessellationSegmentsPerCurve is handled automatically by PatchWriter. It differs from
 // PreChopPathCurves in that it does no culling of offscreen chopped paths.
-constexpr static float kMaxTessellationSegmentsPerCurve = 1024;
+constexpr static float kMaxSegmentsPerCurve = 1024;
+constexpr static float kMaxSegmentsPerCurve_p2 = kMaxSegmentsPerCurve * kMaxSegmentsPerCurve;
+constexpr static float kMaxSegmentsPerCurve_p4 = kMaxSegmentsPerCurve_p2 * kMaxSegmentsPerCurve_p2;
 
 // Returns a new path, equivalent to 'path' within the given viewport, whose verbs can all be drawn
 // with 'maxSegments' tessellation segments or fewer, while staying within '1/tessellationPrecision'
@@ -174,7 +135,7 @@ inline bool ConicHasCusp(const SkPoint p[3]) {
 //     Zero     => Bevel Join
 //     Positive => Miter join, and the value is also the miter limit
 //
-static float GetJoinType(const SkStrokeRec& stroke) {
+inline float GetJoinType(const SkStrokeRec& stroke) {
     switch (stroke.getJoin()) {
         case SkPaint::kRound_Join: return -1;
         case SkPaint::kBevel_Join: return 0;
@@ -186,6 +147,7 @@ static float GetJoinType(const SkStrokeRec& stroke) {
 // This float2 gets written out with each patch/instance if PatchAttribs::kStrokeParams is enabled.
 struct StrokeParams {
     StrokeParams() = default;
+    StrokeParams(float radius, float joinType) : fRadius(radius), fJoinType(joinType) {}
     StrokeParams(const SkStrokeRec& stroke) {
         this->set(stroke);
     }
@@ -193,14 +155,15 @@ struct StrokeParams {
         fRadius = stroke.getWidth() * .5f;
         fJoinType = GetJoinType(stroke);
     }
-    static bool StrokesHaveEqualParams(const SkStrokeRec& a, const SkStrokeRec& b) {
-        return a.getWidth() == b.getWidth() && a.getJoin() == b.getJoin() &&
-               (a.getJoin() != SkPaint::kMiter_Join || a.getMiter() == b.getMiter());
-    }
+
     float fRadius;
     float fJoinType;  // See GetJoinType().
 };
 
+inline bool StrokesHaveEqualParams(const SkStrokeRec& a, const SkStrokeRec& b) {
+    return a.getWidth() == b.getWidth() && a.getJoin() == b.getJoin() &&
+            (a.getJoin() != SkPaint::kMiter_Join || a.getMiter() == b.getMiter());
+}
 
 // Returns the fixed number of edges that are always emitted with the given join type. If the
 // join is round, the caller needs to account for the additional radial edges on their own.
@@ -215,7 +178,7 @@ struct StrokeParams {
 //   * A half-width edge at the end of the join that will be colocated with the first
 //     (full-width) edge of the stroke.
 //
-constexpr static int NumFixedEdgesInJoin(SkPaint::Join joinType) {
+constexpr int NumFixedEdgesInJoin(SkPaint::Join joinType) {
     switch (joinType) {
         case SkPaint::kMiter_Join:
             return 4;
@@ -228,66 +191,19 @@ constexpr static int NumFixedEdgesInJoin(SkPaint::Join joinType) {
     }
     SkUNREACHABLE;
 }
-
-// Returns the worst-case number of edges we will need in order to draw a join of the given type.
-constexpr static int WorstCaseEdgesInJoin(SkPaint::Join joinType,
-                                          float numRadialSegmentsPerRadian) {
-    int numEdges = NumFixedEdgesInJoin(joinType);
-    if (joinType == SkPaint::kRound_Join) {
-        // For round joins we need to count the radial edges on our own. Account for a worst-case
-        // join of 180 degrees (SK_ScalarPI radians).
-        numEdges += std::max(SkScalarCeilToInt(numRadialSegmentsPerRadian * SK_ScalarPI) - 1, 0);
-    }
-    return numEdges;
+constexpr int NumFixedEdgesInJoin(const StrokeParams& strokeParams) {
+    // The caller is responsible for counting the variable number of segments for round joins.
+    return strokeParams.fJoinType > 0.f ? /* miter */ 4 : /* round or bevel */ 3;
 }
 
-// These tolerances decide the number of parametric and radial segments the tessellator will
-// linearize strokes into. These decisions are made in (pre-viewMatrix) local path space.
-class StrokeTolerances {
-    StrokeTolerances() = delete;
-public:
-    // Decides the number of radial segments the tessellator adds for each curve. (Uniform steps
-    // in tangent angle.) The tessellator will add this number of radial segments for each
-    // radian of rotation in local path space.
-    static float CalcNumRadialSegmentsPerRadian(float matrixMaxScale, float strokeWidth) {
-        float cosTheta = 1.f - (1.f / kTessellationPrecision) / (matrixMaxScale * strokeWidth);
-        return .5f / acosf(std::max(cosTheta, -1.f));
-    }
-    template<int N>
-    static vec<N> ApproxNumRadialSegmentsPerRadian(float matrixMaxScale, vec<N> strokeWidths) {
-        vec<N> cosTheta = 1.f - (1.f / kTessellationPrecision) / (matrixMaxScale * strokeWidths);
-        // Subtract SKVX_APPROX_ACOS_MAX_ERROR so we never account for too few segments.
-        return .5f / (approx_acos(max(cosTheta, -1.f)) - SKVX_APPROX_ACOS_MAX_ERROR);
-    }
-    // Returns the equivalent stroke width in (pre-viewMatrix) local path space that the
-    // tessellator will use when rendering this stroke. This only differs from the actual stroke
-    // width for hairlines.
-    static float GetLocalStrokeWidth(const float matrixMinMaxScales[2], float strokeWidth) {
-        SkASSERT(strokeWidth >= 0);
-        float localStrokeWidth = strokeWidth;
-        if (localStrokeWidth == 0) {  // Is the stroke a hairline?
-            float matrixMinScale = matrixMinMaxScales[0];
-            float matrixMaxScale = matrixMinMaxScales[1];
-            // If the stroke is hairline then the tessellator will operate in post-transform
-            // space instead. But for the sake of CPU methods that need to conservatively
-            // approximate the number of segments to emit, we use
-            // localStrokeWidth ~= 1/matrixMinScale.
-            float approxScale = matrixMinScale;
-            // If the matrix has strong skew, don't let the scale shoot off to infinity. (This
-            // does not affect the tessellator; only the CPU methods that approximate the number
-            // of segments to emit.)
-            approxScale = std::max(matrixMinScale, matrixMaxScale * .25f);
-            localStrokeWidth = 1/approxScale;
-            if (localStrokeWidth == 0) {
-                // We just can't accidentally return zero from this method because zero means
-                // "hairline". Otherwise return whatever we calculated above.
-                localStrokeWidth = SK_ScalarNearlyZero;
-            }
-        }
-        return localStrokeWidth;
-    }
-};
+// Decides the number of radial segments the tessellator adds for each curve. (Uniform steps
+// in tangent angle.) The tessellator will add this number of radial segments for each
+// radian of rotation in local path space.
+inline float CalcNumRadialSegmentsPerRadian(float approxDevStrokeRadius) {
+    float cosTheta = 1.f - (1.f / kPrecision) / approxDevStrokeRadius;
+    return .5f / acosf(std::max(cosTheta, -1.f));
+}
 
-}  // namespace skgpu
+}  // namespace skgpu::tess
 
-#endif  // tessellate_Tessellation_DEFINED
+#endif  // skgpu_tessellate_Tessellation_DEFINED

@@ -11,6 +11,7 @@
 #include "src/gpu/ganesh/GrMeshDrawTarget.h"
 #include "src/gpu/ganesh/GrOpFlushState.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/tessellate/VertexChunkPatchAllocator.h"
 #include "src/gpu/tessellate/AffineMatrix.h"
 #include "src/gpu/tessellate/FixedCountBufferUtils.h"
 #include "src/gpu/tessellate/MiddleOutPolygonTriangulator.h"
@@ -22,17 +23,19 @@ namespace skgpu::v1 {
 
 namespace {
 
-using CurveWriter = PatchWriter<GrVertexChunkBuilder,
+using namespace skgpu::tess;
+
+using CurveWriter = PatchWriter<VertexChunkPatchAllocator,
                                 Optional<PatchAttribs::kColor>,
                                 Optional<PatchAttribs::kWideColorIfEnabled>,
                                 Optional<PatchAttribs::kExplicitCurveType>,
                                 AddTrianglesWhenChopping,
                                 DiscardFlatCurves>;
 
-int write_curve_patches(CurveWriter&& patchWriter,
-                        const SkMatrix& shaderMatrix,
-                        const PathTessellator::PathDrawList& pathDrawList) {
-    wangs_formula::VectorXform shaderXform(shaderMatrix);
+void write_curve_patches(CurveWriter&& patchWriter,
+                         const SkMatrix& shaderMatrix,
+                         const PathTessellator::PathDrawList& pathDrawList) {
+    patchWriter.setShaderTransform(wangs_formula::VectorXform{shaderMatrix});
     for (auto [pathMatrix, path, color] : pathDrawList) {
         AffineMatrix m(pathMatrix);
         if (patchWriter.attribs() & PatchAttribs::kColor) {
@@ -44,7 +47,7 @@ int write_curve_patches(CurveWriter&& patchWriter,
                     auto [p0, p1] = m.map2Points(pts);
                     auto p2 = m.map1Point(pts+2);
 
-                    patchWriter.writeQuadratic(p0, p1, p2, shaderXform);
+                    patchWriter.writeQuadratic(p0, p1, p2);
                     break;
                 }
 
@@ -52,7 +55,7 @@ int write_curve_patches(CurveWriter&& patchWriter,
                     auto [p0, p1] = m.map2Points(pts);
                     auto p2 = m.map1Point(pts+2);
 
-                    patchWriter.writeConic(p0, p1, p2, *w, shaderXform);
+                    patchWriter.writeConic(p0, p1, p2, *w);
                     break;
                 }
 
@@ -60,7 +63,7 @@ int write_curve_patches(CurveWriter&& patchWriter,
                     auto [p0, p1] = m.map2Points(pts);
                     auto [p2, p3] = m.map2Points(pts+2);
 
-                    patchWriter.writeCubic(p0, p1, p2, p3, shaderXform);
+                    patchWriter.writeCubic(p0, p1, p2, p3);
                     break;
                 }
 
@@ -68,20 +71,18 @@ int write_curve_patches(CurveWriter&& patchWriter,
             }
         }
     }
-
-    return patchWriter.requiredResolveLevel();
 }
 
-using WedgeWriter = PatchWriter<GrVertexChunkBuilder,
+using WedgeWriter = PatchWriter<VertexChunkPatchAllocator,
                                 Required<PatchAttribs::kFanPoint>,
                                 Optional<PatchAttribs::kColor>,
                                 Optional<PatchAttribs::kWideColorIfEnabled>,
                                 Optional<PatchAttribs::kExplicitCurveType>>;
 
-int write_wedge_patches(WedgeWriter&& patchWriter,
-                        const SkMatrix& shaderMatrix,
-                        const PathTessellator::PathDrawList& pathDrawList) {
-    wangs_formula::VectorXform shaderXform(shaderMatrix);
+void write_wedge_patches(WedgeWriter&& patchWriter,
+                         const SkMatrix& shaderMatrix,
+                         const PathTessellator::PathDrawList& pathDrawList) {
+    patchWriter.setShaderTransform(wangs_formula::VectorXform{shaderMatrix});
     for (auto [pathMatrix, path, color] : pathDrawList) {
         AffineMatrix m(pathMatrix);
         if (patchWriter.attribs() & PatchAttribs::kColor) {
@@ -111,7 +112,7 @@ int write_wedge_patches(WedgeWriter&& patchWriter,
                         auto [p0, p1] = m.map2Points(pts);
                         auto p2 = m.map1Point(pts+2);
 
-                        patchWriter.writeQuadratic(p0, p1, p2, shaderXform);
+                        patchWriter.writeQuadratic(p0, p1, p2);
                         lastPoint = pts[2];
                         break;
                     }
@@ -120,7 +121,7 @@ int write_wedge_patches(WedgeWriter&& patchWriter,
                         auto [p0, p1] = m.map2Points(pts);
                         auto p2 = m.map1Point(pts+2);
 
-                        patchWriter.writeConic(p0, p1, p2, *w, shaderXform);
+                        patchWriter.writeConic(p0, p1, p2, *w);
                         lastPoint = pts[2];
                         break;
                     }
@@ -129,7 +130,7 @@ int write_wedge_patches(WedgeWriter&& patchWriter,
                         auto [p0, p1] = m.map2Points(pts);
                         auto [p2, p3] = m.map2Points(pts+2);
 
-                        patchWriter.writeCubic(p0, p1, p2, p3, shaderXform);
+                        patchWriter.writeCubic(p0, p1, p2, p3);
                         lastPoint = pts[3];
                         break;
                     }
@@ -145,8 +146,6 @@ int write_wedge_patches(WedgeWriter&& patchWriter,
             }
         }
     }
-
-    return patchWriter.requiredResolveLevel();
 }
 
 }  // namespace
@@ -163,7 +162,8 @@ void PathCurveTessellator::prepareWithTriangles(
     int patchPreallocCount = FixedCountCurves::PreallocCount(totalCombinedPathVerbCnt) +
                              (extraTriangles ? extraTriangles->count() : 0);
     if (patchPreallocCount) {
-        CurveWriter writer{fAttribs, target, &fVertexChunkArray, patchPreallocCount};
+        LinearTolerances worstCase;
+        CurveWriter writer{fAttribs, &worstCase, target, &fVertexChunkArray, patchPreallocCount};
 
         // Write out extra space-filling triangles to connect the curve patches with any external
         // source of geometry (e.g. inner triangulation that handles winding explicitly).
@@ -171,10 +171,10 @@ void PathCurveTessellator::prepareWithTriangles(
             SkDEBUGCODE(int breadcrumbCount = 0;)
             for (const auto* tri = extraTriangles->head(); tri; tri = tri->fNext) {
                 SkDEBUGCODE(++breadcrumbCount;)
-                auto p0 = float2::Load(tri->fPts);
-                auto p1 = float2::Load(tri->fPts + 1);
-                auto p2 = float2::Load(tri->fPts + 2);
-                if (skvx::any((p0 == p1) & (p1 == p2))) {
+                auto p0 = skvx::float2::Load(tri->fPts);
+                auto p1 = skvx::float2::Load(tri->fPts + 1);
+                auto p2 = skvx::float2::Load(tri->fPts + 2);
+                if (any((p0 == p1) & (p1 == p2))) {
                     // Cull completely horizontal or vertical triangles. GrTriangulator can't always
                     // get these breadcrumb edges right when they run parallel to the sweep
                     // direction because their winding is undefined by its current definition.
@@ -187,8 +187,8 @@ void PathCurveTessellator::prepareWithTriangles(
             SkASSERT(breadcrumbCount == extraTriangles->count());
         }
 
-        int resolveLevel = write_curve_patches(std::move(writer), shaderMatrix, pathDrawList);
-        this->updateResolveLevel(resolveLevel);
+        write_curve_patches(std::move(writer), shaderMatrix, pathDrawList);
+        fMaxVertexCount = FixedCountCurves::VertexCount(worstCase);
     }
 
     GrResourceProvider* rp = target->resourceProvider();
@@ -212,10 +212,11 @@ void PathCurveTessellator::draw(GrOpFlushState* flushState) const {
     if (!fFixedVertexBuffer || !fFixedIndexBuffer) {
         return;
     }
-    int fixedIndexCount = NumCurveTrianglesAtResolveLevel(fFixedResolveLevel) * 3;
     for (const GrVertexChunk& chunk : fVertexChunkArray) {
         flushState->bindBuffers(fFixedIndexBuffer, chunk.fBuffer, fFixedVertexBuffer);
-        flushState->drawIndexedInstanced(fixedIndexCount, 0, chunk.fCount, chunk.fBase, 0);
+        // The max vertex count is the logical number of vertices that the GPU needs to emit, so
+        // since we're using drawIndexedInstanced, it's provided as the "index count" parameter.
+        flushState->drawIndexedInstanced(fMaxVertexCount, 0, chunk.fCount, chunk.fBase, 0);
     }
 }
 
@@ -236,9 +237,10 @@ void PathWedgeTessellator::prepare(GrMeshDrawTarget* target,
                                    const PathDrawList& pathDrawList,
                                    int totalCombinedPathVerbCnt) {
     if (int patchPreallocCount = FixedCountWedges::PreallocCount(totalCombinedPathVerbCnt)) {
-        WedgeWriter writer{fAttribs, target, &fVertexChunkArray, patchPreallocCount};
-        int resolveLevel = write_wedge_patches(std::move(writer), shaderMatrix, pathDrawList);
-        this->updateResolveLevel(resolveLevel);
+        LinearTolerances worstCase;
+        WedgeWriter writer{fAttribs, &worstCase, target, &fVertexChunkArray, patchPreallocCount};
+        write_wedge_patches(std::move(writer), shaderMatrix, pathDrawList);
+        fMaxVertexCount = FixedCountWedges::VertexCount(worstCase);
     }
 
     GrResourceProvider* rp = target->resourceProvider();
@@ -262,11 +264,9 @@ void PathWedgeTessellator::draw(GrOpFlushState* flushState) const {
     if (!fFixedVertexBuffer || !fFixedIndexBuffer) {
         return;
     }
-    // Emit 3 vertices per curve triangle, plus 3 more for the fan triangle.
-    int fixedIndexCount = (NumCurveTrianglesAtResolveLevel(fFixedResolveLevel) + 1) * 3;
     for (const GrVertexChunk& chunk : fVertexChunkArray) {
         flushState->bindBuffers(fFixedIndexBuffer, chunk.fBuffer, fFixedVertexBuffer);
-        flushState->drawIndexedInstanced(fixedIndexCount, 0, chunk.fCount, chunk.fBase, 0);
+        flushState->drawIndexedInstanced(fMaxVertexCount, 0, chunk.fCount, chunk.fBase, 0);
     }
 }
 

@@ -934,21 +934,6 @@ generated_cc_atom(
 )
 
 generated_cc_atom(
-    name = "SkCustomMesh_hdr",
-    hdrs = ["SkCustomMesh.h"],
-    enforce_iwyu = True,
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":SkAlphaType_hdr",
-        ":SkRect_hdr",
-        ":SkRefCnt_hdr",
-        ":SkSpan_hdr",
-        ":SkString_hdr",
-        ":SkTypes_hdr",
-    ],
-)
-
-generated_cc_atom(
     name = "SkAlphaType_hdr",
     hdrs = ["SkAlphaType.h"],
     visibility = ["//:__subpackages__"],
@@ -969,5 +954,39 @@ generated_cc_atom(
         ":SkColor_hdr",
         ":SkSpan_hdr",
         ":SkTypes_hdr",
+    ],
+)
+
+generated_cc_atom(
+    name = "SkMesh_hdr",
+    hdrs = ["SkMesh.h"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":SkAlphaType_hdr",
+        ":SkRect_hdr",
+        ":SkRefCnt_hdr",
+        ":SkSpan_hdr",
+        ":SkString_hdr",
+        ":SkTypes_hdr",
+    ],
+)
+
+generated_cc_atom(
+    name = "SkCapabilities_hdr",
+    hdrs = ["SkCapabilities.h"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":SkRefCnt_hdr",
+        "//include/sksl:SkSLVersion_hdr",
+    ],
+)
+
+generated_cc_atom(
+    name = "SkCombinationBuilder_hdr",
+    hdrs = ["SkCombinationBuilder.h"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":SkBlendMode_hdr",
+        ":SkTileMode_hdr",
     ],
 )

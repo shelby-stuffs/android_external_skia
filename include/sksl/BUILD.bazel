@@ -95,16 +95,6 @@ generated_cc_atom(
 )
 
 generated_cc_atom(
-    name = "DSLRuntimeEffects_hdr",
-    hdrs = ["DSLRuntimeEffects.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/core:SkRefCnt_hdr",
-        "//include/effects:SkRuntimeEffect_hdr",
-    ],
-)
-
-generated_cc_atom(
     name = "DSLStatement_hdr",
     hdrs = ["DSLStatement.h"],
     visibility = ["//:__subpackages__"],
@@ -143,13 +133,8 @@ generated_cc_atom(
         ":DSLModifiers_hdr",
         ":DSLType_hdr",
         ":SkSLPosition_hdr",
+        "//include/private:SkSLStatement_hdr",
     ],
-)
-
-generated_cc_atom(
-    name = "DSLWrapper_hdr",
-    hdrs = ["DSLWrapper.h"],
-    visibility = ["//:__subpackages__"],
 )
 
 generated_cc_atom(
@@ -189,5 +174,11 @@ generated_cc_atom(
 generated_cc_atom(
     name = "SkSLOperator_hdr",
     hdrs = ["SkSLOperator.h"],
+    visibility = ["//:__subpackages__"],
+)
+
+generated_cc_atom(
+    name = "SkSLVersion_hdr",
+    hdrs = ["SkSLVersion.h"],
     visibility = ["//:__subpackages__"],
 )

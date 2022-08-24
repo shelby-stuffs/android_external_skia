@@ -156,7 +156,7 @@ cc_library(
         "//src/gpu/ganesh/ops:DefaultPathRenderer_src",
         "//src/gpu/ganesh/ops:DrawAtlasOp_src",
         "//src/gpu/ganesh/ops:DrawAtlasPathOp_src",
-        "//src/gpu/ganesh/ops:DrawCustomMeshOp_src",
+        "//src/gpu/ganesh/ops:DrawMeshOp_src",
         "//src/gpu/ganesh/ops:DrawableOp_src",
         "//src/gpu/ganesh/ops:FillRRectOp_src",
         "//src/gpu/ganesh/ops:FillRectOp_src",
@@ -188,12 +188,6 @@ cc_library(
         "//src/gpu/ganesh/tessellate:PathTessellator_src",
         "//src/gpu/ganesh/tessellate:StrokeTessellator_src",
         "//src/gpu/ganesh/text:GrAtlasManager_src",
-        "//src/gpu/ganesh/text:GrDistanceFieldAdjustTable_src",
-        "//src/gpu/ganesh/text:GrSDFMaskFilter_src",
-        "//src/gpu/ganesh/text:GrSDFTControl_src",
-        "//src/gpu/ganesh/text:GrSlug_src",
-        "//src/gpu/ganesh/text:GrTextBlobRedrawCoordinator_src",
-        "//src/gpu/ganesh/text:GrTextBlob_src",
     ],
 )
 
@@ -741,6 +735,7 @@ generated_cc_atom(
         ":GrSamplerState_hdr",
         ":GrShaderCaps_hdr",
         ":GrSurfaceProxy_hdr",
+        "//include/core:SkCapabilities_hdr",
         "//include/core:SkImageInfo_hdr",
         "//include/core:SkRefCnt_hdr",
         "//include/core:SkString_hdr",
@@ -878,7 +873,7 @@ generated_cc_atom(
         ":GrCaps_hdr",
         "//include/gpu:GrContextThreadSafeProxy_hdr",
         "//include/private/gpu/ganesh:GrContext_Base_hdr",
-        "//src/gpu/ganesh/text:GrTextBlobRedrawCoordinator_hdr",
+        "//src/text/gpu:TextBlobRedrawCoordinator_hdr",
     ],
 )
 
@@ -1065,6 +1060,7 @@ generated_cc_atom(
     deps = [
         "//include/gpu:GrTypes_hdr",
         "//include/private/gpu/ganesh:GrTypesPriv_hdr",
+        "//src/gpu:AtlasTypes_hdr",
     ],
 )
 
@@ -1106,9 +1102,9 @@ generated_cc_atom(
         "//src/gpu/ganesh/effects:GrSkSLFP_hdr",
         "//src/gpu/ganesh/effects:GrTextureEffect_hdr",
         "//src/gpu/ganesh/text:GrAtlasManager_hdr",
-        "//src/gpu/ganesh/text:GrTextBlobRedrawCoordinator_hdr",
         "//src/image:SkImage_Base_hdr",
         "//src/image:SkImage_Gpu_hdr",
+        "//src/text/gpu:TextBlobRedrawCoordinator_hdr",
     ],
 )
 
@@ -1193,7 +1189,6 @@ generated_cc_atom(
         ":GrSurfaceProxyView_hdr",
         "//include/gpu:GrBackendSurface_hdr",
         "//src/core:SkIPoint16_hdr",
-        "//src/core:SkTInternalLList_hdr",
         "//src/gpu:AtlasTypes_hdr",
         "//src/gpu:RectanizerSkyline_hdr",
     ],
@@ -1301,8 +1296,8 @@ generated_cc_atom(
         "//src/core:SkTInternalLList_hdr",
         "//src/gpu/ganesh/ops:OpsTask_hdr",
         "//src/gpu/ganesh/ops:SoftwarePathRenderer_hdr",
-        "//src/gpu/ganesh/text:GrSDFTControl_hdr",
         "//src/image:SkSurface_Gpu_hdr",
+        "//src/text/gpu:SDFTControl_hdr",
     ],
 )
 
@@ -2168,7 +2163,7 @@ generated_cc_atom(
         "//include/core:SkPaint_hdr",
         "//include/gpu:GrRecordingContext_hdr",
         "//src/gpu:RefCntedCallback_hdr",
-        "//src/gpu/ganesh/text:GrSDFTControl_hdr",
+        "//src/text/gpu:SDFTControl_hdr",
     ],
 )
 
@@ -2205,13 +2200,14 @@ generated_cc_atom(
         ":GrRecordingContextPriv_hdr",
         ":SkGr_hdr",
         ":SurfaceContext_hdr",
+        "//include/core:SkCapabilities_hdr",
         "//include/gpu:GrContextThreadSafeProxy_hdr",
         "//include/gpu:GrRecordingContext_hdr",
         "//src/core:SkArenaAlloc_hdr",
         "//src/gpu/ganesh/effects:GrSkSLFP_hdr",
         "//src/gpu/ganesh/ops:AtlasTextOp_hdr",
-        "//src/gpu/ganesh/text:GrTextBlobRedrawCoordinator_hdr",
-        "//src/gpu/ganesh/text:GrTextBlob_hdr",
+        "//src/text/gpu:TextBlobRedrawCoordinator_hdr",
+        "//src/text/gpu:TextBlob_hdr",
         "//src/utils:SkJSONWriter_hdr",
     ],
 )
@@ -3146,16 +3142,6 @@ generated_cc_atom(
     deps = [
         ":GrMeshDrawTarget_hdr",
         ":GrVertexChunkArray_hdr",
-    ],
-)
-
-generated_cc_atom(
-    name = "GrVx_hdr",
-    hdrs = ["GrVx.h"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/core:SkTypes_hdr",
-        "//include/private:SkVx_hdr",
     ],
 )
 

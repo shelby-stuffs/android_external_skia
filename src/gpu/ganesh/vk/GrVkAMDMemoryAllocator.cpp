@@ -36,6 +36,10 @@ sk_sp<GrVkMemoryAllocator> GrVkAMDMemoryAllocator::Make(VkInstance instance,
 #define GR_COPY_FUNCTION_KHR(NAME) functions.vk##NAME##KHR = interface->fFunctions.f##NAME
 
     VmaVulkanFunctions functions;
+    // We should be setting all the required functions (at least through vulkan 1.1), but this is
+    // just extra belt and suspenders to make sure there isn't unitialized values here.
+    memset(&functions, 0, sizeof(VmaVulkanFunctions));
+
     // We don't use dynamic function getting in the allocator so we set the getProc functions to
     // null.
     functions.vkGetInstanceProcAddr = nullptr;
@@ -109,7 +113,7 @@ GrVkAMDMemoryAllocator::~GrVkAMDMemoryAllocator() {
 
 VkResult GrVkAMDMemoryAllocator::allocateImageMemory(VkImage image, AllocationPropertyFlags flags,
                                                      GrVkBackendMemory* backendMemory) {
-    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
+    TRACE_EVENT0_ALWAYS("skia.gpu", TRACE_FUNC);
     VmaAllocationCreateInfo info;
     info.flags = 0;
     info.usage = VMA_MEMORY_USAGE_UNKNOWN;

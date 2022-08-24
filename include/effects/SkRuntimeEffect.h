@@ -103,14 +103,16 @@ public:
 
     class Options {
     public:
-        // For testing purposes, completely disable the inliner. (Normally, Runtime Effects don't
-        // run the inliner directly, but they still get an inlining pass once they are painted.)
-        bool forceNoInline = false;
+        // For testing purposes, disables optimization and inlining. (Normally, Runtime Effects
+        // don't run the inliner directly, but they still get an inlining pass once they are
+        // painted.)
+        bool forceUnoptimized = false;
 
     private:
         friend class SkRuntimeEffect;
         friend class SkRuntimeEffectPriv;
 
+        // TODO(skia:11209) - Replace this with a promised SkCapabilities?
         // This flag lifts the ES2 restrictions on Runtime Effects that are gated by the
         // `strictES2Mode` check. Be aware that the software renderer and pipeline-stage effect are
         // still largely ES3-unaware and can still fail or crash if post-ES2 features are used.
@@ -162,19 +164,6 @@ public:
     static Result MakeForBlender(SkString sksl) {
         return MakeForBlender(std::move(sksl), Options{});
     }
-
-    // DSL entry points
-    static Result MakeForColorFilter(std::unique_ptr<SkSL::Program> program, const Options&);
-    static Result MakeForColorFilter(std::unique_ptr<SkSL::Program> program);
-
-    static Result MakeForShader(std::unique_ptr<SkSL::Program> program, const Options&);
-    static Result MakeForShader(std::unique_ptr<SkSL::Program> program);
-    static sk_sp<SkRuntimeEffect> MakeForShader(std::unique_ptr<SkSL::Program> program,
-                                                const Options&, SkSL::ErrorReporter* errors);
-
-
-    static Result MakeForBlender(std::unique_ptr<SkSL::Program> program, const Options&);
-    static Result MakeForBlender(std::unique_ptr<SkSL::Program> program);
 
     // Object that allows passing a SkShader, SkColorFilter or SkBlender as a child
     class ChildPtr {
@@ -282,20 +271,11 @@ private:
 
     static Result MakeFromSource(SkString sksl, const Options& options, SkSL::ProgramKind kind);
 
-    static Result MakeFromDSL(std::unique_ptr<SkSL::Program> program,
-                              const Options& options,
-                              SkSL::ProgramKind kind);
-
-    static sk_sp<SkRuntimeEffect> MakeFromDSL(std::unique_ptr<SkSL::Program> program,
-                                              const Options& options,
-                                              SkSL::ProgramKind kind,
-                                              SkSL::ErrorReporter* errors);
-
     static Result MakeInternal(std::unique_ptr<SkSL::Program> program,
                                const Options& options,
                                SkSL::ProgramKind kind);
 
-    static SkSL::ProgramSettings MakeSettings(const Options& options, bool optimize);
+    static SkSL::ProgramSettings MakeSettings(const Options& options);
 
     uint32_t hash() const { return fHash; }
     bool usesSampleCoords()   const { return (fFlags & kUsesSampleCoords_Flag);   }

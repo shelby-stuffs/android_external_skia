@@ -5,13 +5,15 @@
  * found in the LICENSE file.
  */
 
-#ifndef tessellate_FixedCountBufferUtils_DEFINED
-#define tessellate_FixedCountBufferUtils_DEFINED
+#ifndef skgpu_tessellate_FixedCountBufferUtils_DEFINED
+#define skgpu_tessellate_FixedCountBufferUtils_DEFINED
 
+#include "src/gpu/tessellate/LinearTolerances.h"
 #include "src/gpu/tessellate/Tessellation.h"
-namespace skgpu {
 
-struct VertexWriter;
+namespace skgpu { struct VertexWriter; }
+
+namespace skgpu::tess {
 
 /**
  * Fixed-count tessellation operates in three modes, two for filling paths, and one for stroking.
@@ -41,6 +43,15 @@ public:
         return totalCombinedPathVerbCnt + (totalCombinedPathVerbCnt + 3) / 2;
     }
 
+    // Convert the accumulated worst-case tolerances into an index count passed into an instanced,
+    // indexed draw function that uses FixedCountCurves static vertex and index buffers.
+    static int VertexCount(const LinearTolerances& tolerances) {
+        // We should already chopped curves to make sure none needed a higher resolveLevel than
+        // kMaxResolveLevel.
+        int resolveLevel = std::min(tolerances.requiredResolveLevel(), kMaxResolveLevel);
+        return NumCurveTrianglesAtResolveLevel(resolveLevel) * 3;
+    }
+
     // Return the number of bytes to allocate for a buffer filled via WriteVertexBuffer, assuming
     // the shader and curve instances do require more than kMaxParametricSegments segments.
     static constexpr size_t VertexBufferSize() {
@@ -49,7 +60,7 @@ public:
 
     // As above but for the corresponding index buffer, written via WriteIndexBuffer.
     static constexpr size_t IndexBufferSize() {
-        return NumCurveTrianglesAtResolveLevel(kMaxFixedResolveLevel) * 3 * sizeof(uint16_t);
+        return NumCurveTrianglesAtResolveLevel(kMaxResolveLevel) * 3 * sizeof(uint16_t);
     }
 
     static void WriteVertexBuffer(VertexWriter, size_t bufferSize);
@@ -68,12 +79,18 @@ public:
         return (totalCombinedPathVerbCnt * 5 + 3) / 4;
     }
 
+    static int VertexCount(const LinearTolerances& tolerances) {
+        // Emit 3 vertices per curve triangle, plus 3 more for the wedge fan triangle.
+        int resolveLevel = std::min(tolerances.requiredResolveLevel(), kMaxResolveLevel);
+        return (NumCurveTrianglesAtResolveLevel(resolveLevel) + 1) * 3;
+    }
+
     static constexpr size_t VertexBufferSize() {
         return ((kMaxParametricSegments + 1) + 1/*fan vertex*/) * (2 * sizeof(float));
     }
 
     static constexpr size_t IndexBufferSize() {
-        return (NumCurveTrianglesAtResolveLevel(kMaxFixedResolveLevel) + 1/*fan triangle*/) *
+        return (NumCurveTrianglesAtResolveLevel(kMaxResolveLevel) + 1/*fan triangle*/) *
                3 * sizeof(uint16_t);
     }
 
@@ -106,6 +123,11 @@ public:
         return (totalCombinedPathVerbCnt * 2) + 8/* caps */;
     }
 
+    // Does not account for falling back to kMaxEdgesNoVertexIDs
+    static int VertexCount(const LinearTolerances& tolerances) {
+        return std::min(tolerances.requiredStrokeEdges(), kMaxEdges) * 2;
+    }
+
     static constexpr size_t VertexBufferSize() {
         // Each vertex is a single float (explicit id) and each edge is composed of two vertices.
         return 2 * kMaxEdgesNoVertexIDs * sizeof(float);
@@ -115,6 +137,6 @@ public:
     static void WriteVertexBuffer(VertexWriter, size_t bufferSize);
 };
 
-}  // namespace skgpu
+}  // namespace skgpu::tess
 
-#endif // tessellate_FixedCountBufferUtils
+#endif // skgpu_tessellate_FixedCountBufferUtils

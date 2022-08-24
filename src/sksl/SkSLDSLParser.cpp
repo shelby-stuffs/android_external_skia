@@ -11,14 +11,15 @@
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLString.h"
+#include "include/private/SkTHash.h"
 #include "include/sksl/DSL.h"
 #include "include/sksl/DSLBlock.h"
 #include "include/sksl/DSLCase.h"
 #include "include/sksl/DSLFunction.h"
 #include "include/sksl/DSLSymbols.h"
 #include "include/sksl/DSLVar.h"
-#include "include/sksl/DSLWrapper.h"
 #include "include/sksl/SkSLOperator.h"
+#include "include/sksl/SkSLVersion.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLParsedModule.h"
@@ -29,6 +30,7 @@
 #include "src/sksl/ir/SkSLProgram.h"
 
 #include <algorithm>
+#include <initializer_list>
 #include <memory>
 #include <type_traits>
 #include <unordered_map>
@@ -99,25 +101,6 @@ public:
     }
 };
 
-SkTHashMap<std::string_view, DSLParser::LayoutToken>* DSLParser::sLayoutTokens;
-
-void DSLParser::InitLayoutMap() {
-    sLayoutTokens = new SkTHashMap<std::string_view, LayoutToken>;
-    #define TOKEN(name, text) sLayoutTokens->set(text, LayoutToken::name)
-    TOKEN(LOCATION,                     "location");
-    TOKEN(OFFSET,                       "offset");
-    TOKEN(BINDING,                      "binding");
-    TOKEN(INDEX,                        "index");
-    TOKEN(SET,                          "set");
-    TOKEN(BUILTIN,                      "builtin");
-    TOKEN(INPUT_ATTACHMENT_INDEX,       "input_attachment_index");
-    TOKEN(ORIGIN_UPPER_LEFT,            "origin_upper_left");
-    TOKEN(BLEND_SUPPORT_ALL_EQUATIONS,  "blend_support_all_equations");
-    TOKEN(PUSH_CONSTANT,                "push_constant");
-    TOKEN(COLOR,                        "color");
-    #undef TOKEN
-}
-
 DSLParser::DSLParser(Compiler* compiler, const ProgramSettings& settings, ProgramKind kind,
                      std::string text)
     : fCompiler(*compiler)
@@ -125,14 +108,7 @@ DSLParser::DSLParser(Compiler* compiler, const ProgramSettings& settings, Progra
     , fKind(kind)
     , fText(std::make_unique<std::string>(std::move(text)))
     , fPushback(Token::Kind::TK_NONE, /*offset=*/-1, /*length=*/-1) {
-    // We don't want to have to worry about manually releasing all of the objects in the event that
-    // an error occurs
-    fSettings.fAssertDSLObjectsReleased = false;
-    // We manage our symbol tables manually, so no need for name mangling
-    fSettings.fDSLMangling = false;
     fLexer.start(*fText);
-    static const bool layoutMapInitialized = []{ InitLayoutMap(); return true; }();
-    (void) layoutMapInitialized;
 }
 
 Token DSLParser::nextRawToken() {
@@ -314,6 +290,10 @@ SkSL::LoadedModule DSLParser::moduleInheritingFrom(SkSL::ParsedModule baseModule
 
 void DSLParser::declarations() {
     fEncounteredFatalError = false;
+    // Any #version directive must appear as the first thing in a file
+    if (this->peek().fKind == Token::Kind::TK_DIRECTIVE) {
+        this->directive(/*allowVersion=*/true);
+    }
     bool done = false;
     while (!done) {
         switch (this->peek().fKind) {
@@ -321,14 +301,13 @@ void DSLParser::declarations() {
                 done = true;
                 break;
             case Token::Kind::TK_DIRECTIVE:
-                this->directive();
+                this->directive(/*allowVersion=*/false);
                 break;
-            case Token::Kind::TK_INVALID: {
+            case Token::Kind::TK_INVALID:
                 this->error(this->peek(), "invalid token");
                 this->nextToken();
                 done = true;
                 break;
-            }
             default:
                 this->declaration();
                 done = fEncounteredFatalError;
@@ -338,7 +317,7 @@ void DSLParser::declarations() {
 }
 
 /* DIRECTIVE(#extension) IDENTIFIER COLON IDENTIFIER */
-void DSLParser::directive() {
+void DSLParser::directive(bool allowVersion) {
     Token start;
     if (!this->expect(Token::Kind::TK_DIRECTIVE, "a directive", &start)) {
         return;
@@ -366,6 +345,26 @@ void DSLParser::directive() {
         }
         // We don't currently do anything different between require, enable, and warn
         dsl::AddExtension(this->text(name));
+    } else if (text == "#version") {
+        if (!allowVersion) {
+            this->error(start, "#version directive must appear before anything else");
+            return;
+        }
+        SKSL_INT version;
+        if (!this->intLiteral(&version)) {
+            return;
+        }
+        switch (version) {
+            case 100:
+                ThreadContext::GetProgramConfig()->fRequiredSkSLVersion = Version::k100;
+                break;
+            case 300:
+                ThreadContext::GetProgramConfig()->fRequiredSkSLVersion = Version::k300;
+                break;
+            default:
+                this->error(start, "unsupported version number");
+                return;
+        }
     } else {
         this->error(start, "unsupported directive '" + std::string(this->text(start)) + "'");
     }
@@ -416,7 +415,8 @@ bool DSLParser::functionDeclarationEnd(Position start,
                                        const DSLModifiers& modifiers,
                                        DSLType type,
                                        const Token& name) {
-    SkTArray<DSLWrapper<DSLParameter>> parameters;
+    // TODO(skia:13339): use SkSTArray<8, DSLParameter> once SkTArray is go/cfi compatible
+    std::vector<DSLParameter> parameters;
     Token lookahead = this->peek();
     if (lookahead.fKind == Token::Kind::TK_RPAREN) {
         // `()` means no parameters at all.
@@ -424,9 +424,10 @@ bool DSLParser::functionDeclarationEnd(Position start,
         // `(void)` also means no parameters at all.
         this->nextToken();
     } else {
+        parameters.reserve(8);
         for (;;) {
             size_t paramIndex = parameters.size();
-            std::optional<DSLWrapper<DSLParameter>> parameter = this->parameter(paramIndex);
+            std::optional<DSLParameter> parameter = this->parameter(paramIndex);
             if (!parameter) {
                 return false;
             }
@@ -439,12 +440,13 @@ bool DSLParser::functionDeclarationEnd(Position start,
     if (!this->expect(Token::Kind::TK_RPAREN, "')'")) {
         return false;
     }
-    SkTArray<DSLParameter*> parameterPointers;
-    for (DSLWrapper<DSLParameter>& param : parameters) {
-        parameterPointers.push_back(&param.get());
+    SkSTArray<8, DSLParameter*> parameterPointers;
+    parameterPointers.reserve_back(parameters.size());
+    for (DSLParameter& param : parameters) {
+        parameterPointers.push_back(&param);
     }
     DSLFunction result(modifiers, type, this->text(name), parameterPointers,
-            this->rangeFrom(start));
+                       this->rangeFrom(start));
     if (!this->checkNext(Token::Kind::TK_SEMICOLON)) {
         AutoDSLSymbolTable symbols;
         for (DSLParameter* var : parameterPointers) {
@@ -740,7 +742,7 @@ SkTArray<dsl::DSLGlobalVar> DSLParser::structVarDeclaration(Position start,
 }
 
 /* modifiers type IDENTIFIER (LBRACKET INT_LITERAL RBRACKET)? */
-std::optional<DSLWrapper<DSLParameter>> DSLParser::parameter(size_t paramIndex) {
+std::optional<DSLParameter> DSLParser::parameter(size_t paramIndex) {
     Position pos = this->position(this->peek());
     DSLModifiers modifiers = this->modifiers();
     std::optional<DSLType> type = this->type(&modifiers);
@@ -761,7 +763,7 @@ std::optional<DSLWrapper<DSLParameter>> DSLParser::parameter(size_t paramIndex) 
     if (!this->parseArrayDimensions(pos, &type.value())) {
         return std::nullopt;
     }
-    return {{DSLParameter(modifiers, *type, paramText, this->rangeFrom(pos), paramPos)}};
+    return DSLParameter(modifiers, *type, paramText, this->rangeFrom(pos), paramPos);
 }
 
 /** EQ INT_LITERAL */
@@ -796,6 +798,35 @@ std::string_view DSLParser::layoutIdentifier() {
 
 /* LAYOUT LPAREN IDENTIFIER (EQ INT_LITERAL)? (COMMA IDENTIFIER (EQ INT_LITERAL)?)* RPAREN */
 DSLLayout DSLParser::layout() {
+    enum class LayoutToken {
+        LOCATION,
+        OFFSET,
+        BINDING,
+        INDEX,
+        SET,
+        BUILTIN,
+        INPUT_ATTACHMENT_INDEX,
+        ORIGIN_UPPER_LEFT,
+        BLEND_SUPPORT_ALL_EQUATIONS,
+        PUSH_CONSTANT,
+        COLOR,
+    };
+
+    using LayoutMap = SkTHashMap<std::string_view, LayoutToken>;
+    static LayoutMap* sLayoutTokens = new LayoutMap{
+            {"location",                    LayoutToken::LOCATION},
+            {"offset",                      LayoutToken::OFFSET},
+            {"binding",                     LayoutToken::BINDING},
+            {"index",                       LayoutToken::INDEX},
+            {"set",                         LayoutToken::SET},
+            {"builtin",                     LayoutToken::BUILTIN},
+            {"input_attachment_index",      LayoutToken::INPUT_ATTACHMENT_INDEX},
+            {"origin_upper_left",           LayoutToken::ORIGIN_UPPER_LEFT},
+            {"blend_support_all_equations", LayoutToken::BLEND_SUPPORT_ALL_EQUATIONS},
+            {"push_constant",               LayoutToken::PUSH_CONSTANT},
+            {"color",                       LayoutToken::COLOR},
+    };
+
     DSLLayout result;
     if (this->checkNext(Token::Kind::TK_LAYOUT)) {
         if (!this->expect(Token::Kind::TK_LPAREN, "'('")) {

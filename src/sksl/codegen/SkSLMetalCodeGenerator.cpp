@@ -1416,17 +1416,16 @@ void MetalCodeGenerator::writeFieldAccess(const FieldAccess& f) {
         case SK_POSITION_BUILTIN:
             this->write("_out.sk_Position");
             break;
+        case SK_POINTSIZE_BUILTIN:
+            this->write("_out.sk_PointSize");
+            break;
         default:
-            if (field->fName == "sk_PointSize") {
-                this->write("_out.sk_PointSize");
-            } else {
-                if (FieldAccess::OwnerKind::kAnonymousInterfaceBlock == f.ownerKind()) {
-                    this->write("_globals.");
-                    this->write(fInterfaceBlockNameMap[fInterfaceBlockMap[field]]);
-                    this->write("->");
-                }
-                this->writeName(field->fName);
+            if (FieldAccess::OwnerKind::kAnonymousInterfaceBlock == f.ownerKind()) {
+                this->write("_globals.");
+                this->write(fInterfaceBlockNameMap[fInterfaceBlockMap[field]]);
+                this->write("->");
             }
+            this->writeName(field->fName);
     }
 }
 
@@ -2270,10 +2269,12 @@ void MetalCodeGenerator::writeDoStatement(const DoStatement& d) {
 }
 
 void MetalCodeGenerator::writeExpressionStatement(const ExpressionStatement& s) {
-    if (s.expression()->hasSideEffects()) {
-        this->writeExpression(*s.expression(), Precedence::kTopLevel);
-        this->write(";");
+    if (fProgram.fConfig->fSettings.fOptimize && !s.expression()->hasSideEffects()) {
+        // Don't emit dead expressions.
+        return;
     }
+    this->writeExpression(*s.expression(), Precedence::kTopLevel);
+    this->write(";");
 }
 
 void MetalCodeGenerator::writeSwitchStatement(const SwitchStatement& s) {

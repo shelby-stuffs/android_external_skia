@@ -234,7 +234,7 @@ GrDrawOpAtlas::ErrorCode GrAtlasManager::addToAtlas(GrResourceProvider* resource
 
 void GrAtlasManager::addGlyphToBulkAndSetUseToken(skgpu::BulkUsePlotUpdater* updater,
                                                   MaskFormat format, Glyph* glyph,
-                                                  GrDeferredUploadToken token) {
+                                                  skgpu::DrawToken token) {
     SkASSERT(glyph);
     if (updater->add(glyph->fAtlasLocator)) {
         this->getAtlas(format)->setLastUseToken(glyph->fAtlasLocator, token);
@@ -351,7 +351,10 @@ bool GrAtlasManager::initAtlas(MaskFormat format) {
                                               GrColorTypeBytesPerPixel(grColorType),
                                               atlasDimensions.width(), atlasDimensions.height(),
                                               plotDimensions.width(), plotDimensions.height(),
-                                              this, fAllowMultitexturing, nullptr);
+                                              this,
+                                              fAllowMultitexturing,
+                                              nullptr,
+                                              /*label=*/"TextAtlas");
         if (!fAtlases[index]) {
             return false;
         }

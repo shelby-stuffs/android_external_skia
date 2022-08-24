@@ -26,7 +26,6 @@
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkClipStack.h"
 #include "src/core/SkColorFilterBase.h"
-#include "src/core/SkCustomMeshPriv.h"
 #include "src/core/SkDraw.h"
 #include "src/core/SkGlyphRun.h"
 #include "src/core/SkImageFilterCache.h"
@@ -35,6 +34,7 @@
 #include "src/core/SkMSAN.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkMatrixUtils.h"
+#include "src/core/SkMeshPriv.h"
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkSpecialImage.h"
@@ -53,7 +53,6 @@
 
 #if SK_SUPPORT_GPU
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/chromium/GrSlug.h"
 #include "src/gpu/ganesh/BaseDevice.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/utils/SkTestCanvas.h"
@@ -67,12 +66,18 @@
 #include "src/gpu/graphite/Device.h"
 #endif
 
+#if (SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED))
+#include "include/private/chromium/Slug.h"
+#endif
+
 #define RETURN_ON_NULL(ptr)     do { if (nullptr == (ptr)) return; } while (0)
 #define RETURN_ON_FALSE(pred)   do { if (!(pred)) return; } while (0)
 
 // This is a test: static_assert with no message is a c++17 feature,
 // and std::max() is constexpr only since the c++14 stdlib.
 static_assert(std::max(3,4) == 4);
+
+using Slug = sktext::gpu::Slug;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1818,15 +1823,13 @@ void SkCanvas::drawVertices(const SkVertices* vertices, SkBlendMode mode, const 
 }
 
 #ifdef SK_ENABLE_SKSL
-void SkCanvas::drawCustomMesh(const SkCustomMesh& cm,
-                              sk_sp<SkBlender> blender,
-                              const SkPaint& paint) {
+void SkCanvas::drawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPaint& paint) {
     TRACE_EVENT0("skia", TRACE_FUNC);
-    RETURN_ON_FALSE(cm.isValid());
+    RETURN_ON_FALSE(mesh.isValid());
     if (!blender) {
         blender = SkBlender::Mode(SkBlendMode::kModulate);
     }
-    this->onDrawCustomMesh(std::move(cm), std::move(blender), paint);
+    this->onDrawMesh(mesh, std::move(blender), paint);
 }
 #endif
 
@@ -2339,15 +2342,15 @@ void SkCanvas::onDrawGlyphRunList(const SkGlyphRunList& glyphRunList, const SkPa
     }
 }
 
-#if SK_SUPPORT_GPU
-sk_sp<GrSlug> SkCanvas::convertBlobToSlug(
+#if (SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED))
+sk_sp<Slug> SkCanvas::convertBlobToSlug(
         const SkTextBlob& blob, SkPoint origin, const SkPaint& paint) {
     TRACE_EVENT0("skia", TRACE_FUNC);
     auto glyphRunList = fScratchGlyphRunBuilder->blobToGlyphRunList(blob, origin);
     return this->onConvertGlyphRunListToSlug(glyphRunList, paint);
 }
 
-sk_sp<GrSlug>
+sk_sp<Slug>
 SkCanvas::onConvertGlyphRunListToSlug(const SkGlyphRunList& glyphRunList, const SkPaint& paint) {
     SkRect bounds = glyphRunList.sourceBounds();
     if (bounds.isEmpty() || !bounds.isFinite() || paint.nothingToDraw()) {
@@ -2360,14 +2363,14 @@ SkCanvas::onConvertGlyphRunListToSlug(const SkGlyphRunList& glyphRunList, const 
     return nullptr;
 }
 
-void SkCanvas::drawSlug(const GrSlug* slug) {
+void SkCanvas::drawSlug(const Slug* slug) {
     TRACE_EVENT0("skia", TRACE_FUNC);
     if (slug) {
         this->onDrawSlug(slug);
     }
 }
 
-void SkCanvas::onDrawSlug(const GrSlug* slug) {
+void SkCanvas::onDrawSlug(const Slug* slug) {
     SkRect bounds = slug->sourceBounds();
     if (this->internalQuickReject(bounds, slug->initialPaint())) {
         return;
@@ -2408,11 +2411,8 @@ void SkCanvas::drawGlyphs(int count, const SkGlyphID* glyphs, const SkPoint* pos
             SkMakeSpan(clusters, count),
             SkSpan<SkVector>()
     };
-    SkGlyphRunList glyphRunList {
-            glyphRun,
-            glyphRun.sourceBounds(paint).makeOffset(origin),
-            origin
-    };
+    SkGlyphRunList glyphRunList = fScratchGlyphRunBuilder->makeGlyphRunList(
+            glyphRun, glyphRun.sourceBounds(paint).makeOffset(origin), origin);
     this->onDrawGlyphRunList(glyphRunList, paint);
 }
 
@@ -2428,11 +2428,8 @@ void SkCanvas::drawGlyphs(int count, const SkGlyphID glyphs[], const SkPoint pos
         SkSpan<const uint32_t>(),
         SkSpan<SkVector>()
     };
-    SkGlyphRunList glyphRunList {
-        glyphRun,
-        glyphRun.sourceBounds(paint).makeOffset(origin),
-        origin
-    };
+    SkGlyphRunList glyphRunList = fScratchGlyphRunBuilder->makeGlyphRunList(
+            glyphRun, glyphRun.sourceBounds(paint).makeOffset(origin), origin);
     this->onDrawGlyphRunList(glyphRunList, paint);
 }
 
@@ -2451,11 +2448,8 @@ void SkCanvas::drawGlyphs(int count, const SkGlyphID glyphs[], const SkRSXform x
             SkSpan<const uint32_t>(),
             rotateScales
     };
-    SkGlyphRunList glyphRunList {
-            glyphRun,
-            glyphRun.sourceBounds(paint).makeOffset(origin),
-            origin
-    };
+    SkGlyphRunList glyphRunList = fScratchGlyphRunBuilder->makeGlyphRunList(
+            glyphRun, glyphRun.sourceBounds(paint).makeOffset(origin), origin);
     this->onDrawGlyphRunList(glyphRunList, paint);
 }
 
@@ -2494,7 +2488,7 @@ void SkCanvas::drawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
     }
 #if SK_SUPPORT_GPU && GR_TEST_UTILS
     else {
-        auto slug = GrSlug::ConvertBlob(this, *blob, {x, y}, paint);
+        auto slug = Slug::ConvertBlob(this, *blob, {x, y}, paint);
         slug->draw(this);
     }
 #endif
@@ -2516,18 +2510,16 @@ void SkCanvas::onDrawVerticesObject(const SkVertices* vertices, SkBlendMode bmod
 }
 
 #ifdef SK_ENABLE_SKSL
-void SkCanvas::onDrawCustomMesh(const SkCustomMesh& cm,
-                                sk_sp<SkBlender> blender,
-                                const SkPaint& paint) {
+void SkCanvas::onDrawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPaint& paint) {
     SkPaint simplePaint = clean_paint_for_drawVertices(paint);
 
-    if (this->internalQuickReject(cm.bounds(), simplePaint)) {
+    if (this->internalQuickReject(mesh.bounds(), simplePaint)) {
         return;
     }
 
     auto layer = this->aboutToDraw(this, simplePaint, nullptr);
     if (layer) {
-        this->topDevice()->drawCustomMesh(std::move(cm), std::move(blender), paint);
+        this->topDevice()->drawMesh(mesh, std::move(blender), paint);
     }
 }
 #endif

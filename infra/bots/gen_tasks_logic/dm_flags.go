@@ -210,6 +210,11 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			skip("pdf", "gm", ALL, "longpathdash")
 		}
 
+		if b.extraConfig("OldestSupportedSkpVersion") {
+			// For triaging convenience, make the old-skp job's output match the size of the DDL jobs' output
+			args = append(args, "--skpViewportSize", "2048")
+		}
+
 	} else if b.gpu() {
 		args = append(args, "--nocpu")
 
@@ -285,6 +290,11 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			// tint:1045: Tint doesn't implement MatrixInverse yet.
 			skip(ALL, "gm", ALL, "runtime_intrinsics_matrix")
 			configs = []string{"dawn"}
+		}
+
+		// The FailFlushTimeCallbacks bots only run the 'gl' config
+		if b.extraConfig("FailFlushTimeCallbacks") {
+			configs = []string{"gl"}
 		}
 
 		// Graphite bot *only* runs the grmtl config
@@ -396,13 +406,6 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 					// skbug.com/13289
 					skip(ALL, "test", ALL, "TransferPixelsToTextureTest")
 				}
-
-				if b.model("MacBookAir7.2") {
-					// This issue may be more widespread?
-					// skbug.com/13290
-					skip(ALL, "test", ALL, "SkSLMatricesNonsquare_GPU")
-					skip(ALL, "test", ALL, "SkSLMatrixScalarMath_GPU")
-				}
 			}
 		}
 
@@ -464,7 +467,8 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 
 		// Test 1010102 on our Linux/NVIDIA bots and the persistent cache config
 		// on the GL bots.
-		if b.gpu("QuadroP400") && !b.extraConfig("PreAbandonGpuContext") && !b.extraConfig("TSAN") && b.isLinux() {
+		if b.gpu("QuadroP400") && !b.extraConfig("PreAbandonGpuContext") && !b.extraConfig("TSAN") && b.isLinux() &&
+			!b.extraConfig("FailFlushTimeCallbacks") {
 			if b.extraConfig("Vulkan") {
 				configs = append(configs, "vk1010102")
 				// Decoding transparent images to 1010102 just looks bad
@@ -573,10 +577,6 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			args = append(args, "--pr", "atlas", "tess")
 		}
 
-		if b.extraConfig("OldestSupportedSkpVersion") {
-			// For triaging convenience, make the old-skp job's output match the size of the DDL jobs' output
-			args = append(args, "--skpViewportSize", "2048")
-		}
 		// DDL is a GPU-only feature
 		if b.extraConfig("DDL1") {
 			// This bot generates comparison images for the large skps and the gms
@@ -643,6 +643,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 	if b.matchExtraConfig("Graphite") {
 		// The Graphite bots run the skps, gms and tests
 		removeFromArgs("image")
+		removeFromArgs("lottie")
 		removeFromArgs("colorImage")
 		removeFromArgs("svg")
 	} else if b.matchExtraConfig("DDL", "PDF") {
@@ -659,6 +660,12 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		removeFromArgs("colorImage")
 		removeFromArgs("lottie")
 		removeFromArgs("svg")
+	} else if b.matchExtraConfig("FailFlushTimeCallbacks") {
+		// The FailFlushTimeCallbacks bot only runs skps, gms and svgs
+		removeFromArgs("tests")
+		removeFromArgs("image")
+		removeFromArgs("lottie")
+		removeFromArgs("colorImage")
 	} else {
 		// No other bots render the .skps.
 		removeFromArgs("skp")
@@ -985,6 +992,10 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		skip(ALL, "tests", ALL, "SkSLUnaryPositiveNegative_GPU")
 	}
 
+	if b.model("Pixel3") || b.model("Pixel2XL") {
+		skip(ALL, "tests", ALL, "SkSLEmptyBlocksES3_GPU") // skia:13309
+	}
+
 	if b.matchGpu("Adreno[3456]") { // disable broken tests on Adreno 3/4/5/6xx
 		skip(ALL, "tests", ALL, "SkSLArrayCast_GPU")       // skia:12332
 		skip(ALL, "tests", ALL, "SkSLArrayComparison_GPU") // skia:12332
@@ -1068,6 +1079,10 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			// vector constructors when compiling GLSL.
 			skip(ALL, "tests", ALL, "SkSLPreserveSideEffects_GPU") // skia:13035
 		}
+	}
+
+	if b.gpu("RTX3060") && b.extraConfig("Vulkan") {
+		skip(ALL, "gm", ALL, "blurcircles2") // skia:13342
 	}
 
 	if b.gpu("Tegra3") && !b.extraConfig("Vulkan") {
@@ -1307,6 +1322,10 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 	}
 	if b.extraConfig("ReleaseAndAbandonGpuContext") {
 		args = append(args, "--releaseAndAbandonGpuContext")
+	}
+
+	if b.extraConfig("FailFlushTimeCallbacks") {
+		args = append(args, "--failFlushTimeCallbacks")
 	}
 
 	// Finalize the DM flags and properties.
