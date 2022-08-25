@@ -20,6 +20,7 @@
 #include "include/private/SkColorData.h"
 
 enum class SkBackend : uint8_t;
+enum class SkShaderType : uint32_t;
 class SkPaintParamsKeyBuilder;
 class SkPipelineDataGatherer;
 class SkUniquePaintParamsID;
@@ -46,12 +47,11 @@ namespace SolidColorShaderBlock {
 
 } // namespace SolidColorShaderBlock
 
-// TODO: move this functionality to the SkLinearGradient, SkRadialGradient, etc classes
 namespace GradientShaderBlocks {
 
     struct GradientData {
-        // TODO: For the sprint we only support 4 stops in the gradients
-        static constexpr int kMaxStops = 4;
+        // TODO: For the sprint we only support 8 stops in the gradients
+        static constexpr int kMaxStops = 8;
 
         // This ctor is used during pre-compilation when we don't have enough information to
         // extract uniform data. However, we must be able to provide enough data to make all the
@@ -66,6 +66,7 @@ namespace GradientShaderBlocks {
                      SkM44 localMatrix,
                      SkPoint point0, SkPoint point1,
                      float radius0, float radius1,
+                     float bias, float scale,
                      SkTileMode,
                      int numStops,
                      SkColor4f* colors,
@@ -78,6 +79,8 @@ namespace GradientShaderBlocks {
                    fPoints[1] == rhs.fPoints[1] &&
                    fRadii[0] == rhs.fRadii[0] &&
                    fRadii[1] == rhs.fRadii[1] &&
+                   fBias == rhs.fBias &&
+                   fScale == rhs.fScale &&
                    fTM == rhs.fTM &&
                    fNumStops == rhs.fNumStops &&
                    !memcmp(fColor4fs, rhs.fColor4fs, sizeof(fColor4fs)) &&
@@ -85,10 +88,16 @@ namespace GradientShaderBlocks {
         }
         bool operator!=(const GradientData& rhs) const { return !(*this == rhs); }
 
+        // Layout options.
         SkShader::GradientType fType;
         SkM44                  fLocalMatrix;
         SkPoint                fPoints[2];
         float                  fRadii[2];
+
+        // Layout options for sweep gradient.
+        float                  fBias;
+        float                  fScale;
+
         SkTileMode             fTM;
         int                    fNumStops;
         SkColor4f              fColor4fs[kMaxStops];
@@ -175,13 +184,11 @@ namespace BlendModeBlock {
 
 } // namespace BlendModeBlock
 
-#ifdef SK_GRAPHITE_ENABLED
 // Bridge between the combinations system and the SkPaintParamsKey
 SkUniquePaintParamsID CreateKey(const SkKeyContext&,
                                 SkPaintParamsKeyBuilder*,
-                                skgpu::graphite::ShaderCombo::ShaderType,
+                                SkShaderType,
                                 SkTileMode,
                                 SkBlendMode);
-#endif
 
 #endif // SkKeyHelpers_DEFINED

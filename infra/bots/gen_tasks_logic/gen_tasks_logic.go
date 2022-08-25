@@ -670,7 +670,7 @@ func (b *jobBuilder) deriveCompileTaskName() string {
 		if val := b.parts["extra_config"]; val != "" {
 			ec = strings.Split(val, "_")
 			ignore := []string{
-				"Skpbench", "AbandonGpuContext", "PreAbandonGpuContext", "Valgrind",
+				"Skpbench", "AbandonGpuContext", "PreAbandonGpuContext", "Valgrind", "FailFlushTimeCallbacks",
 				"ReleaseAndAbandonGpuContext", "FSAA", "FAAA", "FDAA", "NativeFonts", "GDI",
 				"NoGPUThreads", "DDL1", "DDL3", "OOPRDDL", "T8888",
 				"DDLTotal", "DDLRecord", "9x9", "BonusConfigs", "SkottieTracing", "SkottieWASM",
@@ -1439,7 +1439,7 @@ func (b *jobBuilder) infra() {
 		b.kitchenTask("infra", OUTPUT_NONE)
 		b.cas(CAS_WHOLE_REPO)
 		b.serviceAccount(b.cfg.ServiceAccountCompile)
-		b.cipd(specs.CIPD_PKGS_GSUTIL...)
+		b.usesGSUtil()
 		b.idempotent()
 		b.usesGo()
 	})
@@ -1475,7 +1475,7 @@ func (b *jobBuilder) buildstats() {
 			b.Name = uploadName
 			b.serviceAccount(b.cfg.ServiceAccountUploadNano)
 			b.linuxGceDimensions(MACHINE_TYPE_SMALL)
-			b.cipd(specs.CIPD_PKGS_GSUTIL...)
+			b.usesGSUtil()
 			b.dep(depName)
 		})
 	}
@@ -1573,7 +1573,7 @@ func (b *taskBuilder) commonTestPerfAssets() {
 func (b *taskBuilder) directUpload(gsBucket, serviceAccount string) {
 	b.recipeProp("gs_bucket", gsBucket)
 	b.serviceAccount(serviceAccount)
-	b.cipd(specs.CIPD_PKGS_GSUTIL...)
+	b.usesGSUtil()
 }
 
 // dm generates a Test task using dm.
@@ -1679,7 +1679,7 @@ func (b *jobBuilder) dm() {
 			b.kitchenTask("upload_dm_results", OUTPUT_NONE)
 			b.serviceAccount(b.cfg.ServiceAccountUploadGM)
 			b.linuxGceDimensions(MACHINE_TYPE_SMALL)
-			b.cipd(specs.CIPD_PKGS_GSUTIL...)
+			b.usesGSUtil()
 			b.dep(depName)
 		})
 	}
@@ -1867,7 +1867,7 @@ func (b *jobBuilder) puppeteer() {
 		b.Name = uploadName
 		b.serviceAccount(b.cfg.ServiceAccountUploadNano)
 		b.linuxGceDimensions(MACHINE_TYPE_SMALL)
-		b.cipd(specs.CIPD_PKGS_GSUTIL...)
+		b.usesGSUtil()
 		b.dep(depName)
 	})
 }
@@ -1964,7 +1964,7 @@ func (b *jobBuilder) perf() {
 			b.Name = uploadName
 			b.serviceAccount(b.cfg.ServiceAccountUploadNano)
 			b.linuxGceDimensions(MACHINE_TYPE_SMALL)
-			b.cipd(specs.CIPD_PKGS_GSUTIL...)
+			b.usesGSUtil()
 			b.dep(depName)
 		})
 	}
@@ -2073,5 +2073,59 @@ func (b *jobBuilder) runWasmGMTests() {
 			"--gold_key", "model:Golo",
 			"--gold_key", "os:Ubuntu18",
 		)
+	})
+}
+
+// Maps a shorthand version of a label (which can be an arbitrary string) to an absolute Bazel
+// label or "target pattern" https://bazel.build/docs/build#specifying-build-targets
+// The reason we need this mapping is because Buildbucket build names cannot have / or : in them.
+var shorthandToLabel = map[string]string{
+	"modules_canvaskit_canvaskit_wasm": "//modules/canvaskit:canvaskit_wasm",
+}
+
+// bazelBuild adds a task which builds the specified single-target label (//foo:bar) or
+// multi-target label (//foo/...) using Bazel. Depending on the host we run this on, we may
+// specify additional Bazel args to build faster.
+func (b *jobBuilder) bazelBuild() {
+	shorthand, config, host, cross := b.parts.bazelBuildParts()
+	label, ok := shorthandToLabel[shorthand]
+	if !ok {
+		panic("unsupported Bazel label shorthand " + shorthand)
+	}
+	b.addTask(b.Name, func(b *taskBuilder) {
+		cmd := []string{"./bazel_build",
+			"--project_id=skia-swarming-bots",
+			"--task_id=" + specs.PLACEHOLDER_TASK_ID,
+			"--task_name=" + b.Name,
+			"--label=" + label,
+			"--config=" + config,
+		}
+		if cross != "" {
+			// The cross (and host) platform is expected to be defined in
+			// //bazel/common_config_settings/BUILD.bazel
+			cross = "//bazel/common_config_settings:" + cross
+			cmd = append(cmd, "--cross="+cross)
+		}
+		if host == "linux_x64" {
+			b.linuxGceDimensions(MACHINE_TYPE_MEDIUM)
+			b.dep(b.buildTaskDrivers("linux", "amd64"))
+
+			// We want all Linux Bazel Builds to use RBE
+			cmd = append(cmd, "--bazel_arg=--config=linux_rbe")
+			cmd = append(cmd, "--bazel_arg=--jobs=100")
+			cmd = append(cmd, "--bazel_arg=--remote_download_minimal")
+		} else {
+			panic("unsupported Bazel host " + host)
+		}
+		b.cmd(cmd...)
+
+		// TODO(kjlubick) I believe this bazelisk package is just the Linux one. To support
+		//   more hosts, we need to have platform-specific bazelisk binaries.
+		b.cipd(b.MustGetCipdPackageFromAsset("bazelisk"))
+		b.addToPATH("bazelisk")
+		b.idempotent()
+		b.cas(CAS_COMPILE)
+		b.attempts(1)
+		b.serviceAccount(b.cfg.ServiceAccountCompile)
 	})
 }

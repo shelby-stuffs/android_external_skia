@@ -8,6 +8,7 @@
 #ifndef SKSL_UTIL
 #define SKSL_UTIL
 
+#include "include/sksl/SkSLVersion.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/sksl/SkSLGLSL.h"
 
@@ -178,6 +179,17 @@ struct ShaderCaps {
     const char* secondExternalTextureExtensionString() const {
         SkASSERT(this->externalTextureSupport());
         return fSecondExternalTextureExtensionString;
+    }
+
+    /**
+     * SkSL 300 requires support for derivatives, nonsquare matrices and bitwise integer operations.
+     */
+    SkSL::Version supportedSkSLVerion() const {
+        if (fShaderDerivativeSupport && fNonsquareMatrixSupport && fIntegerSupport &&
+            fGLSLGeneration >= SkSL::GLSLGeneration::k330) {
+            return SkSL::Version::k300;
+        }
+        return SkSL::Version::k100;
     }
 
     SkSL::GLSLGeneration generation() const { return fGLSLGeneration; }
@@ -401,7 +413,7 @@ private:
     static std::unique_ptr<ShaderCaps> MakeShaderCaps();
 };
 
-#if !defined(SKSL_STANDALONE) && (SK_SUPPORT_GPU || SK_GRAPHITE_ENABLED)
+#if !defined(SKSL_STANDALONE) && (SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED))
 bool type_to_sksltype(const Context& context, const Type& type, SkSLType* outType);
 #endif
 

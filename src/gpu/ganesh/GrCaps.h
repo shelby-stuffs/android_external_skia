@@ -8,6 +8,7 @@
 #ifndef GrCaps_DEFINED
 #define GrCaps_DEFINED
 
+#include "include/core/SkCapabilities.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkString.h"
@@ -37,7 +38,7 @@ class KeyBuilder;
 /**
  * Represents the capabilities of a GrContext.
  */
-class GrCaps : public SkRefCnt {
+class GrCaps : public SkCapabilities {
 public:
     GrCaps(const GrContextOptions&);
 

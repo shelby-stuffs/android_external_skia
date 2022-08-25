@@ -9,6 +9,7 @@
 
 #include "src/gpu/graphite/DrawGeometry.h"
 #include "src/gpu/graphite/DrawWriter.h"
+#include "src/gpu/graphite/render/DynamicInstancesPatchAllocator.h"
 
 #include "src/gpu/tessellate/AffineMatrix.h"
 #include "src/gpu/tessellate/FixedCountBufferUtils.h"
@@ -19,32 +20,7 @@ namespace skgpu::graphite {
 
 namespace {
 
-// TODO: This is very similar to DrawWriterAllocator in TessellateCurveRenderStep except that the
-// index count is calculated differently. These will be merged once skbug.com/13056 is resolved.
-struct DrawWriterAllocator {
-    DrawWriterAllocator(size_t stride, // required for PatchAllocator
-                        DrawWriter& writer,
-                        BindBufferInfo fixedVertexBuffer,
-                        BindBufferInfo fixedIndexBuffer,
-                        unsigned int reserveCount)
-            : fInstances(writer, fixedVertexBuffer, fixedIndexBuffer) {
-        SkASSERT(writer.instanceStride() == stride);
-        // TODO: Is it worth re-reserving large chunks after this preallocation is used up? Or will
-        // appending 1 at a time be fine since it's coming from a large vertex buffer alloc anyway?
-        fInstances.reserve(reserveCount);
-    }
-
-    VertexWriter append() {
-        // TODO (skbug.com/13056): Actually compute optimal minimum required index count based on
-        // PatchWriter's tracked segment count^4.
-        // Wedges use one extra triangle to connect to the fan point compared to the curve version.
-        static constexpr unsigned int kMaxIndexCount =
-                3 * (1 + NumCurveTrianglesAtResolveLevel(kMaxFixedResolveLevel));
-        return fInstances.append(kMaxIndexCount, 1);
-    }
-
-    DrawWriter::DynamicInstances fInstances;
-};
+using namespace skgpu::tess;
 
 // Only kFanPoint, no stroke params, since this is for filled wedges.
 // No explicit curve type, since we assume infinity is supported on GPUs using graphite
@@ -52,7 +28,8 @@ struct DrawWriterAllocator {
 // or we'll add a color-only fast path to RenderStep later.
 static constexpr PatchAttribs kAttribs = PatchAttribs::kFanPoint |
                                          PatchAttribs::kPaintDepth;
-using Writer = PatchWriter<DrawWriterAllocator,
+
+using Writer = PatchWriter<DynamicInstancesPatchAllocator<FixedCountWedges>,
                            Required<PatchAttribs::kFanPoint>,
                            Required<PatchAttribs::kPaintDepth>>;
 
@@ -107,7 +84,7 @@ void TessellateWedgesRenderStep::writeVertices(DrawWriter* dw, const DrawGeometr
     // uniform data to upload, dependent on push constants or storage buffers for good batching)
 
     // Currently no additional transform is applied by the GPU.
-    wangs_formula::VectorXform shaderXform(SkMatrix::I());
+    writer.setShaderTransform(wangs_formula::VectorXform{});
     // TODO: This doesn't handle perspective yet, and ideally wouldn't go through SkMatrix.
     // It may not be relevant, though, if transforms are applied on the GPU and we only need to
     // determine an approximate 2x2 for 'shaderXform' and Wang's formula evaluation.
@@ -120,8 +97,8 @@ void TessellateWedgesRenderStep::writeVertices(DrawWriter* dw, const DrawGeometr
     MidpointContourParser parser{path};
     while (parser.parseNextContour()) {
         writer.updateFanPointAttrib(m.mapPoint(parser.currentMidpoint()));
-        float2 lastPoint = {0, 0};
-        float2 startPoint = {0, 0};
+        skvx::float2 lastPoint = {0, 0};
+        skvx::float2 startPoint = {0, 0};
         for (auto [verb, pts, w] : parser.currentContour()) {
             switch (verb) {
                 case SkPathVerb::kMove: {
@@ -142,7 +119,7 @@ void TessellateWedgesRenderStep::writeVertices(DrawWriter* dw, const DrawGeometr
                     auto [p0, p1] = m.map2Points(pts);
                     auto p2 = m.map1Point(pts+2);
 
-                    writer.writeQuadratic(p0, p1, p2, shaderXform);
+                    writer.writeQuadratic(p0, p1, p2);
                     lastPoint = p2;
                     break;
                 }
@@ -151,7 +128,7 @@ void TessellateWedgesRenderStep::writeVertices(DrawWriter* dw, const DrawGeometr
                     auto [p0, p1] = m.map2Points(pts);
                     auto p2 = m.map1Point(pts+2);
 
-                    writer.writeConic(p0, p1, p2, *w, shaderXform);
+                    writer.writeConic(p0, p1, p2, *w);
                     lastPoint = p2;
                     break;
                 }
@@ -160,7 +137,7 @@ void TessellateWedgesRenderStep::writeVertices(DrawWriter* dw, const DrawGeometr
                     auto [p0, p1] = m.map2Points(pts);
                     auto [p2, p3] = m.map2Points(pts+2);
 
-                    writer.writeCubic(p0, p1, p2, p3, shaderXform);
+                    writer.writeCubic(p0, p1, p2, p3);
                     lastPoint = p3;
                     break;
                 }

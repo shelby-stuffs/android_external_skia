@@ -30,7 +30,6 @@ public:
     enum class Kind {
         kBinary = (int) Statement::Kind::kLast + 1,
         kChildCall,
-        kCodeString,
         kConstructorArray,
         kConstructorArrayCast,
         kConstructorCompound,
@@ -90,7 +89,7 @@ public:
     }
 
     bool isAnyConstructor() const {
-        static_assert((int)Kind::kConstructorArray - 1 == (int)Kind::kCodeString);
+        static_assert((int)Kind::kConstructorArray - 1 == (int)Kind::kChildCall);
         static_assert((int)Kind::kConstructorStruct + 1 == (int)Kind::kExternalFunctionCall);
         return this->kind() >= Kind::kConstructorArray && this->kind() <= Kind::kConstructorStruct;
     }
@@ -204,16 +203,12 @@ public:
         return std::nullopt;
     }
 
-    virtual std::unique_ptr<Expression> clone() const = 0;
+    virtual std::unique_ptr<Expression> clone(Position pos) const = 0;
 
     /**
-     * Returns a clone with a modified position.
+     * Returns a clone at the same position.
      */
-    std::unique_ptr<Expression> clone(Position pos) {
-        std::unique_ptr<Expression> result = this->clone();
-        result->fPosition = pos;
-        return result;
-    }
+    std::unique_ptr<Expression> clone() const { return this->clone(fPosition); }
 
 private:
     const Type* fType;

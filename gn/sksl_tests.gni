@@ -45,6 +45,7 @@ sksl_error_tests = [
   "/sksl/errors/BreakOutsideLoop.rts",
   "/sksl/errors/CallNonFunction.rts",
   "/sksl/errors/CanExitWithoutReturningValue.sksl",
+  "/sksl/errors/CommasAsConstantExpressions.rts",
   "/sksl/errors/ComparisonDimensional.rts",
   "/sksl/errors/ConstructorArgumentCount.rts",
   "/sksl/errors/ConstructorTypeMismatch.rts",
@@ -303,7 +304,20 @@ sksl_spirv_tests = [
   "/sksl/errors/UndefinedFunction.rts",
 ]
 
-sksl_wgsl_tests = [ "/sksl/shared/HelloWorld.sksl" ]
+sksl_wgsl_tests = [
+  "/sksl/wgsl/BuiltinFragmentStageIO.sksl",
+  "/sksl/wgsl/BuiltinVertexStageIO.vert",
+  "/sksl/wgsl/MainHasFragCoordParameter.sksl",
+  "/sksl/wgsl/MainHasVoidReturn.sksl",
+  "/sksl/wgsl/MainDoesNotHaveFragCoordParameter.sksl",
+  "/sksl/wgsl/UserDefinedPipelineIO.sksl",
+  "/sksl/wgsl/VertexPositionOutputIsAlwaysDeclared.vert",
+
+  # Shared tests that are supported so far:
+  "/sksl/shared/HelloWorld.sksl",
+  "/sksl/shared/InstanceID.vert",
+  "/sksl/shared/VertexID.vert",
+]
 
 sksl_shared_tests = [
   "/sksl/intrinsics/AbsFloat.sksl",
@@ -631,6 +645,7 @@ sksl_settings_tests = [
   "/sksl/inliner/ExponentialGrowth.sksl",
   "/sksl/inliner/InlinerCanBeDisabled.sksl",
   "/sksl/shared/Derivatives.sksl",
+  "/sksl/shared/Optimizations.sksl",
   "/sksl/shared/Switch.sksl",
   "/sksl/shared/SwitchDefaultOnly.sksl",
   "/sksl/shared/SwitchWithFallthrough.sksl",

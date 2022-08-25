@@ -7,7 +7,7 @@
 
 #include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
 
-#if defined(SKSL_STANDALONE) || SK_SUPPORT_GPU || SK_GRAPHITE_ENABLED
+#if defined(SKSL_STANDALONE) || SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
 
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
@@ -364,8 +364,8 @@ void PipelineStageCodeGenerator::writeFunction(const FunctionDefinition& f) {
     // obscure bug.
     const FunctionDeclaration& decl = f.declaration();
     if (decl.isMain() &&
-        fProgram.fConfig->fKind != SkSL::ProgramKind::kCustomMeshVertex &&
-        fProgram.fConfig->fKind != SkSL::ProgramKind::kCustomMeshFragment) {
+        fProgram.fConfig->fKind != SkSL::ProgramKind::kMeshVertex &&
+        fProgram.fConfig->fKind != SkSL::ProgramKind::kMeshFragment) {
         fCastReturnsToHalf = true;
     }
 

@@ -101,6 +101,8 @@ public:
     const SurfaceDrawContext* surfaceDrawContext() const;
     skgpu::SurfaceFillContext* surfaceFillContext() override;
 
+    SkStrikeDeviceInfo strikeDeviceInfo() const override;
+
     // set all pixels to 0
     void clearAll();
 
@@ -117,7 +119,7 @@ public:
     void drawPath(const SkPath& path, const SkPaint& paint, bool pathIsMutable) override;
 
     void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override;
-    void drawCustomMesh(const SkCustomMesh&, sk_sp<SkBlender>, const SkPaint&) override;
+    void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override;
     void drawShadow(const SkPath&, const SkDrawShadowRec&) override;
     void drawAtlas(const SkRSXform[], const SkRect[], const SkColor[], int count, sk_sp<SkBlender>,
                    const SkPaint&) override;
@@ -160,12 +162,12 @@ protected:
                             const SkPaint& initialPaint,
                             const SkPaint& drawingPaint) override;
 
-    sk_sp<GrSlug> convertGlyphRunListToSlug(
+    sk_sp<sktext::gpu::Slug> convertGlyphRunListToSlug(
             const SkGlyphRunList& glyphRunList,
             const SkPaint& initialPaint,
             const SkPaint& drawingPaint) override;
 
-    void drawSlug(SkCanvas*, const GrSlug* slug, const SkPaint& drawingPaint) override;
+    void drawSlug(SkCanvas*, const sktext::gpu::Slug* slug, const SkPaint& drawingPaint) override;
 
     void onClipRect(const SkRect& rect, SkClipOp op, bool aa) override {
         SkASSERT(op == SkClipOp::kIntersect || op == SkClipOp::kDifference);
@@ -195,6 +197,8 @@ protected:
     SkIRect onDevClipBounds() const override { return fClip.getConservativeBounds(); }
 
 private:
+    const sktext::gpu::SDFTControl fSDFTControl;
+
     std::unique_ptr<SurfaceDrawContext> fSurfaceDrawContext;
 
     ClipStack fClip;

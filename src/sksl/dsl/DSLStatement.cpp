@@ -17,11 +17,6 @@
 #include "src/sksl/ir/SkSLExpressionStatement.h"
 #include "src/sksl/ir/SkSLNop.h"
 
-#if !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU
-#include "src/gpu/ganesh/GrFragmentProcessor.h"
-#include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
-#endif
-
 namespace SkSL {
 
 namespace dsl {
@@ -64,27 +59,12 @@ DSLStatement::DSLStatement(DSLPossibleStatement stmt, Position pos) {
     }
 }
 
-DSLStatement::~DSLStatement() {
-#if !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU
-    if (fStatement && ThreadContext::InFragmentProcessor()) {
-        ThreadContext::CurrentEmitArgs()->fFragBuilder->codeAppend(this->release());
-        return;
-    }
-#endif
-    SkASSERTF(!fStatement || !ThreadContext::Settings().fAssertDSLObjectsReleased,
-              "Statement destroyed without being incorporated into program (see "
-              "ProgramSettings::fAssertDSLObjectsReleased)");
-}
+DSLStatement::~DSLStatement() {}
 
 DSLPossibleStatement::DSLPossibleStatement(std::unique_ptr<SkSL::Statement> statement)
     : fStatement(std::move(statement)) {}
 
-DSLPossibleStatement::~DSLPossibleStatement() {
-    if (fStatement) {
-        // this handles incorporating the expression into the output tree
-        DSLStatement(std::move(fStatement));
-    }
-}
+DSLPossibleStatement::~DSLPossibleStatement() {}
 
 DSLStatement operator,(DSLStatement left, DSLStatement right) {
     Position pos = left.fStatement->fPosition;

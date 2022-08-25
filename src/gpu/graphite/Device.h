@@ -34,7 +34,7 @@ class Device final : public SkBaseDevice  {
 public:
     ~Device() override;
 
-    static sk_sp<Device> Make(Recorder*, const SkImageInfo&);
+    static sk_sp<Device> Make(Recorder*, const SkImageInfo&, SkBudgeted);
     static sk_sp<Device> Make(Recorder*,
                               sk_sp<TextureProxy>,
                               sk_sp<SkColorSpace>,
@@ -55,6 +55,10 @@ public:
     bool readPixels(Context*, Recorder*, const SkPixmap& dst, int x, int y);
 
     const Transform& localToDeviceTransform();
+
+#if GRAPHITE_TEST_UTILS
+    TextureProxy* proxy();
+#endif
 
 private:
     class IntersectionTreeSet;
@@ -127,7 +131,7 @@ private:
 
     void drawDrawable(SkCanvas*, SkDrawable*, const SkMatrix*) override {}
     void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override {}
-    void drawCustomMesh(const SkCustomMesh&, sk_sp<SkBlender>, const SkPaint&) override {}
+    void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override {}
     void drawShadow(const SkPath&, const SkDrawShadowRec&) override {}
     void onDrawGlyphRunList(
             SkCanvas*, const SkGlyphRunList&, const SkPaint&, const SkPaint&) override {}

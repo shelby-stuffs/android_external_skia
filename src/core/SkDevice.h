@@ -19,11 +19,12 @@
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkRasterClip.h"
+#include "src/core/SkScalerContext.h"
 #include "src/shaders/SkShaderBase.h"
 
 class SkBitmap;
 class SkColorSpace;
-class SkCustomMesh;
+class SkMesh;
 struct SkDrawShadowRec;
 class SkGlyphRun;
 class SkGlyphRunList;
@@ -40,6 +41,16 @@ class BaseDevice;
 namespace skgpu::graphite {
 class Device;
 }
+namespace sktext::gpu {
+class SDFTControl;
+}
+
+struct SkStrikeDeviceInfo {
+    const SkSurfaceProps fSurfaceProps;
+    const SkScalerContextFlags fScalerContextFlags;
+    // This is a pointer so this can be compiled without SK_GPU_SUPPORT.
+    const sktext::gpu::SDFTControl* const fSDFTControl;
+};
 
 class SkBaseDevice : public SkRefCnt, public SkMatrixProvider {
 public:
@@ -56,6 +67,12 @@ public:
      */
     const SkSurfaceProps& surfaceProps() const {
         return fSurfaceProps;
+    }
+
+    SkScalerContextFlags scalerContextFlags() const;
+
+    virtual SkStrikeDeviceInfo strikeDeviceInfo() const {
+        return {fSurfaceProps, this->scalerContextFlags(), nullptr};
     }
 
     SkIRect bounds() const { return SkIRect::MakeWH(this->width(), this->height()); }
@@ -284,7 +301,7 @@ protected:
                               const SkPaint&,
                               bool skipColorXform = false) = 0;
 #ifdef SK_ENABLE_SKSL
-    virtual void drawCustomMesh(const SkCustomMesh& cm, sk_sp<SkBlender>, const SkPaint&) = 0;
+    virtual void drawMesh(const SkMesh& mesh, sk_sp<SkBlender>, const SkPaint&) = 0;
 #endif
     virtual void drawShadow(const SkPath&, const SkDrawShadowRec&);
 
@@ -319,13 +336,13 @@ protected:
                                     const SkPaint& initialPaint,
                                     const SkPaint& drawingPaint) = 0;
 
-    // GrSlug handling routines.
-#if SK_SUPPORT_GPU
-    virtual sk_sp<GrSlug> convertGlyphRunListToSlug(
+    // Slug handling routines.
+#if (SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED))
+    virtual sk_sp<sktext::gpu::Slug> convertGlyphRunListToSlug(
             const SkGlyphRunList& glyphRunList,
             const SkPaint& initialPaint,
             const SkPaint& drawingPaint);
-    virtual void drawSlug(SkCanvas*, const GrSlug* slug, const SkPaint& drawingPaint);
+    virtual void drawSlug(SkCanvas*, const sktext::gpu::Slug* slug, const SkPaint& drawingPaint);
 #endif
 
     /**
@@ -549,13 +566,13 @@ protected:
     void drawDevice(SkBaseDevice*, const SkSamplingOptions&, const SkPaint&) override {}
     void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override {}
 #ifdef SK_ENABLE_SKSL
-    void drawCustomMesh(const SkCustomMesh&, sk_sp<SkBlender>, const SkPaint&) override {}
+    void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override {}
 #endif
 
     void drawFilteredImage(const skif::Mapping&, SkSpecialImage* src, const SkImageFilter*,
                            const SkSamplingOptions&, const SkPaint&) override {}
 #if SK_SUPPORT_GPU
-    void drawSlug(SkCanvas*, const GrSlug*, const SkPaint&) override {}
+    void drawSlug(SkCanvas*, const sktext::gpu::Slug*, const SkPaint&) override {}
 #endif
 
     void onDrawGlyphRunList(

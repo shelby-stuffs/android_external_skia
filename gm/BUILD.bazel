@@ -192,7 +192,6 @@ filegroup(
         "dropshadowimagefilter.cpp",
         "drrect.cpp",
         "drrect_small_inner.cpp",
-        "dsl_processor_test.cpp",
         "dstreadshuffle.cpp",
         "ducky_yuv_blend.cpp",
         "emboss.cpp",
@@ -3226,25 +3225,6 @@ generated_cc_atom(
 )
 
 generated_cc_atom(
-    name = "custommesh_src",
-    srcs = ["custommesh.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":gm_hdr",
-        "//include/core:SkBlender_hdr",
-        "//include/core:SkCanvas_hdr",
-        "//include/core:SkColorSpace_hdr",
-        "//include/core:SkCustomMesh_hdr",
-        "//include/core:SkData_hdr",
-        "//include/core:SkSurface_hdr",
-        "//include/effects:SkGradientShader_hdr",
-        "//include/gpu:GrDirectContext_hdr",
-        "//src/core:SkCanvasPriv_hdr",
-        "//src/core:SkCustomMeshPriv_hdr",
-    ],
-)
-
-generated_cc_atom(
     name = "daa_src",
     srcs = ["daa.cpp"],
     visibility = ["//:__subpackages__"],
@@ -3854,23 +3834,6 @@ generated_cc_atom(
 )
 
 generated_cc_atom(
-    name = "dsl_processor_test_src",
-    srcs = ["dsl_processor_test.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":gm_hdr",
-        "//include/effects:SkRuntimeEffect_hdr",
-        "//include/sksl:DSL_hdr",
-        "//src/core:SkCanvasPriv_hdr",
-        "//src/gpu/ganesh:SurfaceFillContext_hdr",
-        "//src/gpu/ganesh/glsl:GrGLSLFragmentShaderBuilder_hdr",
-        "//src/sksl/dsl/priv:DSLFPs_hdr",
-        "//src/sksl/dsl/priv:DSLWriter_hdr",
-        "//src/sksl/ir:SkSLVariable_hdr",
-    ],
-)
-
-generated_cc_atom(
     name = "dstreadshuffle_src",
     srcs = ["dstreadshuffle.cpp"],
     visibility = ["//:__subpackages__"],
@@ -4438,6 +4401,7 @@ generated_cc_atom(
         "//include/core:SkTypeface_hdr",
         "//include/core:SkTypes_hdr",
         "//tools:Resources_hdr",
+        "//tools:SkMetaData_hdr",
     ],
 )
 
@@ -7988,7 +7952,6 @@ generated_cc_atom(
         "//include/core:SkScalar_hdr",
         "//include/core:SkSize_hdr",
         "//include/core:SkString_hdr",
-        "//include/private:SkNx_hdr",
         "//src/core:SkMipmapBuilder_hdr",
         "//src/core:SkMipmap_hdr",
         "//tools:Resources_hdr",
@@ -8228,7 +8191,7 @@ generated_cc_atom(
         "//include/core:SkTypes_hdr",
         "//include/gpu:GrContextOptions_hdr",
         "//include/private:SkTDArray_hdr",
-        "//include/private/chromium:GrSlug_hdr",
+        "//include/private/chromium:Slug_hdr",
         "//tools:ToolUtils_hdr",
     ],
 )
@@ -9674,5 +9637,24 @@ generated_cc_atom(
         "//include/core:SkMatrix_hdr",
         "//include/core:SkRect_hdr",
         "//include/effects:SkImageFilters_hdr",
+    ],
+)
+
+generated_cc_atom(
+    name = "mesh_src",
+    srcs = ["mesh.cpp"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":gm_hdr",
+        "//include/core:SkBlender_hdr",
+        "//include/core:SkCanvas_hdr",
+        "//include/core:SkColorSpace_hdr",
+        "//include/core:SkData_hdr",
+        "//include/core:SkMesh_hdr",
+        "//include/core:SkSurface_hdr",
+        "//include/effects:SkGradientShader_hdr",
+        "//include/gpu:GrDirectContext_hdr",
+        "//src/core:SkCanvasPriv_hdr",
+        "//src/core:SkMeshPriv_hdr",
     ],
 )

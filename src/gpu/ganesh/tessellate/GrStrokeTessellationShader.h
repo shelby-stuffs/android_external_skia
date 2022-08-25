@@ -11,7 +11,6 @@
 #include "src/gpu/ganesh/tessellate/GrTessellationShader.h"
 
 #include "include/core/SkStrokeRec.h"
-#include "src/gpu/ganesh/GrVx.h"
 #include "src/gpu/ganesh/glsl/GrGLSLVarying.h"
 #include "src/gpu/tessellate/Tessellation.h"
 
@@ -23,7 +22,7 @@
 // edges and sorts them into a single quad strip. With this combined set of edges we can stroke any
 // curve, regardless of curvature.
 class GrStrokeTessellationShader : public GrTessellationShader {
-    using PatchAttribs = skgpu::PatchAttribs;
+    using PatchAttribs = skgpu::tess::PatchAttribs;
 
 public:
 

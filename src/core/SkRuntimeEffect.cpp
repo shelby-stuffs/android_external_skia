@@ -55,9 +55,9 @@
     #define SK_LENIENT_SKSL_DESERIALIZATION 0
 #endif
 
-using ChildType = SkRuntimeEffect::ChildType;
-
 #ifdef SK_ENABLE_SKSL
+
+using ChildType = SkRuntimeEffect::ChildType;
 
 static bool flattenable_is_valid_as_child(const SkFlattenable* f) {
     if (!f) { return true; }
@@ -203,12 +203,12 @@ static std::vector<skvm::Val> make_skvm_uniforms(skvm::Builder* p,
     return uniform;
 }
 
-SkSL::ProgramSettings SkRuntimeEffect::MakeSettings(const Options& options, bool optimize) {
+SkSL::ProgramSettings SkRuntimeEffect::MakeSettings(const Options& options) {
     SkSL::ProgramSettings settings;
     settings.fInlineThreshold = 0;
-    settings.fForceNoInline = options.forceNoInline;
+    settings.fForceNoInline = options.forceUnoptimized;
+    settings.fOptimize = !options.forceUnoptimized;
     settings.fEnforceES2Restrictions = options.enforceES2Restrictions;
-    settings.fOptimize = optimize;
     return settings;
 }
 
@@ -225,7 +225,7 @@ SkRuntimeEffect::Result SkRuntimeEffect::MakeFromSource(SkString sksl,
         // calling the Make overload at the end, which creates its own (non-reentrant)
         // SharedCompiler instance
         SkSL::SharedCompiler compiler;
-        SkSL::Program::Settings settings = MakeSettings(options, /*optimize=*/true);
+        SkSL::Program::Settings settings = MakeSettings(options);
         program = compiler->convertProgram(kind, std::string(sksl.c_str(), sksl.size()), settings);
 
         if (!program) {
@@ -233,26 +233,6 @@ SkRuntimeEffect::Result SkRuntimeEffect::MakeFromSource(SkString sksl,
         }
     }
     return MakeInternal(std::move(program), options, kind);
-}
-
-SkRuntimeEffect::Result SkRuntimeEffect::MakeFromDSL(std::unique_ptr<SkSL::Program> program,
-                                                     const Options& options,
-                                                     SkSL::ProgramKind kind) {
-    // This factory is used for all DSL runtime effects, which don't have anything stored in the
-    // program's source. Populate it so that we can compute fHash, and serialize these effects.
-    program->fSource = std::make_unique<std::string>(program->description());
-    return MakeInternal(std::move(program), options, kind);
-}
-
-sk_sp<SkRuntimeEffect> SkRuntimeEffect::MakeFromDSL(std::unique_ptr<SkSL::Program> program,
-                                                    const Options& options,
-                                                    SkSL::ProgramKind kind,
-                                                    SkSL::ErrorReporter* errors) {
-    Result result = MakeFromDSL(std::move(program), options, kind);
-    if (!result.effect) {
-        errors->error(result.errorText.c_str(), SkSL::Position());
-    }
-    return std::move(result.effect);
 }
 
 SkRuntimeEffect::Result SkRuntimeEffect::MakeInternal(std::unique_ptr<SkSL::Program> program,
@@ -395,7 +375,7 @@ sk_sp<SkRuntimeEffect> SkRuntimeEffect::makeUnoptimizedClone() {
     // handled when the original SkRuntimeEffect was made. We don't keep around the Options struct
     // from when it was initially made so we don't know what was originally requested.
     Options options;
-    options.forceNoInline = true;
+    options.forceUnoptimized = true;
     options.enforceES2Restrictions = false;
     options.usePrivateRTShaderModule = true;
 
@@ -411,7 +391,7 @@ sk_sp<SkRuntimeEffect> SkRuntimeEffect::makeUnoptimizedClone() {
         // calling MakeInternal at the end, which creates its own (non-reentrant) SharedCompiler
         // instance.
         SkSL::SharedCompiler compiler;
-        SkSL::Program::Settings settings = MakeSettings(options, /*optimize=*/false);
+        SkSL::Program::Settings settings = MakeSettings(options);
         program = compiler->convertProgram(kind, *fBaseProgram->fSource, settings);
 
         if (!program) {
@@ -452,52 +432,6 @@ SkRuntimeEffect::Result SkRuntimeEffect::MakeForBlender(SkString sksl, const Opt
     auto result = MakeFromSource(std::move(sksl), options, SkSL::ProgramKind::kRuntimeBlender);
     SkASSERT(!result.effect || result.effect->allowBlender());
     return result;
-}
-
-SkRuntimeEffect::Result SkRuntimeEffect::MakeForColorFilter(std::unique_ptr<SkSL::Program> program,
-                                                            const Options& options) {
-    auto result = MakeFromDSL(std::move(program), options, SkSL::ProgramKind::kRuntimeColorFilter);
-    SkASSERT(!result.effect || result.effect->allowColorFilter());
-    return result;
-}
-
-SkRuntimeEffect::Result SkRuntimeEffect::MakeForShader(std::unique_ptr<SkSL::Program> program,
-                                                       const Options& options) {
-    auto programKind = options.usePrivateRTShaderModule ? SkSL::ProgramKind::kPrivateRuntimeShader
-                                                        : SkSL::ProgramKind::kRuntimeShader;
-    auto result = MakeFromDSL(std::move(program), options, programKind);
-    SkASSERT(!result.effect || result.effect->allowShader());
-    return result;
-}
-
-sk_sp<SkRuntimeEffect> SkRuntimeEffect::MakeForShader(std::unique_ptr<SkSL::Program> program,
-                                                      const Options& options,
-                                                      SkSL::ErrorReporter* errors) {
-    auto programKind = options.usePrivateRTShaderModule ? SkSL::ProgramKind::kPrivateRuntimeShader
-                                                        : SkSL::ProgramKind::kRuntimeShader;
-    auto result = MakeFromDSL(std::move(program), options, programKind, errors);
-    SkASSERT(!result || result->allowShader());
-    return result;
-}
-
-SkRuntimeEffect::Result SkRuntimeEffect::MakeForBlender(std::unique_ptr<SkSL::Program> program,
-                                                        const Options& options) {
-    auto result = MakeFromDSL(std::move(program), options, SkSL::ProgramKind::kRuntimeBlender);
-    SkASSERT(!result.effect || result.effect->allowBlender());
-    return result;
-}
-
-SkRuntimeEffect::Result SkRuntimeEffect::MakeForColorFilter(
-        std::unique_ptr<SkSL::Program> program) {
-    return MakeForColorFilter(std::move(program), Options{});
-}
-
-SkRuntimeEffect::Result SkRuntimeEffect::MakeForShader(std::unique_ptr<SkSL::Program> program) {
-    return MakeForShader(std::move(program), Options{});
-}
-
-SkRuntimeEffect::Result SkRuntimeEffect::MakeForBlender(std::unique_ptr<SkSL::Program> program) {
-    return MakeForBlender(std::move(program), Options{});
 }
 
 sk_sp<SkRuntimeEffect> SkMakeCachedRuntimeEffect(SkRuntimeEffect::Result (*make)(SkString sksl),
@@ -587,10 +521,12 @@ SkRuntimeEffect::SkRuntimeEffect(std::unique_ptr<SkSL::Program> baseProgram,
     // be accounted for in `fHash`. If you've added a new field to Options and caused the static-
     // assert below to trigger, please incorporate your field into `fHash` and update KnownOptions
     // to match the layout of Options.
-    struct KnownOptions { bool forceNoInline, enforceES2Restrictions, usePrivateRTShaderModule; };
+    struct KnownOptions {
+        bool forceUnoptimized, enforceES2Restrictions, usePrivateRTShaderModule;
+    };
     static_assert(sizeof(Options) == sizeof(KnownOptions));
-    fHash = SkOpts::hash_fn(&options.forceNoInline,
-                      sizeof(options.forceNoInline), fHash);
+    fHash = SkOpts::hash_fn(&options.forceUnoptimized,
+                      sizeof(options.forceUnoptimized), fHash);
     fHash = SkOpts::hash_fn(&options.enforceES2Restrictions,
                       sizeof(options.enforceES2Restrictions), fHash);
     fHash = SkOpts::hash_fn(&options.usePrivateRTShaderModule,

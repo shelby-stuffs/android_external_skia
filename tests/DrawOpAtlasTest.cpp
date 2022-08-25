@@ -91,15 +91,15 @@ class TestingUploadTarget : public GrDeferredUploadTarget {
 public:
     TestingUploadTarget() { }
 
-    const GrTokenTracker* tokenTracker() final { return &fTokenTracker; }
-    GrTokenTracker* writeableTokenTracker() { return &fTokenTracker; }
+    const skgpu::TokenTracker* tokenTracker() final { return &fTokenTracker; }
+    skgpu::TokenTracker* writeableTokenTracker() { return &fTokenTracker; }
 
-    GrDeferredUploadToken addInlineUpload(GrDeferredTextureUploadFn&&) final {
+    skgpu::DrawToken addInlineUpload(GrDeferredTextureUploadFn&&) final {
         SkASSERT(0); // this test shouldn't invoke this code path
         return fTokenTracker.nextDrawToken();
     }
 
-    GrDeferredUploadToken addASAPUpload(GrDeferredTextureUploadFn&& upload) final {
+    skgpu::DrawToken addASAPUpload(GrDeferredTextureUploadFn&& upload) final {
         return fTokenTracker.nextTokenToFlush();
     }
 
@@ -107,7 +107,7 @@ public:
     void flushToken() { fTokenTracker.flushToken(); }
 
 private:
-    GrTokenTracker fTokenTracker;
+    skgpu::TokenTracker fTokenTracker;
 
     using INHERITED = GrDeferredUploadTarget;
 };
@@ -158,7 +158,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(BasicDrawOpAtlas, reporter, ctxInfo) {
                                                 kAtlasSize/kNumPlots, kAtlasSize/kNumPlots,
                                                 &counter,
                                                 GrDrawOpAtlas::AllowMultitexturing::kYes,
-                                                &evictor);
+                                                &evictor,
+                                                /*label=*/"BasicDrawOpAtlasTest");
     check(reporter, atlas.get(), 0, 4, 0);
 
     // Fill up the first level
