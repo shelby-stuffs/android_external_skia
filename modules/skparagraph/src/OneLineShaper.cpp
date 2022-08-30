@@ -217,7 +217,7 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
         auto piece = &this->fParagraph->fRuns.back();
 
         // TODO: Optimize copying
-        auto zero = run->fPositions[glyphs.start];
+        SkPoint zero = {run->fPositions[glyphs.start].fX, 0};
         for (size_t i = glyphs.start; i <= glyphs.end; ++i) {
 
             auto index = i - glyphs.start;
@@ -226,6 +226,7 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
             }
             piece->fClusterIndexes[index] = run->fClusterIndexes[i];
             piece->fPositions[index] = run->fPositions[i] - zero;
+            piece->fOffsets[index] = run->fOffsets[i];
             piece->addX(index, advanceX);
         }
 
@@ -611,6 +612,7 @@ bool OneLineShaper::iterateThroughShapingRegions(const ShapeVisitor& shape) {
                                        advanceX);
 
         run.fPositions[0] = { advanceX, 0 };
+        run.fOffsets[0] = {0, 0};
         run.fClusterIndexes[0] = 0;
         run.fPlaceholderIndex = &placeholder - fParagraph->fPlaceholders.begin();
         advanceX += placeholder.fStyle.fWidth;

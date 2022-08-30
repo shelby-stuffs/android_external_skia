@@ -17,10 +17,6 @@
 #include "include/gpu/graphite/Context.h"
 #endif
 
-// We need to ensure that the user-defined snippet ID can't conflict with the SkBlendMode
-// values (since they are used "raw" in the combination system).
-static const int kMinUserDefinedSnippetID = std::max(kBuiltInCodeSnippetIDCount, kSkBlendModeCount);
-
 namespace {
 
 std::string get_mangled_local_var_name(const char* baseName, int manglingSuffix) {
@@ -192,7 +188,7 @@ std::string SkShaderInfo::toSkSL() const {
 SkShaderCodeDictionary::Entry* SkShaderCodeDictionary::makeEntry(
         const SkPaintParamsKey& key
 #ifdef SK_GRAPHITE_ENABLED
-        , const SkPipelineDataGatherer::BlendInfo& blendInfo
+        , const skgpu::BlendInfo& blendInfo
 #endif
         ) {
     uint8_t* newKeyData = fArena.makeArray<uint8_t>(key.sizeInBytes());
@@ -213,7 +209,7 @@ size_t SkShaderCodeDictionary::Hash::operator()(const SkPaintParamsKey* key) con
 const SkShaderCodeDictionary::Entry* SkShaderCodeDictionary::findOrCreate(
         const SkPaintParamsKey& key
 #ifdef SK_GRAPHITE_ENABLED
-        , const SkPipelineDataGatherer::BlendInfo& blendInfo
+        , const skgpu::BlendInfo& blendInfo
 #endif
         ) {
     SkAutoSpinlock lock{fSpinLock};
@@ -269,11 +265,7 @@ const SkShaderSnippet* SkShaderCodeDictionary::getEntry(int codeSnippetID) const
         return &fBuiltInCodeSnippets[codeSnippetID];
     }
 
-    if (codeSnippetID < kMinUserDefinedSnippetID) {
-        return nullptr;
-    }
-
-    int userDefinedCodeSnippetID = codeSnippetID - kMinUserDefinedSnippetID;
+    int userDefinedCodeSnippetID = codeSnippetID - kBuiltInCodeSnippetIDCount;
     if (userDefinedCodeSnippetID < SkTo<int>(fUserDefinedCodeSnippets.size())) {
         return fUserDefinedCodeSnippets[userDefinedCodeSnippetID].get();
     }
@@ -643,11 +635,7 @@ bool SkShaderCodeDictionary::isValidID(int snippetID) const {
         return true;
     }
 
-    if (snippetID < kMinUserDefinedSnippetID) {
-        return false;
-    }
-
-    int userDefinedCodeSnippetID = snippetID - kMinUserDefinedSnippetID;
+    int userDefinedCodeSnippetID = snippetID - kBuiltInCodeSnippetIDCount;
     return userDefinedCodeSnippetID < SkTo<int>(fUserDefinedCodeSnippets.size());
 }
 
@@ -672,7 +660,7 @@ int SkShaderCodeDictionary::addUserDefinedSnippet(
     // 'fHash' and 'fEntryVector'
     fUserDefinedCodeSnippets.push_back(std::move(entry));
 
-    return kMinUserDefinedSnippetID + fUserDefinedCodeSnippets.size() - 1;
+    return kBuiltInCodeSnippetIDCount + fUserDefinedCodeSnippets.size() - 1;
 }
 
 SkBlenderID SkShaderCodeDictionary::addUserDefinedBlender(sk_sp<SkRuntimeEffect> effect) {
@@ -699,7 +687,7 @@ SkBlenderID SkShaderCodeDictionary::addUserDefinedBlender(sk_sp<SkRuntimeEffect>
     // 'fHash' and 'fEntryVector'
     fUserDefinedCodeSnippets.push_back(std::move(entry));
 
-    return SkBlenderID(kMinUserDefinedSnippetID + fUserDefinedCodeSnippets.size() - 1);
+    return SkBlenderID(kBuiltInCodeSnippetIDCount + fUserDefinedCodeSnippets.size() - 1);
 }
 
 SkShaderCodeDictionary::SkShaderCodeDictionary() {

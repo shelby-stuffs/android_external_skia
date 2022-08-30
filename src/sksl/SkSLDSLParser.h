@@ -117,8 +117,8 @@ private:
      */
     bool expectIdentifier(Token* result);
 
-    void error(Token token, std::string msg);
-    void error(Position position, std::string msg);
+    void error(Token token, std::string_view msg);
+    void error(Position position, std::string_view msg);
 
     // Returns the range from `start` to the current parse position.
     Position rangeFrom(Position start);
@@ -161,7 +161,7 @@ private:
 
     dsl::DSLStatement varDeclarations();
 
-    std::optional<dsl::DSLType> structDeclaration();
+    dsl::DSLType structDeclaration();
 
     SkTArray<dsl::DSLGlobalVar> structVarDeclaration(Position start,
                                                      const dsl::DSLModifiers& modifiers);
@@ -188,7 +188,7 @@ private:
 
     dsl::DSLStatement statement();
 
-    std::optional<dsl::DSLType> type(dsl::DSLModifiers* modifiers);
+    dsl::DSLType type(dsl::DSLModifiers* modifiers);
 
     bool interfaceBlock(const dsl::DSLModifiers& mods);
 
@@ -309,7 +309,7 @@ private:
 
             void forwardErrors() {
                 for (Error& error : fErrors) {
-                    dsl::GetErrorReporter().error(error.fMsg.c_str(), error.fPos);
+                    dsl::GetErrorReporter().error(error.fPos, error.fMsg);
                 }
             }
 
@@ -324,7 +324,6 @@ private:
 
         void restoreErrorReporter() {
             SkASSERT(fOldErrorReporter);
-            fErrorReporter.reportPendingErrors(Position());
             dsl::SetErrorReporter(fOldErrorReporter);
             fOldErrorReporter = nullptr;
         }

@@ -68,13 +68,21 @@ public:
         };
 
         enum Flags {
-            // Uniform is an declared as an array. 'count' contains array length.
+            // Uniform is declared as an array. 'count' contains array length.
             kArray_Flag = 0x1,
 
             // Uniform is declared with layout(color). Colors should be supplied as unpremultiplied,
             // extended-range (unclamped) sRGB (ie SkColor4f). The uniform will be automatically
             // transformed to unpremultiplied extended-range working-space colors.
             kColor_Flag = 0x2,
+
+            // When used with SkMeshSpecification, indicates that the uniform is present in the
+            // vertex shader. Not used with SkRuntimeEffect.
+            kVertex_Flag = 0x4,
+
+            // When used with SkMeshSpecification, indicates that the uniform is present in the
+            // fragment shader. Not used with SkRuntimeEffect.
+            kFragment_Flag = 0x8,
         };
 
         SkString  name;
@@ -187,29 +195,30 @@ public:
         sk_sp<SkFlattenable> fChild;
     };
 
-    sk_sp<SkShader> makeShader(sk_sp<SkData> uniforms,
+    sk_sp<SkShader> makeShader(sk_sp<const SkData> uniforms,
                                sk_sp<SkShader> children[],
                                size_t childCount,
                                const SkMatrix* localMatrix = nullptr) const;
-    sk_sp<SkShader> makeShader(sk_sp<SkData> uniforms,
+    sk_sp<SkShader> makeShader(sk_sp<const SkData> uniforms,
                                SkSpan<ChildPtr> children,
                                const SkMatrix* localMatrix = nullptr) const;
 
     sk_sp<SkImage> makeImage(GrRecordingContext*,
-                             sk_sp<SkData> uniforms,
+                             sk_sp<const SkData> uniforms,
                              SkSpan<ChildPtr> children,
                              const SkMatrix* localMatrix,
                              SkImageInfo resultInfo,
                              bool mipmapped) const;
 
-    sk_sp<SkColorFilter> makeColorFilter(sk_sp<SkData> uniforms) const;
-    sk_sp<SkColorFilter> makeColorFilter(sk_sp<SkData> uniforms,
+    sk_sp<SkColorFilter> makeColorFilter(sk_sp<const SkData> uniforms) const;
+    sk_sp<SkColorFilter> makeColorFilter(sk_sp<const SkData> uniforms,
                                          sk_sp<SkColorFilter> children[],
                                          size_t childCount) const;
-    sk_sp<SkColorFilter> makeColorFilter(sk_sp<SkData> uniforms,
+    sk_sp<SkColorFilter> makeColorFilter(sk_sp<const SkData> uniforms,
                                          SkSpan<ChildPtr> children) const;
 
-    sk_sp<SkBlender> makeBlender(sk_sp<SkData> uniforms, SkSpan<ChildPtr> children = {}) const;
+    sk_sp<SkBlender> makeBlender(sk_sp<const SkData> uniforms,
+                                 SkSpan<ChildPtr> children = {}) const;
 
     /**
      * Creates a new Runtime Effect patterned after an already-existing one. The new shader behaves
@@ -419,7 +428,7 @@ protected:
     SkRuntimeEffectBuilder& operator=(SkRuntimeEffectBuilder&&) = delete;
     SkRuntimeEffectBuilder& operator=(const SkRuntimeEffectBuilder&) = delete;
 
-    sk_sp<SkData> uniforms() { return fUniforms; }
+    sk_sp<const SkData> uniforms() { return fUniforms; }
     SkRuntimeEffect::ChildPtr* children() { return fChildren.data(); }
     size_t numChildren() { return fChildren.size(); }
 

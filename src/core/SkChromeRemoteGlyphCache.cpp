@@ -38,6 +38,8 @@
 #include "src/text/gpu/TextBlob.h"
 #endif
 
+using namespace sktext::gpu;
+
 namespace {
 // -- Serializer -----------------------------------------------------------------------------------
 size_t pad(size_t size, size_t alignment) { return (size + (alignment - 1)) & ~(alignment - 1); }
@@ -809,13 +811,16 @@ protected:
                             const SkPaint& drawingPaint) override {
         SkMatrix drawMatrix = this->localToDevice();
         drawMatrix.preTranslate(glyphRunList.origin().x(), glyphRunList.origin().y());
-        SkGlyphRunListPainter::CategorizeGlyphRunList(nullptr,
-                                                      glyphRunList,
-                                                      drawMatrix,
-                                                      drawingPaint,
-                                                      this->strikeDeviceInfo(),
-                                                      fStrikeServerImpl,
-                                                      "Cache Diff");
+
+        // Just ignore the resulting SubRunContainer. Since we're passing in a null SubRunAllocator
+        // no SubRuns will be produced.
+        SubRunContainer::MakeInAlloc(glyphRunList,
+                                     drawMatrix,
+                                     drawingPaint,
+                                     this->strikeDeviceInfo(),
+                                     fStrikeServerImpl,
+                                     nullptr,
+                                     "Cache Diff");
     }
 
     sk_sp<sktext::gpu::Slug> convertGlyphRunListToSlug(const SkGlyphRunList& glyphRunList,
@@ -829,14 +834,15 @@ protected:
         //  cache is fortified with enough information for supporting slug creation.
 
         // Use the lightweight strike cache provided by SkRemoteGlyphCache through fPainter to do
-        // the analysis.
-        SkGlyphRunListPainter::CategorizeGlyphRunList(nullptr,
-                                                      glyphRunList,
-                                                      positionMatrix,
-                                                      drawingPaint,
-                                                      this->strikeDeviceInfo(),
-                                                      fStrikeServerImpl,
-                                                      "Convert Slug Analysis");
+        // the analysis. Just ignore the resulting SubRunContainer. Since we're passing in a null
+        // SubRunAllocator no SubRuns will be produced.
+        SubRunContainer::MakeInAlloc(glyphRunList,
+                                     positionMatrix,
+                                     drawingPaint,
+                                     this->strikeDeviceInfo(),
+                                     fStrikeServerImpl,
+                                     nullptr,
+                                     "Convert Slug Analysis");
 
         // Use the glyph strike cache to get actual glyph information.
         return skgpu::v1::MakeSlug(this->localToDevice(),
