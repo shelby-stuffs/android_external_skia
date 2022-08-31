@@ -19,6 +19,7 @@
 
 class SkArenaAllocWithReset;
 class SkCombinationBuilder;
+class SkKeyContext;
 class SkOption;
 class SkPaintParamsKeyBuilder;
 class SkShaderCodeDictionary;
@@ -39,8 +40,9 @@ enum class SkShaderType : uint32_t {
     kLocalMatrix,
     kImage,
     kBlendShader,
+    kRuntimeShader,
 
-    kLast          = kBlendShader
+    kLast          = kRuntimeShader
 };
 
 static constexpr int kSkShaderTypeCount = static_cast<int>(SkShaderType::kLast) + 1;
@@ -153,6 +155,9 @@ private:
     int numCombinations() {
         return this->numShaderCombinations() * this->numBlendModeCombinations();
     }
+
+    // 'desiredCombination' must be less than numCombinations
+    void createKey(const SkKeyContext&, int desiredCombination, SkPaintParamsKeyBuilder*);
 
 #ifdef SK_DEBUG
     void dump() const;

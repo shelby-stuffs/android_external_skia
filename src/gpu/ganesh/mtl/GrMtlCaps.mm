@@ -336,7 +336,14 @@ void GrMtlCaps::initGrCaps(id<MTLDevice> device) {
     fMaxTextureSize = fMaxRenderTargetSize;
 
     fMaxPushConstantsSize = 4*1024;
-    fTransferBufferAlignment = 1;
+    fTransferBufferRowBytesAlignment = 1;
+
+    // This is documented to be 4 for all Macs. However, on Apple GPUs on Mac it appears there is
+    // no actual alignment requirement
+    // https://developer.apple.com/documentation/metal/mtlblitcommandencoder/1400767-copyfrombuffer
+    if (this->isMac() && fFamilyGroup < 7) {
+        fTransferFromBufferToBufferAlignment = 4;
+    }
 
     // Init sample counts. All devices support 1 (i.e. 0 in skia).
     fSampleCounts.push_back(1);
@@ -372,6 +379,7 @@ void GrMtlCaps::initGrCaps(id<MTLDevice> device) {
 
     fTransferFromBufferToTextureSupport = true;
     fTransferFromSurfaceToBufferSupport = true;
+    fTransferFromBufferToBufferSupport  = true;
 
     fTextureBarrierSupport = false; // Need to figure out if we can do this
 
@@ -1241,13 +1249,13 @@ void GrMtlCaps::onDumpJSON(SkJSONWriter* writer) const {
 
     switch (fGPUFamily) {
         case GPUFamily::kMac:
-            writer->appendString("GPU Family", "Mac");
+            writer->appendNString("GPU Family", "Mac");
             break;
         case GPUFamily::kApple:
-            writer->appendString("GPU Family", "Apple");
+            writer->appendNString("GPU Family", "Apple");
             break;
         default:
-            writer->appendString("GPU Family", "unknown");
+            writer->appendNString("GPU Family", "unknown");
             break;
     }
     writer->appendS32("Family Group", fFamilyGroup);

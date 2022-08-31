@@ -76,7 +76,7 @@ sk_sp<GrD3DBuffer> GrD3DBuffer::Make(GrD3DGpu* gpu, size_t size, GrGpuBufferType
     return sk_sp<GrD3DBuffer>(new GrD3DBuffer(gpu, size, intendedType, accessPattern,
                                               std::move(resource), std::move(alloc),
                                               resourceState,
-                                              /*label=*/{}));
+                                              /*label=*/"MakeD3DBuffer"));
 }
 
 GrD3DBuffer::GrD3DBuffer(GrD3DGpu* gpu, size_t size, GrGpuBufferType intendedType,
@@ -150,10 +150,6 @@ void GrD3DBuffer::onUnmap() {
 }
 
 bool GrD3DBuffer::onUpdateData(const void* src, size_t size) {
-    SkASSERT(src);
-    if (size > this->size()) {
-        return false;
-    }
     if (!fD3DResource) {
         return false;
     }
@@ -213,10 +209,6 @@ void GrD3DBuffer::internalUnmap(size_t size) {
     SkASSERT(this->isMapped());
     VALIDATE();
 
-#ifdef SK_BUILD_FOR_MAC
-    // In both cases the size needs to be 4-byte aligned on Mac
-    sizeInBytes = SkAlign4(sizeInBytes);
-#endif
     if (this->accessPattern() == kStatic_GrAccessPattern) {
         SkASSERT(fStagingBuffer);
         this->setResourceState(this->getD3DGpu(), D3D12_RESOURCE_STATE_COPY_DEST);

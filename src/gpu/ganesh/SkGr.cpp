@@ -394,7 +394,7 @@ static std::unique_ptr<GrFragmentProcessor> make_dither_effect(
     GrSamplerState sampler(GrSamplerState::WrapMode::kRepeat, SkFilterMode::kNearest);
     auto te = GrTextureEffect::Make(
             std::move(tex), kPremul_SkAlphaType, SkMatrix::I(), sampler, *caps);
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
         uniform half range;
         uniform shader table;
         half4 main(float2 xy, half4 color) {
@@ -404,14 +404,10 @@ static std::unique_ptr<GrFragmentProcessor> make_dither_effect(
             return half4(clamp(color.rgb + value * range, 0.0, color.a), color.a);
         }
     )");
-    return GrSkSLFP::Make(effect,
-                          "Dither",
-                          std::move(inputFP),
+    return GrSkSLFP::Make(effect, "Dither", std::move(inputFP),
                           GrSkSLFP::OptFlags::kPreservesOpaqueInput,
-                          "range",
-                          range,
-                          "table",
-                          std::move(te));
+                          "range", range,
+                          "table", std::move(te));
 }
 #endif
 

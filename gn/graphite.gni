@@ -11,6 +11,7 @@ _include_private = get_path_info("../include/private/gpu/graphite", "abspath")
 skia_graphite_public = [
   "$_include/BackendTexture.h",
   "$_include/Context.h",
+  "$_include/ContextOptions.h",
   "$_include/GraphiteTypes.h",
   "$_include/Recorder.h",
   "$_include/Recording.h",
@@ -39,6 +40,8 @@ skia_graphite_sources = [
   "$_src/CopyTask.h",
   "$_src/Device.cpp",
   "$_src/Device.h",
+  "$_src/DrawAtlas.cpp",
+  "$_src/DrawAtlas.h",
   "$_src/DrawBufferManager.cpp",
   "$_src/DrawBufferManager.h",
   "$_src/DrawContext.cpp",
@@ -46,6 +49,7 @@ skia_graphite_sources = [
   "$_src/DrawList.cpp",
   "$_src/DrawList.h",
   "$_src/DrawOrder.h",
+  "$_src/DrawParams.h",
   "$_src/DrawPass.cpp",
   "$_src/DrawPass.h",
   "$_src/DrawTypes.h",
@@ -107,6 +111,7 @@ skia_graphite_sources = [
   "$_src/UploadTask.cpp",
   "$_src/UploadTask.h",
   "$_src/geom/BoundsManager.h",
+  "$_src/geom/Geometry.h",
   "$_src/geom/IntersectionTree.cpp",
   "$_src/geom/IntersectionTree.h",
   "$_src/geom/Rect.h",
@@ -127,6 +132,13 @@ skia_graphite_sources = [
   "$_src/render/TessellateStrokesRenderStep.h",
   "$_src/render/TessellateWedgesRenderStep.cpp",
   "$_src/render/TessellateWedgesRenderStep.h",
+  "$_src/render/TextDirectRenderStep.cpp",
+  "$_src/render/TextDirectRenderStep.h",
+  "$_src/render/TextRenderer.cpp",
+  "$_src/render/TextSDFRenderStep.cpp",
+  "$_src/render/TextSDFRenderStep.h",
+  "$_src/text/AtlasManager.cpp",
+  "$_src/text/AtlasManager.h",
 ]
 
 skia_graphite_mtl_sources = [

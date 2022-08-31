@@ -9,6 +9,7 @@
 #define SkSpan_DEFINED
 
 #include <cstddef>
+#include <initializer_list>
 #include <iterator>
 #include <type_traits>
 #include <utility>
@@ -16,22 +17,25 @@
 
 /**
  * An SkSpan is a view of a contiguous collection of elements of type T. It can be directly
- * constructed from a pointer and size. SkMakeSpan can be used to construct one from an array,
+ * constructed from a pointer and size, or it can be used to construct one from an array,
  * or a container (like std::vector).
  *
- * With C++17, we could add template deduction guides that eliminate the need for SkMakeSpan:
- *     https://skia-review.googlesource.com/c/skia/+/320264
  */
 template <typename T>
 class SkSpan {
 public:
     constexpr SkSpan() : fPtr{nullptr}, fSize{0} {}
     constexpr SkSpan(T* ptr, size_t size) : fPtr{ptr}, fSize{size} {
+        SkASSERT(ptr || size == 0);  // disallow nullptr + a nonzero size
         SkASSERT(size < kMaxSize);
     }
     template <typename U, typename = typename std::enable_if<std::is_same<const U, T>::value>::type>
-    constexpr SkSpan(const SkSpan<U>& that) : fPtr(that.data()), fSize{that.size()} {}
+    constexpr SkSpan(const SkSpan<U>& that) : fPtr(std::data(that)), fSize{std::size(that)} {}
     constexpr SkSpan(const SkSpan& o) = default;
+    template<size_t N> constexpr SkSpan(T(&a)[N]) : SkSpan(a, N) { }
+    template<typename Container>
+    constexpr SkSpan(Container& c) : SkSpan{std::data(c), std::size(c)} { }
+    SkSpan(std::initializer_list<T> il) : SkSpan(std::data(il), std::size(il)) {}
 
     constexpr SkSpan& operator=(const SkSpan& that) = default;
 
@@ -67,23 +71,17 @@ public:
     }
 
 private:
-    static constexpr size_t kMaxSize = std::numeric_limits<size_t>::max() / sizeof(T);
+    static const constexpr size_t kMaxSize = std::numeric_limits<size_t>::max() / sizeof(T);
     T* fPtr;
     size_t fSize;
 };
 
-template <typename T, typename S> inline constexpr SkSpan<T> SkMakeSpan(T* p, S s) {
-    return SkSpan<T>{p, SkTo<size_t>(s)};
-}
-
-template <size_t N, typename T> inline constexpr SkSpan<T> SkMakeSpan(T (&a)[N]) {
-    return SkSpan<T>{a, N};
-}
-
 template <typename Container>
-inline auto SkMakeSpan(Container& c)
-        -> SkSpan<typename std::remove_reference<decltype(*(c.data()))>::type> {
-    return {c.data(), c.size()};
-}
+SkSpan(Container&) ->
+        SkSpan<std::remove_pointer_t<decltype(std::data(std::declval<Container&>()))>>;
+
+template <typename T>
+SkSpan(std::initializer_list<T>) ->
+    SkSpan<std::remove_pointer_t<decltype(std::data(std::declval<std::initializer_list<T>>()))>>;
 
 #endif  // SkSpan_DEFINED

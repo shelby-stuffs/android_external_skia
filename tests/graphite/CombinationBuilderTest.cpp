@@ -9,22 +9,9 @@
 
 #include "include/core/SkCombinationBuilder.h"
 
-using namespace::skgpu::graphite;
+#include "tests/graphite/CombinationBuilderTestAccess.h"
 
-class CombinationBuilderTestAccess {
-public:
-    static int NumCombinations(SkCombinationBuilder* builder) {
-        return builder->numCombinations();
-    }
-#ifdef SK_DEBUG
-    static int Epoch(const SkCombinationBuilder& builder) {
-        return builder.epoch();
-    }
-    static int Epoch(const SkCombinationOption& option) {
-        return option.epoch();
-    }
-#endif
-};
+using namespace::skgpu::graphite;
 
 namespace {
 
@@ -126,8 +113,7 @@ void big_test(Context *context, skiatest::Reporter* reporter) {
 
                 // only option (imageShader_0)
                 [[maybe_unused]] auto imageShader_0 = blendShader_1.addChildOption(
-                        1, SkShaderType::kImage,
-                        SkMakeSpan(tilingOptions));
+                        1, SkShaderType::kImage, tilingOptions);
             }
         }
     }

@@ -45,12 +45,14 @@ enum class SnippetRequirementFlags : uint32_t {
 SK_MAKE_BITMASK_OPS(SnippetRequirementFlags);
 
 struct SkShaderSnippet {
-    using GenerateGlueCodeForEntry = std::string (*)(const std::string& resultName,
-                                                     int entryIndex, // for uniform name mangling
-                                                     const SkPaintParamsKey::BlockReader&,
-                                                     const std::string& priorStageOutputName,
-                                                     const std::vector<std::string>& childNames,
-                                                     int indent);
+    using GenerateGlueCodeForEntry = void (*)(const std::string& resultName,
+                                              int entryIndex,  // for uniform name mangling
+                                              const SkPaintParamsKey::BlockReader&,
+                                              const std::string& priorStageOutputName,
+                                              const std::vector<std::string>& childNames,
+                                              std::string* preamble,
+                                              std::string* mainBody,
+                                              int indent);
 
     SkShaderSnippet() = default;
 
@@ -69,16 +71,13 @@ struct SkShaderSnippet {
             , fStaticFunctionName(functionName)
             , fGlueCodeGenerator(glueCodeGenerator)
             , fNumChildren(numChildren)
-            , fDataPayloadExpectations(dataPayloadExpectations) {
-    }
+            , fDataPayloadExpectations(dataPayloadExpectations) {}
 
     std::string getMangledUniformName(int uniformIndex, int mangleId) const;
 
     bool needsLocalCoords() const {
         return fSnippetRequirementFlags & SnippetRequirementFlags::kLocalCoords;
     }
-
-    int numExpectedChildren() const { return fNumChildren; }
 
     const char* fName = nullptr;
     SkSpan<const SkUniform> fUniforms;
@@ -111,7 +110,7 @@ public:
     const skgpu::BlendInfo& blendInfo() const { return fBlendInfo; }
 #endif
 
-#if SK_SUPPORT_GPU && defined(SK_GRAPHITE_ENABLED) && defined(SK_METAL)
+#if (SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)) && defined(SK_METAL)
     std::string toSkSL() const;
 #endif
 
@@ -119,7 +118,8 @@ private:
     std::string emitGlueCodeForEntry(int* entryIndex,
                                      const std::string& priorStageOutputName,
                                      const std::string& parentPreLocalName,
-                                     std::string* result,
+                                     std::string* preamble,
+                                     std::string* mainBody,
                                      int indent) const;
 
     std::vector<SkPaintParamsKey::BlockReader> fBlockReaders;
@@ -176,12 +176,7 @@ public:
 #endif
     };
 
-#ifdef SK_GRAPHITE_ENABLED
-    const Entry* findOrCreate(const SkPaintParamsKey&,
-                              const skgpu::BlendInfo&) SK_EXCLUDES(fSpinLock);
-#else
-    const Entry* findOrCreate(const SkPaintParamsKey&) SK_EXCLUDES(fSpinLock);
-#endif
+    const Entry* findOrCreate(SkPaintParamsKeyBuilder*) SK_EXCLUDES(fSpinLock);
 
     const Entry* lookup(SkUniquePaintParamsID) const SK_EXCLUDES(fSpinLock);
 

@@ -40,8 +40,9 @@ Context::Context(sk_sp<Gpu> gpu, BackendApi backend)
 Context::~Context() {}
 
 #ifdef SK_METAL
-std::unique_ptr<Context> Context::MakeMetal(const MtlBackendContext& backendContext) {
-    sk_sp<Gpu> gpu = MtlTrampoline::MakeGpu(backendContext);
+std::unique_ptr<Context> Context::MakeMetal(const MtlBackendContext& backendContext,
+                                            const ContextOptions& options) {
+    sk_sp<Gpu> gpu = MtlTrampoline::MakeGpu(backendContext, options);
     if (!gpu) {
         return nullptr;
     }
@@ -72,6 +73,7 @@ void Context::insertRecording(const InsertRecordingInfo& info) {
     // For now we only allow one CommandBuffer. So we just ref it off the InsertRecordingInfo and
     // hold onto it until we submit.
     fCurrentCommandBuffer = info.fRecording->fCommandBuffer;
+    SkASSERT(fCurrentCommandBuffer);
     if (callback) {
         fCurrentCommandBuffer->addFinishedProc(std::move(callback));
     }

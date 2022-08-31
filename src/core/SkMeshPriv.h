@@ -12,11 +12,11 @@
 
 #ifdef SK_ENABLE_SKSL
 #include "include/core/SkData.h"
-#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkSLTypeShared.h"
 
 #if SK_SUPPORT_GPU
 #include "include/gpu/GrDirectContext.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGpuBuffer.h"
 #include "src/gpu/ganesh/GrResourceCache.h"
@@ -29,7 +29,7 @@ struct SkMeshSpecificationPriv {
     using ColorType = SkMeshSpecification::ColorType;
 
     static SkSpan<const Varying> Varyings(const SkMeshSpecification& spec) {
-        return SkMakeSpan(spec.fVaryings);
+        return SkSpan(spec.fVaryings);
     }
 
     static const SkSL::Program* VS(const SkMeshSpecification& spec) { return spec.fVS.get(); }
@@ -64,6 +64,7 @@ struct SkMeshSpecificationPriv {
         SkUNREACHABLE;
     }
 
+#if SK_SUPPORT_GPU
     static GrVertexAttribType AttrTypeAsVertexAttribType(Attribute::Type type) {
         switch (type) {
             case Attribute::Type::kFloat:        return kFloat_GrVertexAttribType;
@@ -74,6 +75,7 @@ struct SkMeshSpecificationPriv {
         }
         SkUNREACHABLE;
     }
+#endif
 
     static SkSLType AttrTypeAsSLType(Attribute::Type type) {
         switch (type) {

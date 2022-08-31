@@ -152,8 +152,8 @@ static std::unique_ptr<skgpu::v1::SurfaceDrawContext> random_surface_draw_contex
 
     return skgpu::v1::SurfaceDrawContext::Make(
             rContext, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kExact,
-            {kRenderTargetWidth, kRenderTargetHeight}, SkSurfaceProps(), sampleCnt,
-            GrMipmapped::kNo, GrProtected::kNo, origin);
+            {kRenderTargetWidth, kRenderTargetHeight}, SkSurfaceProps(), /*label=*/{},
+            sampleCnt, GrMipmapped::kNo, GrProtected::kNo, origin);
 }
 
 #if GR_TEST_UTILS
@@ -254,7 +254,8 @@ bool GrDrawingManager::ProgramUnitTest(GrDirectContext* direct, int maxStages, i
                                                                      GrRenderable::kYes);
         auto proxy = proxyProvider->createProxy(format, kDims, GrRenderable::kYes, 1,
                                                 mipmapped, SkBackingFit::kExact, SkBudgeted::kNo,
-                                                GrProtected::kNo, /*label=*/{}, GrInternalSurfaceFlags::kNone);
+                                                GrProtected::kNo, /*label=*/{},
+                                                GrInternalSurfaceFlags::kNone);
         skgpu::Swizzle swizzle = caps->getReadSwizzle(format, GrColorType::kRGBA_8888);
         views[0] = {{std::move(proxy), kBottomLeft_GrSurfaceOrigin, swizzle},
                     GrColorType::kRGBA_8888, kPremul_SkAlphaType};
@@ -265,7 +266,8 @@ bool GrDrawingManager::ProgramUnitTest(GrDirectContext* direct, int maxStages, i
                                                                      GrRenderable::kNo);
         auto proxy = proxyProvider->createProxy(format, kDims, GrRenderable::kNo, 1, mipmapped,
                                                 SkBackingFit::kExact, SkBudgeted::kNo,
-                                                GrProtected::kNo, /*label=*/{}, GrInternalSurfaceFlags::kNone);
+                                                GrProtected::kNo, /*label=*/{},
+                                                GrInternalSurfaceFlags::kNone);
         skgpu::Swizzle swizzle = caps->getReadSwizzle(format, GrColorType::kAlpha_8);
         views[1] = {{std::move(proxy), kTopLeft_GrSurfaceOrigin, swizzle},
                       GrColorType::kAlpha_8, kPremul_SkAlphaType};
@@ -299,7 +301,8 @@ bool GrDrawingManager::ProgramUnitTest(GrDirectContext* direct, int maxStages, i
     // Validate that GrFPs work correctly without an input.
     auto sdc = skgpu::v1::SurfaceDrawContext::Make(
             direct, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kExact,
-            {kRenderTargetWidth, kRenderTargetHeight}, SkSurfaceProps());
+            {kRenderTargetWidth, kRenderTargetHeight}, SkSurfaceProps(),
+            /*label=*/{});
     if (!sdc) {
         SkDebugf("Could not allocate a surfaceDrawContext");
         return false;

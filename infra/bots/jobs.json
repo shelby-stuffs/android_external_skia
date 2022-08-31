@@ -1,5 +1,5 @@
 [
-  {"name": "BazelBuild-modules_canvaskit_canvaskit_wasm-debug-linux_x64"},
+  {"name": "BazelBuild-modules_canvaskit_canvaskit_wasm-ck_debug-linux_x64"},
   {"name": "BazelBuild-example_hello_world_dawn-enforce_iwyu-linux_x64"},
   {"name": "BazelBuild-example_hello_world_dawn-release-linux_x64",
    "cq_config": {}
@@ -512,7 +512,6 @@
   {"name": "Test-Debian10-Clang-GCE-CPU-Rome-x86_64-Debug-All"},
   {"name": "Test-Debian10-Clang-GCE-CPU-Rome-x86_64-Release-All"},
   {"name": "Test-Debian10-Clang-GCE-GPU-SwiftShader-x86_64-Debug-All-SwiftShader"},
-  {"name": "Test-Debian10-Clang-GCE-GPU-SwiftShader-x86_64-Debug-All-SwiftShader_MSAN"},
   {"name": "Test-Debian10-Clang-GCE-GPU-SwiftShader-x86_64-Release-All-SwiftShader"},
   {"name": "Test-Debian10-Clang-NUC5PPYH-GPU-IntelHD405-x86_64-Debug-All"},
   {"name": "Test-Debian10-Clang-NUC5PPYH-GPU-IntelHD405-x86_64-Debug-All-Vulkan"},

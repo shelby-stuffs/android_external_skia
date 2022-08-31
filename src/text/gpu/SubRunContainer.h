@@ -13,7 +13,6 @@
 #include "src/core/SkDevice.h"
 #include "src/text/gpu/SubRunAllocator.h"
 
-class SkGlyphRunList;
 class SkMatrix;
 class SkMatrixProvider;
 class SkPaint;
@@ -22,9 +21,12 @@ class SkStrikeClient;
 class SkStrikeForGPUCacheInterface;
 class SkWriteBuffer;
 
-namespace sktext::gpu {
-class Glyph;
-class StrikeCache;
+namespace sktext {
+class GlyphRunList;
+    namespace gpu {
+    class Glyph;
+    class StrikeCache;
+    }
 }
 
 #if SK_SUPPORT_GPU  // Ganesh support
@@ -104,6 +106,16 @@ public:
                       const SkPaint&,
                       sk_sp<SkRefCnt> subRunStorage,
                       skgpu::v1::SurfaceDrawContext*) const = 0;
+#endif
+#if defined(SK_GRAPHITE_ENABLED)
+    // TODO: make this pure virtual once all are defined
+    // Produce GPU tasks for this subRun or just draw them.
+    virtual void draw(SkCanvas*,
+                      const SkMatrixProvider& viewMatrix,
+                      SkPoint drawOrigin,
+                      const SkPaint&,
+                      sk_sp<SkRefCnt> subRunStorage,
+                      skgpu::graphite::Device*) const {}
 #endif
 
     void flatten(SkWriteBuffer& buffer) const;
@@ -195,7 +207,7 @@ public:
                                                       SubRunAllocator* alloc);
 
     static std::tuple<bool, SubRunContainerOwner> MakeInAlloc(
-            const SkGlyphRunList& glyphRunList,
+            const GlyphRunList& glyphRunList,
             const SkMatrix& positionMatrix,
             const SkPaint& runPaint,
             SkStrikeDeviceInfo strikeDeviceInfo,
@@ -203,7 +215,7 @@ public:
             sktext::gpu::SubRunAllocator* alloc,
             const char* tag);
 
-    static size_t EstimateAllocSize(const SkGlyphRunList& glyphRunList);
+    static size_t EstimateAllocSize(const GlyphRunList& glyphRunList);
 
 #if SK_SUPPORT_GPU
     void draw(SkCanvas* canvas,
@@ -213,6 +225,14 @@ public:
               const SkPaint& paint,
               const SkRefCnt* subRunStorage,
               skgpu::v1::SurfaceDrawContext* sdc) const;
+#endif
+#ifdef SK_GRAPHITE_ENABLED
+    void draw(SkCanvas*,
+              const SkMatrixProvider& viewMatrix,
+              SkPoint drawOrigin,
+              const SkPaint&,
+              const SkRefCnt* subRunStorage,
+              skgpu::graphite::Device*) const;
 #endif
 
     const SkMatrix& initialPosition() const { return fInitialPositionMatrix; }

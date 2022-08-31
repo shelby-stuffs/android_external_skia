@@ -67,7 +67,7 @@ static std::unique_ptr<GrFragmentProcessor> make_textured_colorizer(const SkPMCo
 
 static std::unique_ptr<GrFragmentProcessor> make_single_interval_colorizer(const SkPMColor4f& start,
                                                                            const SkPMColor4f& end) {
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
         uniform half4 start;
         uniform half4 end;
         half4 main(float2 coord) {
@@ -87,7 +87,7 @@ static std::unique_ptr<GrFragmentProcessor> make_dual_interval_colorizer(const S
                                                                          const SkPMColor4f& c2,
                                                                          const SkPMColor4f& c3,
                                                                          float threshold) {
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
         uniform float4 scale[2];
         uniform float4 bias[2];
         uniform half threshold;
@@ -120,8 +120,8 @@ static std::unique_ptr<GrFragmentProcessor> make_dual_interval_colorizer(const S
                            vc2 - threshold * scale[1]};
     return GrSkSLFP::Make(effect, "DualIntervalColorizer", /*inputFP=*/nullptr,
                           GrSkSLFP::OptFlags::kNone,
-                          "scale", SkMakeSpan(scale),
-                          "bias", SkMakeSpan(bias),
+                          "scale", SkSpan(scale),
+                          "bias", SkSpan(bias),
                           "threshold", threshold);
 }
 
@@ -139,7 +139,7 @@ static std::unique_ptr<GrFragmentProcessor> make_unrolled_colorizer(int interval
     SkASSERT(intervalCount >= 1 && intervalCount <= 8);
 
     static SkOnce                 once[kMaxUnrolledIntervalCount];
-    static sk_sp<SkRuntimeEffect> effects[kMaxUnrolledIntervalCount];
+    static const SkRuntimeEffect* effects[kMaxUnrolledIntervalCount];
 
     once[intervalCount - 1]([intervalCount] {
         SkString sksl;
@@ -228,15 +228,15 @@ static std::unique_ptr<GrFragmentProcessor> make_unrolled_colorizer(int interval
 
         auto result = SkRuntimeEffect::MakeForShader(std::move(sksl));
         SkASSERTF(result.effect, "%s", result.errorText.c_str());
-        effects[intervalCount - 1] = std::move(result.effect);
+        effects[intervalCount - 1] = result.effect.release();
     });
 
     return GrSkSLFP::Make(effects[intervalCount - 1], "UnrolledBinaryColorizer",
                           /*inputFP=*/nullptr, GrSkSLFP::OptFlags::kNone,
                           "thresholds1_7", thresholds1_7,
                           "thresholds9_13", thresholds9_13,
-                          "scale", SkMakeSpan(scale, intervalCount),
-                          "bias", SkMakeSpan(bias, intervalCount));
+                          "scale", SkSpan(scale, intervalCount),
+                          "bias", SkSpan(bias, intervalCount));
 }
 
 // The "looping" colorizer uses a real loop to binary-search the array of gradient stops.
@@ -254,7 +254,7 @@ static std::unique_ptr<GrFragmentProcessor> make_looping_colorizer(int intervalC
 
     struct EffectCacheEntry {
         SkOnce once;
-        sk_sp<SkRuntimeEffect> effect;
+        const SkRuntimeEffect* effect;
     };
 
     static EffectCacheEntry effectCache[kMaxLoopingIntervalCount / 4];
@@ -320,14 +320,14 @@ static std::unique_ptr<GrFragmentProcessor> make_looping_colorizer(int intervalC
 
         auto result = SkRuntimeEffect::MakeForShader(std::move(sksl));
         SkASSERTF(result.effect, "%s", result.errorText.c_str());
-        cacheEntry->effect = std::move(result.effect);
+        cacheEntry->effect = result.effect.release();
     });
 
     return GrSkSLFP::Make(cacheEntry->effect, "LoopingBinaryColorizer",
                           /*inputFP=*/nullptr, GrSkSLFP::OptFlags::kNone,
-                          "thresholds", SkMakeSpan((const SkV4*)thresholds, intervalChunks),
-                          "scale", SkMakeSpan(scale, intervalCount),
-                          "bias", SkMakeSpan(bias, intervalCount));
+                          "thresholds", SkSpan((const SkV4*)thresholds, intervalChunks),
+                          "scale", SkSpan(scale, intervalCount),
+                          "bias", SkSpan(bias, intervalCount));
 }
 
 // Converts an input array of {colors, positions} into an array of {scales, biases, thresholds}.
@@ -539,7 +539,7 @@ static std::unique_ptr<GrFragmentProcessor> make_clamped_gradient(
         SkPMColor4f rightBorderColor,
         bool makePremul,
         bool colorsAreOpaque) {
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
         uniform shader colorizer;
         uniform shader gradLayout;
 
@@ -602,7 +602,7 @@ static std::unique_ptr<GrFragmentProcessor> make_tiled_gradient(
         bool mirror,
         bool makePremul,
         bool colorsAreOpaque) {
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
         uniform shader colorizer;
         uniform shader gradLayout;
 
@@ -779,7 +779,7 @@ std::unique_ptr<GrFragmentProcessor> MakeLinear(const SkLinearGradient& shader,
     // falls at X.5 - delta then we still could get inconsistent results, but that is much less
     // likely. crbug.com/938592
     // If/when we add filtering of the gradient this can be removed.
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
         half4 main(float2 coord) {
             return half4(half(coord.x) + 0.00001, 1, 0, 0); // y = 1 for always valid
         }
@@ -792,7 +792,7 @@ std::unique_ptr<GrFragmentProcessor> MakeLinear(const SkLinearGradient& shader,
 
 std::unique_ptr<GrFragmentProcessor> MakeRadial(const SkRadialGradient& shader,
                                                 const GrFPArgs& args) {
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
         half4 main(float2 coord) {
             return half4(half(length(coord)), 1, 0, 0); // y = 1 for always valid
         }
@@ -812,7 +812,7 @@ std::unique_ptr<GrFragmentProcessor> MakeSweep(const SkSweepGradient& shader,
     // using atan instead.
     int useAtanWorkaround =
             args.fContext->priv().caps()->shaderCaps()->fAtan2ImplementedAsAtanYOverX;
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
         uniform half bias;
         uniform half scale;
         uniform int useAtanWorkaround;  // specialized
@@ -844,7 +844,8 @@ std::unique_ptr<GrFragmentProcessor> MakeConical(const SkTwoPointConicalGradient
     SkTLazy<SkMatrix> matrix;
     switch (shader.getType()) {
         case SkTwoPointConicalGradient::Type::kStrip: {
-            static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+            static const SkRuntimeEffect* effect =
+                    SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
                 uniform half r0_2;
                 half4 main(float2 p) {
                     half v = 1; // validation flag, set to negative to discard fragment later
@@ -864,7 +865,8 @@ std::unique_ptr<GrFragmentProcessor> MakeConical(const SkTwoPointConicalGradient
         } break;
 
         case SkTwoPointConicalGradient::Type::kRadial: {
-            static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+            static const SkRuntimeEffect* effect =
+                    SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
                 uniform half r0;
                 uniform half lengthScale;
                 half4 main(float2 p) {
@@ -892,7 +894,8 @@ std::unique_ptr<GrFragmentProcessor> MakeConical(const SkTwoPointConicalGradient
         } break;
 
         case SkTwoPointConicalGradient::Type::kFocal: {
-            static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+            static const SkRuntimeEffect* effect =
+                    SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
                 // Optimization flags, all specialized:
                 uniform int isRadiusIncreasing;
                 uniform int isFocalOnCircle;

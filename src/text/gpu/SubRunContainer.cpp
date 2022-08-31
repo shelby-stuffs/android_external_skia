@@ -11,11 +11,11 @@
 #include "src/core/SkDescriptor.h"
 #include "src/core/SkDistanceFieldGen.h"
 #include "src/core/SkGlyphBuffer.h"
-#include "src/core/SkGlyphRun.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkStrikeCache.h"
 #include "src/gpu/AtlasTypes.h"
+#include "src/text/GlyphRun.h"
 #include "src/text/gpu/Glyph.h"
 #include "src/text/gpu/GlyphVector.h"
 #include "src/text/gpu/SubRunAllocator.h"
@@ -454,15 +454,9 @@ public:
     static std::optional<PathOpSubmitter> MakeFromBuffer(SkReadBuffer& buffer,
                                                          SubRunAllocator* alloc,
                                                          const SkStrikeClient* client);
-
-#if SK_SUPPORT_GPU
-    void submitOps(SkCanvas*,
-                   const GrClip* clip,
-                   const SkMatrixProvider& viewMatrix,
-                   SkPoint drawOrigin,
-                   const SkPaint& paint,
-                   skgpu::v1::SurfaceDrawContext* sdc) const;
-#endif  // SK_SUPPORT_GPU
+    void submitDraws(SkCanvas*,
+                     SkPoint drawOrigin,
+                     const SkPaint& paint) const;
 
 private:
     const bool fIsAntiAliased;
@@ -525,7 +519,7 @@ std::optional<PathOpSubmitter> PathOpSubmitter::MakeFromBuffer(SkReadBuffer& buf
     auto paths = alloc->makeUniqueArray<SkPath>(glyphCount);
     SkBulkGlyphMetricsAndPaths pathGetter{std::move(strike)};
 
-    for (auto [i, glyphID] : SkMakeEnumerate(SkMakeSpan(glyphIDs, glyphCount))) {
+    for (auto [i, glyphID] : SkMakeEnumerate(SkSpan(glyphIDs, glyphCount))) {
         const SkPath* path = pathGetter.glyph(glyphID)->path();
         // There should never be missing paths in a sub run.
         if (path == nullptr) { return {}; }
@@ -535,8 +529,8 @@ std::optional<PathOpSubmitter> PathOpSubmitter::MakeFromBuffer(SkReadBuffer& buf
     SkASSERT(buffer.isValid());
     return {PathOpSubmitter{isAntiAlias,
                             strikeToSourceScale,
-                            SkMakeSpan(positions, glyphCount),
-                            SkMakeSpan(glyphIDs, glyphCount),
+                            SkSpan(positions, glyphCount),
+                            SkSpan(glyphIDs, glyphCount),
                             std::move(paths),
                             *descriptor->getDesc()}};
 }
@@ -575,22 +569,17 @@ PathOpSubmitter PathOpSubmitter::Make(const SkZip<SkGlyphVariant, SkPoint>& acce
 
     return PathOpSubmitter{isAntiAliased,
                            strikeToSourceScale,
-                           SkMakeSpan(positions, glyphCount),
-                           SkMakeSpan(glyphIDs, glyphCount),
+                           SkSpan(positions, glyphCount),
+                           SkSpan(glyphIDs, glyphCount),
                            std::move(paths),
                            descriptor};
 }
 
-#if SK_SUPPORT_GPU
-void PathOpSubmitter::submitOps(SkCanvas* canvas,
-                                const GrClip* clip,
-                                const SkMatrixProvider& viewMatrix,
-                                SkPoint drawOrigin,
-                                const SkPaint& paint,
-                                skgpu::v1::SurfaceDrawContext* sdc) const {
+void PathOpSubmitter::submitDraws(SkCanvas* canvas,
+                                  SkPoint drawOrigin,
+                                  const SkPaint& paint) const {
     SkPaint runPaint{paint};
     runPaint.setAntiAlias(fIsAntiAliased);
-
 
     SkMaskFilterBase* maskFilter = as_MFB(runPaint.getMaskFilter());
 
@@ -601,9 +590,10 @@ void PathOpSubmitter::submitOps(SkCanvas* canvas,
 
     // If there are shaders, non-blur mask filters or styles, the path must be scaled into source
     // space independently of the CTM. This allows the CTM to be correct for the different effects.
-    GrStyle style(runPaint);
+    SkStrokeRec style(runPaint);
     bool needsExactCTM = runPaint.getShader()
-                         || style.applies()
+                         || runPaint.getPathEffect()
+                         || (!style.isFillStyle() && !style.isHairlineStyle())
                          || (maskFilter != nullptr && !maskFilter->asABlur(nullptr));
     if (!needsExactCTM) {
         SkMaskFilterBase::BlurRec blurRec;
@@ -638,7 +628,6 @@ void PathOpSubmitter::submitOps(SkCanvas* canvas,
         }
     }
 }
-#endif  // SK_SUPPORT_GPU
 
 // -- PathSubRun -----------------------------------------------------------------------------------
 class PathSubRun final : public SubRun {
@@ -657,15 +646,25 @@ public:
 
 #if SK_SUPPORT_GPU
     void draw(SkCanvas* canvas,
-              const GrClip* clip,
+              const GrClip*,
+              const SkMatrixProvider&,
+              SkPoint drawOrigin,
+              const SkPaint& paint,
+              sk_sp<SkRefCnt>,
+              skgpu::v1::SurfaceDrawContext*) const override {
+        fPathDrawing.submitDraws(canvas, drawOrigin, paint);
+    }
+#endif  // SK_SUPPORT_GPU
+#if defined(SK_GRAPHITE_ENABLED)
+    void draw(SkCanvas* canvas,
               const SkMatrixProvider& viewMatrix,
               SkPoint drawOrigin,
               const SkPaint& paint,
               sk_sp<SkRefCnt> subRunStorage,
-              skgpu::v1::SurfaceDrawContext* sdc) const override {
-        fPathDrawing.submitOps(canvas, clip, viewMatrix, drawOrigin, paint, sdc);
+              skgpu::graphite::Device* device) const override {
+        fPathDrawing.submitDraws(canvas, drawOrigin, paint);
     }
-#endif  // SK_SUPPORT_GPU
+#endif  // SK_GRAPHITE_ENABLED
 
     int unflattenSize() const override;
 
@@ -793,7 +792,7 @@ std::optional<DrawableOpSubmitter> DrawableOpSubmitter::MakeFromBuffer(
 
     auto drawables = alloc->makePODArray<SkDrawable*>(glyphCount);
     SkBulkGlyphMetricsAndDrawables drawableGetter(sk_sp<SkStrike>{strike});
-    auto glyphs = drawableGetter.glyphs(SkMakeSpan(glyphIDs, glyphCount));
+    auto glyphs = drawableGetter.glyphs(SkSpan(glyphIDs, glyphCount));
 
     for (auto [i, glyph] : SkMakeEnumerate(glyphs)) {
         drawables[i] = glyph->drawable();
@@ -801,9 +800,9 @@ std::optional<DrawableOpSubmitter> DrawableOpSubmitter::MakeFromBuffer(
 
     SkASSERT(buffer.isValid());
     return {DrawableOpSubmitter{strikeToSourceScale,
-                                SkMakeSpan(positions, glyphCount),
-                                SkMakeSpan(glyphIDs, glyphCount),
-                                SkMakeSpan(drawables, glyphCount),
+                                SkSpan(positions, glyphCount),
+                                SkSpan(glyphIDs, glyphCount),
+                                SkSpan(drawables, glyphCount),
                                 std::move(strike),
                                 *descriptor->getDesc()}};
 }
@@ -840,9 +839,9 @@ DrawableOpSubmitter DrawableOpSubmitter::Make(const SkZip<SkGlyphVariant, SkPoin
     }
 
     return DrawableOpSubmitter{strikeToSourceScale,
-                               SkMakeSpan(positions, glyphCount),
-                               SkMakeSpan(glyphIDs, glyphCount),
-                               SkMakeSpan(drawables, glyphCount),
+                               SkSpan(positions, glyphCount),
+                               SkSpan(glyphIDs, glyphCount),
+                               SkSpan(drawables, glyphCount),
                                std::move(strike),
                                descriptor};
 }
@@ -2133,7 +2132,7 @@ SubRunContainerOwner SubRunContainer::MakeFromBufferInAlloc(SkReadBuffer& buffer
     return container;
 }
 
-size_t SubRunContainer::EstimateAllocSize(const SkGlyphRunList& glyphRunList) {
+size_t SubRunContainer::EstimateAllocSize(const GlyphRunList& glyphRunList) {
     // The difference in alignment from the per-glyph data to the SubRun;
     constexpr size_t alignDiff = alignof(DirectMaskSubRun) - alignof(DevicePosition);
     constexpr size_t vertexDataToSubRunPadding = alignDiff > 0 ? alignDiff : 0;
@@ -2146,7 +2145,7 @@ size_t SubRunContainer::EstimateAllocSize(const SkGlyphRunList& glyphRunList) {
 }
 
 std::tuple<bool, SubRunContainerOwner> SubRunContainer::MakeInAlloc(
-        const SkGlyphRunList& glyphRunList,
+        const GlyphRunList& glyphRunList,
         const SkMatrix& positionMatrix,
         const SkPaint& runPaint,
         SkStrikeDeviceInfo strikeDeviceInfo,
@@ -2227,7 +2226,7 @@ std::tuple<bool, SubRunContainerOwner> SubRunContainer::MakeInAlloc(
                 }
             }
 
-            if (!rejected->source().empty()) {
+            if (!rejected->source().empty() && !SDFTControl.forcePaths()) {
                 // Process masks including ARGB - this should be the 99.99% case.
                 // This will handle medium size emoji that are sharing the run with SDFT drawn text.
                 // If things are too big they will be passed along to the drawing of last resort
@@ -2411,6 +2410,19 @@ void SubRunContainer::draw(SkCanvas* canvas,
     }
 }
 #endif  // SK_SUPPORT_GPU
+
+#if defined(SK_GRAPHITE_ENABLED)
+void SubRunContainer::draw(SkCanvas* canvas,
+                           const SkMatrixProvider& viewMatrix,
+                           SkPoint drawOrigin,
+                           const SkPaint& paint,
+                           const SkRefCnt* subRunStorage,
+                           skgpu::graphite::Device* device) const {
+    for (auto& subRun : fSubRuns) {
+        subRun.draw(canvas, viewMatrix, drawOrigin, paint, sk_ref_sp(subRunStorage), device);
+    }
+}
+#endif
 
 bool SubRunContainer::canReuse(const SkPaint& paint, const SkMatrix& positionMatrix) const {
     for (const SubRun& subRun : fSubRuns) {
