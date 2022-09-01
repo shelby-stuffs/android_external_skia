@@ -16,8 +16,17 @@
 #include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/geom/Transform_graphite.h"
 #include "src/text/gpu/SDFTControl.h"
+#include "src/text/gpu/SubRunContainer.h"
 
 class SkStrokeRec;
+
+namespace {
+class DirectMaskSubRun;
+class TransformedMaskSubRun;
+class SDFTSubRun;
+}
+
+namespace sktext::gpu { class AtlasSubRun; }
 
 namespace skgpu::graphite {
 
@@ -163,11 +172,6 @@ private:
         // - drawPaint, drawImageLattice, drawImageRect, drawEdgeAAImageSet, drawVertices, drawAtlas
         // - drawShape after it's applied the path effect.
         kIgnorePathEffect = 0b010,
-
-        // Use an identity transform instead of localToDevice().
-        // TODO: This is currently only used to hack in support for perspective, we should remove it
-        // if no additional use cases arise once perspective is handled on the GPU.
-        kIgnoreTransform  = 0b100,
     };
     SK_DECL_BITMASK_OPS_FRIENDS(DrawFlags);
 
@@ -176,7 +180,8 @@ private:
     // Handles applying path effects, mask filters, stroke-and-fill styles, and hairlines.
     // Ignores geometric style on the paint in favor of explicitly provided SkStrokeRec and flags.
     // All overridden SkDevice::draw() functions should bottom-out with calls to drawGeometry().
-    void drawGeometry(const Geometry&,
+    void drawGeometry(const Transform&,
+                      const Geometry&,
                       const SkPaint&,
                       const SkStrokeRec&,
                       SkEnumBitMask<DrawFlags> = DrawFlags::kNone);
@@ -184,6 +189,12 @@ private:
     // Like drawGeometry() but is Shape-only, depth-only, fill-only, and lets the ClipStack define
     // the transform, clip, and DrawOrder (although Device still tracks stencil buffer usage).
     void drawClipShape(const Transform&, const Shape&, const Clip&, DrawOrder);
+
+    // Handles primitive processing for atlas-based text
+    void drawAtlasSubRun(const sktext::gpu::AtlasSubRun*,
+                         SkPoint drawOrigin,
+                         const SkPaint& paint,
+                         sk_sp<SkRefCnt> subRunStorage);
 
     // Returns the Renderer to draw the shape in the given style. If SkStrokeRec is a
     // stroke-and-fill, this returns the Renderer used for the fill portion and it can be assumed
@@ -220,6 +231,9 @@ private:
     bool fDrawsOverlap;
 
     friend class ClipStack; // for recordDraw
+    friend class ::DirectMaskSubRun; // for drawAtlasSubRun
+    friend class ::TransformedMaskSubRun; // for drawAtlasSubRun
+    friend class ::SDFTSubRun; // for drawAtlasSubRun
 };
 
 SK_MAKE_BITMASK_OPS(Device::DrawFlags)

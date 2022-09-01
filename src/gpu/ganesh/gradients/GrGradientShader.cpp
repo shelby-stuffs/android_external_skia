@@ -54,7 +54,8 @@ static std::unique_ptr<GrFragmentProcessor> make_textured_colorizer(const SkPMCo
     SkASSERT(1 == bitmap.height() && SkIsPow2(bitmap.width()));
     SkASSERT(bitmap.isImmutable());
 
-    auto view = std::get<0>(GrMakeCachedBitmapProxyView(args.fContext, bitmap, GrMipmapped::kNo));
+    auto view = std::get<0>(GrMakeCachedBitmapProxyView(
+            args.fContext, bitmap, /*label=*/"MakeTexturedColorizer", GrMipmapped::kNo));
     if (!view) {
         SkDebugf("Gradient won't draw. Could not create texture.");
         return nullptr;
@@ -258,7 +259,7 @@ static std::unique_ptr<GrFragmentProcessor> make_looping_colorizer(int intervalC
     };
 
     static EffectCacheEntry effectCache[kMaxLoopingIntervalCount / 4];
-    SkASSERT(cacheIndex >= 0 && cacheIndex < (int)SK_ARRAY_COUNT(effectCache));
+    SkASSERT(cacheIndex >= 0 && cacheIndex < (int)std::size(effectCache));
     EffectCacheEntry* cacheEntry = &effectCache[cacheIndex];
 
     cacheEntry->once([intervalCount, intervalChunks, cacheEntry] {

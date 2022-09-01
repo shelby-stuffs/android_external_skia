@@ -40,6 +40,12 @@ class GrClip;
 namespace skgpu::v1 { class SurfaceDrawContext; }
 #endif
 
+#if defined(SK_GRAPHITE_ENABLED)
+#include "src/gpu/graphite/geom/SubRunData.h"
+
+namespace skgpu::graphite { class Recorder; }
+#endif
+
 namespace sktext::gpu {
 // -- AtlasSubRun --------------------------------------------------------------------------------
 // AtlasSubRun is the API that AtlasTextOp uses to generate vertex data for drawing.
@@ -86,6 +92,21 @@ public:
             int begin, int end, GrMeshDrawTarget* target) const = 0;
 #endif
 
+#if defined(SK_GRAPHITE_ENABLED)
+    // bounds of the stored data
+    virtual SkRect bounds() const = 0;
+
+//    virtual void fillVertexData(
+//            void* vertexDst, int offset, int count,
+//            SkColor color,
+//            const SkMatrix& drawMatrix,
+//            SkPoint drawOrigin,
+//            SkIRect clip) const {}
+
+    virtual std::tuple<bool, int> regenerateAtlas(
+        int begin, int end, skgpu::graphite::Recorder*) const = 0;
+#endif
+
     virtual void testingOnly_packedGlyphIDToGlyph(StrikeCache* cache) const = 0;
 };
 
@@ -108,14 +129,12 @@ public:
                       skgpu::v1::SurfaceDrawContext*) const = 0;
 #endif
 #if defined(SK_GRAPHITE_ENABLED)
-    // TODO: make this pure virtual once all are defined
-    // Produce GPU tasks for this subRun or just draw them.
+    // Produce uploads and draws for this subRun
     virtual void draw(SkCanvas*,
-                      const SkMatrixProvider& viewMatrix,
                       SkPoint drawOrigin,
                       const SkPaint&,
                       sk_sp<SkRefCnt> subRunStorage,
-                      skgpu::graphite::Device*) const {}
+                      skgpu::graphite::Device*) const = 0;
 #endif
 
     void flatten(SkWriteBuffer& buffer) const;
@@ -228,7 +247,6 @@ public:
 #endif
 #ifdef SK_GRAPHITE_ENABLED
     void draw(SkCanvas*,
-              const SkMatrixProvider& viewMatrix,
               SkPoint drawOrigin,
               const SkPaint&,
               const SkRefCnt* subRunStorage,
@@ -245,4 +263,5 @@ private:
     SubRunList fSubRuns;
 };
 }  // namespace sktext::gpu
+
 #endif  // sktext_gpu_SubRunContainer_DEFINED

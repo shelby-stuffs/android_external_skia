@@ -13,6 +13,7 @@
 #include <vector>
 #include "include/core/SkSpan.h"
 #include "include/private/SkSpinlock.h"
+#include "include/private/SkTHash.h"
 #include "include/private/SkUniquePaintParamsID.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkEnumBitMask.h"
@@ -198,9 +199,8 @@ public:
 
     void getShaderInfo(SkUniquePaintParamsID, SkShaderInfo*);
 
-    // TODO: this is still experimental but, most likely, it will need to be made thread-safe
-    // It returns the code snippet ID to use to identify the supplied user-defined code
-    // TODO: add hooks for user to actually provide code.
+    int findOrCreateRuntimeEffectSnippet(const SkRuntimeEffect* effect);
+
     int addUserDefinedSnippet(const char* name,
                               SkSpan<const SkPaintParamsKey::DataPayloadField> expectations);
 
@@ -213,15 +213,21 @@ private:
     Entry* makeEntry(const SkPaintParamsKey&);
 #endif
 
-    struct Hash {
-        size_t operator()(const SkPaintParamsKey*) const;
-    };
+    // TODO: this is still experimental but, most likely, it will need to be made thread-safe
+    // It returns the code snippet ID to use to identify the supplied user-defined code
+    int addUserDefinedSnippet(
+            const char* name,
+            SkSpan<const SkUniform> uniforms,
+            SnippetRequirementFlags snippetRequirementFlags,
+            SkSpan<const SkTextureAndSampler> texturesAndSamplers,
+            const char* functionName,
+            SkShaderSnippet::GenerateGlueCodeForEntry glueCodeGenerator,
+            int numChildren,
+            SkSpan<const SkPaintParamsKey::DataPayloadField> dataPayloadExpectations);
 
-    struct KeyEqual {
-        bool operator()(const SkPaintParamsKey* k1, const SkPaintParamsKey* k2) const {
-            return k1->operator==(*k2);
-        }
-    };
+    const char* addTextToArena(std::string_view text);
+
+    SkSpan<const SkUniform> convertUniforms(const SkRuntimeEffect* effect);
 
     std::array<SkShaderSnippet, kBuiltInCodeSnippetIDCount> fBuiltInCodeSnippets;
 
@@ -232,13 +238,49 @@ private:
     // TODO: can we do something better given this should have write-seldom/read-often behavior?
     mutable SkSpinlock fSpinLock;
 
-    using PaintHashMap = std::unordered_map<const SkPaintParamsKey*, Entry*, Hash, KeyEqual>;
+    struct SkPaintParamsKeyPtr {
+        const SkPaintParamsKey* fKey;
+
+        bool operator==(SkPaintParamsKeyPtr rhs) const {
+            return *fKey == *rhs.fKey;
+        }
+        struct Hash {
+            size_t operator()(SkPaintParamsKeyPtr) const;
+        };
+    };
+
+    using PaintHashMap = SkTHashMap<SkPaintParamsKeyPtr, Entry*, SkPaintParamsKeyPtr::Hash>;
 
     PaintHashMap fHash SK_GUARDED_BY(fSpinLock);
     std::vector<Entry*> fEntryVector SK_GUARDED_BY(fSpinLock);
 
+    SK_BEGIN_REQUIRE_DENSE
+    struct RuntimeEffectKey {
+        uint32_t fHash;
+        uint32_t fUniformSize;
+
+        bool operator==(RuntimeEffectKey rhs) const {
+            return fHash == rhs.fHash && fUniformSize == rhs.fUniformSize;
+        }
+        struct Hash {
+            size_t operator()(RuntimeEffectKey) const;
+        };
+    };
+    SK_END_REQUIRE_DENSE
+
+    // A map from RuntimeEffectKeys (hash plus uniforms) to code-snippet IDs. RuntimeEffectKeys
+    // don't track the lifetime of a runtime effect at all; they live forever, and a newly-
+    // instantiated runtime effect with the same program as a previously-discarded effect will reuse
+    // an existing ID. Entries in the runtime-effect map are never removed; they only disappear when
+    // the context is discarded, which takes the ShaderCodeDictionary along with it. However, they
+    // are extremely small (< 20 bytes) so the memory footprint should be unnoticeable.
+    using RuntimeEffectMap = SkTHashMap<RuntimeEffectKey, int32_t>;
+    RuntimeEffectMap fRuntimeEffectMap SK_GUARDED_BY(fSpinLock);
+
     // This arena holds:
-    //    the Entries held in 'fHash' and 'fEntryVector' - thus, guarded by 'fSpinLock'
+    //   - the Entries held in `fHash` and `fEntryVector`
+    //   - SkUniform data created by `findOrCreateRuntimeEffectSnippet`
+    // and in all cases is guarded by `fSpinLock`
     SkArenaAlloc fArena{256};
 };
 

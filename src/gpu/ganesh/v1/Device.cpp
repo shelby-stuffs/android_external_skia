@@ -688,7 +688,8 @@ sk_sp<SkSpecialImage> Device::makeSpecial(const SkBitmap& bitmap) {
 
     // TODO: this makes a tight copy of 'bitmap' but it doesn't have to be (given SkSpecialImage's
     // semantics). Since this is cached we would have to bake the fit into the cache key though.
-    auto view = std::get<0>(GrMakeCachedBitmapProxyView(fContext.get(), bitmap));
+    auto view = std::get<0>(
+            GrMakeCachedBitmapProxyView(fContext.get(), bitmap, /*label=*/"Device_MakeSpecial"));
     if (!view) {
         return nullptr;
     }
@@ -756,7 +757,8 @@ sk_sp<SkSpecialImage> Device::snapSpecial(const SkIRect& subset, bool forceCopy)
                                         GrMipmapped::kNo,  // Don't auto generate mips
                                         subset,
                                         SkBackingFit::kApprox,
-                                        SkBudgeted::kYes);  // Always budgeted
+                                        SkBudgeted::kYes,
+                                        /*label=*/"Device_SnapSpecial");  // Always budgeted
         if (!view) {
             return nullptr;
         }
@@ -958,7 +960,7 @@ void Device::drawAtlas(const SkRSXform xform[],
 
 #if defined(SK_EXPERIMENTAL_SIMULATE_DRAWGLYPHRUNLIST_WITH_SLUG)
 void Device::testingOnly_drawGlyphRunListWithSlug(SkCanvas* canvas,
-                                                  const SkGlyphRunList& glyphRunList,
+                                                  const sktext::GlyphRunList& glyphRunList,
                                                   const SkPaint& initialPaint,
                                                   const SkPaint& drawingPaint) {
     auto slug = this->convertGlyphRunListToSlug(glyphRunList, initialPaint, drawingPaint);
@@ -969,10 +971,11 @@ void Device::testingOnly_drawGlyphRunListWithSlug(SkCanvas* canvas,
 #endif
 
 #if defined(SK_EXPERIMENTAL_SIMULATE_DRAWGLYPHRUNLIST_WITH_SLUG_SERIALIZE)
-void Device::testingOnly_drawGlyphRunListWithSerializedSlug(SkCanvas* canvas,
-                                                            const SkGlyphRunList& glyphRunList,
-                                                            const SkPaint& initialPaint,
-                                                            const SkPaint& drawingPaint) {
+void Device::testingOnly_drawGlyphRunListWithSerializedSlug(
+        SkCanvas* canvas,
+        const sktext::GlyphRunList& glyphRunList,
+        const SkPaint& initialPaint,
+        const SkPaint& drawingPaint) {
     // This is not a text blob draw. Handle using glyphRunList conversion.
     if (glyphRunList.blob() == nullptr) {
         auto slug = this->convertGlyphRunListToSlug(glyphRunList, initialPaint, drawingPaint);
@@ -1055,7 +1058,7 @@ private:
 
 void Device::testingOnly_drawGlyphRunListWithSerializedSlugAndStrike(
         SkCanvas* canvas,
-        const SkGlyphRunList& glyphRunList,
+        const sktext::GlyphRunList& glyphRunList,
         const SkPaint& initialPaint,
         const SkPaint& drawingPaint) {
     if (glyphRunList.blob() == nullptr) {
