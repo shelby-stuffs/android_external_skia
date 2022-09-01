@@ -157,6 +157,74 @@ genrule(
     tools = [":dawn_json_generator"],
 )
 
+py_binary(
+    name = "dawn_gpu_info_generator",
+    srcs = [
+        "generator/dawn_gpu_info_generator.py",
+        "generator/generator_lib.py",
+    ],
+    deps = [
+        requirement("jinja2"),
+        # jinja2 has a dep on MarkupSafe. Declaring MarkupSafe here is not necessary, but it makes
+        # the link easier to find than searching the Bazel cache for generated deps.
+        requirement("MarkupSafe"),
+    ],
+)
+
+genrule(
+    name = "generate_gpuinfo",
+    srcs = [
+        "gpu_info.json",
+        "generator/templates/BSD_LICENSE",
+        "generator/templates/dawn/common/GPUInfo.h",
+        "generator/templates/dawn/common/GPUInfo.cpp",
+    ],
+    outs = [
+        "src/dawn/common/GPUInfo_autogen.h",
+        "src/dawn/common/GPUInfo_autogen.cpp",
+    ],
+    cmd = "$(location :dawn_gpu_info_generator) " +
+          "--gpu-info-json $(location gpu_info.json) " +
+          "--template-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
+          "--output-dir $(RULEDIR)",
+    tools = [":dawn_gpu_info_generator"],
+)
+
+py_binary(
+    name = "dawn_version_generator",
+    srcs = [
+        "generator/dawn_version_generator.py",
+        "generator/generator_lib.py",
+    ],
+    deps = [
+        requirement("jinja2"),
+        # jinja2 has a dep on MarkupSafe. Declaring MarkupSafe here is not necessary, but it makes
+        # the link easier to find than searching the Bazel cache for generated deps.
+        requirement("MarkupSafe"),
+    ],
+)
+
+# This currently has a blank version, which "disables caching" according to
+# https://dawn.googlesource.com/dawn/+/bd30d9e594226e96c07ec3cd46dbdc68928aef41/generator/dawn_version_generator.py#39
+# We don't anticipate that being a real issue. Should we need to make this work,
+# the easiest way is to use cat to read in .git/HEAD and specify that directly
+# to the dawn_version_generator script (which needs a patch to accept that argument.
+genrule(
+    name = "generate_version",
+    srcs = [
+        "generator/templates/BSD_LICENSE",
+        "generator/templates/dawn/common/Version.h",
+    ],
+    outs = [
+        "src/dawn/common/Version_autogen.h",
+    ],
+    cmd = "$(location :dawn_version_generator) " +
+          "--template-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
+          "--dawn-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
+          "--output-dir $(RULEDIR)",
+    tools = [":dawn_version_generator"],
+)
+
 DAWN_HDRS = [
     "include/dawn/EnumClassBitmasks.h",
     "include/dawn/dawn_proc.h",
@@ -201,6 +269,8 @@ DAWN_SRCS = [
     "src/dawn/native/BindGroupTracker.h",
     "src/dawn/native/BindingInfo.cpp",
     "src/dawn/native/BindingInfo.h",
+    "src/dawn/native/Blob.cpp",
+    "src/dawn/native/Blob.h",
     "src/dawn/native/BlobCache.cpp",
     "src/dawn/native/BlobCache.h",
     "src/dawn/native/BuddyAllocator.cpp",
@@ -371,6 +441,8 @@ DAWN_SRCS = [
     "src/dawn/common/DynamicLib.h",
     "src/dawn/common/GPUInfo.cpp",
     "src/dawn/common/GPUInfo.h",
+    "src/dawn/common/GPUInfo_autogen.cpp",
+    "src/dawn/common/GPUInfo_autogen.h",
     "src/dawn/common/HashUtils.h",
     "src/dawn/common/IOKitRef.h",
     "src/dawn/common/LinkedList.h",
@@ -401,6 +473,7 @@ DAWN_SRCS = [
     "src/dawn/common/TypeTraits.h",
     "src/dawn/common/TypedInteger.h",
     "src/dawn/common/UnderlyingType.h",
+    "src/dawn/common/Version_autogen.h",
     "src/dawn/common/ityp_array.h",
     "src/dawn/common/ityp_bitset.h",
     "src/dawn/common/ityp_span.h",
@@ -563,15 +636,11 @@ cc_library(
 cc_library(
     name = "dawn",
     visibility = ["//visibility:public"],
-    deps = select({
-        # Emscripten provides the dawn files necessary as system headers.
-        ":cpu_wasm": [],
-        "//conditions:default": [
-            ":dawn_cpp",
-            ":dawn_native",
-            ":dawn_proc",
-        ],
-    }),
+    deps = [
+        ":dawn_cpp",
+        ":dawn_native",
+        ":dawn_proc",
+    ],
 )
 
 TINT_HDRS = [
@@ -768,6 +837,7 @@ TINT_SRCS = [
     "src/tint/inspector/scalar.cc",
     "src/tint/inspector/scalar.h",
     "src/tint/number.h",
+    "src/tint/number.cc",
     "src/tint/program.cc",
     "src/tint/program.h",
     "src/tint/program_builder.cc",
@@ -776,6 +846,8 @@ TINT_SRCS = [
     "src/tint/program_id.h",
     "src/tint/reader/reader.cc",
     "src/tint/reader/reader.h",
+    "src/tint/resolver/const_eval.h",
+    "src/tint/resolver/const_eval.cc",
     "src/tint/resolver/ctor_conv_intrinsic.cc",
     "src/tint/resolver/ctor_conv_intrinsic.h",
     "src/tint/resolver/dependency_graph.cc",
@@ -830,8 +902,6 @@ TINT_SRCS = [
     "src/tint/transform/expand_compound_assignment.h",
     "src/tint/transform/first_index_offset.cc",
     "src/tint/transform/first_index_offset.h",
-    "src/tint/transform/fold_constants.cc",
-    "src/tint/transform/fold_constants.h",
     "src/tint/transform/fold_trivial_single_use_lets.cc",
     "src/tint/transform/fold_trivial_single_use_lets.h",
     "src/tint/transform/for_loop_to_loop.cc",
@@ -887,6 +957,7 @@ TINT_SRCS = [
     "src/tint/utils/bitcast.h",
     "src/tint/utils/block_allocator.h",
     "src/tint/utils/concat.h",
+    "src/tint/utils/compiler_macros.h",
     "src/tint/utils/crc32.h",
     "src/tint/utils/debugger.cc",
     "src/tint/utils/debugger.h",
@@ -896,6 +967,7 @@ TINT_SRCS = [
     "src/tint/utils/map.h",
     "src/tint/utils/math.h",
     "src/tint/utils/reverse.h",
+    "src/tint/utils/result.h",
     "src/tint/utils/scoped_assignment.h",
     "src/tint/utils/string.h",
     "src/tint/utils/to_const_ptr_vec.h",
@@ -907,6 +979,8 @@ TINT_SRCS = [
     "src/tint/writer/array_length_from_uniform_options.cc",
     "src/tint/writer/array_length_from_uniform_options.h",
     "src/tint/writer/float_to_string.cc",
+    "src/tint/writer/flatten_bindings.cc",
+    "src/tint/writer/flatten_bindings.h",
     "src/tint/writer/float_to_string.h",
     "src/tint/writer/generate_external_texture_bindings.cc",
     "src/tint/writer/generate_external_texture_bindings.h",

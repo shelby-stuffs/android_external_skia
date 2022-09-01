@@ -39,7 +39,6 @@
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
-#include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLProgram.h"
@@ -426,23 +425,6 @@ bool Analysis::UpdateVariableRefKind(Expression* expr,
     }
     info.fAssignedVar->setRefKind(kind);
     return true;
-}
-
-bool Analysis::IsTrivialExpression(const Expression& expr) {
-    return expr.is<Literal>() ||
-           expr.is<VariableReference>() ||
-           (expr.is<Swizzle>() &&
-            IsTrivialExpression(*expr.as<Swizzle>().base())) ||
-           (expr.is<FieldAccess>() &&
-            IsTrivialExpression(*expr.as<FieldAccess>().base())) ||
-           (expr.isAnyConstructor() &&
-            expr.asAnyConstructor().argumentSpan().size() == 1 &&
-            IsTrivialExpression(*expr.asAnyConstructor().argumentSpan().front())) ||
-           (expr.isAnyConstructor() &&
-            expr.isConstantOrUniform()) ||
-           (expr.is<IndexExpression>() &&
-            expr.as<IndexExpression>().index()->isIntLiteral() &&
-            IsTrivialExpression(*expr.as<IndexExpression>().base()));
 }
 
 class ES2IndexingVisitor : public ProgramVisitor {

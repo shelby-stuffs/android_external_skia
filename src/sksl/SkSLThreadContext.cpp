@@ -32,7 +32,7 @@ ThreadContext::ThreadContext(SkSL::Compiler* compiler, SkSL::ProgramKind kind,
     fOldConfig = fCompiler->fContext->fConfig;
 
     if (!isModule) {
-        if (compiler->context().fCaps.useNodePools() && settings.fDSLUseMemoryPool) {
+        if (compiler->context().fCaps.fUseNodePools && settings.fDSLUseMemoryPool) {
             fPool = Pool::Create();
             fPool->attachToThread();
         }
@@ -110,16 +110,12 @@ void ThreadContext::SetErrorReporter(ErrorReporter* errorReporter) {
 }
 
 void ThreadContext::ReportError(std::string_view msg, Position pos) {
-    GetErrorReporter().error(msg, pos);
+    GetErrorReporter().error(pos, msg);
 }
 
 void ThreadContext::DefaultErrorReporter::handleError(std::string_view msg, Position pos) {
     SK_ABORT("error: %.*s\nNo SkSL error reporter configured, treating this as a fatal error\n",
              (int)msg.length(), msg.data());
-}
-
-void ThreadContext::ReportErrors(Position pos) {
-    GetErrorReporter().reportPendingErrors(pos);
 }
 
 thread_local ThreadContext* instance = nullptr;

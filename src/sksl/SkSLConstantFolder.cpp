@@ -23,9 +23,10 @@
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
 
-#include <math.h>
+#include <cmath>
 #include <limits>
 #include <optional>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -681,9 +682,10 @@ std::unique_ptr<Expression> ConstantFolder::Simplify(const Context& context,
                                       op, *right);
     }
 
-    // Perform constant folding on pairs of matrices or arrays.
+    // Perform constant folding on pairs of matrices, arrays or structs.
     if ((leftType.isMatrix() && rightType.isMatrix()) ||
-        (leftType.isArray() && rightType.isArray())) {
+        (leftType.isArray() && rightType.isArray()) ||
+        (leftType.isStruct() && rightType.isStruct())) {
         return simplify_constant_equality(context, pos, *left, op, *right);
     }
 
