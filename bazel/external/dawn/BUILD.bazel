@@ -174,7 +174,7 @@ py_binary(
 genrule(
     name = "generate_gpuinfo",
     srcs = [
-        "gpu_info.json",
+        "src/dawn/gpu_info.json",
         "generator/templates/BSD_LICENSE",
         "generator/templates/dawn/common/GPUInfo.h",
         "generator/templates/dawn/common/GPUInfo.cpp",
@@ -184,7 +184,7 @@ genrule(
         "src/dawn/common/GPUInfo_autogen.cpp",
     ],
     cmd = "$(location :dawn_gpu_info_generator) " +
-          "--gpu-info-json $(location gpu_info.json) " +
+          "--gpu-info-json $(location src/dawn/gpu_info.json) " +
           "--template-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
           "--output-dir $(RULEDIR)",
     tools = [":dawn_gpu_info_generator"],
@@ -221,7 +221,7 @@ genrule(
     cmd = "$(location :dawn_version_generator) " +
           "--template-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
           "--dawn-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
-          "--output-dir $(RULEDIR)",
+          "--output-dir $(RULEDIR) 2> /dev/null",
     tools = [":dawn_version_generator"],
 )
 
@@ -584,7 +584,7 @@ cc_library(
         # List this as a copt, so as not to propagate it to dependents
         # Skia has its own vulkan headers and we do not want these to
         # interfere/override those.
-        "-isystem external/vulkan_headers/include",
+        "-Iexternal/vulkan_headers/include",
     ],
     defines = DAWN_VULKAN_DEFINES,
     includes = [
@@ -686,6 +686,8 @@ TINT_SRCS = [
     "src/tint/ast/call_statement.h",
     "src/tint/ast/case_statement.cc",
     "src/tint/ast/case_statement.h",
+    "src/tint/ast/const.cc",
+    "src/tint/ast/const.h",
     "src/tint/ast/compound_assignment_statement.cc",
     "src/tint/ast/compound_assignment_statement.h",
     "src/tint/ast/continue_statement.cc",
@@ -740,6 +742,8 @@ TINT_SRCS = [
     "src/tint/ast/interpolate_attribute.h",
     "src/tint/ast/invariant_attribute.cc",
     "src/tint/ast/invariant_attribute.h",
+    "src/tint/ast/let.cc",
+    "src/tint/ast/let.h",
     "src/tint/ast/literal_expression.cc",
     "src/tint/ast/literal_expression.h",
     "src/tint/ast/location_attribute.cc",
@@ -756,6 +760,10 @@ TINT_SRCS = [
     "src/tint/ast/multisampled_texture.h",
     "src/tint/ast/node.cc",
     "src/tint/ast/node.h",
+    "src/tint/ast/override.cc",
+    "src/tint/ast/override.h",
+    "src/tint/ast/parameter.cc",
+    "src/tint/ast/parameter.h",
     "src/tint/ast/phony_expression.cc",
     "src/tint/ast/phony_expression.h",
     "src/tint/ast/pipeline_stage.cc",
@@ -806,12 +814,16 @@ TINT_SRCS = [
     "src/tint/ast/unary_op_expression.h",
     "src/tint/ast/variable.cc",
     "src/tint/ast/variable.h",
+    "src/tint/ast/var.cc",
+    "src/tint/ast/var.h",
     "src/tint/ast/variable_decl_statement.cc",
     "src/tint/ast/variable_decl_statement.h",
     "src/tint/ast/vector.cc",
     "src/tint/ast/vector.h",
     "src/tint/ast/void.cc",
     "src/tint/ast/void.h",
+    "src/tint/ast/while_statement.cc",
+    "src/tint/ast/while_statement.h",
     "src/tint/ast/workgroup_attribute.cc",
     "src/tint/ast/workgroup_attribute.h",
     "src/tint/castable.cc",
@@ -918,8 +930,8 @@ TINT_SRCS = [
     "src/tint/transform/multiplanar_external_texture.h",
     "src/tint/transform/num_workgroups_from_uniform.cc",
     "src/tint/transform/num_workgroups_from_uniform.h",
-    "src/tint/transform/promote_initializers_to_const_var.cc",
-    "src/tint/transform/promote_initializers_to_const_var.h",
+    "src/tint/transform/promote_initializers_to_let.cc",
+    "src/tint/transform/promote_initializers_to_let.h",
     "src/tint/transform/promote_side_effects_to_decl.cc",
     "src/tint/transform/promote_side_effects_to_decl.h",
     "src/tint/transform/remove_phonies.cc",
@@ -934,6 +946,8 @@ TINT_SRCS = [
     "src/tint/transform/simplify_pointers.h",
     "src/tint/transform/single_entry_point.cc",
     "src/tint/transform/single_entry_point.h",
+    "src/tint/transform/spirv_atomic.cc",
+    "src/tint/transform/spirv_atomic.h",
     "src/tint/transform/transform.cc",
     "src/tint/transform/transform.h",
     "src/tint/transform/unshadow.cc",
@@ -950,8 +964,8 @@ TINT_SRCS = [
     "src/tint/transform/vectorize_scalar_matrix_constructors.h",
     "src/tint/transform/vertex_pulling.cc",
     "src/tint/transform/vertex_pulling.h",
-    "src/tint/transform/wrap_arrays_in_structs.cc",
-    "src/tint/transform/wrap_arrays_in_structs.h",
+    "src/tint/transform/while_to_loop.cc",
+    "src/tint/transform/while_to_loop.h",
     "src/tint/transform/zero_init_workgroup_memory.cc",
     "src/tint/transform/zero_init_workgroup_memory.h",
     "src/tint/utils/bitcast.h",
@@ -1038,6 +1052,8 @@ TINT_SRCS = [
     "src/tint/sem/i32.h",
     "src/tint/sem/if_statement.cc",
     "src/tint/sem/if_statement.h",
+    "src/tint/sem/index_accessor_expression.cc",
+    "src/tint/sem/index_accessor_expression.h",
     "src/tint/sem/info.cc",
     "src/tint/sem/info.h",
     "src/tint/sem/loop_statement.cc",
@@ -1093,6 +1109,8 @@ TINT_SRCS = [
     "src/tint/sem/vector.h",
     "src/tint/sem/void.cc",
     "src/tint/sem/void.h",
+    "src/tint/sem/while_statement.cc",
+    "src/tint/sem/while_statement.h",
     # Dawn sets the following tint GN variables
     #    tint_build_spv_reader = true
     #    tint_build_spv_writer = true

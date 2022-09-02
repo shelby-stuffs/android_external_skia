@@ -632,6 +632,7 @@ if (skia_compile_modules || skia_compile_sksl_tests) {
   # Copy the module source files into the out directory.
   copy("sksl_pre_includes") {
     sources = [
+      "src/sksl/sksl_compute.sksl",
       "src/sksl/sksl_frag.sksl",
       "src/sksl/sksl_gpu.sksl",
       "src/sksl/sksl_graphite_frag.sksl",
@@ -975,23 +976,29 @@ optional("gpu") {
   if (skia_use_dawn) {
     public_defines += [ "SK_DAWN" ]
     sources += skia_dawn_sources
-    public_deps += [ "//third_party/externals/dawn/include/dawn:cpp_headers" ]
-    deps += [
-      "//third_party/externals/dawn/src/dawn:cpp",
-      "//third_party/externals/dawn/src/dawn:proc",
-    ]
-    if (dawn_enable_d3d12 || dawn_enable_desktop_gl || dawn_enable_metal ||
-        dawn_enable_opengles || dawn_enable_vulkan) {
-      deps += [ "//third_party/externals/dawn/src/dawn/native" ]
-    }
-    if (dawn_enable_d3d12) {
-      libs += [
-        "d3d12.lib",
-        "dxgi.lib",
-        "d3dcompiler.lib",
+
+    # When building for WASM, the WebGPU headers are provided by Emscripten. For native builds we
+    # have to depend on Dawn directly.
+    if (!skia_use_webgpu) {
+      public_deps += [ "//third_party/externals/dawn/include/dawn:cpp_headers" ]
+      deps += [
+        "//third_party/externals/dawn/src/dawn:cpp",
+        "//third_party/externals/dawn/src/dawn:proc",
       ]
-    } else if (dawn_enable_metal) {
-      frameworks += [ "Metal.framework" ]
+
+      if (dawn_enable_d3d12 || dawn_enable_desktop_gl || dawn_enable_metal ||
+          dawn_enable_opengles || dawn_enable_vulkan) {
+        deps += [ "//third_party/externals/dawn/src/dawn/native" ]
+      }
+      if (dawn_enable_d3d12) {
+        libs += [
+          "d3d12.lib",
+          "dxgi.lib",
+          "d3dcompiler.lib",
+        ]
+      } else if (dawn_enable_metal) {
+        frameworks += [ "Metal.framework" ]
+      }
     }
   }
 
@@ -1699,7 +1706,7 @@ if (skia_enable_tools) {
     ]
 
     if (skia_use_dawn) {
-      deps += [ "//third_party/externals/dawn/src/dawn:dawn_headers" ]
+      deps += [ "//third_party/externals/dawn/include/dawn:headers" ]
     }
   }
 
@@ -1886,7 +1893,7 @@ if (skia_enable_tools) {
       sources += [ "tools/gpu/d3d/D3DTestUtils.cpp" ]
     }
     if (skia_use_dawn) {
-      public_deps += [ "//third_party/externals/dawn/src/dawn:dawn_headers" ]
+      public_deps += [ "//third_party/externals/dawn/include/dawn:headers" ]
       sources += [ "tools/gpu/dawn/DawnTestContext.cpp" ]
       if (is_clang) {
         cflags_cc = [ "-Wno-microsoft-cast" ]
@@ -1951,6 +1958,14 @@ if (skia_enable_tools) {
       "tools/trace/SkDebugfTracer.cpp",
       "tools/trace/SkDebugfTracer.h",
     ]
+    if (skia_use_perfetto) {
+      deps += [ "//third_party/perfetto" ]
+      sources += [
+        "tools/trace/SkPerfettoTrace.cpp",
+        "tools/trace/SkPerfettoTrace.h",
+      ]
+      defines = [ "SK_USE_PERFETTO" ]
+    }
   }
 
   test_lib("tool_utils") {
@@ -2156,6 +2171,12 @@ if (skia_enable_tools) {
     if (skia_enable_skottie) {
       test_app("skottie_tool") {
         deps = [ "modules/skottie:tool" ]
+      }
+      test_app("skottie_tool_cpu") {
+        deps = [ "modules/skottie:tool_cpu" ]
+      }
+      test_app("skottie_tool_gpu") {
+        deps = [ "modules/skottie:tool_gpu" ]
       }
     }
     test_app("svg_tool") {

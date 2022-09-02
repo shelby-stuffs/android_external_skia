@@ -82,9 +82,9 @@ public:
             UniformDataCache::Index geomUniformIndex,
             UniformDataCache::Index shadingUniformIndex,
             TextureDataCache::Index textureDataIndex)
-        : fPipelineKey(ColorDepthOrderField::set(draw->fGeometry.order().paintOrder().bits()) |
-                       StencilIndexField::set(draw->fGeometry.order().stencilIndex().bits())  |
-                       RenderStepField::set(static_cast<uint32_t>(renderStep))                |
+        : fPipelineKey(ColorDepthOrderField::set(draw->fDrawParams.order().paintOrder().bits()) |
+                       StencilIndexField::set(draw->fDrawParams.order().stencilIndex().bits())  |
+                       RenderStepField::set(static_cast<uint32_t>(renderStep))                  |
                        PipelineField::set(pipelineIndex))
         , fUniformKey(GeometryUniformField::set(geomUniformIndex.asUInt())   |
                       ShadingUniformField::set(shadingUniformIndex.asUInt()) |
@@ -317,8 +317,7 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
                                          std::unique_ptr<DrawList> draws,
                                          sk_sp<TextureProxy> target,
                                          std::pair<LoadOp, StoreOp> ops,
-                                         std::array<float, 4> clearColor,
-                                         const BoundsManager* occlusionCuller) {
+                                         std::array<float, 4> clearColor) {
     // NOTE: This assert is here to ensure SortKey is as tightly packed as possible. Any change to
     // its size should be done with care and good reason. The performance of sorting the keys is
     // heavily tied to the total size.
@@ -361,11 +360,6 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
     SkPipelineDataGatherer gatherer(Layout::kMetal);  // TODO: get the layout from the recorder
 
     for (const DrawList::Draw& draw : draws->fDraws.items()) {
-        if (occlusionCuller && occlusionCuller->isOccluded(draw.fGeometry.clip().drawBounds(),
-                                                           draw.fGeometry.order().depth())) {
-            continue;
-        }
-
         // If we have two different descriptors, such that the uniforms from the PaintParams can be
         // bound independently of those used by the rest of the RenderStep, then we can upload now
         // and remember the location for re-use on any RenderStep that does shading.
@@ -376,7 +370,7 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
             UniformDataCache::Index uniformDataIndex;
             std::tie(shaderID, uniformDataIndex, textureBindingIndex) =
                     ExtractPaintData(recorder, &gatherer, &builder,
-                                     draw.fGeometry.transform().inverse(),
+                                     draw.fDrawParams.transform().inverse(),
                                      draw.fPaintParams.value());
             shadingUniformIndex = shadingUniformBindings.addUniforms(uniformDataIndex);
         } // else depth-only
@@ -400,7 +394,7 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
                 uniformDataIndex = ExtractRenderStepData(&geometryUniformDataCache,
                                                          &gatherer,
                                                          step,
-                                                         draw.fGeometry);
+                                                         draw.fDrawParams);
                 geometryUniformIndex = geometryUniformBindings.addUniforms(uniformDataIndex);
             }
 
@@ -424,7 +418,7 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
                             stepTextureBindingIndex});
         }
 
-        passBounds.join(draw.fGeometry.clip().drawBounds());
+        passBounds.join(draw.fDrawParams.clip().drawBounds());
         drawPass->fDepthStencilFlags |= draw.fRenderer.depthStencilFlags();
         drawPass->fRequiresMSAA |= draw.fRenderer.requiresMSAA();
     }
@@ -465,7 +459,7 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
         const bool stateChange = geometryUniformChange ||
                                  shadingUniformChange ||
                                  textureBindingsChange ||
-                                 draw.fGeometry.clip().scissor() != lastScissor;
+                                 draw.fDrawParams.clip().scissor() != lastScissor;
 
         // Update DrawWriter *before* we actually change any state so that accumulated draws from
         // the previous state use the proper state.
@@ -513,13 +507,13 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
                 drawPass->fCommands.push_back(Command(bts));
                 lastTextureBindings = key.textureBindings();
             }
-            if (draw.fGeometry.clip().scissor() != lastScissor) {
-                drawPass->fCommands.emplace_back(SetScissor{draw.fGeometry.clip().scissor()});
-                lastScissor = draw.fGeometry.clip().scissor();
+            if (draw.fDrawParams.clip().scissor() != lastScissor) {
+                drawPass->fCommands.emplace_back(SetScissor{draw.fDrawParams.clip().scissor()});
+                lastScissor = draw.fDrawParams.clip().scissor();
             }
         }
 
-        renderStep.writeVertices(&drawWriter, draw.fGeometry);
+        renderStep.writeVertices(&drawWriter, draw.fDrawParams);
     }
     // Finish recording draw calls for any collected data at the end of the loop
     drawWriter.flush();
@@ -537,7 +531,7 @@ bool DrawPass::prepareResources(ResourceProvider* resourceProvider,
         auto pipeline = resourceProvider->findOrCreateGraphicsPipeline(pipelineDesc,
                                                                        renderPassDesc);
         if (!pipeline) {
-            SKGPU_LOG_W("Failed to create GraphicsPipeline for draw in RenderPass. Droping Pass");
+            SKGPU_LOG_W("Failed to create GraphicsPipeline for draw in RenderPass. Dropping pass!");
             return false;
         }
         fFullPipelines.push_back(std::move(pipeline));
@@ -551,6 +545,7 @@ bool DrawPass::prepareResources(ResourceProvider* resourceProvider,
         // snapshot, save layers, etc. Right now we only support SkImages directly made for graphite
         // and all others have a TextureProxy with an invalid TextureInfo.
         if (!fSampledTextures[i]->textureInfo().isValid()) {
+            SKGPU_LOG_W("Failed to validate sampled texture. Will not create renderpass!");
             return false;
         }
         if (!fSampledTextures[i]->instantiate(resourceProvider)) {

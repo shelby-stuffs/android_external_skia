@@ -25,7 +25,7 @@ namespace sktext::gpu {
 class TestingPeer {
 public:
     static const SkDescriptor& GetDescriptor(const GlyphVector& v) {
-        return v.fSkStrike->getDescriptor();
+        return std::get<sk_sp<SkStrike>>(v.fStrike)->getDescriptor();
     }
     static SkSpan<GlyphVector::Variant> GetGlyphs(const GlyphVector& v) {
         return v.fGlyphs;
@@ -46,7 +46,7 @@ DEF_TEST(GlyphVector_Serialization, r) {
     }
 
     GlyphVector src = GlyphVector::Make(
-            strikeSpec.findOrCreateStrike(), SkMakeSpan(glyphs, N), &alloc);
+            strikeSpec.findOrCreateStrike(), SkSpan(glyphs, N), &alloc);
 
     SkBinaryWriteBuffer wBuffer;
     src.flatten(wBuffer);

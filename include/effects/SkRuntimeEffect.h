@@ -83,6 +83,10 @@ public:
             // When used with SkMeshSpecification, indicates that the uniform is present in the
             // fragment shader. Not used with SkRuntimeEffect.
             kFragment_Flag = 0x8,
+
+            // This flag indicates that the SkSL uniform uses a medium-precision type
+            // (i.e., `half` instead of `float`).
+            kHalfPrecision_Flag = 0x10,
         };
 
         SkString  name;
@@ -245,8 +249,8 @@ public:
     // provide an SkData of this size, containing values for all of those variables.
     size_t uniformSize() const;
 
-    SkSpan<const Uniform> uniforms() const { return SkMakeSpan(fUniforms); }
-    SkSpan<const Child> children() const { return SkMakeSpan(fChildren); }
+    SkSpan<const Uniform> uniforms() const { return SkSpan(fUniforms); }
+    SkSpan<const Child> children() const { return SkSpan(fChildren); }
 
     // Returns pointer to the named uniform variable's description, or nullptr if not found
     const Uniform* findUniform(const char* name) const;
@@ -295,7 +299,7 @@ private:
     bool usesColorTransform() const { return (fFlags & kUsesColorTransform_Flag); }
     bool alwaysOpaque()       const { return (fFlags & kAlwaysOpaque_Flag);       }
 
-    const SkFilterColorProgram* getFilterColorProgram();
+    const SkFilterColorProgram* getFilterColorProgram() const;
 
 #if SK_SUPPORT_GPU
     friend class GrSkSLFP;             // fBaseProgram, fSampleUsages

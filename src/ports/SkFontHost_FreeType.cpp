@@ -122,7 +122,7 @@ static_assert(std::is_same<FT_Alloc_size_t, long  >::value ||
 
 extern "C" {
     static void* sk_ft_alloc(FT_Memory, FT_Alloc_size_t size) {
-        return sk_malloc_throw(size);
+        return sk_malloc_canfail(size);
     }
     static void sk_ft_free(FT_Memory, void* block) {
         sk_free(block);
@@ -142,6 +142,14 @@ public:
         }
         FT_Add_Default_Modules(fLibrary);
         FT_Set_Default_Properties(fLibrary);
+
+#ifdef TT_SUPPORT_COLRV1
+        if (SkGraphics::GetVariableColrV1Enabled()) {
+            FT_Bool variableColrV1Enabled = true;
+            FT_Property_Set(
+                    fLibrary, "truetype", "TEMPORARY-enable-variable-colrv1", &variableColrV1Enabled);
+        }
+#endif
 
         // Subpixel anti-aliasing may be unfiltered until the LCD filter is set.
         // Newer versions may still need this, so this test with side effects must come first.

@@ -10,10 +10,12 @@
 
 #include "include/core/SkColorType.h"
 #include "include/core/SkSurfaceProps.h"
-#include "src/core/SkDevice.h"
 #include "src/core/SkScalerContext.h"
 
-class SkGlyphRunList;
+class SkColorSpace;
+namespace sktext {
+class GlyphRunList;
+}
 
 class SkStrikeCommon {
 public:
@@ -42,7 +44,8 @@ public:
 
     void drawForBitmapDevice(
             SkCanvas* canvas, const BitmapDevicePainter* bitmapDevice,
-            const SkGlyphRunList& glyphRunList, const SkPaint& paint, const SkMatrix& drawMatrix);
+            const sktext::GlyphRunList& glyphRunList, const SkPaint& paint,
+            const SkMatrix& drawMatrix);
 private:
     // The props as on the actual device.
     const SkSurfaceProps fDeviceProps;
@@ -52,11 +55,4 @@ private:
     const SkColorType fColorType;
     const SkScalerContextFlags fScalerContextFlags;
 };
-
-#if (SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED))
-namespace sktext::gpu{
-class SubRunList;
-class SubRunAllocator;
-}
-#endif  // SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
 #endif  // SkGlyphRunPainter_DEFINED

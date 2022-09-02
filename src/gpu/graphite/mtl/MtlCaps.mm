@@ -17,7 +17,7 @@
 
 namespace skgpu::graphite {
 
-MtlCaps::MtlCaps(const id<MTLDevice> device)
+MtlCaps::MtlCaps(const id<MTLDevice> device, const ContextOptions& options)
         : Caps() {
     this->initGPUFamily(device);
     this->initCaps(device);
@@ -27,7 +27,7 @@ MtlCaps::MtlCaps(const id<MTLDevice> device)
 
     // Metal-specific MtlCaps
 
-    this->finishInitialization();
+    this->finishInitialization(options);
 }
 
 // translates from older MTLFeatureSet interface to MTLGPUFamily interface
@@ -327,7 +327,7 @@ void MtlCaps::setColorType(SkColorType colorType, std::initializer_list<MTLPixel
 }
 
 size_t MtlCaps::GetFormatIndex(MTLPixelFormat pixelFormat) {
-    static_assert(SK_ARRAY_COUNT(kMtlFormats) == MtlCaps::kNumMtlFormats,
+    static_assert(std::size(kMtlFormats) == MtlCaps::kNumMtlFormats,
                   "Size of kMtlFormats array must match static value in header");
     for (size_t i = 0; i < MtlCaps::kNumMtlFormats; ++i) {
         if (kMtlFormats[i] == pixelFormat) {

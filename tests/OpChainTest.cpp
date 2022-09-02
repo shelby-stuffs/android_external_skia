@@ -27,7 +27,7 @@ struct Range {
 
 static constexpr int kNumOpPositions = 4;
 static constexpr Range kRanges[] = {{0, 4,}, {1, 2}};
-static constexpr int kNumRanges = (int)SK_ARRAY_COUNT(kRanges);
+static constexpr int kNumRanges = (int)std::size(kRanges);
 static constexpr int kNumRepeats = 2;
 static constexpr int kNumOps = kNumRepeats * kNumOpPositions * kNumRanges;
 
@@ -183,7 +183,8 @@ DEF_GPUTEST(OpChainTest, reporter, /*ctxInfo*/) {
     static const GrSurfaceOrigin kOrigin = kTopLeft_GrSurfaceOrigin;
     auto proxy = dContext->priv().proxyProvider()->createProxy(
             format, kDims, GrRenderable::kYes, 1, GrMipmapped::kNo, SkBackingFit::kExact,
-            SkBudgeted::kNo, GrProtected::kNo, /*label=*/{}, GrInternalSurfaceFlags::kNone);
+            SkBudgeted::kNo, GrProtected::kNo, /*label=*/"OpChainTest",
+            GrInternalSurfaceFlags::kNone);
     SkASSERT(proxy);
     proxy->instantiate(dContext->priv().resourceProvider());
 

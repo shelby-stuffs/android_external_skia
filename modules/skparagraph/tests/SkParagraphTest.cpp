@@ -42,6 +42,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <thread>
 
 struct GrContextOptions;
 
@@ -6923,4 +6924,88 @@ UNIX_ONLY_TEST(SkParagraph_NonMonotonicGlyphsRTL, reporter) {
     }
     REPORTER_ASSERT(reporter, impl->lineNumber() == 1);  // But it's still one line
     paragraph->paint(canvas.get(), 0, 0);
+}
+
+void performGetRectsForRangeConcurrently(skiatest::Reporter* reporter) {
+    sk_sp<ResourceFontCollection> fontCollection = sk_make_sp<ResourceFontCollection>();
+    if (!fontCollection->fontsFound()) {
+        INFOF(reporter, "No fonts found\n");
+        return;
+    }
+    auto const text = std::u16string(42000, 'x');
+    ParagraphStyle paragraphStyle;
+    TextStyle textStyle;
+    textStyle.setFontFamilies({SkString("Roboto")});
+    textStyle.setFontSize(14);
+    textStyle.setColor(SK_ColorBLACK);
+    textStyle.setFontStyle(SkFontStyle(SkFontStyle::kMedium_Weight, SkFontStyle::kNormal_Width,
+                                       SkFontStyle::kUpright_Slant));
+
+    ParagraphBuilderImpl builder(paragraphStyle, fontCollection);
+    builder.pushStyle(textStyle);
+    builder.addText(text);
+    builder.pop();
+
+    auto paragraph = builder.Build();
+    paragraph->layout(std::numeric_limits<float>::max());
+
+    RectHeightStyle heightStyle = RectHeightStyle::kMax;
+    RectWidthStyle widthStyle = RectWidthStyle::kMax;
+    auto t1 = std::thread([&] {
+        auto result = paragraph->getRectsForRange(0, 2, heightStyle, widthStyle);
+        REPORTER_ASSERT(reporter, !result.empty());
+    });
+    auto t2 = std::thread([&] {
+        auto result = paragraph->getRectsForRange(5, 10, heightStyle, widthStyle);
+        REPORTER_ASSERT(reporter, !result.empty());
+    });
+    t1.join();
+    t2.join();
+}
+
+UNIX_ONLY_TEST(SkParagraph_GetRectsForRangeConcurrently, reporter) {
+    auto const threads_count = 100;
+    std::thread threads[threads_count];
+    for (auto& thread : threads) {
+        thread = std::thread(performGetRectsForRangeConcurrently, reporter);
+    }
+    for (auto& thread : threads) {
+        thread.join();
+    }
+}
+
+UNIX_ONLY_TEST(SkParagraph_TabSubstitution, reporter) {
+    sk_sp<ResourceFontCollection> fontCollection = sk_make_sp<ResourceFontCollection>(true);
+    if (!fontCollection->fontsFound()) return;
+
+    TestCanvas canvas("SkParagraph_TabSubstitution.png");
+
+    ParagraphStyle paragraph_style;
+    paragraph_style.setReplaceTabCharacters(true);
+
+    TextStyle text_style;
+    text_style.setColor(SK_ColorBLACK);
+    text_style.setFontFamilies({SkString("Roboto")});
+    text_style.setFontSize(100);
+
+    ParagraphBuilderImpl builder1(paragraph_style, fontCollection);
+    builder1.pushStyle(text_style);
+    builder1.addText("There is a tab>\t<right here");
+    auto paragraph1 = builder1.Build();
+    paragraph1->layout(TestCanvasWidth);
+    paragraph1->paint(canvas.get(), 0, 0);
+
+    paragraph_style.setReplaceTabCharacters(false);
+    ParagraphBuilderImpl builder2(paragraph_style, fontCollection);
+    builder2.pushStyle(text_style);
+    builder2.addText("There is a tab>\t<right here");
+    auto paragraph2 = builder2.Build();
+    paragraph2->layout(TestCanvasWidth);
+    paragraph2->paint(canvas.get(), 0, 0);
+
+    // Second paragraph has an unresolved \t (glyph == 0)
+    REPORTER_ASSERT(reporter, ((ParagraphImpl*)paragraph1.get())->runs()[0].glyphs()[15] != 0);
+    REPORTER_ASSERT(reporter, ((ParagraphImpl*)paragraph2.get())->runs()[0].glyphs()[15] == 0);
+    // Notice, that the cache didn't work for the second paragraph - as it should not
+    REPORTER_ASSERT(reporter, 2 == fontCollection->getParagraphCache()->count());
 }

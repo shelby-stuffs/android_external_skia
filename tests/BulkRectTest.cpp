@@ -20,7 +20,7 @@
 static std::unique_ptr<skgpu::v1::SurfaceDrawContext> new_SDC(GrRecordingContext* rContext) {
     return skgpu::v1::SurfaceDrawContext::Make(
             rContext, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kExact, {128, 128},
-            SkSurfaceProps());
+            SkSurfaceProps(), /*label=*/{});
 }
 
 static sk_sp<GrSurfaceProxy> create_proxy(GrRecordingContext* rContext) {
@@ -31,7 +31,8 @@ static sk_sp<GrSurfaceProxy> create_proxy(GrRecordingContext* rContext) {
                                                                            GrRenderable::kYes);
     return rContext->priv().proxyProvider()->createProxy(
             format, kDimensions, GrRenderable::kYes, 1, GrMipmapped::kNo, SkBackingFit::kExact,
-            SkBudgeted::kNo, GrProtected::kNo, /*label=*/{}, GrInternalSurfaceFlags::kNone);
+            SkBudgeted::kNo, GrProtected::kNo, /*label=*/"CreateSurfaceProxy",
+            GrInternalSurfaceFlags::kNone);
 }
 
 typedef GrQuadAAFlags (*PerQuadAAFunc)(int i);

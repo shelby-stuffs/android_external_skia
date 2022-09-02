@@ -190,7 +190,8 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
                                             this->origin(),
                                             kMipMapped,
                                             kFit,
-                                            kBudgeted);
+                                            kBudgeted,
+                                            /*label=*/"SurfaceContext_ReadPixelsWithCopyWholeSrc");
             } else {
                 auto srcRect = SkIRect::MakePtSize(pt, dst.dimensions());
                 copy = GrSurfaceProxy::Copy(fContext,
@@ -200,6 +201,7 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
                                             srcRect,
                                             kFit,
                                             kBudgeted,
+                                            /*label=*/"SurfaceContext_ReadPixels",
                                             restrictions.fRectsMustMatch);
                 pt = {0, 0};
             }
@@ -418,15 +420,16 @@ bool SurfaceContext::internalWritePixels(GrDirectContext* dContext,
         // targets we will use top left and otherwise we will make the origins match.
         GrSurfaceOrigin tempOrigin =
                 this->asFillContext() ? kTopLeft_GrSurfaceOrigin : this->origin();
-        auto tempProxy = dContext->priv().proxyProvider()->createProxy(format,
-                                                                       src[0].dimensions(),
-                                                                       GrRenderable::kNo,
-                                                                       1,
-                                                                       GrMipmapped::kNo,
-                                                                       SkBackingFit::kApprox,
-                                                                       SkBudgeted::kYes,
-                                                                       GrProtected::kNo,
-                                                                       /*label=*/{});
+        auto tempProxy = dContext->priv().proxyProvider()->createProxy(
+                format,
+                src[0].dimensions(),
+                GrRenderable::kNo,
+                1,
+                GrMipmapped::kNo,
+                SkBackingFit::kApprox,
+                SkBudgeted::kYes,
+                GrProtected::kNo,
+                /*label=*/"SurfaceContext_InternalWritePixels");
         if (!tempProxy) {
             return false;
         }
@@ -762,7 +765,7 @@ void SurfaceContext::asyncReadPixels(GrDirectContext* dContext,
                                             callbackContext,
                                             rect.size(),
                                             colorType,
-                                            this->caps()->transferBufferAlignment(),
+                                            this->caps()->transferBufferRowBytesAlignment(),
                                             mappedBufferManager,
                                             std::move(transferResult)};
     auto finishCallback = [](GrGpuFinishedContext c) {
@@ -849,7 +852,8 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
                                            GrMipmapped::kNo,
                                            srcRect,
                                            SkBackingFit::kApprox,
-                                           SkBudgeted::kYes);
+                                           SkBudgeted::kYes,
+                                           /*label=*/"SurfaceContext_AsyncRescaleAndReadPixelsYUV420");
         if (!srcView) {
             // If we can't get a texture copy of the contents then give up.
             callback(callbackContext, nullptr);
@@ -995,7 +999,7 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
                                             callbackContext,
                                             dContext->priv().clientMappedBufferManager(),
                                             dstSize,
-                                            this->caps()->transferBufferAlignment(),
+                                            this->caps()->transferBufferRowBytesAlignment(),
                                             std::move(yTransfer),
                                             std::move(uTransfer),
                                             std::move(vTransfer)};
@@ -1107,7 +1111,9 @@ bool SurfaceContext::rescaleInto(skgpu::SurfaceFillContext* dst,
         // TODO: If copying supported specifying a renderable copy then we could return the copy
         // when there are no other conversions.
         texView = GrSurfaceProxyView::Copy(fContext, std::move(texView), GrMipmapped::kNo, srcRect,
-                                           SkBackingFit::kApprox, SkBudgeted::kNo);
+                                           SkBackingFit::kApprox,
+                                           SkBudgeted::kNo,
+                                           /*label=*/"SurfaceContext_RescaleInto");
         if (!texView) {
             return false;
         }
@@ -1264,7 +1270,7 @@ SurfaceContext::PixelTransferResult SurfaceContext::transferPixels(GrColorType d
     }
 
     size_t rowBytes = GrColorTypeBytesPerPixel(supportedRead.fColorType) * rect.width();
-    rowBytes = SkAlignTo(rowBytes, this->caps()->transferBufferAlignment());
+    rowBytes = SkAlignTo(rowBytes, this->caps()->transferBufferRowBytesAlignment());
     size_t size = rowBytes * rect.height();
     // By using kStream_GrAccessPattern here, we are not able to cache and reuse the buffer for
     // multiple reads. Switching to kDynamic_GrAccessPattern would allow for this, however doing

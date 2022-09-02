@@ -1,7 +1,6 @@
 // This file is type-checked by the Typescript definitions. It is not actually executed.
 // Test it by running `npm run dtslint` in the parent directory.
-import {
-    CanvasKitInit,
+import CanvasKitInit, {
     AnimatedImage,
     Canvas,
     CanvasKit,
@@ -268,6 +267,12 @@ function imageTests(CK: CanvasKit, imgElement?: HTMLImageElement) {
       alphaType: CK.AlphaType.Premul,
       colorType: CK.ColorType.RGBA_8888,
     });
+    const img6 = CK.MakeLazyImageFromTextureSource(imgElement, {
+      width: 1,
+      height: 1,
+      alphaType: CK.AlphaType.Premul,
+      colorType: CK.ColorType.RGBA_8888,
+    }, true);
     if (!img) return;
     const dOne = img.encodeToBytes(); // $ExpectType Uint8Array | null
     const dTwo = img.encodeToBytes(CK.ImageFormat.JPEG, 97);
@@ -512,8 +517,8 @@ function paragraphTests(CK: CanvasKit, p?: Paragraph) {
     const g = p.getMaxIntrinsicWidth(); // $ExpectType number
     const h = p.getMaxWidth(); // $ExpectType number
     const i = p.getMinIntrinsicWidth(); // $ExpectType number
-    const j = p.getRectsForPlaceholders(); // $ExpectType Float32Array
-    const k = p.getRectsForRange(2, 10, CK.RectHeightStyle.Max,  // $ExpectType Float32Array
+    const j = p.getRectsForPlaceholders(); // $ExpectType Float32Array[]
+    const k = p.getRectsForRange(2, 10, CK.RectHeightStyle.Max,  // $ExpectType Float32Array[]
         CK.RectWidthStyle.Tight);
     const l = p.getWordBoundary(10); // $ExpectType URange
     p.layout(300);
@@ -887,7 +892,12 @@ function surfaceTests(CK: CanvasKit, gl?: WebGLRenderingContext) {
       alphaType: CK.AlphaType.Unpremul,
     });
     const img6 = surfaceFour.makeImageFromTextureSource(new ImageData(40, 80)); // $ExpectType Image | null
-
+    const img7 = surfaceFour.makeImageFromTextureSource(videoEle, {
+      height: 40,
+      width: 80,
+      colorType: CK.ColorType.RGBA_8888,
+      alphaType: CK.AlphaType.Premul,
+    }, true);
     surfaceSeven.delete();
 
     const ctx = CK.GetWebGLContext(canvasEl); // $ExpectType number
@@ -912,6 +922,7 @@ function surfaceTests(CK: CanvasKit, gl?: WebGLRenderingContext) {
     surfaceFour.drawOnce(drawFrame);
 
     surfaceFour.updateTextureFromSource(img5!, videoEle);
+    surfaceFour.updateTextureFromSource(img5!, videoEle, true);
 }
 
 function textBlobTests(CK: CanvasKit, font?: Font, path?: Path) {

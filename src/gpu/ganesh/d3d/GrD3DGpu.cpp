@@ -365,15 +365,16 @@ sk_sp<GrTexture> GrD3DGpu::onCreateCompressedTexture(SkISize dimensions,
     GrMipmapStatus mipmapStatus = mipLevelCount > 1 ? GrMipmapStatus::kValid
                                                     : GrMipmapStatus::kNotAllocated;
 
-    sk_sp<GrD3DTexture> d3dTex = this->createD3DTexture(dimensions,
-                                                        dxgiFormat,
-                                                        GrRenderable::kNo,
-                                                        1,
-                                                        budgeted,
-                                                        isProtected,
-                                                        mipLevelCount,
-                                                        mipmapStatus,
-                                                        /*label=*/{});
+    sk_sp<GrD3DTexture> d3dTex = this->createD3DTexture(
+        dimensions,
+        dxgiFormat,
+        GrRenderable::kNo,
+        1,
+        budgeted,
+        isProtected,
+        mipLevelCount,
+        mipmapStatus,
+        /*label=*/"D3DGpu_CreateCompressedTexture");
     if (!d3dTex) {
         return nullptr;
     }
@@ -787,6 +788,30 @@ bool GrD3DGpu::uploadToTexture(GrD3DTexture* tex,
     return true;
 }
 
+bool GrD3DGpu::onTransferFromBufferToBuffer(sk_sp<GrGpuBuffer> src,
+                                            size_t srcOffset,
+                                            sk_sp<GrGpuBuffer> dst,
+                                            size_t dstOffset,
+                                            size_t size) {
+    if (!this->currentCommandList()) {
+        return false;
+    }
+
+    sk_sp<GrD3DBuffer> d3dSrc(static_cast<GrD3DBuffer*>(src.release()));
+    sk_sp<GrD3DBuffer> d3dDst(static_cast<GrD3DBuffer*>(dst.release()));
+
+    fCurrentDirectCommandList->copyBufferToBuffer(std::move(d3dDst),
+                                                  dstOffset,
+                                                  d3dSrc->d3dResource(),
+                                                  srcOffset,
+                                                  size);
+
+    // copyBufferToBuffer refs the dst but not the src
+    this->currentCommandList()->addGrBuffer(std::move(src));
+
+    return true;
+}
+
 bool GrD3DGpu::onTransferPixelsTo(GrTexture* texture,
                                   SkIRect rect,
                                   GrColorType surfaceColorType,
@@ -1103,7 +1128,7 @@ bool GrD3DGpu::onRegenerateMipMapLevels(GrTexture * tex) {
                                                   uavDesc,
                                                   grProtected,
                                                   GrMipmapStatus::kDirty,
-                                                  /*label=*/{});
+                                                  /*label=*/"RegenerateMipMapLevels");
         if (!uavTexture) {
             return false;
         }

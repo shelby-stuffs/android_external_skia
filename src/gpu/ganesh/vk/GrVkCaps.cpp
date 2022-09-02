@@ -62,6 +62,7 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
 
     fTransferFromBufferToTextureSupport = true;
     fTransferFromSurfaceToBufferSupport = true;
+    fTransferFromBufferToBufferSupport  = true;
 
     fMaxRenderTargetSize = 4096; // minimum required by spec
     fMaxTextureSize = 4096; // minimum required by spec
@@ -812,9 +813,9 @@ const GrVkCaps::FormatInfo& GrVkCaps::getFormatInfo(VkFormat format) const {
 }
 
 GrVkCaps::FormatInfo& GrVkCaps::getFormatInfo(VkFormat format) {
-    static_assert(SK_ARRAY_COUNT(kVkFormats) == GrVkCaps::kNumVkFormats,
+    static_assert(std::size(kVkFormats) == GrVkCaps::kNumVkFormats,
                   "Size of VkFormats array must match static value in header");
-    for (size_t i = 0; i < SK_ARRAY_COUNT(kVkFormats); ++i) {
+    for (size_t i = 0; i < std::size(kVkFormats); ++i) {
         if (kVkFormats[i] == format) {
             return fFormatTable[i];
         }
@@ -825,7 +826,7 @@ GrVkCaps::FormatInfo& GrVkCaps::getFormatInfo(VkFormat format) {
 
 void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice physDev,
                                const VkPhysicalDeviceProperties& properties) {
-    static_assert(SK_ARRAY_COUNT(kVkFormats) == GrVkCaps::kNumVkFormats,
+    static_assert(std::size(kVkFormats) == GrVkCaps::kNumVkFormats,
                   "Size of VkFormats array must match static value in header");
 
     std::fill_n(fColorTypeToFormatTable, kGrColorTypeCnt, VK_FORMAT_UNDEFINED);

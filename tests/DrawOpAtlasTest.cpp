@@ -104,7 +104,7 @@ public:
     }
 
     void issueDrawToken() { fTokenTracker.issueDrawToken(); }
-    void flushToken() { fTokenTracker.flushToken(); }
+    void issueFlushToken() { fTokenTracker.issueFlushToken(); }
 
 private:
     skgpu::TokenTracker fTokenTracker;
@@ -184,7 +184,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(BasicDrawOpAtlas, reporter, ctxInfo) {
     for (int i = 0; i < 512; ++i) {
         atlas->setLastUseToken(atlasLocators[0], uploadTarget.tokenTracker()->nextDrawToken());
         uploadTarget.issueDrawToken();
-        uploadTarget.flushToken();
+        uploadTarget.issueFlushToken();
         atlas->compact(uploadTarget.tokenTracker()->nextTokenToFlush());
     }
 
@@ -205,7 +205,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrAtlasTextOpPreparation, reporter, ctxInfo) 
 
     auto sdc = skgpu::v1::SurfaceDrawContext::Make(dContext, GrColorType::kRGBA_8888, nullptr,
                                                    SkBackingFit::kApprox, {32, 32},
-                                                   SkSurfaceProps());
+                                                   SkSurfaceProps(),
+                                                   /*label=*/"AtlasTextOpPreparation");
 
     SkPaint paint;
     paint.setColor(SK_ColorRED);

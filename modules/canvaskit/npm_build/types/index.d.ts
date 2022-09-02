@@ -1,5 +1,5 @@
-// Minimum TypeScript Version: 3.7
-export function CanvasKitInit(opts: CanvasKitInitOptions): Promise<CanvasKit>;
+// Minimum TypeScript Version: 4.1
+export default function CanvasKitInit(opts: CanvasKitInitOptions): Promise<CanvasKit>;
 
 export interface CanvasKitInitOptions {
     /**
@@ -276,8 +276,12 @@ export interface CanvasKit {
      *              the image is destroyed.
      * @param info - If provided, will be used to determine the width/height/format of the
      *               source image. If not, sensible defaults will be used.
+     * @param srcIsPremul - set to true if the src data has premultiplied alpha. Otherwise, it will
+     *         be assumed to be Unpremultiplied. Note: if this is true and info specifies
+     *         Unpremul, Skia will not convert the src pixels first.
      */
-    MakeLazyImageFromTextureSource(src: TextureSource, info?: ImageInfo | PartialImageInfo): Image;
+    MakeLazyImageFromTextureSource(src: TextureSource, info?: ImageInfo | PartialImageInfo,
+                                   srcIsPremul?: boolean): Image;
 
     /**
      * Deletes the associated WebGLContext. Function not available on the CPU version.
@@ -847,7 +851,7 @@ export interface Paragraph extends EmbindObject<Paragraph> {
     getMaxIntrinsicWidth(): number;
     getMaxWidth(): number;
     getMinIntrinsicWidth(): number;
-    getRectsForPlaceholders(): FlattenedRectangleArray;
+    getRectsForPlaceholders(): Rect[];
 
     /**
      * Returns bounding boxes that enclose all text in the range of glpyh indexes [start, end).
@@ -857,7 +861,7 @@ export interface Paragraph extends EmbindObject<Paragraph> {
      * @param wStyle
      */
     getRectsForRange(start: number, end: number, hStyle: RectHeightStyle,
-                     wStyle: RectWidthStyle): FlattenedRectangleArray;
+                     wStyle: RectWidthStyle): Rect[];
 
     /**
      * Finds the first and last glyphs that define a word containing the glyph at index offset.
@@ -1018,6 +1022,7 @@ export interface SkSLUniform {
     rows: number;
     /** The index into the uniforms array that this uniform begins. */
     slot: number;
+    isInteger: boolean;
 }
 
 /**
@@ -1486,7 +1491,7 @@ export interface Canvas extends EmbindObject<Canvas> {
      *          not supported in JS, so that colorType corresponds to raw bytes Uint8Array.
      */
     readPixels(srcX: number, srcY: number, imageInfo: ImageInfo, dest?: MallocObj,
-               bytesPerRow?: number): Uint8Array | Float32Array | null;
+               bytesPerRow?: number): Float32Array | Uint8Array | null;
 
     /**
      * Removes changes to the current matrix and clip since Canvas state was
@@ -1992,7 +1997,7 @@ export interface Paint extends EmbindObject<Paint> {
      * Sets the current color filter, replacing the existing one if there was one.
      * @param filter
      */
-    setColorFilter(filter: ColorFilter): void;
+    setColorFilter(filter: ColorFilter | null): void;
 
     /**
      * Sets the color used when stroking and filling. The color values are interpreted as being in
@@ -2006,25 +2011,25 @@ export interface Paint extends EmbindObject<Paint> {
      * Sets the current image filter, replacing the existing one if there was one.
      * @param filter
      */
-    setImageFilter(filter: ImageFilter): void;
+    setImageFilter(filter: ImageFilter | null): void;
 
     /**
      * Sets the current mask filter, replacing the existing one if there was one.
      * @param filter
      */
-    setMaskFilter(filter: MaskFilter): void;
+    setMaskFilter(filter: MaskFilter | null): void;
 
     /**
      * Sets the current path effect, replacing the existing one if there was one.
      * @param effect
      */
-    setPathEffect(effect: PathEffect): void;
+    setPathEffect(effect: PathEffect | null): void;
 
     /**
      * Sets the current shader, replacing the existing one if there was one.
      * @param shader
      */
-    setShader(shader: Shader): void;
+    setShader(shader: Shader | null): void;
 
     /**
      * Sets the geometry drawn at the beginning and end of strokes.
@@ -2664,8 +2669,12 @@ export interface Surface extends EmbindObject<Surface> {
      * @param src
      * @param info - If provided, will be used to determine the width/height/format of the
      *               source image. If not, sensible defaults will be used.
+     * @param srcIsPremul - set to true if the src data has premultiplied alpha. Otherwise, it will
+     *               be assumed to be Unpremultiplied. Note: if this is true and info specifies
+     *               Unpremul, Skia will not convert the src pixels first.
      */
-    makeImageFromTextureSource(src: TextureSource, info?: ImageInfo | PartialImageInfo): Image | null;
+    makeImageFromTextureSource(src: TextureSource, info?: ImageInfo | PartialImageInfo,
+                               srcIsPremul?: boolean): Image | null;
 
     /**
      * Returns current contents of the surface as an Image. This image will be optimized to be
@@ -2714,8 +2723,11 @@ export interface Surface extends EmbindObject<Surface> {
      *
      * @param img - A texture-backed Image.
      * @param src - A valid texture source of any dimensions.
+     * @param srcIsPremul - set to true if the src data has premultiplied alpha. Otherwise, it will
+     *               be assumed to be Unpremultiplied. Note: if this is true and the image was
+     *               created with Unpremul, Skia will not convert.
      */
-    updateTextureFromSource(img: Image, src: TextureSource): void;
+    updateTextureFromSource(img: Image, src: TextureSource, srcIsPremul?: boolean): void;
 
     /**
      * Returns the width of this surface in pixels.

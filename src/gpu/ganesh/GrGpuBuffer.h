@@ -80,19 +80,37 @@ public:
      */
     bool updateData(const void* src, size_t srcSizeInBytes);
 
+    GrGpuBufferType intendedType() const { return fIntendedType; }
+
 protected:
     GrGpuBuffer(GrGpu*,
                 size_t sizeInBytes,
                 GrGpuBufferType,
                 GrAccessPattern,
                 std::string_view label);
-    GrGpuBufferType intendedType() const { return fIntendedType; }
+
+    enum class MapType {
+        /** Maps for reading. The effect of writes is undefined. */
+        kRead,
+        /**
+         * Maps for writing. The existing contents are discarded and the initial contents of the
+         * buffer. Reads (even after overwriting initial contents) should be avoided for performance
+         * reasons as the memory may not be cached.
+         */
+        kWriteDiscard,
+    };
 
     void* fMapPtr;
 
 private:
-    virtual void onMap() = 0;
-    virtual void onUnmap() = 0;
+    /** Currently MapType is determined entirely by the buffer type, as documented in map(). */
+    MapType mapType() const {
+        return this->intendedType() == GrGpuBufferType::kXferGpuToCpu ? MapType::kRead
+                                                                      : MapType::kWriteDiscard;
+    }
+
+    virtual void onMap(MapType) = 0;
+    virtual void onUnmap(MapType) = 0;
     virtual bool onUpdateData(const void* src, size_t srcSizeInBytes) = 0;
 
     size_t onGpuMemorySize() const override { return fSizeInBytes; }
@@ -103,12 +121,6 @@ private:
     size_t            fSizeInBytes;
     GrAccessPattern   fAccessPattern;
     GrGpuBufferType   fIntendedType;
-
-#ifdef SK_DEBUG
-    // Static and stream access buffers are only ever written to once. This is used to track that
-    // and assert it is true.
-    bool              fHasWrittenToBuffer = false;
-#endif
 };
 
 #endif

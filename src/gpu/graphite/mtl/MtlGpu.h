@@ -18,10 +18,11 @@
 #import <Metal/Metal.h>
 
 namespace skgpu::graphite {
+struct ContextOptions;
 
 class MtlGpu final : public Gpu {
 public:
-    static sk_sp<Gpu> Make(const MtlBackendContext&);
+    static sk_sp<Gpu> Make(const MtlBackendContext&, const ContextOptions&);
     ~MtlGpu() override;
 
     id<MTLDevice> device() const { return fDevice.get(); }
@@ -34,8 +35,6 @@ public:
 
 private:
     MtlGpu(sk_cfp<id<MTLDevice>>, sk_cfp<id<MTLCommandQueue>>, sk_sp<const MtlCaps>);
-
-    Gpu::OutstandingSubmission onSubmit(sk_sp<CommandBuffer>) override;
 
     BackendTexture onCreateBackendTexture(SkISize dimensions, const TextureInfo&) override;
     void onDeleteBackendTexture(BackendTexture&) override;

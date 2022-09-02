@@ -13,7 +13,6 @@
 #include "src/core/SkDevice.h"
 #include "src/text/gpu/SubRunAllocator.h"
 
-class SkGlyphRunList;
 class SkMatrix;
 class SkMatrixProvider;
 class SkPaint;
@@ -22,9 +21,12 @@ class SkStrikeClient;
 class SkStrikeForGPUCacheInterface;
 class SkWriteBuffer;
 
-namespace sktext::gpu {
-class Glyph;
-class StrikeCache;
+namespace sktext {
+class GlyphRunList;
+    namespace gpu {
+    class Glyph;
+    class StrikeCache;
+    }
 }
 
 #if SK_SUPPORT_GPU  // Ganesh support
@@ -36,6 +38,12 @@ class GrDeferredUploadTarget;
 class GrMeshDrawTarget;
 class GrClip;
 namespace skgpu::v1 { class SurfaceDrawContext; }
+#endif
+
+#if defined(SK_GRAPHITE_ENABLED)
+#include "src/gpu/graphite/geom/SubRunData.h"
+
+namespace skgpu::graphite { class Recorder; }
 #endif
 
 namespace sktext::gpu {
@@ -84,6 +92,21 @@ public:
             int begin, int end, GrMeshDrawTarget* target) const = 0;
 #endif
 
+#if defined(SK_GRAPHITE_ENABLED)
+    // bounds of the stored data
+    virtual SkRect bounds() const = 0;
+
+//    virtual void fillVertexData(
+//            void* vertexDst, int offset, int count,
+//            SkColor color,
+//            const SkMatrix& drawMatrix,
+//            SkPoint drawOrigin,
+//            SkIRect clip) const {}
+
+    virtual std::tuple<bool, int> regenerateAtlas(
+        int begin, int end, skgpu::graphite::Recorder*) const = 0;
+#endif
+
     virtual void testingOnly_packedGlyphIDToGlyph(StrikeCache* cache) const = 0;
 };
 
@@ -104,6 +127,14 @@ public:
                       const SkPaint&,
                       sk_sp<SkRefCnt> subRunStorage,
                       skgpu::v1::SurfaceDrawContext*) const = 0;
+#endif
+#if defined(SK_GRAPHITE_ENABLED)
+    // Produce uploads and draws for this subRun
+    virtual void draw(SkCanvas*,
+                      SkPoint drawOrigin,
+                      const SkPaint&,
+                      sk_sp<SkRefCnt> subRunStorage,
+                      skgpu::graphite::Device*) const = 0;
 #endif
 
     void flatten(SkWriteBuffer& buffer) const;
@@ -195,7 +226,7 @@ public:
                                                       SubRunAllocator* alloc);
 
     static std::tuple<bool, SubRunContainerOwner> MakeInAlloc(
-            const SkGlyphRunList& glyphRunList,
+            const GlyphRunList& glyphRunList,
             const SkMatrix& positionMatrix,
             const SkPaint& runPaint,
             SkStrikeDeviceInfo strikeDeviceInfo,
@@ -203,7 +234,7 @@ public:
             sktext::gpu::SubRunAllocator* alloc,
             const char* tag);
 
-    static size_t EstimateAllocSize(const SkGlyphRunList& glyphRunList);
+    static size_t EstimateAllocSize(const GlyphRunList& glyphRunList);
 
 #if SK_SUPPORT_GPU
     void draw(SkCanvas* canvas,
@@ -213,6 +244,13 @@ public:
               const SkPaint& paint,
               const SkRefCnt* subRunStorage,
               skgpu::v1::SurfaceDrawContext* sdc) const;
+#endif
+#ifdef SK_GRAPHITE_ENABLED
+    void draw(SkCanvas*,
+              SkPoint drawOrigin,
+              const SkPaint&,
+              const SkRefCnt* subRunStorage,
+              skgpu::graphite::Device*) const;
 #endif
 
     const SkMatrix& initialPosition() const { return fInitialPositionMatrix; }
@@ -225,4 +263,5 @@ private:
     SubRunList fSubRuns;
 };
 }  // namespace sktext::gpu
+
 #endif  // sktext_gpu_SubRunContainer_DEFINED

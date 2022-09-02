@@ -64,7 +64,7 @@ static sk_sp<GrSurfaceProxy> make_deferred(GrProxyProvider* proxyProvider, const
     const GrBackendFormat format = caps->getDefaultBackendFormat(p.fColorType, p.fRenderable);
     return proxyProvider->createProxy(format, {p.fSize, p.fSize}, p.fRenderable, p.fSampleCnt,
                                       GrMipmapped::kNo, p.fFit, p.fBudgeted, GrProtected::kNo,
-                                      /*label=*/{});
+                                      /*label=*/"ResourceAllocatorTest_Deffered");
 }
 
 static sk_sp<GrSurfaceProxy> make_backend(GrDirectContext* dContext, const ProxyParams& p) {
@@ -99,7 +99,7 @@ static sk_sp<GrSurfaceProxy> make_fully_lazy(GrProxyProvider* proxyProvider, con
                                            desc.fMipmapped,
                                            desc.fBudgeted,
                                            desc.fProtected,
-                                           /*label=*/{});
+                                           /*label=*/"ResourceAllocatorTest_FullLazy");
         return GrSurfaceProxy::LazyCallbackResult(std::move(tex));
     };
     return GrProxyProvider::MakeFullyLazyProxy(std::move(cb), format, p.fRenderable, p.fSampleCnt,
@@ -119,7 +119,7 @@ static sk_sp<GrSurfaceProxy> make_lazy(GrProxyProvider* proxyProvider, const GrC
                                            desc.fMipmapped,
                                            desc.fBudgeted,
                                            desc.fProtected,
-                                           /*label=*/{});
+                                           /*label=*/"ResourceAllocatorTest_Lazy");
         return GrSurfaceProxy::LazyCallbackResult(std::move(tex));
     };
     return proxyProvider->createLazyProxy(std::move(cb), format, {p.fSize, p.fSize},
@@ -238,7 +238,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceAllocatorTest, reporter, ctxInfo) {
          kDontShare},
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(overlappingTests); i++) {
+    for (size_t i = 0; i < std::size(overlappingTests); i++) {
         const TestCase& test = overlappingTests[i];
         sk_sp<GrSurfaceProxy> p1 = make_proxy(dContext, test.fP1);
         sk_sp<GrSurfaceProxy> p2 = make_proxy(dContext, test.fP2);
@@ -307,7 +307,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceAllocatorTest, reporter, ctxInfo) {
          kDontShare}
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(nonOverlappingTests); i++) {
+    for (size_t i = 0; i < std::size(nonOverlappingTests); i++) {
         const TestCase& test = nonOverlappingTests[i];
         sk_sp<GrSurfaceProxy> p1 = make_proxy(dContext, test.fP1);
         sk_sp<GrSurfaceProxy> p2 = make_proxy(dContext, test.fP2);
@@ -496,7 +496,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceAllocatorMemoryBudgetTest, reporter, 
             }},
     };
     SkString match("");
-    for (size_t i = 0; i < SK_ARRAY_COUNT(tests); i++) {
+    for (size_t i = 0; i < std::size(tests); i++) {
         TestCase& test = tests[i];
         if (match.isEmpty() || match == SkString(test.fName)) {
             // Create proxies

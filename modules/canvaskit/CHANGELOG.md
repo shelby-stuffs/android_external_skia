@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+ - Minor bug fixes in the TypeScript type declaration.
+ - Creating a Premul Image from a TextureSource should upload the texture to WebGL correctly.
+
+### Added
+ - `Surface.makeImageFromTextureSource`, `Surface.updateTextureFromSource`, and
+   `MakeLazyImageFromTextureSource` all take an optional `srcIsPremul` to specify if their source
+   data has Premultiplied alpha. This avoids double multiplying alpha in certain cases.
+
 ## [0.34.1] - 2022-06-02
 
 ### Added

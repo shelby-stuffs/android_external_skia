@@ -164,7 +164,8 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::Make(
         skgpu::Swizzle writeSwizzle,
         GrSurfaceOrigin origin,
         SkBudgeted budgeted,
-        const SkSurfaceProps& surfaceProps) {
+        const SkSurfaceProps& surfaceProps,
+        std::string_view label) {
     // It is probably not necessary to check if the context is abandoned here since uses of the
     // SurfaceDrawContext which need the context will mostly likely fail later on without an
     // issue. However having this hear adds some reassurance in case there is a path doesn't handle
@@ -182,7 +183,7 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::Make(
             fit,
             budgeted,
             isProtected,
-            /*label=*/{});
+            label);
     if (!proxy) {
         return nullptr;
     }
@@ -207,6 +208,7 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::Make(
         SkBackingFit fit,
         SkISize dimensions,
         const SkSurfaceProps& surfaceProps,
+        std::string_view label,
         int sampleCnt,
         GrMipmapped mipmapped,
         GrProtected isProtected,
@@ -220,15 +222,16 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::Make(
     if (!format.isValid()) {
         return nullptr;
     }
-    sk_sp<GrTextureProxy> proxy = rContext->priv().proxyProvider()->createProxy(format,
-                                                                                dimensions,
-                                                                                GrRenderable::kYes,
-                                                                                sampleCnt,
-                                                                                mipmapped,
-                                                                                fit,
-                                                                                budgeted,
-                                                                                isProtected,
-                                                                                /*label=*/{});
+    sk_sp<GrTextureProxy> proxy = rContext->priv().proxyProvider()->createProxy(
+            format,
+            dimensions,
+            GrRenderable::kYes,
+            sampleCnt,
+            mipmapped,
+            fit,
+            budgeted,
+            isProtected,
+            label);
     if (!proxy) {
         return nullptr;
     }
@@ -259,7 +262,8 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::MakeWithFallback(
         return nullptr;
     }
     return SurfaceDrawContext::Make(rContext, ct, colorSpace, fit, dimensions, surfaceProps,
-                                    sampleCnt, mipmapped, isProtected, origin, budgeted);
+                                    /*label=*/"MakeSurfaceDrawContextWithFallback", sampleCnt,
+                                    mipmapped, isProtected, origin, budgeted);
 }
 
 std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::MakeFromBackendTexture(
@@ -327,7 +331,7 @@ void SurfaceDrawContext::willReplaceOpsTask(OpsTask* prevTask, OpsTask* nextTask
 void SurfaceDrawContext::drawGlyphRunList(SkCanvas* canvas,
                                           const GrClip* clip,
                                           const SkMatrixProvider& viewMatrix,
-                                          const SkGlyphRunList& glyphRunList,
+                                          const sktext::GlyphRunList& glyphRunList,
                                           SkStrikeDeviceInfo strikeDeviceInfo,
                                           const SkPaint& paint) {
     ASSERT_SINGLE_OWNER
@@ -2086,6 +2090,7 @@ bool SurfaceDrawContext::setupDstProxyView(const SkRect& opBounds,
                                      copyRect,
                                      fit,
                                      SkBudgeted::kYes,
+                                     /*label=*/{},
                                      restrictions.fRectsMustMatch);
     SkASSERT(copy);
 

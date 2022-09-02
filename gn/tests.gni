@@ -98,6 +98,7 @@ tests_sources = [
   "$_tests/GrDDLImageTest.cpp",
   "$_tests/GrFinishedFlushTest.cpp",
   "$_tests/GrGlyphVectorTest.cpp",
+  "$_tests/GrGpuBufferTest.cpp",
   "$_tests/GrMemoryPoolTest.cpp",
   "$_tests/GrOpListFlushTest.cpp",
   "$_tests/GrPorterDuffTest.cpp",
@@ -256,6 +257,7 @@ tests_sources = [
   "$_tests/SkScalerCacheTest.cpp",
   "$_tests/SkShaperJSONWriterTest.cpp",
   "$_tests/SkSharedMutexTest.cpp",
+  "$_tests/SkSpanTest.cpp",
   "$_tests/SkStrikeCacheTest.cpp",
   "$_tests/SkStringViewTest.cpp",
   "$_tests/SkTBlockListTest.cpp",
@@ -332,8 +334,9 @@ metal_tests_sources = [
 
 graphite_tests_sources = [
   "$_tests/graphite/BackendTextureTest.cpp",
+  "$_tests/graphite/BoundsManagerTest.cpp",
   "$_tests/graphite/CombinationBuilderTest.cpp",
-  "$_tests/graphite/CommandBufferTest.cpp",
+  "$_tests/graphite/CombinationBuilderTestAccess.h",
   "$_tests/graphite/GraphiteResourceCacheTest.cpp",
   "$_tests/graphite/IntersectionTreeTest.cpp",
   "$_tests/graphite/KeyTest.cpp",

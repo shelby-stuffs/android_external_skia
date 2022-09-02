@@ -17,9 +17,11 @@
 #include "src/core/SkColorFilterBase.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
+#include "src/core/SkKeyHelpers.h"
 #include "src/core/SkLRUCache.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkOpts.h"
+#include "src/core/SkPaintParamsKey.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkRuntimeEffectPriv.h"
@@ -101,6 +103,10 @@ SkRuntimeEffect::Uniform SkRuntimeEffectPriv::VarAsUniform(const SkSL::Variable&
         uni.flags |= Uniform::kArray_Flag;
         uni.count = type->columns();
         type = &type->componentType();
+    }
+
+    if (type->hasPrecision() && !type->highPrecision()) {
+        uni.flags |= Uniform::kHalfPrecision_Flag;
     }
 
     SkAssertResult(init_uniform_type(context, type, &uni));
@@ -774,7 +780,7 @@ std::unique_ptr<SkFilterColorProgram> SkFilterColorProgram::Make(const SkRuntime
                                              effect->fMain,
                                              &p,
                                              /*debugTrace=*/nullptr,
-                                             SkMakeSpan(uniform),
+                                             SkSpan(uniform),
                                              /*device=*/zeroCoord,
                                              /*local=*/zeroCoord,
                                              inputColor,
@@ -835,7 +841,7 @@ SkPMColor4f SkFilterColorProgram::eval(
     return result;
 }
 
-const SkFilterColorProgram* SkRuntimeEffect::getFilterColorProgram() {
+const SkFilterColorProgram* SkRuntimeEffect::getFilterColorProgram() const {
     return fFilterColorProgram.get();
 }
 
@@ -890,7 +896,7 @@ static GrFPResult make_effect_fp(sk_sp<SkRuntimeEffect> effect,
                                      std::move(inputFP),
                                      std::move(destColorFP),
                                      std::move(uniforms),
-                                     SkMakeSpan(childFPs));
+                                     SkSpan(childFPs));
     SkASSERT(fp);
     return GrFPSuccess(std::move(fp));
 }
@@ -988,7 +994,7 @@ public:
                               std::move(uniforms),
                               std::move(inputFP),
                               /*destColorFP=*/nullptr,
-                              SkMakeSpan(fChildren),
+                              SkSpan(fChildren),
                               childArgs);
     }
 #endif
@@ -1014,7 +1020,7 @@ public:
         // something. (Uninitialized values can trigger asserts in skvm::Builder).
         skvm::Coord zeroCoord = { p->splat(0.0f), p->splat(0.0f) };
         return SkSL::ProgramToSkVM(*fEffect->fBaseProgram, fEffect->fMain, p,/*debugTrace=*/nullptr,
-                                   SkMakeSpan(uniform), /*device=*/zeroCoord, /*local=*/zeroCoord,
+                                   SkSpan(uniform), /*device=*/zeroCoord, /*local=*/zeroCoord,
                                    c, c, &callbacks);
     }
 
@@ -1094,7 +1100,7 @@ sk_sp<SkFlattenable> SkRuntimeColorFilter::CreateProc(SkReadBuffer& buffer) {
     }
 #endif
 
-    return effect->makeColorFilter(std::move(uniforms), SkMakeSpan(children));
+    return effect->makeColorFilter(std::move(uniforms), SkSpan(children));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1116,7 +1122,7 @@ public:
         sk_sp<SkRuntimeEffect> unoptimized = fEffect->makeUnoptimizedClone();
         sk_sp<SkSL::SkVMDebugTrace> debugTrace = make_skvm_debug_trace(unoptimized.get(), coord);
         auto debugShader = sk_make_sp<SkRTShader>(unoptimized, debugTrace, fUniforms,
-                                                  &this->getLocalMatrix(), SkMakeSpan(fChildren));
+                                                  &this->getLocalMatrix(), SkSpan(fChildren));
 
         return SkRuntimeEffect::TracedShader{std::move(debugShader), std::move(debugTrace)};
     }
@@ -1141,7 +1147,7 @@ public:
                                             std::move(uniforms),
                                             /*inputFP=*/nullptr,
                                             /*destColorFP=*/nullptr,
-                                            SkMakeSpan(fChildren),
+                                            SkSpan(fChildren),
                                             args);
         if (!success) {
             return nullptr;
@@ -1150,6 +1156,14 @@ public:
         return GrMatrixEffect::Make(matrix, std::move(fp));
     }
 #endif
+
+    void addToKey(const SkKeyContext& keyContext,
+                  SkPaintParamsKeyBuilder* builder,
+                  SkPipelineDataGatherer* gatherer) const override {
+        RuntimeShaderBlock::BeginBlock(keyContext, builder, gatherer,
+                                       {fEffect, this->getLocalMatrix(), fUniforms});
+        builder->endBlock();
+    }
 
     bool onAppendStages(const SkStageRec& rec) const override {
         return false;
@@ -1176,7 +1190,7 @@ public:
                                                             *inputs);
 
         return SkSL::ProgramToSkVM(*fEffect->fBaseProgram, fEffect->fMain, p, fDebugTrace.get(),
-                                   SkMakeSpan(uniform), device, local, paint, paint, &callbacks);
+                                   SkSpan(uniform), device, local, paint, paint, &callbacks);
     }
 
     void flatten(SkWriteBuffer& buffer) const override {
@@ -1250,7 +1264,7 @@ sk_sp<SkFlattenable> SkRTShader::CreateProc(SkReadBuffer& buffer) {
     }
 #endif
 
-    return effect->makeShader(std::move(uniforms), SkMakeSpan(children), localMPtr);
+    return effect->makeShader(std::move(uniforms), SkSpan(children), localMPtr);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1281,7 +1295,7 @@ public:
         // Emit the blend function as an SkVM program.
         skvm::Coord zeroCoord = {p->splat(0.0f), p->splat(0.0f)};
         return SkSL::ProgramToSkVM(*fEffect->fBaseProgram, fEffect->fMain, p,/*debugTrace=*/nullptr,
-                                   SkMakeSpan(uniform), /*device=*/zeroCoord, /*local=*/zeroCoord,
+                                   SkSpan(uniform), /*device=*/zeroCoord, /*local=*/zeroCoord,
                                    src, dst, &callbacks);
     }
 
@@ -1300,7 +1314,7 @@ public:
                                             std::move(uniforms),
                                             std::move(srcFP),
                                             std::move(dstFP),
-                                            SkMakeSpan(fChildren),
+                                            SkSpan(fChildren),
                                             args);
 
         return success ? std::move(fp) : nullptr;
@@ -1347,7 +1361,7 @@ sk_sp<SkFlattenable> SkRuntimeBlender::CreateProc(SkReadBuffer& buffer) {
     }
 #endif
 
-    return effect->makeBlender(std::move(uniforms), SkMakeSpan(children));
+    return effect->makeBlender(std::move(uniforms), SkSpan(children));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1360,7 +1374,7 @@ sk_sp<SkShader> SkRuntimeEffect::makeShader(sk_sp<const SkData> uniforms,
     for (size_t i = 0; i < childCount; ++i) {
         children.emplace_back(childShaders[i]);
     }
-    return this->makeShader(std::move(uniforms), SkMakeSpan(children), localMatrix);
+    return this->makeShader(std::move(uniforms), SkSpan(children), localMatrix);
 }
 
 sk_sp<SkShader> SkRuntimeEffect::makeShader(sk_sp<const SkData> uniforms,
@@ -1423,7 +1437,7 @@ sk_sp<SkImage> SkRuntimeEffect::makeImage(GrRecordingContext* rContext,
                                          /*inputFP=*/nullptr,
                                          /*destColorFP=*/nullptr,
                                          std::move(uniforms),
-                                         SkMakeSpan(childFPs));
+                                         SkSpan(childFPs));
 
         if (localMatrix) {
             SkMatrix invLM;
@@ -1474,7 +1488,7 @@ sk_sp<SkColorFilter> SkRuntimeEffect::makeColorFilter(sk_sp<const SkData> unifor
     for (size_t i = 0; i < childCount; ++i) {
         children.emplace_back(childColorFilters[i]);
     }
-    return this->makeColorFilter(std::move(uniforms), SkMakeSpan(children));
+    return this->makeColorFilter(std::move(uniforms), SkSpan(children));
 }
 
 sk_sp<SkColorFilter> SkRuntimeEffect::makeColorFilter(sk_sp<const SkData> uniforms,
@@ -1583,7 +1597,7 @@ sk_sp<SkImage> SkRuntimeShaderBuilder::makeImage(GrRecordingContext* recordingCo
                                                  bool mipmapped) {
     return this->effect()->makeImage(recordingContext,
                                      this->uniforms(),
-                                     SkMakeSpan(this->children(), this->numChildren()),
+                                     SkSpan(this->children(), this->numChildren()),
                                      localMatrix,
                                      resultInfo,
                                      mipmapped);
@@ -1591,7 +1605,7 @@ sk_sp<SkImage> SkRuntimeShaderBuilder::makeImage(GrRecordingContext* recordingCo
 
 sk_sp<SkShader> SkRuntimeShaderBuilder::makeShader(const SkMatrix* localMatrix) {
     return this->effect()->makeShader(
-            this->uniforms(), SkMakeSpan(this->children(), this->numChildren()), localMatrix);
+            this->uniforms(), SkSpan(this->children(), this->numChildren()), localMatrix);
 }
 
 SkRuntimeBlendBuilder::SkRuntimeBlendBuilder(sk_sp<SkRuntimeEffect> effect)
@@ -1601,7 +1615,7 @@ SkRuntimeBlendBuilder::~SkRuntimeBlendBuilder() = default;
 
 sk_sp<SkBlender> SkRuntimeBlendBuilder::makeBlender() {
     return this->effect()->makeBlender(this->uniforms(),
-                                       SkMakeSpan(this->children(), this->numChildren()));
+                                       SkSpan(this->children(), this->numChildren()));
 }
 
 #endif  // SK_ENABLE_SKSL

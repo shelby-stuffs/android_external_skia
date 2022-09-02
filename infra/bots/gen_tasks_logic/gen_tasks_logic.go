@@ -1286,7 +1286,6 @@ func (b *jobBuilder) compile() string {
 	return name
 }
 
-
 // recreateSKPs generates a RecreateSKPs task.
 func (b *jobBuilder) recreateSKPs() {
 	cmd := []string{
@@ -2086,6 +2085,13 @@ func (b *jobBuilder) bazelBuild() {
 			cross = "//bazel/common_config_settings:" + cross
 			cmd = append(cmd, "--cross="+cross)
 		}
+		// When we updated to Bazel 5.2.0, a bug with 5.0.0 with respect to npm install's
+		// handling of packages starting with @ surfaced. Locally, if we expunge the cache
+		// and re-install things, it fixed things. We can remove this work around
+		// the next time we update emsdk, which should force a re-download of things anyway.
+		if shorthand == "modules_canvaskit_canvaskit_wasm" {
+			cmd = append(cmd, "--expunge_cache")
+		}
 		if host == "linux_x64" {
 			b.linuxGceDimensions(MACHINE_TYPE_MEDIUM)
 			// Use a built task_driver from CIPD instead of building it from scratch. The
@@ -2097,7 +2103,7 @@ func (b *jobBuilder) bazelBuild() {
 			b.cipd(b.MustGetCipdPackageFromAsset("bazel_build_task_driver"))
 
 			// We want all Linux Bazel Builds to use RBE
-			cmd = append(cmd, "--bazel_arg=--config=linux_rbe")
+			cmd = append(cmd, "--bazel_arg=--config=for_linux_x64_with_rbe")
 			cmd = append(cmd, "--bazel_arg=--jobs=100")
 			cmd = append(cmd, "--bazel_arg=--remote_download_minimal")
 		} else {

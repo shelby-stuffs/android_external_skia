@@ -10,6 +10,8 @@
 #include "include/core/SkCombinationBuilder.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/graphite/Context.h"
+#include "src/core/SkKeyHelpers.h"
+#include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkShaderCodeDictionary.h"
 #include "src/gpu/graphite/ContextPriv.h"
 
@@ -92,7 +94,7 @@ static sk_sp<SkBlender> get_blender(sk_sp<SkRuntimeEffect> comboEffect,
 } // anonymous namespace
 
 DEF_GRAPHITE_TEST_FOR_CONTEXTS(RTEffectTest, reporter, context) {
-    auto dict = context->priv().shaderCodeDictionary();
+    SkShaderCodeDictionary* dict = context->priv().shaderCodeDictionary();
 
     sk_sp<SkRuntimeEffect> comboEffect = get_combo_effect();
     sk_sp<SkRuntimeEffect> redEffect = get_red_effect();
@@ -124,4 +126,77 @@ DEF_GRAPHITE_TEST_FOR_CONTEXTS(RTEffectTest, reporter, context) {
 
     // TODO:
     //   check that the uniforms can be extracted from 'blender' correctly
+}
+
+DEF_GRAPHITE_TEST_FOR_CONTEXTS(FindOrCreateSnippetForRuntimeEffectWorks, reporter, context) {
+    SkShaderCodeDictionary* dict = context->priv().shaderCodeDictionary();
+
+    std::unique_ptr<SkRuntimeEffect> testEffect(SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
+    R"(
+        half4 main(float2 coords) {
+            return half4(coords.xy01);
+        }
+    )"));
+
+    // Create a new runtime-effect snippet.
+    int snippetID = dict->findOrCreateRuntimeEffectSnippet(testEffect.get());
+    REPORTER_ASSERT(reporter, snippetID >= kBuiltInCodeSnippetIDCount);
+
+    // Verify that it can be looked up and its name is 'RuntimeEffect'. (The name isn't meaningful,
+    // but this is an easy way to verify that we didn't get an unrelated snippet.)
+    const SkShaderSnippet* snippet = dict->getEntry(snippetID);
+    REPORTER_ASSERT(reporter, snippet);
+    REPORTER_ASSERT(reporter, std::string_view(snippet->fName) == "RuntimeEffect");
+
+    // If we pass the same effect again, we should get the same snippet ID as before.
+    int foundSnippetID = dict->findOrCreateRuntimeEffectSnippet(testEffect.get());
+    REPORTER_ASSERT(reporter, foundSnippetID == snippetID);
+}
+
+DEF_GRAPHITE_TEST_FOR_CONTEXTS(UniformsInFindOrCreateSnippetForRuntimeEffect, reporter, context) {
+    SkShaderCodeDictionary* dict = context->priv().shaderCodeDictionary();
+
+    std::unique_ptr<SkRuntimeEffect> testEffect(SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
+    R"(
+        uniform float3x3 MyFloat3x3Uniform;
+        uniform int4 MyInt4ArrayUniform[1];
+        uniform half2 MyHalf2ArrayUniform[99];
+        half4 main(float2 coords) {
+            return half4(coords.xy01);
+        }
+    )"));
+
+    // Create a new runtime-effect snippet.
+    int snippetID = dict->findOrCreateRuntimeEffectSnippet(testEffect.get());
+    REPORTER_ASSERT(reporter, snippetID >= kBuiltInCodeSnippetIDCount);
+
+    // Delete the test effect.
+    testEffect = nullptr;
+
+    // Verify that it can be looked up by its snippet ID.
+    const SkShaderSnippet* snippet = dict->getEntry(snippetID);
+    REPORTER_ASSERT(reporter, snippet);
+
+    // The uniform span should match our expectations even though the runtime effect was deleted.
+    REPORTER_ASSERT(reporter, snippet->fUniforms.size() == 4);
+
+    REPORTER_ASSERT(reporter, std::string_view(snippet->fUniforms[0].name()) == "localMatrix");
+    REPORTER_ASSERT(reporter, snippet->fUniforms[0].type() == SkSLType::kFloat4x4);
+    REPORTER_ASSERT(reporter, snippet->fUniforms[0].count() == 0);
+
+    REPORTER_ASSERT(reporter,
+                    std::string_view(snippet->fUniforms[1].name()) == "MyFloat3x3Uniform");
+    REPORTER_ASSERT(reporter, snippet->fUniforms[1].type() == SkSLType::kFloat3x3);
+    REPORTER_ASSERT(reporter, snippet->fUniforms[1].count() == 0);
+
+    REPORTER_ASSERT(reporter,
+                    std::string_view(snippet->fUniforms[2].name()) == "MyInt4ArrayUniform");
+    REPORTER_ASSERT(reporter, snippet->fUniforms[2].type() == SkSLType::kInt4);
+    REPORTER_ASSERT(reporter, snippet->fUniforms[2].count() == 1);
+
+    REPORTER_ASSERT(reporter,
+                    std::string_view(snippet->fUniforms[3].name()) == "MyHalf2ArrayUniform");
+    REPORTER_ASSERT(reporter, snippet->fUniforms[3].type() == SkSLType::kHalf2);
+    REPORTER_ASSERT(reporter, snippet->fUniforms[3].count() == 99);
+
 }

@@ -9,18 +9,25 @@
 #define skgpu_graphite_RecorderPriv_DEFINED
 
 #include "include/gpu/graphite/Recorder.h"
+#include "src/text/gpu/SDFTControl.h"
 
 namespace skgpu::graphite {
 
 class RecorderPriv {
 public:
     void add(sk_sp<Task>);
+    void addRuntimeEffect(int codeSnippetID, sk_sp<const SkRuntimeEffect>);
 
     ResourceProvider* resourceProvider() const;
     UniformDataCache* uniformDataCache() const;
     TextureDataCache* textureDataCache() const;
     DrawBufferManager* drawBufferManager() const;
     UploadBufferManager* uploadBufferManager() const;
+    AtlasManager* atlasManager();
+    TokenTracker* tokenTracker();
+    sktext::gpu::StrikeCache* strikeCache();
+    sktext::gpu::TextBlobRedrawCoordinator* textBlobCache();
+    sktext::gpu::SDFTControl getSDFTControl(bool useSDFTForSmallText) const;
     const Caps* caps() const;
     sk_sp<const Caps> refCaps() const;
 

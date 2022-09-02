@@ -193,11 +193,8 @@ std::string get_sksl_fs(SkShaderCodeDictionary* dict,
     dict->getShaderInfo(desc.paintParamsID(), &shaderInfo);
 
     *blendInfo = shaderInfo.blendInfo();
-#if SK_SUPPORT_GPU
+
     return shaderInfo.toSkSL();
-#else
-    return {};
-#endif
 }
 
 inline MTLVertexFormat attribute_type_to_mtlformat(VertexAttribType type) {
@@ -395,7 +392,7 @@ static MTLBlendOperation blend_equation_to_mtl_blend_op(skgpu::BlendEquation equ
             MTLBlendOperationSubtract,         // skgpu::BlendEquation::kSubtract
             MTLBlendOperationReverseSubtract,  // skgpu::BlendEquation::kReverseSubtract
     };
-    static_assert(SK_ARRAY_COUNT(gTable) == (int)skgpu::BlendEquation::kFirstAdvanced);
+    static_assert(std::size(gTable) == (int)skgpu::BlendEquation::kFirstAdvanced);
     static_assert(0 == (int)skgpu::BlendEquation::kAdd);
     static_assert(1 == (int)skgpu::BlendEquation::kSubtract);
     static_assert(2 == (int)skgpu::BlendEquation::kReverseSubtract);
@@ -509,7 +506,7 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(
 
     settings.fForceNoRTFlip = true;
 
-    ShaderErrorHandler* errorHandler = DefaultShaderErrorHandler();
+    ShaderErrorHandler* errorHandler = gpu->caps()->shaderErrorHandler();
     if (!SkSLToMSL(gpu,
                    get_sksl_vs(pipelineDesc),
                    SkSL::ProgramKind::kGraphiteVertex,

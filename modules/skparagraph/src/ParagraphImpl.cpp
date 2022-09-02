@@ -241,10 +241,18 @@ bool ParagraphImpl::computeCodeUnitProperties() {
     }
 
     // Collect all spaces and some extra information
+    // (and also substitute \t with a space while we are at it)
     fTrailingSpaces = fText.size();
     TextIndex firstWhitespace = EMPTY_INDEX;
     fUnicode->forEachCodepoint(fText.c_str(), fText.size(),
-       [this, &firstWhitespace](SkUnichar unichar, int32_t start, int32_t end, int32_t count) {
+        [this, &firstWhitespace](SkUnichar unichar, int32_t start, int32_t end, int32_t count) {
+            if (unichar == '\t' && end - start == 1) {
+                if (this->paragraphStyle().getReplaceTabCharacters()) {
+                    fText[start] = ' ';
+                    unichar = ' ';
+                }
+            }
+
             if (fUnicode->isWhitespace(unichar)) {
                 for (auto i = start; i < end; ++i) {
                     fCodeUnitProperties[i] |=  CodeUnitFlags::kPartOfWhiteSpaceBreak;
@@ -1091,34 +1099,33 @@ TextIndex ParagraphImpl::findNextGraphemeBoundary(TextIndex utf8) {
 }
 
 void ParagraphImpl::ensureUTF16Mapping() {
-    if (!fUTF16IndexForUTF8Index.empty()) {
-        return;
-    }
-    // Fill out code points 16
-    auto ptr = fText.c_str();
-    auto end = fText.c_str() + fText.size();
-    while (ptr < end) {
+    fillUTF16MappingOnce([&] {
+        // Fill out code points 16
+        auto ptr = fText.c_str();
+        auto end = fText.c_str() + fText.size();
+        while (ptr < end) {
 
-        size_t index = ptr - fText.c_str();
-        SkUnichar u = SkUTF::NextUTF8(&ptr, end);
+            size_t index = ptr - fText.c_str();
+            SkUnichar u = SkUTF::NextUTF8(&ptr, end);
 
-        // All utf8 units refer to the same codepoint
-        size_t next = ptr - fText.c_str();
-        for (auto i = index; i < next; ++i) {
-            fUTF16IndexForUTF8Index.emplace_back(fUTF8IndexForUTF16Index.size());
-        }
-        SkASSERT(fUTF16IndexForUTF8Index.size() == next);
+            // All utf8 units refer to the same codepoint
+            size_t next = ptr - fText.c_str();
+            for (auto i = index; i < next; ++i) {
+                fUTF16IndexForUTF8Index.emplace_back(fUTF8IndexForUTF16Index.size());
+            }
+            SkASSERT(fUTF16IndexForUTF8Index.size() == next);
 
-        // One or two codepoints refer to the same text index
-        uint16_t buffer[2];
-        size_t count = SkUTF::ToUTF16(u, buffer);
-        fUTF8IndexForUTF16Index.emplace_back(index);
-        if (count > 1) {
+            // One or two codepoints refer to the same text index
+            uint16_t buffer[2];
+            size_t count = SkUTF::ToUTF16(u, buffer);
             fUTF8IndexForUTF16Index.emplace_back(index);
+            if (count > 1) {
+                fUTF8IndexForUTF16Index.emplace_back(index);
+            }
         }
-    }
-    fUTF16IndexForUTF8Index.emplace_back(fUTF8IndexForUTF16Index.size());
-    fUTF8IndexForUTF16Index.emplace_back(fText.size());
+        fUTF16IndexForUTF8Index.emplace_back(fUTF8IndexForUTF16Index.size());
+        fUTF8IndexForUTF16Index.emplace_back(fText.size());
+    });
 }
 
 void ParagraphImpl::visit(const Visitor& visitor) {

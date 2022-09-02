@@ -7,10 +7,12 @@
 
 #include "src/gpu/graphite/RecorderPriv.h"
 
+#include "src/core/SkRuntimeEffectPriv.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/Device.h"
 #include "src/gpu/graphite/Gpu.h"
 #include "src/gpu/graphite/TaskGraph.h"
+#include "src/sksl/SkSLUtil.h"
 
 namespace skgpu::graphite {
 
@@ -44,9 +46,43 @@ UploadBufferManager* RecorderPriv::uploadBufferManager() const {
     return fRecorder->fUploadBufferManager.get();
 }
 
+AtlasManager* RecorderPriv::atlasManager() {
+    return fRecorder->fAtlasManager.get();
+}
+
+TokenTracker* RecorderPriv::tokenTracker() {
+    return fRecorder->fTokenTracker.get();
+}
+
+sktext::gpu::StrikeCache* RecorderPriv::strikeCache() {
+    return fRecorder->fStrikeCache.get();
+}
+
+sktext::gpu::TextBlobRedrawCoordinator* RecorderPriv::textBlobCache() {
+    return fRecorder->fTextBlobCache.get();
+}
+
+sktext::gpu::SDFTControl RecorderPriv::getSDFTControl(bool useSDFTForSmallText) const {
+    return sktext::gpu::SDFTControl{
+            this->caps()->shaderCaps()->supportsDistanceFieldText(),
+            useSDFTForSmallText,
+            this->caps()->minDistanceFieldFontSize(),
+            this->caps()->glyphsAsPathsFontSize(),
+            true /*forcePaths*/};
+}
+
 void RecorderPriv::add(sk_sp<Task> task) {
     ASSERT_SINGLE_OWNER
     fRecorder->fGraph->add(std::move(task));
+}
+
+void RecorderPriv::addRuntimeEffect(int codeSnippetID, sk_sp<const SkRuntimeEffect> effect) {
+    ASSERT_SINGLE_OWNER
+    // The same code-snippet ID should never refer to two different effects.
+    SkASSERT(!fRecorder->fRuntimeEffectMap.find(codeSnippetID) ||
+             (SkRuntimeEffectPriv::Hash(*fRecorder->fRuntimeEffectMap[codeSnippetID]) ==
+              SkRuntimeEffectPriv::Hash(*effect)));
+    fRecorder->fRuntimeEffectMap.set(codeSnippetID, std::move(effect));
 }
 
 void RecorderPriv::flushTrackedDevices() {

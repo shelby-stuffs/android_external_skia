@@ -73,7 +73,7 @@ public:
 
 private:
     PipelineDynamicStateTestProcessor() : INHERITED(kGrPipelineDynamicStateTestProcessor_ClassID) {
-        this->setVertexAttributesWithImplicitOffsets(kAttributes, SK_ARRAY_COUNT(kAttributes));
+        this->setVertexAttributesWithImplicitOffsets(kAttributes, std::size(kAttributes));
     }
 
     const Attribute& inVertex() const { return kAttributes[0]; }
@@ -193,7 +193,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrPipelineDynamicStateTest, reporter, ctxInfo
 
     auto sdc = skgpu::v1::SurfaceDrawContext::Make(
             dContext, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kExact,
-            {kScreenSize, kScreenSize}, SkSurfaceProps());
+            {kScreenSize, kScreenSize}, SkSurfaceProps(), /*label=*/{});
     if (!sdc) {
         ERRORF(reporter, "could not create render target context.");
         return;

@@ -340,14 +340,6 @@
 #  endif
 #endif
 
-#if !defined(SK_MAYBE_UNUSED)
-#  if defined(__clang__) || defined(__GNUC__)
-#    define SK_MAYBE_UNUSED [[maybe_unused]]
-#  else
-#    define SK_MAYBE_UNUSED
-#  endif
-#endif
-
 /**
  * If your judgment is better than the compiler's (i.e. you've profiled it),
  * you can use SK_ALWAYS_INLINE to force inlining. E.g.
@@ -529,6 +521,15 @@ static inline constexpr int64_t SkLeftShift(int64_t value, int32_t shift) {
 
 /** @return the number of entries in an array (not a pointer)
 */
+// The SkArrayCountHelper template returns a type 'char (&)[N]', a reference to an array of
+// char with N elements, where N is deduced using function parameter type deduction. This is then
+// used in the sizeof operator in SK_ARRAY_COUNT. The sizeof operator ignores the reference, and
+// just evaluates the size of the array type.
+//
+// DEPRECATED: use std::size() instead.
+// Note: Rarely, std::size(z) can't deduce the type of z during compile time for static_assert
+// while SK_ARRAY_COUNT can. It can't be deduced because z is part of class, and the class' this
+// pointer is not a valid constexpr expression. Use SkASSERT instead.
 template <typename T, size_t N> char (&SkArrayCountHelper(T (&array)[N]))[N];
 #define SK_ARRAY_COUNT(array) (sizeof(SkArrayCountHelper(array)))
 
