@@ -78,6 +78,11 @@ CanvasKit.onRuntimeInitialized = function() {
     return this;
   };
 
+  CanvasKit.Path.prototype.addCircle = function(x, y, r, isCCW) {
+    this._addCircle(x, y, r, !!isCCW);
+    return this;
+  };
+
   CanvasKit.Path.prototype.addOval = function(oval, isCCW, startIndex) {
     if (startIndex === undefined) {
       startIndex = 1;
@@ -360,6 +365,7 @@ CanvasKit.onRuntimeInitialized = function() {
     }
     return this;
   };
+
   // isComplement is optional, defaults to false
   CanvasKit.Path.prototype.trim = function(startT, stopT, isComplement) {
     if (this._trim(startT, stopT, !!isComplement)) {
@@ -846,6 +852,32 @@ CanvasKit.onRuntimeInitialized = function() {
       return optionalOutput;
     }
     return ta.slice();
+  };
+
+  CanvasKit.ImageFilter.MakeDropShadow = function(dx, dy, sx, sy, color, input) {
+    var cPtr = copyColorToWasm(color, _scratchColorPtr);
+    return CanvasKit.ImageFilter._MakeDropShadow(dx, dy, sx, sy, cPtr, input);
+  };
+
+  CanvasKit.ImageFilter.MakeDropShadowOnly = function(dx, dy, sx, sy, color, input) {
+    var cPtr = copyColorToWasm(color, _scratchColorPtr);
+    return CanvasKit.ImageFilter._MakeDropShadowOnly(dx, dy, sx, sy, cPtr, input);
+  };
+
+  CanvasKit.ImageFilter.MakeImage = function(img, sampling, srcRect, dstRect) {
+    var srcPtr = copyRectToWasm(srcRect, _scratchFourFloatsAPtr);
+    var dstPtr = copyRectToWasm(dstRect, _scratchFourFloatsBPtr);
+
+    if ('B' in sampling && 'C' in sampling) {
+        return CanvasKit.ImageFilter._MakeImageCubic(img, sampling.B, sampling.C, srcPtr, dstPtr);
+    } else {
+        const filter = sampling['filter'];  // 'filter' is a required field
+        let mipmap = CanvasKit.MipmapMode.None;
+        if ('mipmap' in sampling) {         // 'mipmap' is optional
+            mipmap = sampling['mipmap'];
+        }
+        return CanvasKit.ImageFilter._MakeImageOptions(img, filter, mipmap, srcPtr, dstPtr);
+    }
   };
 
   CanvasKit.ImageFilter.MakeMatrixTransform = function(matrix, sampling, input) {

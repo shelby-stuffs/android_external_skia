@@ -363,9 +363,6 @@ static GrGLRenderer get_renderer(const char* rendererString, const GrGLExtension
     if (strstr(rendererString, "llvmpipe")) {
         return GrGLRenderer::kGalliumLLVM;
     }
-    if (strstr(rendererString, "virgl")) {
-        return GrGLRenderer::kVirgl;
-    }
     static const char kMaliGStr[] = "Mali-G";
     if (0 == strncmp(rendererString, kMaliGStr, std::size(kMaliGStr) - 1)) {
         return GrGLRenderer::kMaliG;
@@ -392,6 +389,10 @@ static bool is_commamd_buffer(const char* rendererString, const char* versionStr
     return (0 == strcmp(rendererString, kChromium) ||
            (3 == sscanf(versionString, "OpenGL ES %d.%d %8s", &major, &minor, suffix) &&
             0 == strcmp(kChromium, suffix)));
+}
+
+static bool is_virgl(const char* rendererString) {
+    return !!strstr(rendererString, "virgl");
 }
 
 static std::tuple<GrGLDriver, GrGLDriverVersion> get_driver_and_version(GrGLStandard standard,
@@ -588,6 +589,8 @@ static std::tuple<GrGLANGLEBackend, SkString> get_angle_backend(const char* rend
             return {GrGLANGLEBackend::kD3D11, std::move(innerString)};
         } else if (strstr(rendererString, "Direct3D9")) {
             return {GrGLANGLEBackend::kD3D9, std::move(innerString)};
+        } else if (strstr(rendererString, "Metal")) {
+            return {GrGLANGLEBackend::kMetal, std::move(innerString)};
         } else if (strstr(rendererString, "OpenGL")) {
             return {GrGLANGLEBackend::kOpenGL, std::move(innerString)};
         }
@@ -729,6 +732,8 @@ GrGLDriverInfo GrGLGetDriverInfo(const GrGLInterface* interface) {
     }
 
     info.fIsOverCommandBuffer = is_commamd_buffer(renderer, version);
+
+    info.fIsRunningOverVirgl = is_virgl(renderer);
 
     return info;
 }

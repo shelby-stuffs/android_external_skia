@@ -46,7 +46,7 @@ genrule(
           "--template-dir $$(dirname $(location generator/templates/api_cpp.h)) " +
           "--targets cpp_headers " +
           "--output-dir $(RULEDIR)",
-    tools = [":dawn_json_generator"],
+    exec_tools = [":dawn_json_generator"],
 )
 
 genrule(
@@ -68,7 +68,7 @@ genrule(
           "--template-dir $$(dirname $(location generator/templates/api.h)) " +
           "--targets headers " +
           "--output-dir $(RULEDIR)",
-    tools = [":dawn_json_generator"],
+    exec_tools = [":dawn_json_generator"],
 )
 
 genrule(
@@ -90,7 +90,7 @@ genrule(
           "--template-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
           "--targets proc " +
           "--output-dir $(RULEDIR)",
-    tools = [":dawn_json_generator"],
+    exec_tools = [":dawn_json_generator"],
 )
 
 genrule(
@@ -110,7 +110,7 @@ genrule(
           "--template-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
           "--targets cpp " +
           "--output-dir $(RULEDIR)",
-    tools = [":dawn_json_generator"],
+    exec_tools = [":dawn_json_generator"],
 )
 
 genrule(
@@ -154,7 +154,7 @@ genrule(
           "--template-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
           "--targets native_utils " +
           "--output-dir $(RULEDIR)",
-    tools = [":dawn_json_generator"],
+    exec_tools = [":dawn_json_generator"],
 )
 
 py_binary(
@@ -187,7 +187,7 @@ genrule(
           "--gpu-info-json $(location src/dawn/gpu_info.json) " +
           "--template-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
           "--output-dir $(RULEDIR)",
-    tools = [":dawn_gpu_info_generator"],
+    exec_tools = [":dawn_gpu_info_generator"],
 )
 
 py_binary(
@@ -222,7 +222,7 @@ genrule(
           "--template-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
           "--dawn-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
           "--output-dir $(RULEDIR) 2> /dev/null",
-    tools = [":dawn_version_generator"],
+    exec_tools = [":dawn_version_generator"],
 )
 
 DAWN_HDRS = [
@@ -297,6 +297,10 @@ DAWN_SRCS = [
     "src/dawn/native/Commands.h",
     "src/dawn/native/CacheKey.cpp",
     "src/dawn/native/CacheKey.h",
+    "src/dawn/native/CacheKeyImplTint.cpp",
+    "src/dawn/native/CacheRequest.cpp",
+    "src/dawn/native/CacheRequest.h",
+    "src/dawn/native/CacheResult.h",
     "src/dawn/native/CompilationMessages.cpp",
     "src/dawn/native/CompilationMessages.h",
     "src/dawn/native/ComputePassEncoder.cpp",
@@ -407,6 +411,7 @@ DAWN_SRCS = [
     "src/dawn/native/ToBackend.h",
     "src/dawn/native/Toggles.cpp",
     "src/dawn/native/Toggles.h",
+    "src/dawn/native/UsageValidationMode.h",
     "src/dawn/native/VertexFormat.cpp",
     "src/dawn/native/VertexFormat.h",
     "src/dawn/native/dawn_platform.h",
@@ -760,6 +765,7 @@ TINT_SRCS = [
     "src/tint/ast/multisampled_texture.h",
     "src/tint/ast/node.cc",
     "src/tint/ast/node.h",
+    "src/tint/ast/node_id.h",
     "src/tint/ast/override.cc",
     "src/tint/ast/override.h",
     "src/tint/ast/parameter.cc",
@@ -869,7 +875,6 @@ TINT_SRCS = [
     "src/tint/resolver/intrinsic_table.inl",
     "src/tint/resolver/resolver.cc",
     "src/tint/resolver/resolver.h",
-    "src/tint/resolver/resolver_constants.cc",
     "src/tint/resolver/sem_helper.cc",
     "src/tint/resolver/sem_helper.h",
     "src/tint/resolver/uniformity.cc",
@@ -1036,6 +1041,7 @@ TINT_SRCS = [
     "src/tint/sem/depth_multisampled_texture.h",
     "src/tint/sem/depth_texture.cc",
     "src/tint/sem/depth_texture.h",
+    "src/tint/sem/evaluation_stage.h",
     "src/tint/sem/expression.cc",
     "src/tint/sem/expression.h",
     "src/tint/sem/external_texture.cc",

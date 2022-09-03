@@ -7,6 +7,8 @@ exports_files_legacy()
 TEXT_FILES = [
     "GlyphRun.cpp",
     "GlyphRun.h",
+    "StrikeForGPU.cpp",
+    "StrikeForGPU.h",
 ]
 
 split_srcs_and_hdrs(

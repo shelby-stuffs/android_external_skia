@@ -47,6 +47,7 @@
 #include "include/effects/SkDiscretePathEffect.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
+#include "include/effects/SkLumaColorFilter.h"
 #include "include/effects/SkPerlinNoiseShader.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/effects/SkTrimPathEffect.h"
@@ -442,6 +443,19 @@ SkPathOrNull MakePathFromSVGString(std::string str) {
     SkPath path;
     if (SkParsePath::FromSVGString(str.c_str(), &path)) {
         return emscripten::val(path);
+    }
+    return emscripten::val::null();
+}
+
+bool CanInterpolate(const SkPath& path1, const SkPath& path2) {
+    return path1.isInterpolatable(path2);
+}
+
+SkPathOrNull MakePathFromInterpolation(const SkPath& path1, const SkPath& path2, SkScalar weight) {
+    SkPath out;
+    bool succeed = path1.interpolate(path2, weight, &out);
+    if (succeed) {
+        return emscripten::val(out);
     }
     return emscripten::val::null();
 }
@@ -1307,7 +1321,8 @@ EMSCRIPTEN_BINDINGS(Skia) {
             float* twentyFloats = reinterpret_cast<float*>(fPtr);
             return SkColorFilters::Matrix(twentyFloats);
         }))
-        .class_function("MakeSRGBToLinearGamma", &SkColorFilters::SRGBToLinearGamma);
+        .class_function("MakeSRGBToLinearGamma", &SkColorFilters::SRGBToLinearGamma)
+        .class_function("MakeLuma", &SkLumaColorFilter::Make);
 
     class_<SkContourMeasureIter>("ContourMeasureIter")
         .constructor<const SkPath&, bool, SkScalar>()
@@ -1517,6 +1532,10 @@ EMSCRIPTEN_BINDINGS(Skia) {
 
     class_<SkImageFilter>("ImageFilter")
         .smart_ptr<sk_sp<SkImageFilter>>("sk_sp<ImageFilter>")
+        .class_function("MakeBlend", optional_override([](SkBlendMode mode, sk_sp<SkImageFilter> background,
+                                                          sk_sp<SkImageFilter> foreground)->sk_sp<SkImageFilter> {
+            return SkImageFilters::Blend(mode, background, foreground);
+        }))
         .class_function("MakeBlur", optional_override([](SkScalar sigmaX, SkScalar sigmaY,
                                                          SkTileMode tileMode, sk_sp<SkImageFilter> input)->sk_sp<SkImageFilter> {
             return SkImageFilters::Blur(sigmaX, sigmaY, tileMode, input);
@@ -1526,6 +1545,61 @@ EMSCRIPTEN_BINDINGS(Skia) {
             return SkImageFilters::ColorFilter(cf, input);
         }))
         .class_function("MakeCompose", &SkImageFilters::Compose)
+        .class_function("MakeDilate", optional_override([](SkScalar radiusX, SkScalar radiusY,
+                                                           sk_sp<SkImageFilter> input)->sk_sp<SkImageFilter> {
+            return SkImageFilters::Dilate(radiusX, radiusY, input);
+        }))
+        .class_function("MakeDisplacementMap", optional_override([](SkColorChannel xChannelSelector,
+                                                                    SkColorChannel yChannelSelector,
+                                                                    SkScalar scale, sk_sp<SkImageFilter> displacement,
+                                                                    sk_sp<SkImageFilter> color)->sk_sp<SkImageFilter> {
+            return SkImageFilters::DisplacementMap(xChannelSelector, yChannelSelector,
+                                                   scale, displacement, color);
+        }))
+        .class_function("MakeShader", optional_override([](sk_sp<SkShader> shader)->sk_sp<SkImageFilter> {
+            return SkImageFilters::Shader(shader);
+        }))
+        .class_function("_MakeDropShadow", optional_override([](SkScalar dx, SkScalar dy,
+                                                               SkScalar sigmaX, SkScalar sigmaY,
+                                                               WASMPointerF32 cPtr, sk_sp<SkImageFilter> input)->sk_sp<SkImageFilter> {
+            SkColor4f c = ptrToSkColor4f(cPtr);
+            return SkImageFilters::DropShadow(dx, dy, sigmaX, sigmaY, c.toSkColor(), input);
+        }))
+        .class_function("_MakeDropShadowOnly", optional_override([](SkScalar dx, SkScalar dy,
+                                                                   SkScalar sigmaX, SkScalar sigmaY,
+                                                                   WASMPointerF32 cPtr, sk_sp<SkImageFilter> input)->sk_sp<SkImageFilter> {
+            SkColor4f c = ptrToSkColor4f(cPtr);
+            return SkImageFilters::DropShadowOnly(dx, dy, sigmaX, sigmaY, c.toSkColor(), input);
+        }))
+        .class_function("MakeErode", optional_override([](SkScalar radiusX, SkScalar radiusY,
+                                                           sk_sp<SkImageFilter> input)->sk_sp<SkImageFilter> {
+            return SkImageFilters::Erode(radiusX, radiusY, input);
+        }))
+        .class_function("_MakeImageCubic", optional_override([](sk_sp<SkImage> image,
+                                                                     float B, float C,
+                                                                     WASMPointerF32 srcPtr,
+                                                                     WASMPointerF32 dstPtr
+                                                                     )->sk_sp<SkImageFilter> {
+            const SkRect* src = reinterpret_cast<const SkRect*>(srcPtr);
+            const SkRect* dst = reinterpret_cast<const SkRect*>(dstPtr);
+            if (src && dst) {
+                return SkImageFilters::Image(image, *src, *dst, SkSamplingOptions({B, C}));
+            }
+            return SkImageFilters::Image(image, SkSamplingOptions({B, C}));
+        }))
+        .class_function("_MakeImageOptions", optional_override([](sk_sp<SkImage> image,
+                                                                       SkFilterMode fm,
+                                                                       SkMipmapMode mm,
+                                                                       WASMPointerF32 srcPtr,
+                                                                       WASMPointerF32 dstPtr
+                                                                       )->sk_sp<SkImageFilter> {
+            const SkRect* src = reinterpret_cast<const SkRect*>(srcPtr);
+            const SkRect* dst = reinterpret_cast<const SkRect*>(dstPtr);
+            if (src && dst) {
+                return SkImageFilters::Image(image, *src, *dst, SkSamplingOptions(fm, mm));
+            }
+            return SkImageFilters::Image(image, SkSamplingOptions(fm, mm));
+        }))
         .class_function("_MakeMatrixTransformCubic",
                         optional_override([](WASMPointerF32 mPtr, float B, float C,
                                              sk_sp<SkImageFilter> input)->sk_sp<SkImageFilter> {
@@ -1537,6 +1611,10 @@ EMSCRIPTEN_BINDINGS(Skia) {
                                              sk_sp<SkImageFilter> input)->sk_sp<SkImageFilter> {
             OptionalMatrix matr(mPtr);
             return SkImageFilters::MatrixTransform(matr, SkSamplingOptions(fm, mm), input);
+        }))
+        .class_function("MakeOffset", optional_override([](SkScalar dx, SkScalar dy,
+                                                           sk_sp<SkImageFilter> input)->sk_sp<SkImageFilter> {
+            return SkImageFilters::Offset(dx, dy, input);
         }));
 
     class_<SkMaskFilter>("MaskFilter")
@@ -1634,6 +1712,8 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .class_function("MakeFromOp", &MakePathFromOp)
 #endif
         .class_function("MakeFromSVGString", &MakePathFromSVGString)
+        .class_function("MakeFromPathInterpolation", &MakePathFromInterpolation)
+        .class_function("CanInterpolate", &CanInterpolate)
         .class_function("_MakeFromCmds", &MakePathFromCmds)
         .class_function("_MakeFromVerbsPointsWeights", &MakePathFromVerbsPointsWeights)
         .function("_addArc", optional_override([](SkPath& self,
@@ -1647,6 +1727,13 @@ EMSCRIPTEN_BINDINGS(Skia) {
                                                    bool ccw, unsigned start)->void {
             const SkRect* oval = reinterpret_cast<const SkRect*>(fPtr);
             self.addOval(*oval, ccw ? SkPathDirection::kCCW : SkPathDirection::kCW, start);
+        }))
+        .function("_addCircle", optional_override([](SkPath& self,
+                                                   SkScalar x,
+                                                   SkScalar y,
+                                                   SkScalar r,
+                                                   bool ccw)->void {
+            self.addCircle(x, y, r, ccw ? SkPathDirection::kCCW : SkPathDirection::kCW);
         }))
         // interface.js has 3 overloads of addPath
         .function("_addPath", &ApplyAddPath)
@@ -1996,7 +2083,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
         }))
         .function("getUniformName", optional_override([](SkRuntimeEffect& self, int i)->JSString {
             auto it = self.uniforms().begin() + i;
-            return emscripten::val(it->name.c_str());
+            return emscripten::val(std::string(it->name).c_str());
         }))
         .function("getUniform", optional_override([](SkRuntimeEffect& self, int i)->RuntimeEffectUniform {
             auto it = self.uniforms().begin() + i;
@@ -2215,6 +2302,12 @@ EMSCRIPTEN_BINDINGS(Skia) {
     enum_<SkClipOp>("ClipOp")
         .value("Difference", SkClipOp::kDifference)
         .value("Intersect",  SkClipOp::kIntersect);
+
+    enum_<SkColorChannel>("ColorChannel")
+        .value("Red",   SkColorChannel::kR)
+        .value("Green", SkColorChannel::kG)
+        .value("Blue",  SkColorChannel::kB)
+        .value("Alpha", SkColorChannel::kA);
 
     enum_<SkColorType>("ColorType")
         .value("Alpha_8", SkColorType::kAlpha_8_SkColorType)

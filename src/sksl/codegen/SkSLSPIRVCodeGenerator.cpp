@@ -68,6 +68,7 @@
 
 #include <cmath>
 #include <set>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -3654,9 +3655,9 @@ void SPIRVCodeGenerator::writeDoStatement(const DoStatement& d, OutputStream& ou
     this->writeStatement(*d.statement(), out);
     if (fCurrentBlock) {
         this->writeInstruction(SpvOpBranch, next, out);
+        this->writeLabel(next, kBranchIsOnPreviousLine, out);
+        this->writeInstruction(SpvOpBranch, continueTarget, out);
     }
-    this->writeLabel(next, kBranchIsOnPreviousLine, out);
-    this->writeInstruction(SpvOpBranch, continueTarget, out);
     this->writeLabel(continueTarget, kBranchIsAbove, conditionalOps, out);
     SpvId test = this->writeExpression(*d.test(), out);
     this->writeInstruction(SpvOpBranchConditional, test, header, end, out);

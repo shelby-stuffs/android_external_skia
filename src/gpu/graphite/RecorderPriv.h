@@ -11,12 +11,17 @@
 #include "include/gpu/graphite/Recorder.h"
 #include "src/text/gpu/SDFTControl.h"
 
+namespace skgpu {
+enum class MaskFormat : int;
+}
+
 namespace skgpu::graphite {
+
+class TextureProxy;
 
 class RecorderPriv {
 public:
     void add(sk_sp<Task>);
-    void addRuntimeEffect(int codeSnippetID, sk_sp<const SkRuntimeEffect>);
 
     ResourceProvider* resourceProvider() const;
     UniformDataCache* uniformDataCache() const;
@@ -30,6 +35,9 @@ public:
     sktext::gpu::SDFTControl getSDFTControl(bool useSDFTForSmallText) const;
     const Caps* caps() const;
     sk_sp<const Caps> refCaps() const;
+
+    const sk_sp<skgpu::graphite::TextureProxy>* getAtlasProxies(skgpu::MaskFormat maskformat,
+                                                                unsigned int* numActiveProxies);
 
     void flushTrackedDevices();
 

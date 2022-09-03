@@ -18,11 +18,11 @@ class SkMatrixProvider;
 class SkPaint;
 class SkReadBuffer;
 class SkStrikeClient;
-class SkStrikeForGPUCacheInterface;
 class SkWriteBuffer;
 
 namespace sktext {
 class GlyphRunList;
+class StrikeForGPUCacheInterface;
     namespace gpu {
     class Glyph;
     class StrikeCache;
@@ -41,9 +41,19 @@ namespace skgpu::v1 { class SurfaceDrawContext; }
 #endif
 
 #if defined(SK_GRAPHITE_ENABLED)
+#include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/geom/SubRunData.h"
+#include "src/gpu/graphite/geom/Transform_graphite.h"
 
-namespace skgpu::graphite { class Recorder; }
+namespace skgpu {
+enum class MaskFormat : int;
+}
+
+namespace skgpu::graphite {
+class DrawWriter;
+class Recorder;
+class Renderer;
+}
 #endif
 
 namespace sktext::gpu {
@@ -93,18 +103,22 @@ public:
 #endif
 
 #if defined(SK_GRAPHITE_ENABLED)
-    // bounds of the stored data
-    virtual SkRect bounds() const = 0;
-
-//    virtual void fillVertexData(
-//            void* vertexDst, int offset, int count,
-//            SkColor color,
-//            const SkMatrix& drawMatrix,
-//            SkPoint drawOrigin,
-//            SkIRect clip) const {}
-
     virtual std::tuple<bool, int> regenerateAtlas(
-        int begin, int end, skgpu::graphite::Recorder*) const = 0;
+            int begin, int end, skgpu::graphite::Recorder*) const = 0;
+
+    // returns bounds of the stored data and matrix to transform it to device space
+    virtual std::tuple<skgpu::graphite::Rect, skgpu::graphite::Transform> boundsAndDeviceMatrix(
+            const skgpu::graphite::Transform& localToDevice, SkPoint drawOrigin) const = 0;
+
+    virtual const skgpu::graphite::Renderer* renderer() const = 0;
+
+    virtual void fillVertexData(
+            skgpu::graphite::DrawWriter*,
+            int offset, int count,
+            SkScalar depth,
+            const skgpu::graphite::Transform& transform) const = 0;
+
+    virtual skgpu::MaskFormat maskFormat() const = 0;
 #endif
 
     virtual void testingOnly_packedGlyphIDToGlyph(StrikeCache* cache) const = 0;
@@ -225,13 +239,17 @@ public:
                                                       const SkStrikeClient* client,
                                                       SubRunAllocator* alloc);
 
-    static std::tuple<bool, SubRunContainerOwner> MakeInAlloc(
+    enum SubRunCreationBehavior {kAddSubRuns, kStrikeCalculationsOnly};
+    // The returned SubRunContainerOwner will never be null. If subRunCreation ==
+    // kStrikeCalculationsOnly, then the returned container will be empty.
+    static SK_WARN_UNUSED_RESULT std::tuple<bool, SubRunContainerOwner> MakeInAlloc(
             const GlyphRunList& glyphRunList,
             const SkMatrix& positionMatrix,
             const SkPaint& runPaint,
             SkStrikeDeviceInfo strikeDeviceInfo,
-            SkStrikeForGPUCacheInterface* strikeCache,
+            StrikeForGPUCacheInterface* strikeCache,
             sktext::gpu::SubRunAllocator* alloc,
+            SubRunCreationBehavior creationBehavior,
             const char* tag);
 
     static size_t EstimateAllocSize(const GlyphRunList& glyphRunList);

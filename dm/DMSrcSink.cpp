@@ -30,10 +30,10 @@
 #include "include/ports/SkImageGeneratorWIC.h"
 #include "include/private/SkImageInfoPriv.h"
 #include "include/private/SkTLogic.h"
-#include "include/third_party/skcms/skcms.h"
 #include "include/utils/SkNullCanvas.h"
 #include "include/utils/SkPaintFilterCanvas.h"
 #include "include/utils/SkRandom.h"
+#include "modules/skcms/skcms.h"
 #include "modules/skottie/utils/SkottieUtils.h"
 #include "src/codec/SkCodecImageGenerator.h"
 #include "src/codec/SkSwizzler.h"
@@ -1261,7 +1261,7 @@ Result SkottieSrc::draw(GrDirectContext*, SkCanvas* canvas) const {
     // frame progression. The film strip will still be in order left-to-right,
     // top-down, just not drawn in that order.
     static constexpr int frameOrder[] = { 4, 0, 3, 1, 2 };
-    static_assert(SK_ARRAY_COUNT(frameOrder) == kTileCount, "");
+    static_assert(std::size(frameOrder) == kTileCount, "");
 
     for (int i = 0; i < kTileCount; ++i) {
         const SkScalar y = frameOrder[i] * kTileSize;

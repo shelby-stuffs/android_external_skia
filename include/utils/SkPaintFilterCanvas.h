@@ -21,6 +21,8 @@
 #include "include/private/SkTDArray.h"
 #include "include/utils/SkNWayCanvas.h"
 
+#include <cstddef>
+
 namespace sktext {
 class GlyphRunList;
 }
@@ -122,7 +124,7 @@ protected:
     bool onPeekPixels(SkPixmap* pixmap) override;
     bool onAccessTopLayerPixels(SkPixmap* pixmap) override;
     SkImageInfo onImageInfo() const override;
-    bool onGetProps(SkSurfaceProps* props) const override;
+    bool onGetProps(SkSurfaceProps* props, bool top) const override;
 
 private:
     class AutoPaintFilter;

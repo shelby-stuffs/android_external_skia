@@ -43,9 +43,20 @@ static bool check_valid_uniform_type(Position pos,
     {
         bool error = false;
         if (ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
-            if (t->isEffectChild() ||
-                ((t->isScalar() || t->isVector()) && ct.isSigned() && ct.bitWidth() == 32) ||
-                ((t->isScalar() || t->isVector() || t->isMatrix()) && ct.isFloat())) {
+            // `shader`, `blender`, `colorFilter`
+            if (t->isEffectChild()) {
+                return true;
+            }
+
+            // `int`, `int2`, `int3`, `int4`
+            if (ct.isSigned() && ct.bitWidth() == 32 && (t->isScalar() || t->isVector())) {
+                return true;
+            }
+
+            // `float`, `float2`, `float3`, `float4`, `float2x2`, `float3x3`, `float4x4`
+            // `half`, `half2`, `half3`, `half4`, `half2x2`, `half3x3`, `half4x4`
+            if (ct.isFloat() &&
+                (t->isScalar() || t->isVector() || (t->isMatrix() && t->rows() == t->columns()))) {
                 return true;
             }
 
@@ -160,13 +171,13 @@ void VarDeclaration::ErrorCheck(const Context& context,
         // TODO(skia:13471): remove this restriction
         context.fErrors->error(pos, "compute shader in / out arrays must be unsized");
     }
+    if ((modifiers.fFlags & Modifiers::kThreadgroup_Flag) &&
+        (modifiers.fFlags & (Modifiers::kIn_Flag | Modifiers::kOut_Flag))) {
+            context.fErrors->error(pos,
+                                   "in / out variables may not be declared threadgroup");
+    }
     if ((modifiers.fFlags & Modifiers::kUniform_Flag)) {
         check_valid_uniform_type(pos, baseType, context);
-    }
-    if (ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
-        if (modifiers.fFlags & Modifiers::kIn_Flag) {
-            context.fErrors->error(pos, "'in' variables not permitted in runtime effects");
-        }
     }
     if (baseType->isEffectChild() && !(modifiers.fFlags & Modifiers::kUniform_Flag)) {
         context.fErrors->error(pos,
@@ -197,9 +208,25 @@ void VarDeclaration::ErrorCheck(const Context& context,
     int permitted = Modifiers::kConst_Flag | Modifiers::kHighp_Flag | Modifiers::kMediump_Flag |
                     Modifiers::kLowp_Flag;
     if (storage == Variable::Storage::kGlobal) {
-        permitted |= Modifiers::kIn_Flag | Modifiers::kOut_Flag | Modifiers::kUniform_Flag |
-                     Modifiers::kFlat_Flag | Modifiers::kNoPerspective_Flag;
+        if (!ProgramConfig::IsCompute(context.fConfig->fKind)) {
+            permitted |= Modifiers::kUniform_Flag;
+        }
+
+        // No other modifiers are allowed in runtime effects
+        if (!ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
+            permitted |= Modifiers::kIn_Flag | Modifiers::kOut_Flag;
+            if (!ProgramConfig::IsCompute(context.fConfig->fKind)) {
+                permitted |= Modifiers::kFlat_Flag | Modifiers::kNoPerspective_Flag;
+            } else if (!baseType->isOpaque()) {
+                permitted |= Modifiers::kThreadgroup_Flag;
+            }
+        }
     }
+    // This modifier isn't actually allowed on variables, at all. However, it's restricted to only
+    // appear in module code by the parser. We "allow" it here, to avoid double-reporting errors.
+    // This means that module code could put it on a variable (to no effect). We'll live with that.
+    permitted |= Modifiers::kHasSideEffects_Flag;
+
     // TODO(skbug.com/11301): Migrate above checks into building a mask of permitted layout flags
 
     int permittedLayoutFlags = ~0;
@@ -214,6 +241,10 @@ void VarDeclaration::ErrorCheck(const Context& context,
         ((modifiers.fFlags & Modifiers::kUniform_Flag) && !permitBindingAndSet)) {
         permittedLayoutFlags &= ~Layout::kBinding_Flag;
         permittedLayoutFlags &= ~Layout::kSet_Flag;
+    }
+    if (ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
+        // Disallow all layout flags except 'color' in runtime effects
+        permittedLayoutFlags &= Layout::kColor_Flag;
     }
     modifiers.checkPermitted(context, modifiersPosition, permitted, permittedLayoutFlags);
 }

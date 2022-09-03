@@ -65,9 +65,9 @@ bool paint_depends_on_dst(const PaintParams& paintParams) {
         return false;
     } else if (bm.value() == SkBlendMode::kSrcOver) {
         // src-over does not depend on dst if src is opaque (a = 1)
-        // TODO: This will get more complicated when PaintParams has color filters and blenders
         return !paintParams.color().isOpaque() ||
-               (paintParams.shader() && !paintParams.shader()->isOpaque());
+               (paintParams.shader() && !paintParams.shader()->isOpaque()) ||
+               (paintParams.colorFilter() && !paintParams.colorFilter()->isAlphaUnchanged());
     } else {
         // TODO: Are their other modes that don't depend on dst that can be trivially detected?
         return true;
@@ -566,10 +566,6 @@ void Device::drawAtlasSubRun(const sktext::gpu::AtlasSubRun* subRun,
                              sk_sp<SkRefCnt> subRunStorage) {
     // TODO: This exercises the glyph uploads but still needs work for rendering.
 
-    // TODO: We should get the Transform from the SubRun as some store pre-transformed data.
-    SkM44 positionMatrix = this->localToDevice44();
-    positionMatrix.preTranslate(drawOrigin.x(), drawOrigin.y());
-    Transform transform{positionMatrix};
     const int subRunEnd = subRun->glyphCount();
     for (int subRunCursor = 0; subRunCursor < subRunEnd;) {
         // For the remainder of the run, add any atlas uploads to the Recorder's AtlasManager
@@ -579,10 +575,12 @@ void Device::drawAtlasSubRun(const sktext::gpu::AtlasSubRun* subRun,
             return;
         }
         if (glyphsRegenerated) {
-            this->drawGeometry(transform,
+            auto [bounds, localToDevice] = subRun->boundsAndDeviceMatrix(
+                                                   this->localToDeviceTransform(), drawOrigin);
+            this->drawGeometry(localToDevice,
                                Geometry(SubRunData(subRun, std::move(subRunStorage),
-                                                   subRun->bounds(), subRunCursor,
-                                                   glyphsRegenerated)),
+                                                   bounds, subRunCursor, glyphsRegenerated,
+                                                   fRecorder)),
                                paint,
                                kFillStyle,
                                DrawFlags::kIgnorePathEffect | DrawFlags::kIgnoreMaskFilter);
@@ -651,10 +649,9 @@ void Device::drawGeometry(const Transform& localToDevice,
     // TODO: The tessellating path renderers haven't implemented perspective yet, so transform to
     // device space so we draw something approximately correct (barring local coord issues).
     if (geometry.isShape() && localToDevice.type() == Transform::Type::kProjection) {
-        static const Transform kIdentity{SkM44()};
         SkPath devicePath = geometry.shape().asPath();
         devicePath.transform(localToDevice.matrix().asM33());
-        this->drawGeometry(kIdentity, Geometry(Shape(devicePath)), paint, style, flags);
+        this->drawGeometry(Transform::Identity(), Geometry(Shape(devicePath)), paint, style, flags);
         return;
     }
 
@@ -686,7 +683,7 @@ void Device::drawGeometry(const Transform& localToDevice,
     // clip stack before calling ChooseRenderer.
     const Renderer* renderer = ChooseRenderer(geometry, clip, style);
     if (!renderer) {
-        SKGPU_LOG_W("Skipping draw with no supported path renderer.");
+        SKGPU_LOG_W("Skipping draw with no supported renderer.");
         return;
     }
 
@@ -767,7 +764,7 @@ void Device::drawClipShape(const Transform& localToDevice,
     if (localToDevice.type() == Transform::Type::kProjection) {
         SkPath devicePath = geometry.shape().asPath();
         devicePath.transform(localToDevice.matrix().asM33());
-        fDC->recordDraw(*renderer, Transform({}), Geometry(Shape(devicePath)), clip, order,
+        fDC->recordDraw(*renderer, Transform::Identity(), Geometry(Shape(devicePath)), clip, order,
                         nullptr, nullptr);
     } else {
         fDC->recordDraw(*renderer, localToDevice, geometry, clip, order, nullptr, nullptr);
@@ -778,6 +775,10 @@ const Renderer* Device::ChooseRenderer(const Geometry& geometry,
                                        const Clip& clip,
                                        const SkStrokeRec& style) {
     SkStrokeRec::Style type = style.getStyle();
+
+    if (geometry.isSubRun()) {
+        return geometry.subRunData().subRun()->renderer();
+    }
 
     if (!geometry.isShape()) {
         // TODO: Other Geometry types will have pretty specific Renderers

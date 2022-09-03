@@ -12,10 +12,12 @@
 #include "include/gpu/graphite/TextureInfo.h"
 #include "include/private/SkSLString.h"
 #include "src/core/SkPipelineData.h"
+#include "src/core/SkSLTypeShared.h"
 #include "src/core/SkShaderCodeDictionary.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/Renderer.h"
+#include "src/gpu/graphite/UniformManager.h"
 #include "src/gpu/graphite/mtl/MtlGpu.h"
 #include "src/gpu/graphite/mtl/MtlResourceProvider.h"
 #include "src/gpu/graphite/mtl/MtlUtils.h"
@@ -36,43 +38,13 @@ std::string get_uniform_header(int bufferID, const char* name) {
 
 std::string get_uniforms(SkSpan<const SkUniform> uniforms, int* offset, int manglingSuffix) {
     std::string result;
+    UniformOffsetCalculator offsetter(Layout::kMetal, *offset);
 
-    for (auto u : uniforms) {
-        int count = u.count() ? u.count() : 1;
-        // TODO: this is sufficient for the sprint but should be changed to use SkSL's
-        // machinery
-        SkSL::String::appendf(&result, "    layout(offset=%d) ", *offset);
-        switch (u.type()) {
-            case SkSLType::kFloat4:
-                result.append("float4");
-                *offset += 16 * count;
-                break;
-            case SkSLType::kFloat2:
-                result.append("float2");
-                *offset += 8 * count;
-                break;
-            case SkSLType::kFloat:
-                result.append("float");
-                *offset += 4 * count;
-                break;
-            case SkSLType::kFloat4x4:
-                result.append("float4x4");
-                *offset += 64 * count;
-                break;
-            case SkSLType::kHalf4:
-                result.append("half4");
-                *offset += 8 * count;
-                break;
-            case SkSLType::kInt:
-                result.append("int");
-                *offset += 4 * count;
-                break;
-            default:
-                SkASSERT(0);
-        }
-
-        result.append(" ");
-        result.append(u.name());
+    for (const SkUniform& u : uniforms) {
+        SkSL::String::appendf(&result, "    layout(offset=%zu) %s %s",
+                              offsetter.calculateOffset(u.type(), u.count()),
+                              SkSLTypeString(u.type()),
+                              u.name());
         if (manglingSuffix >= 0) {
             result.append("_");
             result.append(std::to_string(manglingSuffix));
@@ -85,10 +57,11 @@ std::string get_uniforms(SkSpan<const SkUniform> uniforms, int* offset, int mang
         result.append(";\n");
     }
 
+    *offset = offsetter.size();
     return result;
 }
 
-std::string emit_SKSL_uniforms(int bufferID, const char* name, SkSpan<const SkUniform> uniforms) {
+std::string emit_SkSL_uniforms(int bufferID, const char* name, SkSpan<const SkUniform> uniforms) {
     int offset = 0;
 
     std::string result = get_uniform_header(bufferID, name);
@@ -105,29 +78,8 @@ std::string emit_SkSL_attributes(SkSpan<const Attribute> vertexAttrs,
     int attr = 0;
     auto add_attrs = [&](SkSpan<const Attribute> attrs) {
         for (auto a : attrs) {
-            // TODO: this is sufficient for the sprint but should be changed to use SkSL's
-            // machinery
             SkSL::String::appendf(&result, "    layout(location=%d) in ", attr++);
-            switch (a.gpuType()) {
-                case SkSLType::kFloat4:
-                    result.append("float4");
-                    break;
-                case SkSLType::kFloat2:
-                    result.append("float2");
-                    break;
-                case SkSLType::kFloat3:
-                    result.append("float3");
-                    break;
-                case SkSLType::kFloat:
-                    result.append("float");
-                    break;
-                case SkSLType::kHalf4:
-                    result.append("half4");
-                    break;
-                default:
-                    SkASSERT(0);
-            }
-
+            result.append(SkSLTypeString(a.gpuType()));
             SkSL::String::appendf(&result, " %s;\n", a.name());
         }
     };
@@ -139,6 +91,19 @@ std::string emit_SkSL_attributes(SkSpan<const Attribute> vertexAttrs,
     if (!instanceAttrs.empty()) {
         result.append("// instance attrs\n");
         add_attrs(instanceAttrs);
+    }
+
+    return result;
+}
+
+std::string emit_SkSL_varyings(SkSpan<const Varying> varyings, const char* direction) {
+    std::string result;
+
+    int location = 0;
+    for (auto v : varyings) {
+        SkSL::String::appendf(&result, "    layout(location=%d) %s ", location++, direction);
+        result.append(SkSLTypeString(v.fType));
+        SkSL::String::appendf(&result, " %s;\n", v.fName);
     }
 
     return result;
@@ -167,7 +132,12 @@ std::string get_sksl_vs(const GraphicsPipelineDesc& desc) {
 
     // Uniforms needed by RenderStep
     if (step->numUniforms() > 0) {
-        sksl += emit_SKSL_uniforms(1, "Step", step->uniforms());
+        sksl += emit_SkSL_uniforms(1, "Step", step->uniforms());
+    }
+
+    // Varyings needed by RenderStep
+    if (step->numVaryings() > 0) {
+        sksl += emit_SkSL_varyings(step->varyings(), "out");
     }
 
     // Vertex shader function declaration
@@ -181,6 +151,7 @@ std::string get_sksl_vs(const GraphicsPipelineDesc& desc) {
 }
 
 std::string get_sksl_fs(SkShaderCodeDictionary* dict,
+                        SkRuntimeEffectDictionary* rteDict,
                         const GraphicsPipelineDesc& desc,
                         BlendInfo* blendInfo) {
     if (!desc.paintParamsID().isValid()) {
@@ -188,13 +159,22 @@ std::string get_sksl_fs(SkShaderCodeDictionary* dict,
         return {};
     }
 
-    SkShaderInfo shaderInfo;
+    SkShaderInfo shaderInfo(rteDict);
 
     dict->getShaderInfo(desc.paintParamsID(), &shaderInfo);
-
     *blendInfo = shaderInfo.blendInfo();
 
-    return shaderInfo.toSkSL();
+    std::string sksl;
+    const RenderStep* step = desc.renderStep();
+
+    // Varyings needed by RenderStep
+    if (step->numVaryings() > 0) {
+        sksl += emit_SkSL_varyings(step->varyings(), "in");
+    }
+
+    sksl += shaderInfo.toSkSL();
+
+    return sksl;
 }
 
 inline MTLVertexFormat attribute_type_to_mtlformat(VertexAttribType type) {
@@ -520,7 +500,8 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(
     BlendInfo blendInfo;
     auto dict = resourceProvider->shaderCodeDictionary();
     if (!SkSLToMSL(gpu,
-                   get_sksl_fs(dict, pipelineDesc, &blendInfo),
+                   get_sksl_fs(dict, resourceProvider->runtimeEffectDictionary(),
+                               pipelineDesc, &blendInfo),
                    SkSL::ProgramKind::kGraphiteFragment,
                    settings,
                    &msl[kFragment_ShaderType],

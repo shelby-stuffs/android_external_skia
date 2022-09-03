@@ -20,6 +20,7 @@ import CanvasKitInit, {
     TextBlob,
     Typeface,
     Vertices,
+    WebGPUDeviceContext,
 } from "canvaskit-wasm";
 
 CanvasKitInit({locateFile: (file: string) => '/node_modules/canvaskit/bin/' + file}).then((CK: CanvasKit) => {
@@ -53,6 +54,7 @@ CanvasKitInit({locateFile: (file: string) => '/node_modules/canvaskit/bin/' + fi
     typefaceTests(CK);
     vectorTests(CK);
     verticesTests(CK);
+    webGPUTest(CK);
 });
 
 function animatedImageTests(CK: CanvasKit) {
@@ -234,6 +236,7 @@ function colorFilterTests(CK: CanvasKit) {
     CK.ColorMatrix.postTranslate(cm, 20, 0, -10, 0);
 
     const filterSix = CK.ColorFilter.MakeMatrix(cm); // $ExpectType ColorFilter
+    const luma = CK.ColorFilter.MakeLumaColorFilter(); // $ExpectType ColorFilter
 }
 
 function contourMeasureTests(CK: CanvasKit, path?: Path) {
@@ -283,7 +286,8 @@ function imageTests(CK: CanvasKit, imgElement?: HTMLImageElement) {
     const s2 = mm.makeShaderOptions(CK.TileMode.Decal, CK.TileMode.Repeat, // $ExpectType Shader
         CK.FilterMode.Nearest, CK.MipmapMode.Linear,
         CK.Matrix.identity());
-    const pixels = img.readPixels(85, 1000, { // $ExpectType Float32Array | Uint8Array | null
+    // See https://github.com/microsoft/dtslint/issues/191#issuecomment-1108307671 for below
+    const pixels = img.readPixels(85, 1000, { // $ExpectType Float32Array | Uint8Array | null || Uint8Array | Float32Array | null
         width: 79,
         height: 205,
         colorType: CK.ColorType.RGBA_8888,
@@ -304,8 +308,8 @@ function imageTests(CK: CanvasKit, imgElement?: HTMLImageElement) {
     img.delete();
 }
 
-function imageFilterTests(CK: CanvasKit, colorFilter?: ColorFilter) {
-    if (!colorFilter) return;
+function imageFilterTests(CK: CanvasKit, colorFilter?: ColorFilter, img?: Image, shader?: Shader) {
+    if (!colorFilter || !img || !shader) return;
     const imgf = CK.ImageFilter; // less typing
     const filter = imgf.MakeBlur(2, 4, CK.TileMode.Mirror, null); // $ExpectType ImageFilter
     const filter1 = imgf.MakeBlur(2, 4, CK.TileMode.Decal, filter); // $ExpectType ImageFilter
@@ -322,6 +326,28 @@ function imageFilterTests(CK: CanvasKit, colorFilter?: ColorFilter) {
     const filter9 = imgf.MakeMatrixTransform(CK.M44.identity(),
                                              { filter: CK.FilterMode.Nearest },
                                              filter6);
+    let filter10 = imgf.MakeBlend(CK.BlendMode.SrcOver, filter8, filter9); // $ExpectType ImageFilter
+    filter10 = imgf.MakeBlend(CK.BlendMode.Xor, null, null);
+    let filter11 = imgf.MakeDilate(2, 10, null); // $ExpectType ImageFilter
+    filter11 = imgf.MakeDilate(2, 10, filter11);
+    let filter12 = imgf.MakeErode(2, 10, null); // $ExpectType ImageFilter
+    filter12 = imgf.MakeErode(2, 10, filter12);
+    let filter13 = imgf.MakeDisplacementMap(// $ExpectType ImageFilter
+        CK.ColorChannel.Red, CK.ColorChannel.Alpha, 3.2, filter11, filter12);
+    filter13 = imgf.MakeDisplacementMap(
+        CK.ColorChannel.Blue, CK.ColorChannel.Green, 512, null, null);
+    let filter14 = imgf.MakeDropShadow(10, -30, 4.0, 2.0, CK.MAGENTA, null); // $ExpectType ImageFilter
+    filter14 = imgf.MakeDropShadow(10, -30, 4.0, 2.0, CK.MAGENTA, filter14);
+    filter14 = imgf.MakeDropShadowOnly(10, -30, 4.0, 2.0, CK.CYAN, null);
+    filter14 = imgf.MakeDropShadowOnly(10, -30, 4.0, 2.0, CK.CYAN, filter14);
+
+    let filter15 = imgf.MakeImage(img, { B: 1 / 3, C: 1 / 3 }); // $ExpectType ImageFilter | null
+    filter15 = imgf.MakeImage(img, { filter: CK.FilterMode.Linear },
+                              CK.LTRBRect(1, 2, 3, 4), CK.XYWHRect(5, 6, 7, 8));
+
+    let filter16 = imgf.MakeOffset(5, 3, null); // $ExpectType ImageFilter
+    filter16 = imgf.MakeOffset(-100.3, -18, filter16);
+    imgf.MakeShader(shader); // $ExpectType ImageFilter
 }
 
 function fontTests(CK: CanvasKit, face?: Typeface, paint?: Paint) {
@@ -436,7 +462,6 @@ function pathTests(CK: CanvasKit) {
     const p5 = CK.Path.MakeFromOp(p4, p2!, CK.PathOp.ReverseDifference); // $ExpectType Path | null
     const p6 = CK.Path.MakeFromSVGString('M 205,5 L 795,5 z'); // $ExpectType Path | null
     const p7 = p3.makeAsWinding(); // $ExpectType Path | null
-
     const someRect = CK.LTRBRect(10, 20, 30, 40);
     // Making sure arrays are accepted as rrects.
     const someRRect = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
@@ -448,6 +473,7 @@ function pathTests(CK: CanvasKit) {
     path.addPoly([20, 20,  40, 40,  20, 40], true);
     path.addRect(someRect);
     path.addRect(someRect, true);
+    path.addCircle(10, 10, 10);
     path.addRRect(someRRect);
     path.addRRect(someRRect, true);
     path.addVerbsPointsWeights(verbs, [1, 2, 3, 4]);
@@ -504,6 +530,10 @@ function pathTests(CK: CanvasKit) {
     path.transform(CK.Matrix.identity());
     path.transform(1, 0, 0, 0, 1, 0, 0, 0, 1);
     path.trim(0.1, 0.7, false);
+
+    if (CK.Path.CanInterpolate(p3, p4)) {
+        const interpolated = CK.Path.MakeFromPathInterpolation(p3, p4, 0.5); // $ExpectType Path | null
+    }
 }
 
 function paragraphTests(CK: CanvasKit, p?: Paragraph) {
@@ -990,4 +1020,28 @@ function verticesTests(CK: CanvasKit) {
     const rect = vertices.bounds(); // $ExpectType Float32Array
     vertices.bounds(rect);
     const id = vertices.uniqueID(); // $ExpectType number
+}
+
+function webGPUTest(CK: CanvasKit, device?: GPUDevice, canvas?: HTMLCanvasElement, texture?: GPUTexture) {
+    if (!device || !canvas || !texture) {
+        return;
+    }
+
+    const gpuContext: WebGPUDeviceContext = CK.MakeGPUDeviceContext(device)!; // $ExpectType GrDirectContext
+
+    // Texture surface.
+    const surface1 = CK.MakeGPUTextureSurface(gpuContext, texture, 800, 600, // $ExpectType Surface | null
+                                              CK.ColorSpace.SRGB);
+
+    // Canvas surfaces.
+    const canvasContext = CK.MakeGPUCanvasContext(gpuContext, canvas, { // $ExpectType WebGPUCanvasContext
+        format: "bgra8unorm",
+        alphaMode: "premultiplied",
+    })!;
+    canvasContext.requestAnimationFrame((canvas: Canvas) => {
+        canvas.clear([0, 0, 0, 0]);
+    });
+
+    const surface2 = CK.MakeGPUCanvasSurface(canvasContext, CK.ColorSpace.SRGB); // $ExpectType Surface | null
+    const surface3 = CK.MakeGPUCanvasSurface(canvasContext, CK.ColorSpace.SRGB, 10, 10); // $ExpectType Surface | null
 }

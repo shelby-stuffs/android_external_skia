@@ -167,7 +167,7 @@ var (
 	// TODO(borenet): This hacky and bad.
 	CIPD_PKG_LUCI_AUTH = cipd.MustGetPackage("infra/tools/luci-auth/${platform}")
 
-	CIPD_PKGS_GOLDCTL = []*specs.CipdPackage{cipd.MustGetPackage("skia/tools/goldctl/${platform}")}
+	CIPD_PKGS_GOLDCTL = cipd.MustGetPackage("skia/tools/goldctl/${platform}")
 
 	CIPD_PKGS_XCODE = []*specs.CipdPackage{
 		// https://chromium.googlesource.com/chromium/tools/build/+/e19b7d9390e2bb438b566515b141ed2b9ed2c7c2/scripts/slave/recipe_modules/ios/api.py#317
@@ -918,6 +918,7 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 					"IntelIris540":  "8086:1926-26.20.100.7463",
 					"IntelIris6100": "8086:162b-20.19.15.4963",
 					"IntelIris655":  "8086:3ea5-26.20.100.7463",
+					"IntelIrisXe":   "8086:9a49-30.0.101.1340",
 					"RadeonHD7770":  "1002:683d-26.20.13031.18002",
 					"RadeonR9M470X": "1002:6646-26.20.13031.18002",
 					"QuadroP400":    "10de:1cb3-30.0.15.1179",
@@ -928,6 +929,10 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 					log.Fatalf("Entry %q not found in Win GPU mapping.", b.parts["cpu_or_gpu_value"])
 				}
 				d["gpu"] = gpu
+				if b.parts["cpu_or_gpu_value"] == "IntelIrisXe" {
+					// The Intel Iris Xe devices have not updated.
+					d["os"] = "Windows-10-19043"
+				}
 			} else if b.isLinux() {
 				gpu, ok := map[string]string{
 					// Intel drivers come from CIPD, so no need to specify the version here.
@@ -1538,7 +1543,13 @@ func (b *taskBuilder) commonTestPerfAssets() {
 			b.asset("linux_vulkan_sdk")
 		}
 		if b.matchGpu("Intel") {
-			b.asset("mesa_intel_driver_linux")
+			if b.matchGpu("IrisXe") {
+				b.asset("mesa_intel_driver_linux_22")
+			} else {
+				// Use this for legacy drivers that were culled in v22 of Mesa.
+				// https://www.phoronix.com/scan.php?page=news_item&px=Mesa-22.0-Drops-OpenSWR
+				b.asset("mesa_intel_driver_linux")
+			}
 		}
 	}
 }
@@ -2013,7 +2024,7 @@ func (b *jobBuilder) runWasmGMTests() {
 		b.usesNode()
 		b.swarmDimensions()
 		b.cipd(CIPD_PKG_LUCI_AUTH)
-		b.cipd(CIPD_PKGS_GOLDCTL...)
+		b.cipd(CIPD_PKGS_GOLDCTL)
 		b.dep(b.buildTaskDrivers("linux", "amd64"))
 		b.dep(compileTaskName)
 		b.timeout(60 * time.Minute)
@@ -2106,6 +2117,56 @@ func (b *jobBuilder) bazelBuild() {
 			cmd = append(cmd, "--bazel_arg=--config=for_linux_x64_with_rbe")
 			cmd = append(cmd, "--bazel_arg=--jobs=100")
 			cmd = append(cmd, "--bazel_arg=--remote_download_minimal")
+		} else {
+			panic("unsupported Bazel host " + host)
+		}
+		b.cmd(cmd...)
+
+		// TODO(kjlubick) I believe this bazelisk package is just the Linux one. To support
+		//   more hosts, we need to have platform-specific bazelisk binaries.
+		b.cipd(b.MustGetCipdPackageFromAsset("bazelisk"))
+		b.addToPATH("bazelisk")
+		b.idempotent()
+		b.cas(CAS_COMPILE)
+		b.attempts(1)
+		b.serviceAccount(b.cfg.ServiceAccountCompile)
+	})
+}
+
+func (b *jobBuilder) bazelTest() {
+	taskdriverName, config, host, cross := b.parts.bazelTestParts()
+
+	b.addTask(b.Name, func(b *taskBuilder) {
+		cmd := []string{"./" + taskdriverName,
+			"--project_id=skia-swarming-bots",
+			"--task_id=" + specs.PLACEHOLDER_TASK_ID,
+			"--task_name=" + b.Name,
+			"--test_config=" + config,
+			"--workdir=.",
+		}
+
+		switch taskdriverName {
+		case "canvaskit_gold":
+			// TODO(kjlubick) pass in appropriate keys (e.g. webgl vs webgpu vs cpu)
+			cmd = append(cmd,
+				"--goldctl_path=./cipd_bin_packages/goldctl",
+				"--git_commit="+specs.PLACEHOLDER_REVISION,
+				"--changelist_id="+specs.PLACEHOLDER_ISSUE,
+				"--patchset_order="+specs.PLACEHOLDER_PATCHSET,
+				"--tryjob_id="+specs.PLACEHOLDER_BUILDBUCKET_BUILD_ID)
+			b.cipd(CIPD_PKGS_GOLDCTL)
+			break
+		}
+
+		if cross != "" {
+			// The cross (and host) platform is expected to be defined in
+			// //bazel/common_config_settings/BUILD.bazel
+			cross = "//bazel/common_config_settings:" + cross
+			cmd = append(cmd, "--cross="+cross)
+		}
+		if host == "linux_x64" {
+			b.linuxGceDimensions(MACHINE_TYPE_MEDIUM)
+			b.dep(b.buildTaskDrivers("linux", "amd64"))
 		} else {
 			panic("unsupported Bazel host " + host)
 		}

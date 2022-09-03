@@ -6,27 +6,23 @@
  */
 
 #include "src/text/gpu/GlyphVector.h"
-#include <variant>
 
-#include "include/private/chromium/SkChromeRemoteGlyphCache.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkStrikeCache.h"
 #include "src/core/SkWriteBuffer.h"
+#include "src/text/StrikeForGPU.h"
+
+#include <optional>
+
+class SkStrikeClient;
 
 using MaskFormat = skgpu::MaskFormat;
 
 namespace sktext::gpu {
-GlyphVector::GlyphVector(sk_sp<SkStrike>&& strike, SkSpan<Variant> glyphs)
-        : fStrike{std::move(strike)}
+// -- GlyphVector ----------------------------------------------------------------------------------
+GlyphVector::GlyphVector(StrikeRef&& strikeRef, SkSpan<Variant> glyphs)
+        : fStrikeRef{std::move(strikeRef)}
         , fGlyphs{glyphs} {
-    SkASSERT(std::get<sk_sp<SkStrike>>(fStrike) != nullptr);
-    SkASSERT(fGlyphs.size() > 0);
-}
-
-GlyphVector::GlyphVector(SkStrikeForGPU* strike, SkSpan<Variant> glyphs)
-        : fStrike{strike}
-        , fGlyphs{glyphs} {
-    SkASSERT(std::get<SkStrikeForGPU*>(fStrike) != nullptr);
     SkASSERT(fGlyphs.size() > 0);
 }
 
@@ -48,7 +44,7 @@ GlyphVector GlyphVector::Make(
 }
 
 GlyphVector GlyphVector::Make(
-        SkStrikeForGPU* strike, SkSpan<SkGlyphVariant> glyphs, SubRunAllocator* alloc) {
+        StrikeForGPU* strike, SkSpan<SkGlyphVariant> glyphs, SubRunAllocator* alloc) {
     SkASSERT(strike != nullptr);
     SkASSERT(glyphs.size() > 0);
     Variant* variants = MakeGlyphs(glyphs, alloc);
@@ -58,19 +54,8 @@ GlyphVector GlyphVector::Make(
 std::optional<GlyphVector> GlyphVector::MakeFromBuffer(SkReadBuffer& buffer,
                                                        const SkStrikeClient* client,
                                                        SubRunAllocator* alloc) {
-    auto descriptor = SkAutoDescriptor::MakeFromBuffer(buffer);
-    if (!buffer.validate(descriptor.has_value())) {
-        return std::nullopt;
-    }
-
-    if (client != nullptr) {
-        if (!client->translateTypefaceID(&descriptor.value())) {
-            return std::nullopt;
-        }
-    }
-
-    sk_sp<SkStrike> strike = SkStrikeCache::GlobalStrikeCache()->findStrike(*descriptor->getDesc());
-    if (!buffer.validate(strike != nullptr)) {
+    std::optional<StrikeRef> strikeRef = StrikeRef::MakeFromBuffer(buffer, client);
+    if (!buffer.validate(strikeRef.has_value())) {
         return std::nullopt;
     }
 
@@ -96,21 +81,13 @@ std::optional<GlyphVector> GlyphVector::MakeFromBuffer(SkReadBuffer& buffer,
     for (int i = 0; i < glyphCount; i++) {
         variants[i].packedGlyphID = SkPackedGlyphID(buffer.readUInt());
     }
-    return GlyphVector{std::move(strike), SkSpan(variants, glyphCount)};
+    return GlyphVector{std::move(strikeRef.value()), SkSpan(variants, glyphCount)};
 }
 
-void GlyphVector::flatten(SkWriteBuffer& buffer) {
+void GlyphVector::flatten(SkWriteBuffer& buffer) const {
     // There should never be a glyph vector with zero glyphs.
     SkASSERT(fGlyphs.size() != 0);
-    if (std::holds_alternative<std::monostate>(fStrike)) {
-        SK_ABORT("Can't flatten with already drawn.");
-    }
-
-    if (sk_sp<SkStrike>* strikePtr = std::get_if<sk_sp<SkStrike>>(&fStrike)) {
-        (*strikePtr)->getDescriptor().flatten(buffer);
-    } else if (SkStrikeForGPU** GPUstrikePtr = std::get_if<SkStrikeForGPU*>(&fStrike)) {
-        (*GPUstrikePtr)->getDescriptor().flatten(buffer);
-    }
+    fStrikeRef.flatten(buffer);
 
     // Write out the span of packedGlyphIDs.
     buffer.write32(SkTo<int32_t>(fGlyphs.size()));
@@ -126,8 +103,7 @@ SkSpan<const Glyph*> GlyphVector::glyphs() const {
 // packedGlyphIDToGlyph must be run in single-threaded mode.
 // If fSkStrike is not sk_sp<SkStrike> then the conversion to Glyph* has not happened.
 void GlyphVector::packedGlyphIDToGlyph(StrikeCache* cache) {
-    if (std::holds_alternative<sk_sp<SkStrike>>(fStrike)) {
-        SkStrike* strike = std::get<sk_sp<SkStrike>>(fStrike).get();
+    if (sk_sp<SkStrike> strike = fStrikeRef.getStrikeAndSetToNullptr()) {
         fTextStrike = cache->findOrCreateStrike(strike->strikeSpec());
 
         for (Variant& variant : fGlyphs) {
@@ -136,9 +112,6 @@ void GlyphVector::packedGlyphIDToGlyph(StrikeCache* cache) {
 
         // This must be pinned for the Atlas filling to work.
         strike->verifyPinnedStrike();
-
-        // Drop the ref on the strike that was taken in the SkGlyphRunPainter process* methods.
-        fStrike = std::monostate();
     }
 }
 }  // namespace sktext::gpu
