@@ -7,6 +7,8 @@
 
 #include "tests/Test.h"
 
+#ifdef SK_GRAPHITE_ENABLED
+
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCombinationBuilder.h"
 #include "include/core/SkM44.h"
@@ -93,12 +95,6 @@ std::tuple<SkPaint, int> create_paint(Recorder* recorder,
             s = SkShaders::Blend(SkBlendMode::kColorDodge, std::move(dst), std::move(src));
             break;
         }
-        case SkShaderType::kRuntimeShader: {
-            const SkRuntimeEffect* effect = TestingOnly_GetCommonRuntimeEffect();
-            s = effect->makeShader(/*uniforms=*/nullptr, /*children=*/{});
-            break;
-        }
-
     }
     SkPaint p;
     p.setColor(SK_ColorRED);
@@ -114,7 +110,7 @@ SkUniquePaintParamsID create_key(Context* context,
                                  SkBlendMode blendMode) {
     SkShaderCodeDictionary* dict = context->priv().shaderCodeDictionary();
 
-    SkCombinationBuilder combinationBuilder(context);
+    SkCombinationBuilder combinationBuilder(context->priv().shaderCodeDictionary());
 
     switch (shaderType) {
         case SkShaderType::kSolidColor:
@@ -139,13 +135,6 @@ SkUniquePaintParamsID create_key(Context* context,
             SkCombinationOption option = combinationBuilder.addOption(shaderType);
             option.addChildOption(0, SkShaderType::kSolidColor);
             option.addChildOption(1, SkShaderType::kSolidColor);
-        } break;
-        case SkShaderType::kRuntimeShader: {
-            combinationBuilder.addOption(shaderType);
-            // TODO: this needs to be connected to the runtime effect from
-            // TestingOnly_GetCommonRuntimeEffect. Unfortunately, right now, we only have a
-            // way of adding runtime blenders to the combination system. For now, we skip this
-            // case below
         } break;
     }
 
@@ -187,8 +176,7 @@ DEF_GRAPHITE_TEST_FOR_CONTEXTS(PaintParamsKeyTest, reporter, context) {
                     SkShaderType::kConicalGradient,
                     SkShaderType::kLocalMatrix,
                     SkShaderType::kImage,
-                    SkShaderType::kBlendShader,
-                    SkShaderType::kRuntimeShader }) {
+                    SkShaderType::kBlendShader }) {
         for (auto tm: { SkTileMode::kClamp,
                         SkTileMode::kRepeat,
                         SkTileMode::kMirror,
@@ -198,12 +186,6 @@ DEF_GRAPHITE_TEST_FOR_CONTEXTS(PaintParamsKeyTest, reporter, context) {
                 if (tm != SkTileMode::kClamp) {
                     continue;  // the TileMode doesn't matter for these cases
                 }
-            }
-
-            // TODO: re-enable this combination when we can add runtime shaders to the combination
-            // system.
-            if (s == SkShaderType::kRuntimeShader) {
-                continue;
             }
 
             // TODO: test out a runtime SkBlender here
@@ -231,3 +213,5 @@ DEF_GRAPHITE_TEST_FOR_CONTEXTS(PaintParamsKeyTest, reporter, context) {
         }
     }
 }
+
+#endif // SK_GRAPHITE_ENABLED

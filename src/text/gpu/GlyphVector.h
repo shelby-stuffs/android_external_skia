@@ -7,13 +7,11 @@
 
 #ifndef sktext_gpu_GlyphVector_DEFINED
 #define sktext_gpu_GlyphVector_DEFINED
-
-#include <variant>
 #include "include/core/SkSpan.h"
 #include "src/core/SkGlyph.h"
 #include "src/core/SkGlyphBuffer.h"
-#include "src/core/SkStrikeForGPU.h"
 #include "src/gpu/AtlasTypes.h"
+#include "src/text/StrikeForGPU.h"
 #include "src/text/gpu/Glyph.h"
 #include "src/text/gpu/StrikeCache.h"
 #include "src/text/gpu/SubRunAllocator.h"
@@ -43,20 +41,19 @@ public:
         Variant(SkPackedGlyphID id) : packedGlyphID{id} {}
     };
 
-    GlyphVector(sk_sp<SkStrike>&& strike, SkSpan<Variant> glyphs);
-    GlyphVector(SkStrikeForGPU* strike, SkSpan<Variant> glyphs);
+    GlyphVector(StrikeRef&& strikeRef, SkSpan<Variant> glyphs);
 
     static GlyphVector Make(
             sk_sp<SkStrike>&& strike, SkSpan<SkGlyphVariant> glyphs, SubRunAllocator* alloc);
     static GlyphVector Make(
-            SkStrikeForGPU* strike, SkSpan<SkGlyphVariant> glyphs, SubRunAllocator* alloc);
+            StrikeForGPU* strike, SkSpan<SkGlyphVariant> glyphs, SubRunAllocator* alloc);
 
     SkSpan<const Glyph*> glyphs() const;
 
     static std::optional<GlyphVector> MakeFromBuffer(SkReadBuffer& buffer,
                                                      const SkStrikeClient* strikeClient,
                                                      SubRunAllocator* alloc);
-    void flatten(SkWriteBuffer& buffer);
+    void flatten(SkWriteBuffer& buffer) const;
 
     // This doesn't need to include sizeof(GlyphVector) because this is embedded in each of
     // the sub runs.
@@ -85,20 +82,14 @@ public:
     }
 
 private:
-    friend class TestingPeer;
-
+    friend class GlyphVectorTestingPeer;
     static Variant* MakeGlyphs(SkSpan<SkGlyphVariant> glyphs, SubRunAllocator* alloc);
 
-    // A glyph run can hold a pointer from a remote glyph cache which is of type SkStrikeForGPU
-    // or it can hold an actual ref to an actual SkStrike. When in monostate, the sk_sp<SkStrike>
-    // has been released after converting glyph ids to atlas locations.
-    std::variant<std::monostate, SkStrikeForGPU*, sk_sp<SkStrike>> fStrike;
+    StrikeRef fStrikeRef;
     SkSpan<Variant> fGlyphs;
     sk_sp<TextStrike> fTextStrike{nullptr};
     uint64_t fAtlasGeneration{skgpu::AtlasGenerationCounter::kInvalidGeneration};
     skgpu::BulkUsePlotUpdater fBulkUseUpdater;
 };
-
 }  // namespace sktext::gpu
-
 #endif  // sktext_gpu_GlyphVector_DEFINED

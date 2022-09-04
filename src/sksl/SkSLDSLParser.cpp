@@ -30,6 +30,7 @@
 #include "src/sksl/ir/SkSLProgram.h"
 
 #include <algorithm>
+#include <climits>
 #include <initializer_list>
 #include <memory>
 #include <type_traits>
@@ -60,6 +61,7 @@ static int parse_modifier_token(Token::Kind token) {
         case Token::Kind::TK_MEDIUMP:        return Modifiers::kMediump_Flag;
         case Token::Kind::TK_LOWP:           return Modifiers::kLowp_Flag;
         case Token::Kind::TK_ES3:            return Modifiers::kES3_Flag;
+        case Token::Kind::TK_THREADGROUP:    return Modifiers::kThreadgroup_Flag;
         default:                             return 0;
     }
 }
@@ -151,6 +153,22 @@ static bool is_whitespace(Token::Kind kind) {
         default:
             return false;
     }
+}
+
+bool DSLParser::expectNewline() {
+    Token token = this->nextRawToken();
+    if (token.fKind == Token::Kind::TK_WHITESPACE) {
+        // The lexer doesn't distinguish newlines from other forms of whitespace, so we check
+        // for newlines by searching through the token text.
+        std::string_view tokenText = this->text(token);
+        if (tokenText.find_first_of('\r') != std::string_view::npos ||
+            tokenText.find_first_of('\n') != std::string_view::npos) {
+            return true;
+        }
+    }
+    // We didn't find a newline.
+    this->pushback(token);
+    return false;
 }
 
 Token DSLParser::nextToken() {
@@ -316,7 +334,8 @@ void DSLParser::declarations() {
     }
 }
 
-/* DIRECTIVE(#extension) IDENTIFIER COLON IDENTIFIER */
+/* DIRECTIVE(#extension) IDENTIFIER COLON IDENTIFIER NEWLINE |
+   DIRECTIVE(#version) INTLITERAL NEWLINE */
 void DSLParser::directive(bool allowVersion) {
     Token start;
     if (!this->expect(Token::Kind::TK_DIRECTIVE, "a directive", &start)) {
@@ -337,14 +356,19 @@ void DSLParser::directive(bool allowVersion) {
             return;
         }
         std::string_view behaviorText = this->text(behavior);
-        if (behaviorText == "disable") {
-            return;
+        if (behaviorText != "disable") {
+            if (behaviorText == "require" || behaviorText == "enable" || behaviorText == "warn") {
+                // We don't currently do anything different between require, enable, and warn
+                dsl::AddExtension(this->text(name));
+            } else {
+                this->error(behavior, "expected 'require', 'enable', 'warn', or 'disable'");
+            }
         }
-        if (behaviorText != "require" && behaviorText != "enable" && behaviorText != "warn") {
-            this->error(behavior, "expected 'require', 'enable', 'warn', or 'disable'");
+
+        // We expect a newline after an #extension directive.
+        if (!this->expectNewline()) {
+            this->error(start, "invalid #extension directive");
         }
-        // We don't currently do anything different between require, enable, and warn
-        dsl::AddExtension(this->text(name));
     } else if (text == "#version") {
         if (!allowVersion) {
             this->error(start, "#version directive must appear before anything else");
@@ -364,6 +388,10 @@ void DSLParser::directive(bool allowVersion) {
             default:
                 this->error(start, "unsupported version number");
                 return;
+        }
+        // We expect a newline after a #version directive.
+        if (!this->expectNewline()) {
+            this->error(start, "invalid #version directive");
         }
     } else {
         this->error(start, "unsupported directive '" + std::string(this->text(start)) + "'");
@@ -896,7 +924,7 @@ DSLLayout DSLParser::layout() {
 }
 
 /* layout? (UNIFORM | CONST | IN | OUT | INOUT | LOWP | MEDIUMP | HIGHP | FLAT | NOPERSPECTIVE |
-            VARYING | INLINE)* */
+            VARYING | INLINE | THREADGROUP)* */
 DSLModifiers DSLParser::modifiers() {
     int start = this->peek().fOffset;
     DSLLayout layout = this->layout();
@@ -912,8 +940,14 @@ DSLModifiers DSLParser::modifiers() {
         if (!tokenFlag) {
             break;
         }
+        Token modifier = this->nextToken();
+        // We have to check for this (internal) modifier here. It's automatically added to user
+        // functions before the IR is built, so testing for it in Convert gives false positives.
+        if (tokenFlag == Modifiers::kHasSideEffects_Flag && !ThreadContext::IsModule()) {
+            this->error(modifier, "'sk_has_side_effects' is not permitted here");
+        }
         flags |= tokenFlag;
-        end = this->position(this->nextToken()).endOffset();
+        end = this->position(modifier).endOffset();
     }
     return DSLModifiers(std::move(layout), flags, Position::Range(start, end));
 }

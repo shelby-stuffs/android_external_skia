@@ -401,7 +401,7 @@ describe('Core canvas behavior', () => {
         paint.delete();
     }, '/assets/mandrill_16.png');
 
-    gm('draw_glyphs', (canvas, fetchedByteBuffers) => {
+    gm('draw_glyphs', (canvas) => {
         canvas.clear(CanvasKit.WHITE);
 
         const paint = new CanvasKit.Paint();
@@ -765,6 +765,18 @@ describe('Core canvas behavior', () => {
         textFont.delete();
     });
 
+    gm('luma_filter', (canvas) => {
+        canvas.clear(CanvasKit.WHITE);
+        const paint = new CanvasKit.Paint();
+        paint.setAntiAlias(true);
+        const lumaCF = CanvasKit.ColorFilter.MakeLuma();
+        paint.setColor(CanvasKit.BLUE);
+        paint.setColorFilter(lumaCF);
+        canvas.drawCircle(256, 256, 256, paint);
+        paint.delete();
+        lumaCF.delete();
+    });
+
     gm('combined_filters', (canvas, fetchedByteBuffers) => {
         const img = CanvasKit.MakeImageFromEncoded(fetchedByteBuffers[0]);
         expect(img).toBeTruthy();
@@ -1010,7 +1022,7 @@ describe('Core canvas behavior', () => {
         expect(paint.getColor()).toEqual(Float32Array.of(0, 0, 0, 1.0));
     });
 
-    gm('draw shadow', (canvas) => {
+    gm('draw_shadow', (canvas) => {
         const lightRadius = 20;
         const lightPos = [500,500,20];
         const zPlaneParams = [0,0,1];
@@ -1558,6 +1570,71 @@ describe('Core canvas behavior', () => {
         paint.delete();
     });
 
+    gm('Can_Interpolate_Path', (canvas) => {
+        const paint = new CanvasKit.Paint();
+        paint.setAntiAlias(true);
+        paint.setStyle(CanvasKit.PaintStyle.Stroke);
+        paint.setStrokeWidth(2);
+        const path = new CanvasKit.Path()
+        const path2 = new CanvasKit.Path();
+        const path3 = new CanvasKit.Path();
+        path3.addCircle(30, 30, 10);
+        path.moveTo(20, 20);
+        path.lineTo(40, 40);
+        path.lineTo(20, 40);
+        path.lineTo(40, 20);
+        path.close();
+        path2.addRect([20, 20, 40, 40]);
+        path2.transform(CanvasKit.Matrix.translated(40, 0));
+        const canInterpolate1 = CanvasKit.Path.CanInterpolate(path, path2);
+        expect(canInterpolate1).toBe(true);
+        const canInterpolate2 = CanvasKit.Path.CanInterpolate(path, path3);
+        expect(canInterpolate2).toBe(false);
+        canvas.drawPath(path, paint);
+        canvas.drawPath(path2, paint);
+        path3.transform(CanvasKit.Matrix.translated(80, 0));
+        canvas.drawPath(path3, paint);
+        path.delete();
+        path2.delete();
+        path3.delete();
+        paint.delete();
+    });
+
+    gm('Interpolate_Paths', (canvas) => {
+        const paint = new CanvasKit.Paint();
+        paint.setAntiAlias(true);
+        paint.setStyle(CanvasKit.PaintStyle.Stroke);
+        paint.setStrokeWidth(2);
+        const path = new CanvasKit.Path()
+        const path2 = new CanvasKit.Path();
+        path.moveTo(20, 20);
+        path.lineTo(40, 40);
+        path.lineTo(20, 40);
+        path.lineTo(40, 20);
+        path.close();
+        path2.addRect([20, 20, 40, 40]);
+        for (let i = 0; i <= 1; i += 1.0 / 6) {
+          const interp = CanvasKit.Path.MakeFromPathInterpolation(path, path2, i);
+          canvas.drawPath(interp, paint);
+          interp.delete();
+          canvas.translate(30, 0);
+        }
+        path.delete();
+        path2.delete();
+        paint.delete();
+    });
+
+    gm('Draw_Circle', (canvas) => {
+        const paint = new CanvasKit.Paint();
+        paint.setColor(CanvasKit.Color(59, 53, 94, 1));
+        const path = new CanvasKit.Path();
+        path.moveTo(256, 256);
+        path.addCircle(256, 256, 256);
+        canvas.drawPath(path, paint);
+        path.delete();
+        paint.delete();
+    });
+
     gm('PathEffect_MakePath2D', (canvas) => {
         // Based off //docs/examples/skpaint_path_2d_path_effect.cpp
         canvas.clear(CanvasKit.WHITE);
@@ -1604,5 +1681,211 @@ describe('Core canvas behavior', () => {
 
         effect.delete();
         paint.delete();
+    });
+
+    gm('ImageFilter_MakeBlend', (canvas) => {
+        canvas.clear(CanvasKit.WHITE);
+        const redCF = CanvasKit.ColorFilter.MakeBlend(
+                CanvasKit.Color(255, 0, 0, 0.4), CanvasKit.BlendMode.SrcOver);
+        const redIF = CanvasKit.ImageFilter.MakeColorFilter(redCF, null);
+        const blueCF = CanvasKit.ColorFilter.MakeBlend(
+                CanvasKit.Color(0, 0, 255, 0.7), CanvasKit.BlendMode.SrcOver);
+        const blueIF = CanvasKit.ImageFilter.MakeColorFilter(blueCF, null);
+
+        const BOX_SIZE = 100;
+        const SWATCH_SIZE = 80;
+        const MARGIN = (BOX_SIZE - SWATCH_SIZE) / 2;
+        const COLS_PER_ROW = CANVAS_WIDTH / BOX_SIZE;
+        const blends = ['Clear', 'Src', 'Dst', 'SrcOver', 'DstOver', 'SrcIn', 'DstIn', 'SrcOut',
+                        'DstOut', 'SrcATop', 'DstATop', 'Xor', 'Plus', 'Modulate', 'Screen',
+                        'Overlay', 'Darken', 'Lighten', 'ColorDodge', 'ColorBurn', 'HardLight',
+                        'SoftLight', 'Difference', 'Exclusion', 'Multiply', 'Hue', 'Saturation',
+                        'Color', 'Luminosity'];
+        const paint = new CanvasKit.Paint();
+        // Put a dark green on the paint itself.
+        paint.setColor(CanvasKit.Color(0, 255, 0, 0.2));
+
+        const font = new CanvasKit.Font(null, 10);
+        const textPaint = new CanvasKit.Paint();
+        textPaint.setColor(CanvasKit.BLACK);
+
+        for (let i = 0; i < blends.length; i++) {
+            const filter = CanvasKit.ImageFilter.MakeBlend(CanvasKit.BlendMode[blends[i]],
+                                                           redIF, blueIF);
+            const col = i % COLS_PER_ROW, row = Math.floor(i / COLS_PER_ROW);
+
+            paint.setImageFilter(filter);
+            canvas.save();
+
+            canvas.clipRect(CanvasKit.XYWHRect(col * BOX_SIZE + MARGIN, row * BOX_SIZE + MARGIN, SWATCH_SIZE, SWATCH_SIZE),
+                            CanvasKit.ClipOp.Intersect);
+            canvas.drawPaint(paint);
+            canvas.restore();
+
+            canvas.drawText(blends[i], col * BOX_SIZE + 30, row * BOX_SIZE + BOX_SIZE, textPaint, font);
+            filter.delete();
+        }
+        redCF.delete();
+        redIF.delete();
+        blueCF.delete();
+        blueIF.delete();
+        paint.delete();
+    });
+
+    gm('ImageFilter_MakeDilate', (canvas, fetchedByteBuffers) => {
+        canvas.clear(CanvasKit.WHITE);
+
+        const paint = new CanvasKit.Paint();
+        const dilate = CanvasKit.ImageFilter.MakeDilate(2, 10, null);
+        paint.setImageFilter(dilate);
+
+        const img = CanvasKit.MakeImageFromEncoded(fetchedByteBuffers[0]);
+        expect(img).toBeTruthy();
+        canvas.drawImage(img, 10, 20, paint);
+
+        img.delete();
+        paint.delete();
+        dilate.delete();
+    }, '/assets/mandrill_512.png');
+
+    gm('ImageFilter_MakeErode', (canvas, fetchedByteBuffers) => {
+        canvas.clear(CanvasKit.WHITE);
+
+        const paint = new CanvasKit.Paint();
+        const erode = CanvasKit.ImageFilter.MakeErode(2, 10, null);
+        paint.setImageFilter(erode);
+
+        const img = CanvasKit.MakeImageFromEncoded(fetchedByteBuffers[0]);
+        expect(img).toBeTruthy();
+        canvas.drawImage(img, 10, 20, paint);
+
+        img.delete();
+        paint.delete();
+        erode.delete();
+    }, '/assets/mandrill_512.png');
+
+    gm('ImageFilter_MakeDisplacementMap', (canvas, fetchedByteBuffers) => {
+        // See https://www.smashingmagazine.com/2021/09/deep-dive-wonderful-world-svg-displacement-filtering/
+        // for a good writeup of displacement filters.
+        // https://jsfiddle.skia.org/canvaskit/27ba8450861fd4ec9632276dcdb2edd0d967070c2bb44e60f803597ff78ccda2
+        // is a way to play with how the color and scale interact.
+        canvas.clear(CanvasKit.WHITE);
+
+        // As implemented, if the displacement map is smaller than the image * scale, things can
+        // look strange, with a copy of the image in the background. Making it the size
+        // of the canvas will at least mask the "ghost" image that shows up in the background.
+        const DISPLACEMENT_SIZE = CANVAS_HEIGHT;
+        const IMAGE_SIZE = 512;
+        const SCALE = 30;
+        const pixels = [];
+        // Create a soft, oblong grid shape. This sort of makes it look like there is some warbly
+        // glass in front of the mandrill image.
+        for (let y = 0; y < DISPLACEMENT_SIZE; y++) {
+            for (let x = 0; x < DISPLACEMENT_SIZE; x++) {
+                if (x < SCALE/2 || y < SCALE/2 || x >= IMAGE_SIZE - SCALE/2 || y >= IMAGE_SIZE - SCALE/2) {
+                    // grey means no displacement. If we displace off the edge of the image, we'll
+                    // see strange transparent pixels showing up around the edges.
+                    pixels.push(127, 127, 127, 255);
+                } else {
+                    // Scale our sine wave from [-1, 1] to [0, 255] (which will be scaled by the
+                    // DisplacementMap back to [-1, 1].
+                    // Setting the alpha to be 255 doesn't impact the translation, but does
+                    // let us draw the image if we like.
+                    pixels.push(Math.sin(x/5)*255+127, Math.sin(y/3)*255+127, 0, 255);
+                }
+            }
+        }
+        const mapImg = CanvasKit.MakeImage({
+            width: DISPLACEMENT_SIZE,
+            height: DISPLACEMENT_SIZE,
+            // Premul is important - we do not want further division of our channels.
+            alphaType: CanvasKit.AlphaType.Premul,
+            colorType: CanvasKit.ColorType.RGBA_8888,
+            colorSpace: CanvasKit.ColorSpace.SRGB,
+        }, Uint8ClampedArray.from(pixels), 4 * DISPLACEMENT_SIZE);
+        // To see just the displacement map, uncomment the lines below
+        // canvas.drawImage(mapImg, 0, 0, null);
+        // return;
+        const map = CanvasKit.ImageFilter.MakeImage(mapImg, {C: 1/3, B:1/3});
+
+        const displaced = CanvasKit.ImageFilter.MakeDisplacementMap(CanvasKit.ColorChannel.Red,
+                                CanvasKit.ColorChannel.Green, SCALE, map, null);
+        const paint = new CanvasKit.Paint();
+        paint.setImageFilter(displaced);
+        const img = CanvasKit.MakeImageFromEncoded(fetchedByteBuffers[0]);
+        expect(img).toBeTruthy();
+        canvas.drawImage(img, 0, 0, paint);
+
+        mapImg.delete();
+        img.delete();
+        map.delete();
+        paint.delete();
+        displaced.delete();
+    }, '/assets/mandrill_512.png');
+
+    gm('ImageFilter_MakeDropShadow', (canvas, fetchedByteBuffers) => {
+        canvas.clear(CanvasKit.WHITE);
+
+        const img = CanvasKit.MakeImageFromEncoded(fetchedByteBuffers[0]);
+        expect(img).toBeTruthy();
+
+        const drop = CanvasKit.ImageFilter.MakeDropShadow(10, -30, 4.0, 2.0, CanvasKit.MAGENTA, null);
+        const paint = new CanvasKit.Paint();
+        paint.setImageFilter(drop)
+        canvas.drawImage(img, 50, 50, paint);
+
+        img.delete();
+        paint.delete();
+        drop.delete();
+    }, '/assets/mandrill_512.png');
+
+    gm('ImageFilter_MakeDropShadowOnly', (canvas, fetchedByteBuffers) => {
+        canvas.clear(CanvasKit.WHITE);
+
+        const img = CanvasKit.MakeImageFromEncoded(fetchedByteBuffers[0]);
+        expect(img).toBeTruthy();
+
+        const drop = CanvasKit.ImageFilter.MakeDropShadowOnly(10, -30, 4.0, 2.0, CanvasKit.MAGENTA, null);
+        const paint = new CanvasKit.Paint();
+        paint.setImageFilter(drop)
+        canvas.drawImage(img, 50, 50, paint);
+        img.delete();
+        paint.delete();
+        drop.delete();
+    }, '/assets/mandrill_512.png');
+
+    gm('ImageFilter_MakeOffset', (canvas, fetchedByteBuffers) => {
+        canvas.clear(CanvasKit.WHITE);
+
+        const img = CanvasKit.MakeImageFromEncoded(fetchedByteBuffers[0]);
+        expect(img).toBeTruthy();
+
+        const offset = CanvasKit.ImageFilter.MakeOffset(30, -130, null);
+        const paint = new CanvasKit.Paint();
+        paint.setImageFilter(offset);
+        canvas.drawImage(img, 50, 50, paint);
+        img.delete();
+        paint.delete();
+        offset.delete();
+    }, '/assets/mandrill_512.png');
+
+    gm('ImageFilter_MakeShader', (canvas) => {
+        canvas.clear(CanvasKit.WHITE);
+
+        const rt = CanvasKit.RuntimeEffect.Make(`
+uniform float4 color;
+half4 main(vec2 fragcoord) {
+    return vec4(color);
+}
+`);
+        const shader = rt.makeShader([0.0, 0.0, 1.0, 0.5]);
+        const filter = CanvasKit.ImageFilter.MakeShader(shader);
+        const paint = new CanvasKit.Paint();
+        paint.setImageFilter(filter);
+        canvas.drawPaint(paint);
+        paint.delete();
+        filter.delete();
+        shader.delete();
+        rt.delete();
     });
 });

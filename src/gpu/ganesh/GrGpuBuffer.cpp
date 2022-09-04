@@ -39,17 +39,27 @@ void GrGpuBuffer::unmap() {
 
 bool GrGpuBuffer::isMapped() const { return SkToBool(fMapPtr); }
 
-bool GrGpuBuffer::updateData(const void* src, size_t srcSizeInBytes) {
+bool GrGpuBuffer::updateData(const void* src, size_t offset, size_t size, bool preserve) {
     SkASSERT(!this->isMapped());
-    SkASSERT(srcSizeInBytes > 0 && srcSizeInBytes <= fSizeInBytes);
+    SkASSERT(size > 0 && offset + size <= fSizeInBytes);
     SkASSERT(src);
+
     if (this->wasDestroyed()) {
         return false;
     }
+
+    if (preserve) {
+        size_t a = this->getGpu()->caps()->bufferUpdateDataPreserveAlignment();
+        if (SkAlignTo(offset, a) != offset || SkAlignTo(size, a) != size) {
+            return false;
+        }
+    }
+
     if (this->intendedType() == GrGpuBufferType::kXferGpuToCpu) {
         return false;
     }
-    return this->onUpdateData(src, srcSizeInBytes);
+
+    return this->onUpdateData(src, offset, size, preserve);
 }
 
 void GrGpuBuffer::ComputeScratchKeyForDynamicBuffer(size_t size,

@@ -125,7 +125,7 @@ private:
                 auto it = std::find_if(uniforms.begin(),
                                        uniforms.end(),
                                        [&name](SkMeshSpecification::Uniform uniform) {
-                    return uniform.name == name;
+                    return uniform.name == std::string_view(name.c_str(), name.size());
                 });
                 SkASSERT(it != uniforms.end());
 
@@ -504,11 +504,11 @@ private:
             if (!fMeshData.ib) {
                 return nullptr;
             }
-            auto data = fMeshData.ib->asData();
+            auto data = fMeshData.ib->peek();
             if (!data) {
                 return nullptr;
             }
-            return SkTAddOffset<const uint16_t>(data->data(), fMeshData.ioffset);
+            return SkTAddOffset<const uint16_t>(data, fMeshData.ioffset);
         }
 
         int indexCount() const {
@@ -609,9 +609,9 @@ void MeshOp::Mesh::writeVertices(skgpu::VertexWriter& writer,
             }
         }
     } else {
-        sk_sp<const SkData> data = fMeshData.vb->asData();
+        const void* data = fMeshData.vb->peek();
         if (data) {
-            auto vdata = static_cast<const char*>(data->data()) + fMeshData.voffset;
+            auto vdata = SkTAddOffset<const char>(data, fMeshData.voffset);
             writer << skgpu::VertexWriter::Array(vdata, spec.stride()*fMeshData.vcount);
         }
     }

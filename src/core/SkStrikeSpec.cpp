@@ -189,8 +189,8 @@ SkStrikeSpec::SkStrikeSpec(const SkFont& font, const SkPaint& paint,
     fTypeface = font.refTypefaceOrDefault();
 }
 
-SkScopedStrikeForGPU SkStrikeSpec::findOrCreateScopedStrike(
-        SkStrikeForGPUCacheInterface* cache) const {
+sktext::ScopedStrikeForGPU SkStrikeSpec::findOrCreateScopedStrike(
+        sktext::StrikeForGPUCacheInterface* cache) const {
     return cache->findOrCreateScopedStrike(*this);
 }
 

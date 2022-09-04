@@ -3976,6 +3976,10 @@ static void test_arcTo(skiatest::Reporter* reporter) {
       REPORTER_ASSERT(reporter, p.getPoint(0) == p.getPoint(n - 1));
     }
 #endif
+
+    // This test, if improperly handled, can create an infinite loop in angles_to_unit_vectors
+    p.reset();
+    p.arcTo(SkRect::MakeXYWH(0, 0, 10, 10), -2.61488527e+33f, 359.992157f, false);
 }
 
 static void test_addPath(skiatest::Reporter* reporter) {
@@ -5906,4 +5910,23 @@ DEF_TEST(path_moveto_twopass_convexity, r) {
     pathWithExtraMoveTo.moveTo(5.90043e-39f, 1.34525e-43f);
     pathWithExtraMoveTo.addPath(path);
     REPORTER_ASSERT(r, !pathWithExtraMoveTo.isConvex());
+}
+
+// crbug.com/1154864
+DEF_TEST(path_walk_simple_edges_1154864, r) {
+    // Drawing this path triggered an assert in walk_simple_edges:
+    auto surface = SkSurface::MakeRasterN32Premul(32, 32);
+
+    SkPath path;
+    path.setFillType(SkPathFillType::kWinding);
+    path.moveTo(0.00665998459f, 2);
+    path.quadTo(0.00665998459f, 4, -1.99334002f, 4);
+    path.quadTo(-3.99334002f, 4, -3.99334002f, 2);
+    path.quadTo(-3.99334002f, 0, -1.99334002f, 0);
+    path.quadTo(0.00665998459f, 0, 0.00665998459f, 2);
+    path.close();
+
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    surface->getCanvas()->drawPath(path, paint);
 }

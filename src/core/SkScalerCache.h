@@ -16,10 +16,13 @@
 #include "src/core/SkDescriptor.h"
 #include "src/core/SkGlyph.h"
 #include "src/core/SkGlyphRunPainter.h"
-#include "src/core/SkStrikeForGPU.h"
+
 #include <memory>
 
 class SkScalerContext;
+namespace sktext {
+union IDOrPath;
+}  // namespace sktext
 
 // This class represents a strike: a specific combination of typeface, size, matrix, etc., and
 // holds the glyphs for that strike.
@@ -86,6 +89,9 @@ public:
 
     size_t prepareForDrawableDrawing(
             SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) SK_EXCLUDES(fMu);
+
+    // Convert all the IDs into SkPaths in the span.
+    size_t glyphIDsToPaths(SkSpan<sktext::IDOrPath> idsOrPaths) SK_EXCLUDES(fMu);
 
     std::tuple<SkScalar, size_t>
             findMaximumGlyphDimension(SkSpan<const SkGlyphID> glyphs) SK_EXCLUDES(fMu);

@@ -14,10 +14,13 @@
 
 #include <climits>
 
-class SkStrikeForGPU;
 struct SkGlyphPositionRoundingSpec;
 class SkPath;
 class SkDrawable;
+
+namespace sktext {
+class StrikeForGPU;
+}  // namespace sktext
 
 // SkSourceGlyphBuffer is the source of glyphs between the different stages of glyph drawing.
 // It starts with the glyphs and positions from the SkGlyphRun as the first source. When glyphs
