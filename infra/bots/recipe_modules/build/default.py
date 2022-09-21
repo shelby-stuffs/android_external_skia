@@ -191,6 +191,12 @@ def compile_fn(api, checkout_root, out_dir):
     extra_cflags.append('-O1')
   if compiler != 'MSVC' and configuration == 'OptimizeForSize':
     extra_cflags.append('-Oz')
+    # build IDs are required for Bloaty if we want to use strip to ignore debug symbols.
+    # https://github.com/google/bloaty/blob/master/doc/using.md#debugging-stripped-binaries
+    extra_ldflags.append('-Wl,--build-id=sha1')
+    args.update({
+      'skia_use_runtime_icu': 'true',
+    })
 
   if 'Exceptions' in extra_tokens:
     extra_cflags.append('/EHsc')
@@ -303,6 +309,9 @@ def compile_fn(api, checkout_root, out_dir):
 
   if 'Wuffs' in extra_tokens:
     args['skia_use_wuffs'] = 'true'
+
+  if 'AVIF' in extra_tokens:
+    args['skia_use_libavif'] = 'true'
 
   for (k,v) in {
     'cc':  cc,

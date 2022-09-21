@@ -62,6 +62,7 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
     fMustResetBlendFuncBetweenDualSourceAndDisable = false;
     fBindTexture0WhenChangingTextureFBOMultisampleCount = false;
     fRebindColorAttachmentAfterCheckFramebufferStatus = false;
+    fFlushBeforeWritePixels = false;
     fProgramBinarySupport = false;
     fProgramParameterSupport = false;
     fSamplerObjectSupport = false;
@@ -1975,7 +1976,15 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
                 // We are confident that Angle does it as we expect. Our non-angle test bots do seem
                 // to pass and draw correctly so we could consider enabling this more broadly in the
                 // future.
-                if (ctxInfo.angleBackend() != GrGLANGLEBackend::kUnknown) {
+                // In addition, we also need to disable BGRA MSAA on Mesa. When a client attempts
+                // to wrap a GPU-backed texture into an SkSurface with MSAA, Ganesh will create
+                // a MSAA renderbuffer to first render to before resolving to the single-sampled
+                // texture. Mesa claims to support EXT_texture_format_BGRA8888, and according to
+                // the spec, this should imply support for both BGRA textures and renderbuffers.
+                // In practice, however, Mesa only supports BGRA textures and will error on
+                // glRenderbufferStorage* if the internalformat is BGRA.
+                if (ctxInfo.angleBackend() != GrGLANGLEBackend::kUnknown &&
+                    ctxInfo.angleDriver() != GrGLDriver::kMesa) {
                     // Angle incorrectly requires GL_BGRA8_EXT for the interalFormat for both ES2
                     // and ES3 even though this extension does not define that value. The extension
                     // only defines GL_BGRA_EXT as an internal format.
@@ -2474,17 +2483,24 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
         info.fDefaultExternalType = GR_GL_UNSIGNED_BYTE;
         info.fDefaultColorType = GrColorType::kRGB_888x;
 
-        bool supportsRGBXTexStorage = false;
-
-        if (GR_IS_GR_GL_ES(standard) && ctxInfo.hasExtension("GL_ANGLE_rgbx_internal_format")) {
-            info.fFlags =
-                    FormatInfo::kTexturable_Flag | FormatInfo::kTransfers_Flag | msaaRenderFlags;
-            supportsRGBXTexStorage = true;
+        bool supportsSizedRGBX = false;
+        // The GL_ANGLE_rgbx_internal_format extension only adds the sized GL_RGBX8 type and does
+        // not have a way to create a texture of that format with texImage using an unsized type. So
+        // we require that we either have texture storage support or that tex image supports sized
+        // formats to say that this format is supported.
+        if (GR_IS_GR_GL_ES(standard) && ctxInfo.hasExtension("GL_ANGLE_rgbx_internal_format") &&
+            (texStorageSupported || texImageSupportsSizedInternalFormat)) {
+            supportsSizedRGBX = true;
         }
 
-        if (texStorageSupported && supportsRGBXTexStorage) {
-            info.fFlags |= FormatInfo::kUseTexStorage_Flag;
+        if (supportsSizedRGBX) {
             info.fInternalFormatForTexImageOrStorage = GR_GL_RGBX8;
+            info.fFlags = FormatInfo::kTexturable_Flag |
+                          FormatInfo::kTransfers_Flag |
+                          msaaRenderFlags;
+            if (texStorageSupported) {
+                info.fFlags |= FormatInfo::kUseTexStorage_Flag;
+            }
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
@@ -2505,7 +2521,7 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
                     auto& ioFormat = ctInfo.fExternalIOFormats[ioIdx++];
                     ioFormat.fColorType = GrColorType::kRGB_888x;
                     ioFormat.fExternalType = GR_GL_UNSIGNED_BYTE;
-                    ioFormat.fExternalTexImageFormat = GR_GL_RGB;
+                    ioFormat.fExternalTexImageFormat = GR_GL_RGBA;
                     ioFormat.fExternalReadFormat = 0;
                 }
 
@@ -3860,6 +3876,13 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fAvoidLargeIndexBufferDraws = true;
     }
 
+    if (ctxInfo.renderer() == GrGLRenderer::kMali4xx ||
+        (ctxInfo.renderer() == GrGLRenderer::kWebGL &&
+         ctxInfo.webglRenderer() == GrGLRenderer::kMali4xx)) {
+        // Perspective SDF text runs significantly slower on Mali-4xx hardware
+        fDisablePerspectiveSDFText = true;
+    }
+
     // This was reproduced on the following configurations:
     // - A Galaxy J5 (Adreno 306) running Android 6 with driver 140.0
     // - A Nexus 7 2013 (Adreno 320) running Android 5 with driver 104.0
@@ -4205,6 +4228,16 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fDisableTessellationPathRenderer = true;
     }
 
+    // The Wembley device draws the mesh_update GM incorrectly when using transfer buffers. Buffer
+    // to buffer transfers affect draws earlier in the GL command sequence.
+    // Android API: 31
+    // GL_VERSION : OpenGL ES 3.2 build 1.13@5720833
+    // GL_RENDERER: PowerVR Rogue GE8300
+    // GL_VENDOR  : Imagination Technologies
+    if (ctxInfo.renderer() == GrGLRenderer::kPowerVRRogue) {
+        fTransferFromBufferToBufferSupport = false;
+    }
+
 #ifdef SK_BUILD_FOR_WIN
     // glDrawElementsIndirect fails GrMeshTest on every Win10 Intel bot.
     if (ctxInfo.driver() == GrGLDriver::kIntel ||
@@ -4331,13 +4364,6 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fProgramBinarySupport = false;
     }
 
-    // Two Adreno 530 devices (LG G6 and OnePlus 3T) appear to have driver bugs that are corrupting
-    // SkSL::Program memory. To get better/different crash reports, disable node-pooling, so that
-    // program allocations aren't reused.  (crbug.com/1147008, crbug.com/1164271)
-    if (ctxInfo.renderer() == GrGLRenderer::kAdreno530) {
-        shaderCaps->fUseNodePools = false;
-    }
-
     // skbug.com/11204. Avoid recursion issue in SurfaceContext::writePixels.
     if (fDisallowTexSubImageForUnormConfigTexturesEverBoundToFBO) {
         fReuseScratchTextures = false;
@@ -4445,6 +4471,19 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         ctxInfo.driver()        == GrGLDriver::kARM     &&
         ctxInfo.driverVersion()  < GR_GL_DRIVER_VER(1, 19, 0)) {
         fAnisoSupport = false;
+    }
+
+    // b/229626353
+    // On certain classes of Adreno running WebGL, glTexSubImage2D() occasionally fails to upload
+    // texels on time for sampling. The solution is to call glFlush() before glTexSubImage2D().
+    // Seen on:
+    // * Nexus 5x (Adreno 418)
+    // * Nexus 6 (Adreno 420)
+    // * Pixel 3 (Adreno 630)
+    if (ctxInfo.renderer()      == GrGLRenderer::kWebGL &&
+        (ctxInfo.webglRenderer() == GrGLRenderer::kAdreno4xx_other ||
+         ctxInfo.webglRenderer() == GrGLRenderer::kAdreno630)) {
+        fFlushBeforeWritePixels = true;
     }
 }
 

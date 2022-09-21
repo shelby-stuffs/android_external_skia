@@ -117,7 +117,7 @@ go_repositories()
 
 go_rules_dependencies()
 
-go_register_toolchains(version = "1.17.2")
+go_register_toolchains(version = "1.18")
 
 gazelle_dependencies(go_repository_default_config = "//:WORKSPACE.bazel")
 
@@ -180,6 +180,16 @@ browser_repositories(
 local_repository(
     name = "abseil_cpp",
     path = "third_party/externals/abseil-cpp",
+)
+
+local_repository(
+    name = "brotli",
+    path = "third_party/externals/brotli",
+)
+
+local_repository(
+    name = "highway",
+    path = "third_party/externals/highway",
 )
 
 local_repository(
@@ -265,9 +275,30 @@ local_repository(
 )
 
 new_local_repository(
+    name = "libavif",
+    build_file = "bazel/external/libavif/BUILD.bazel",
+    path = "third_party/externals/libavif",
+    workspace_file_content = "",
+)
+
+new_local_repository(
+    name = "libgav1",
+    build_file = "bazel/external/libgav1/BUILD.bazel",
+    path = "third_party/externals/libgav1",
+    workspace_file_content = "",
+)
+
+new_local_repository(
     name = "libjpeg_turbo",
     build_file = "bazel/external/libjpeg_turbo/BUILD.bazel",
     path = "third_party/externals/libjpeg-turbo",
+    workspace_file_content = "",
+)
+
+new_local_repository(
+    name = "libjxl",
+    build_file = "bazel/external/libjxl/BUILD.bazel",
+    path = "third_party/externals/libjxl",
     workspace_file_content = "",
 )
 
@@ -282,6 +313,13 @@ new_local_repository(
     name = "libwebp",
     build_file = "bazel/external/libwebp/BUILD.bazel",
     path = "third_party/externals/libwebp",
+    workspace_file_content = "",
+)
+
+new_local_repository(
+    name = "libyuv",
+    build_file = "bazel/external/libyuv/BUILD.bazel",
+    path = "third_party/externals/libyuv",
     workspace_file_content = "",
 )
 

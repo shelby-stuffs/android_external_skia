@@ -32,6 +32,7 @@
 #include "src/sksl/ir/SkSLFunctionReference.h"
 #include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLMethodReference.h"
+#include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLTypeReference.h"
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
@@ -44,6 +45,7 @@
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 namespace SkSL {
 
@@ -414,6 +416,7 @@ double evaluate_fract(double a, double, double)        { return a - std::floor(a
 double evaluate_min(double a, double b, double)        { return (a < b) ? a : b; }
 double evaluate_max(double a, double b, double)        { return (a > b) ? a : b; }
 double evaluate_clamp(double x, double l, double h)    { return (x < l) ? l : (x > h) ? h : x; }
+double evaluate_fma(double a, double b, double c)      { return a * b + c; }
 double evaluate_saturate(double a, double, double)     { return (a < 0) ? 0 : (a > 1) ? 1 : a; }
 double evaluate_mix(double x, double y, double a)      { return x * (1 - a) + y * a; }
 double evaluate_step(double e, double x, double)       { return (x < e) ? 0 : 1; }
@@ -570,6 +573,9 @@ static std::unique_ptr<Expression> optimize_intrinsic_call(const Context& contex
         case k_clamp_IntrinsicKind:
             return evaluate_3_way_intrinsic(context, arguments, returnType,
                                             Intrinsics::evaluate_clamp);
+        case k_fma_IntrinsicKind:
+            return evaluate_3_way_intrinsic(context, arguments, returnType,
+                                            Intrinsics::evaluate_fma);
         case k_saturate_IntrinsicKind:
             return evaluate_intrinsic<float>(context, arguments, returnType,
                                              Intrinsics::evaluate_saturate);
@@ -836,8 +842,9 @@ std::string FunctionCall::description() const {
  * particular meaning other than "lower costs are preferred". Returns CoercionCost::Impossible() if
  * the call is not valid.
  */
-CoercionCost FunctionCall::CallCost(const Context& context, const FunctionDeclaration& function,
-        const ExpressionArray& arguments){
+static CoercionCost call_cost(const Context& context,
+                              const FunctionDeclaration& function,
+                              const ExpressionArray& arguments) {
     if (context.fConfig->strictES2Mode() &&
         (function.modifiers().fFlags & Modifiers::kES3_Flag)) {
         return CoercionCost::Impossible();
@@ -859,21 +866,21 @@ CoercionCost FunctionCall::CallCost(const Context& context, const FunctionDeclar
 
 const FunctionDeclaration* FunctionCall::FindBestFunctionForCall(
         const Context& context,
-        const std::vector<const FunctionDeclaration*>& functions,
+        const FunctionDeclaration* overloadChain,
         const ExpressionArray& arguments) {
-    if (functions.size() == 1) {
-        return functions.front();
+    if (!overloadChain->nextOverload()) {
+        return overloadChain;
     }
     CoercionCost bestCost = CoercionCost::Impossible();
     const FunctionDeclaration* best = nullptr;
-    for (const auto& f : functions) {
-        CoercionCost cost = CallCost(context, *f, arguments);
-        if (cost < bestCost) {
+    for (const FunctionDeclaration* f = overloadChain; f != nullptr; f = f->nextOverload()) {
+        CoercionCost cost = call_cost(context, *f, arguments);
+        if (cost <= bestCost) {
             bestCost = cost;
             best = f;
         }
     }
-    return best;
+    return bestCost.fImpossible ? nullptr : best;
 }
 
 static std::string build_argument_type_list(SkSpan<const std::unique_ptr<Expression>> arguments) {
@@ -920,13 +927,12 @@ std::unique_ptr<Expression> FunctionCall::Convert(const Context& context,
         }
         case Expression::Kind::kFunctionReference: {
             const FunctionReference& ref = functionValue->as<FunctionReference>();
-            const std::vector<const FunctionDeclaration*>& functions = ref.functions();
-            const FunctionDeclaration* best = FindBestFunctionForCall(context, functions,
+            const FunctionDeclaration* best = FindBestFunctionForCall(context, ref.overloadChain(),
                                                                       arguments);
             if (best) {
                 return FunctionCall::Convert(context, pos, *best, std::move(arguments));
             }
-            std::string msg = "no match for " + std::string(functions.front()->name()) +
+            std::string msg = "no match for " + std::string(ref.overloadChain()->name()) +
                               build_argument_type_list(arguments);
             context.fErrors->error(pos, msg);
             return nullptr;
@@ -935,15 +941,14 @@ std::unique_ptr<Expression> FunctionCall::Convert(const Context& context,
             MethodReference& ref = functionValue->as<MethodReference>();
             arguments.push_back(std::move(ref.self()));
 
-            const std::vector<const FunctionDeclaration*>& functions = ref.functions();
-            const FunctionDeclaration* best = FindBestFunctionForCall(context, functions,
+            const FunctionDeclaration* best = FindBestFunctionForCall(context, ref.overloadChain(),
                                                                       arguments);
             if (best) {
                 return FunctionCall::Convert(context, pos, *best, std::move(arguments));
             }
             std::string msg =
                     "no match for " + arguments.back()->type().displayName() +
-                    "::" + std::string(functions.front()->name().substr(1)) +
+                    "::" + std::string(ref.overloadChain()->name().substr(1)) +
                     build_argument_type_list(SkSpan(arguments).first(arguments.size() - 1));
             context.fErrors->error(pos, msg);
             return nullptr;
@@ -1005,6 +1010,8 @@ std::unique_ptr<Expression> FunctionCall::Convert(const Context& context,
                 return nullptr;
             }
         }
+        // TODO(skia:13609): Make sure that we don't pass writeonly objects to readonly parameters,
+        // or vice-versa.
     }
 
     if (function.isMain()) {

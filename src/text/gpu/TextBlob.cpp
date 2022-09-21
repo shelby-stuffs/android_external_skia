@@ -36,9 +36,9 @@
 #include "src/text/gpu/SubRunContainer.h"
 
 #if SK_SUPPORT_GPU  // Ganesh Support
+#include "src/gpu/ganesh/Device_v1.h"
 #include "src/gpu/ganesh/GrClip.h"
-#include "src/gpu/ganesh/v1/Device_v1.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #endif
 
 using namespace sktext::gpu;
@@ -203,14 +203,14 @@ sk_sp<SlugImpl> SlugImpl::Make(const SkMatrixProvider& viewMatrix,
     const SkMatrix positionMatrix =
             position_matrix(viewMatrix.localToDevice(), glyphRunList.origin());
 
-    auto [__, subRuns] = SubRunContainer::MakeInAlloc(glyphRunList,
-                                                      positionMatrix,
-                                                      drawingPaint,
-                                                      strikeDeviceInfo,
-                                                      strikeCache,
-                                                      &alloc,
-                                                      SubRunContainer::kAddSubRuns,
-                                                      "Make Slug");
+    auto subRuns = SubRunContainer::MakeInAlloc(glyphRunList,
+                                                positionMatrix,
+                                                drawingPaint,
+                                                strikeDeviceInfo,
+                                                strikeCache,
+                                                &alloc,
+                                                SubRunContainer::kAddSubRuns,
+                                                "Make Slug");
 
     sk_sp<SlugImpl> slug = sk_sp<SlugImpl>(initializer.initialize(
             std::move(alloc),
@@ -269,11 +269,14 @@ auto TextBlob::Key::Make(const GlyphRunList& glyphRunList,
 
         // Do any runs use direct drawing types?.
         key.fHasSomeDirectSubRuns = false;
+        SkPoint glyphRunListLocation = glyphRunList.sourceBounds().center();
         for (auto& run : glyphRunList) {
             SkScalar approximateDeviceTextSize =
-                    SkFontPriv::ApproximateTransformedTextSize(run.font(), drawMatrix);
+                    SkFontPriv::ApproximateTransformedTextSize(run.font(), drawMatrix,
+                                                               glyphRunListLocation);
             key.fHasSomeDirectSubRuns |=
-                    strikeDevice.fSDFTControl->isDirect(approximateDeviceTextSize, paint);
+                    strikeDevice.fSDFTControl->isDirect(approximateDeviceTextSize, paint,
+                                                        drawMatrix);
         }
 
         if (key.fHasSomeDirectSubRuns) {
@@ -350,7 +353,7 @@ sk_sp<TextBlob> TextBlob::Make(const GlyphRunList& glyphRunList,
     auto [initializer, totalMemoryAllocated, alloc] =
             SubRunAllocator::AllocateClassMemoryAndArena<TextBlob>(subRunSizeHint);
 
-    auto [someGlyphExcluded, container] = SubRunContainer::MakeInAlloc(
+    auto container = SubRunContainer::MakeInAlloc(
             glyphRunList, positionMatrix, paint,
             strikeDeviceInfo, strikeCache, &alloc, SubRunContainer::kAddSubRuns, "TextBlob");
 
@@ -359,10 +362,6 @@ sk_sp<TextBlob> TextBlob::Make(const GlyphRunList& glyphRunList,
                                                                   std::move(container),
                                                                   totalMemoryAllocated,
                                                                   initialLuminance));
-
-    // Be sure to pass the ref to the matrix that the SubRuns will capture.
-    blob->fSomeGlyphsExcluded = someGlyphExcluded;
-
     return blob;
 }
 
@@ -375,11 +374,9 @@ bool TextBlob::hasPerspective() const {
 }
 
 bool TextBlob::canReuse(const SkPaint& paint, const SkMatrix& positionMatrix) const {
-    // A singular matrix will create a TextBlob with no SubRuns, but unknown glyphs can
-    // also cause empty runs. If there are no subRuns or some glyphs were excluded or perspective,
-    // then regenerate when the matrices don't match.
-    if ((fSubRuns->isEmpty() || fSomeGlyphsExcluded || hasPerspective()) &&
-        fSubRuns->initialPosition() != positionMatrix) {
+    // A singular matrix will create a TextBlob with no SubRuns, but unknown glyphs can also
+    // cause empty runs. If there are no subRuns, then regenerate when the matrices don't match.
+    if (fSubRuns->isEmpty() && fSubRuns->initialPosition() != positionMatrix) {
         return false;
     }
 

@@ -518,8 +518,6 @@ bool GrGpu::transferFromBufferToBuffer(sk_sp<GrGpuBuffer> src,
     SkASSERT(dstOffset + size <= dst->size());
     SkASSERT(src->intendedType() == GrGpuBufferType::kXferCpuToGpu);
     SkASSERT(dst->intendedType() != GrGpuBufferType::kXferCpuToGpu);
-    SkASSERT(!src->isMapped());
-    SkASSERT(!dst->isMapped());
 
     this->handleDirtyContext();
     if (!this->onTransferFromBufferToBuffer(std::move(src),
@@ -869,7 +867,8 @@ GrBackendTexture GrGpu::createBackendTexture(SkISize dimensions,
                                              const GrBackendFormat& format,
                                              GrRenderable renderable,
                                              GrMipmapped mipmapped,
-                                             GrProtected isProtected) {
+                                             GrProtected isProtected,
+                                             std::string_view label) {
     const GrCaps* caps = this->caps();
 
     if (!format.isValid()) {
@@ -890,7 +889,8 @@ GrBackendTexture GrGpu::createBackendTexture(SkISize dimensions,
         return {};
     }
 
-    return this->onCreateBackendTexture(dimensions, format, renderable, mipmapped, isProtected);
+    return this->onCreateBackendTexture(
+            dimensions, format, renderable, mipmapped, isProtected, label);
 }
 
 bool GrGpu::clearBackendTexture(const GrBackendTexture& backendTexture,

@@ -6,15 +6,6 @@
  */
 
 #include "src/core/SkGlyphRunPainter.h"
-#include "src/core/SkScalerContext.h"
-
-#if SK_SUPPORT_GPU
-#include "src/gpu/ganesh/GrColorInfo.h"
-#include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
-#include "src/text/gpu/SDFTControl.h"
-#include "src/text/gpu/TextBlobRedrawCoordinator.h"
-#endif // SK_SUPPORT_GPU
 
 #include "include/core/SkBitmap.h"
 #include "include/core/SkColorFilter.h"
@@ -23,24 +14,17 @@
 #include "include/core/SkPathEffect.h"
 #include "include/private/SkTDArray.h"
 #include "src/core/SkDevice.h"
-#include "src/core/SkDistanceFieldGen.h"
 #include "src/core/SkDraw.h"
 #include "src/core/SkEnumerate.h"
 #include "src/core/SkFontPriv.h"
 #include "src/core/SkGlyphBuffer.h"
 #include "src/core/SkRasterClip.h"
-#include "src/core/SkScalerCache.h"
+#include "src/core/SkScalerContext.h"
 #include "src/core/SkStrikeCache.h"
 #include "src/core/SkStrikeSpec.h"
-#include "src/core/SkTraceEvent.h"
 #include "src/text/GlyphRun.h"
-#include "src/text/StrikeForGPU.h"
-
-#include <cinttypes>
-#include <climits>
 
 namespace {
-// TODO: unify with code in GrSDFTControl.cpp
 SkScalerContextFlags compute_scaler_context_flags(const SkColorSpace* cs) {
     // If we're doing linear blending, then we can disable the gamma hacks.
     // Otherwise, leave them on. In either case, we still want the contrast boost:
@@ -69,7 +53,7 @@ void SkGlyphRunListPainterCPU::drawForBitmapDevice(
     auto [accepted, rejected] = bufferScope.buffers();
 
     // The bitmap blitters can only draw lcd text to a N32 bitmap in srcOver. Otherwise,
-    // convert the lcd text into A8 text. The props communicates this to the scaler.
+    // convert the lcd text into A8 text. The props communicate this to the scaler.
     auto& props = (kN32_SkColorType == fColorType && paint.isSrcOver())
                           ? fDeviceProps
                           : fBitmapFallbackProps;
@@ -104,29 +88,34 @@ void SkGlyphRunListPainterCPU::drawForBitmapDevice(
                                        pathPaint.getPathEffect() ||
                                        pathPaint.getMaskFilter() ||
                                        (stroking && !hairline);
-            if (!needsExactCTM) {
-                for (auto [variant, pos] : accepted->accepted()) {
-                    const SkPath* path = variant.glyph()->path();
-                    SkMatrix m;
-                    SkPoint translate = drawOrigin + pos;
-                    m.setScaleTranslate(strikeToSourceScale, strikeToSourceScale,
-                                        translate.x(), translate.y());
-                    SkAutoCanvasRestore acr(canvas, true);
-                    canvas->concat(m);
-                    canvas->drawPath(*path, pathPaint);
-                }
-            } else {
-                for (auto [variant, pos] : accepted->accepted()) {
-                    const SkPath* path = variant.glyph()->path();
-                    SkMatrix m;
-                    SkPoint translate = drawOrigin + pos;
-                    m.setScaleTranslate(strikeToSourceScale, strikeToSourceScale,
-                                        translate.x(), translate.y());
+            {
+                SkBulkGlyphMetricsAndPaths glyphs{sk_sp<SkStrike>(strike)};
+                if (!needsExactCTM) {
+                    for (auto [variant, pos] : accepted->accepted()) {
+                        const SkGlyph& glyph = *glyphs.glyph(variant.packedID().glyphID());
+                        const SkPath* path = glyph.path();
+                        SkMatrix m;
+                        SkPoint translate = drawOrigin + pos;
+                        m.setScaleTranslate(strikeToSourceScale, strikeToSourceScale,
+                                            translate.x(), translate.y());
+                        SkAutoCanvasRestore acr(canvas, true);
+                        canvas->concat(m);
+                        canvas->drawPath(*path, pathPaint);
+                    }
+                } else {
+                    for (auto [variant, pos] : accepted->accepted()) {
+                        const SkGlyph& glyph = *glyphs.glyph(variant.packedID().glyphID());
+                        const SkPath* path = glyph.path();
+                        SkMatrix m;
+                        SkPoint translate = drawOrigin + pos;
+                        m.setScaleTranslate(strikeToSourceScale, strikeToSourceScale,
+                                            translate.x(), translate.y());
 
-                    SkPath deviceOutline;
-                    path->transform(m, &deviceOutline);
-                    deviceOutline.setIsVolatile(true);
-                    canvas->drawPath(deviceOutline, pathPaint);
+                        SkPath deviceOutline;
+                        path->transform(m, &deviceOutline);
+                        deviceOutline.setIsVolatile(true);
+                        canvas->drawPath(deviceOutline, pathPaint);
+                    }
                 }
             }
 
@@ -135,8 +124,10 @@ void SkGlyphRunListPainterCPU::drawForBitmapDevice(
                 strike->prepareForDrawableDrawing(accepted, rejected);
                 rejected->flipRejectsToSource();
 
+                SkBulkGlyphMetricsAndDrawables glyphs(std::move(strike));
                 for (auto [variant, pos] : accepted->accepted()) {
-                    SkDrawable* drawable = variant.glyph()->drawable();
+                    const SkGlyph& glyph = *glyphs.glyph(variant.packedID().glyphID());
+                    SkDrawable* drawable = glyph.drawable();
                     SkMatrix m;
                     SkPoint translate = drawOrigin + pos;
                     m.setScaleTranslate(strikeToSourceScale, strikeToSourceScale,

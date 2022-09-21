@@ -30,6 +30,11 @@ skia_gpu_sources = [
   "$_include/private/gpu/ganesh/GrTypesPriv.h",
   "$_src/gpu/GrAHardwareBufferUtils.h",
   "$_src/gpu/GrRectanizer.h",
+  "$_src/gpu/ganesh/ClipStack.cpp",
+  "$_src/gpu/ganesh/ClipStack.h",
+  "$_src/gpu/ganesh/Device.cpp",
+  "$_src/gpu/ganesh/Device_drawTexture.cpp",
+  "$_src/gpu/ganesh/Device_v1.h",
   "$_src/gpu/ganesh/GrAHardwareBufferImageGenerator.cpp",
   "$_src/gpu/ganesh/GrAHardwareBufferImageGenerator.h",
   "$_src/gpu/ganesh/GrAHardwareBufferUtils.cpp",
@@ -37,6 +42,7 @@ skia_gpu_sources = [
   "$_src/gpu/ganesh/GrAppliedClip.h",
   "$_src/gpu/ganesh/GrAttachment.cpp",
   "$_src/gpu/ganesh/GrAttachment.h",
+  "$_src/gpu/ganesh/GrAuditTrail.cpp",
   "$_src/gpu/ganesh/GrAuditTrail.h",
   "$_src/gpu/ganesh/GrAutoLocaleSetter.h",
   "$_src/gpu/ganesh/GrBackendSemaphore.cpp",
@@ -48,9 +54,15 @@ skia_gpu_sources = [
   "$_src/gpu/ganesh/GrBackendUtils.cpp",
   "$_src/gpu/ganesh/GrBackendUtils.h",
   "$_src/gpu/ganesh/GrBaseContextPriv.h",
+  "$_src/gpu/ganesh/GrBlurUtils.cpp",
+  "$_src/gpu/ganesh/GrBlurUtils.h",
   "$_src/gpu/ganesh/GrBuffer.h",
   "$_src/gpu/ganesh/GrBufferAllocPool.cpp",
   "$_src/gpu/ganesh/GrBufferAllocPool.h",
+  "$_src/gpu/ganesh/GrBufferTransferRenderTask.cpp",
+  "$_src/gpu/ganesh/GrBufferTransferRenderTask.h",
+  "$_src/gpu/ganesh/GrBufferUpdateRenderTask.cpp",
+  "$_src/gpu/ganesh/GrBufferUpdateRenderTask.h",
   "$_src/gpu/ganesh/GrCaps.cpp",
   "$_src/gpu/ganesh/GrCaps.h",
   "$_src/gpu/ganesh/GrClientMappedBufferManager.cpp",
@@ -84,6 +96,8 @@ skia_gpu_sources = [
   "$_src/gpu/ganesh/GrDrawIndirectCommand.h",
   "$_src/gpu/ganesh/GrDrawOpAtlas.cpp",
   "$_src/gpu/ganesh/GrDrawOpAtlas.h",
+  "$_src/gpu/ganesh/GrDrawOpTest.cpp",
+  "$_src/gpu/ganesh/GrDrawOpTest.h",
   "$_src/gpu/ganesh/GrDrawingManager.cpp",
   "$_src/gpu/ganesh/GrDrawingManager.h",
   "$_src/gpu/ganesh/GrDriverBugWorkarounds.cpp",
@@ -237,8 +251,17 @@ skia_gpu_sources = [
   "$_src/gpu/ganesh/GrYUVABackendTextures.cpp",
   "$_src/gpu/ganesh/GrYUVATextureProxies.cpp",
   "$_src/gpu/ganesh/GrYUVATextureProxies.h",
+  "$_src/gpu/ganesh/PathRenderer.cpp",
+  "$_src/gpu/ganesh/PathRenderer.h",
+  "$_src/gpu/ganesh/PathRendererChain.cpp",
+  "$_src/gpu/ganesh/PathRendererChain.h",
+  "$_src/gpu/ganesh/StencilClip.h",
+  "$_src/gpu/ganesh/StencilMaskHelper.cpp",
+  "$_src/gpu/ganesh/StencilMaskHelper.h",
   "$_src/gpu/ganesh/SurfaceContext.cpp",
   "$_src/gpu/ganesh/SurfaceContext.h",
+  "$_src/gpu/ganesh/SurfaceDrawContext.cpp",
+  "$_src/gpu/ganesh/SurfaceDrawContext.h",
   "$_src/gpu/ganesh/SurfaceFillContext.cpp",
   "$_src/gpu/ganesh/SurfaceFillContext.h",
 
@@ -361,8 +384,6 @@ skia_gpu_sources = [
   "$_src/gpu/ganesh/mock/GrMockTypes.cpp",
 
   # Sk files
-  "$_src/gpu/ganesh/BaseDevice.cpp",
-  "$_src/gpu/ganesh/BaseDevice.h",
   "$_src/gpu/ganesh/SkGr.cpp",
   "$_src/gpu/ganesh/SkGr.h",
   "$_src/image/SkImage_Gpu.cpp",
@@ -438,12 +459,6 @@ skia_null_gpu_sources =
     [ "$_src/gpu/ganesh/gl/GrGLMakeNativeInterface_none.cpp" ]
 
 skia_skgpu_v1_sources = [
-  "$_src/gpu/ganesh/GrAuditTrail.cpp",
-  "$_src/gpu/ganesh/GrBlurUtils.cpp",
-  "$_src/gpu/ganesh/GrBlurUtils.h",
-  "$_src/gpu/ganesh/GrDrawOpTest.cpp",
-  "$_src/gpu/ganesh/GrDrawOpTest.h",
-
   # Ops
   "$_src/gpu/ganesh/ops/AAConvexPathRenderer.cpp",
   "$_src/gpu/ganesh/ops/AAConvexPathRenderer.h",
@@ -525,24 +540,6 @@ skia_skgpu_v1_sources = [
   "$_src/gpu/ganesh/ops/TextureOp.h",
   "$_src/gpu/ganesh/ops/TriangulatingPathRenderer.cpp",
   "$_src/gpu/ganesh/ops/TriangulatingPathRenderer.h",
-
-  # v1
-  "$_src/gpu/ganesh/v1/ClipStack.cpp",
-  "$_src/gpu/ganesh/v1/ClipStack.h",
-  "$_src/gpu/ganesh/v1/Device.cpp",
-  "$_src/gpu/ganesh/v1/Device_drawTexture.cpp",
-  "$_src/gpu/ganesh/v1/Device_v1.h",
-  "$_src/gpu/ganesh/v1/PathRenderer.cpp",
-  "$_src/gpu/ganesh/v1/PathRenderer.h",
-  "$_src/gpu/ganesh/v1/PathRendererChain.cpp",
-  "$_src/gpu/ganesh/v1/PathRendererChain.h",
-  "$_src/gpu/ganesh/v1/StencilClip.h",
-  "$_src/gpu/ganesh/v1/StencilMaskHelper.cpp",
-  "$_src/gpu/ganesh/v1/StencilMaskHelper.h",
-  "$_src/gpu/ganesh/v1/SurfaceDrawContext.cpp",
-  "$_src/gpu/ganesh/v1/SurfaceDrawContext_v1.h",
-  "$_src/gpu/ganesh/v1/SurfaceFillContext_v1.cpp",
-  "$_src/gpu/ganesh/v1/SurfaceFillContext_v1.h",
 ]
 
 skia_gpu_sources += skia_skgpu_v1_sources
@@ -552,7 +549,6 @@ skia_vk_sources = [
   "$_include/gpu/vk/GrVkExtensions.h",
   "$_include/gpu/vk/GrVkMemoryAllocator.h",
   "$_include/gpu/vk/GrVkTypes.h",
-  "$_include/gpu/vk/GrVkVulkan.h",
   "$_include/private/gpu/ganesh/GrVkTypesPriv.h",
   "$_src/gpu/ganesh/vk/GrVkAMDMemoryAllocator.cpp",
   "$_src/gpu/ganesh/vk/GrVkAMDMemoryAllocator.h",
@@ -570,7 +566,6 @@ skia_vk_sources = [
   "$_src/gpu/ganesh/vk/GrVkDescriptorSet.h",
   "$_src/gpu/ganesh/vk/GrVkDescriptorSetManager.cpp",
   "$_src/gpu/ganesh/vk/GrVkDescriptorSetManager.h",
-  "$_src/gpu/ganesh/vk/GrVkExtensions.cpp",
   "$_src/gpu/ganesh/vk/GrVkFramebuffer.cpp",
   "$_src/gpu/ganesh/vk/GrVkFramebuffer.h",
   "$_src/gpu/ganesh/vk/GrVkGpu.cpp",
@@ -835,4 +830,19 @@ skia_shared_gpu_sources = [
   "$_src/text/gpu/TextBlob.h",
   "$_src/text/gpu/TextBlobRedrawCoordinator.cpp",
   "$_src/text/gpu/TextBlobRedrawCoordinator.h",
+]
+
+skia_shared_vk_sources = [
+  "$_include/gpu/vk/VulkanExtensions.h",
+  "$_include/gpu/vk/VulkanTypes.h",
+  "$_include/private/gpu/vk/SkiaVulkan.h",
+  "$_src/gpu/vk/VulkanExtensions.cpp",
+]
+
+skia_piet_gpu_sources = [
+  "$_src/gpu/piet/PietTypes.h",
+  "$_src/gpu/piet/Render.cpp",
+  "$_src/gpu/piet/Render.h",
+  "$_src/gpu/piet/Scene.cpp",
+  "$_src/gpu/piet/Scene.h",
 ]

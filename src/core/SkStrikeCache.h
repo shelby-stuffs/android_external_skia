@@ -139,16 +139,22 @@ public:
             sktext::gpu::StrikeCache* gpuStrikeCache) const;
 #endif
 
-    void prepareForMaskDrawing(
-            SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) override {
-        size_t increase = fScalerCache.prepareForMaskDrawing(accepted, rejected);
+    SkRect prepareForMaskDrawing(SkScalar strikeToSourceScale,
+                                 SkDrawableGlyphBuffer* accepted,
+                                 SkSourceGlyphBuffer* rejected) override {
+        auto [rect, increase] = fScalerCache.prepareForMaskDrawing(
+                strikeToSourceScale, accepted, rejected);
         this->updateDelta(increase);
+        return rect;
     }
 
-    void prepareForSDFTDrawing(
-            SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) override {
-        size_t increase = fScalerCache.prepareForSDFTDrawing(accepted, rejected);
+    SkRect prepareForSDFTDrawing(SkScalar strikeToSourceScale,
+                                 SkDrawableGlyphBuffer* accepted,
+                                 SkSourceGlyphBuffer* rejected) override {
+        auto [rect, increase] = fScalerCache.prepareForSDFTDrawing(
+                strikeToSourceScale, accepted, rejected);
         this->updateDelta(increase);
+        return rect;
     }
 
     void prepareForPathDrawing(
@@ -166,6 +172,15 @@ public:
             SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) override {
         size_t increase = fScalerCache.prepareForDrawableDrawing(accepted, rejected);
         this->updateDelta(increase);
+    }
+
+    void glyphIDsToDrawables(SkSpan<sktext::IDOrDrawable> idsOrDrawables) {
+        size_t increase = fScalerCache.glyphIDsToDrawables(idsOrDrawables);
+        this->updateDelta(increase);
+    }
+
+    sktext::SkStrikePromise strikePromise() override {
+        return sktext::SkStrikePromise(sk_ref_sp<SkStrike>(this));
     }
 
     SkScalar findMaximumGlyphDimension(SkSpan<const SkGlyphID> glyphs) override {
@@ -210,9 +225,6 @@ public:
     sk_sp<SkStrike> findOrCreateStrike(const SkStrikeSpec& strikeSpec) SK_EXCLUDES(fLock);
 
     sktext::ScopedStrikeForGPU findOrCreateScopedStrike(
-            const SkStrikeSpec& strikeSpec) override SK_EXCLUDES(fLock);
-
-    sktext::StrikeRef findOrCreateStrikeRef(
             const SkStrikeSpec& strikeSpec) override SK_EXCLUDES(fLock);
 
     static void PurgeAll();

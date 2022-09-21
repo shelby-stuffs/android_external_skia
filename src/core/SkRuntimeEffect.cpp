@@ -31,10 +31,11 @@
 #include "src/core/SkWriteBuffer.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLCompiler.h"
-#include "src/sksl/SkSLSharedCompiler.h"
 #include "src/sksl/SkSLUtil.h"
+#include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/codegen/SkSLVMCodeGenerator.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
+#include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/tracing/SkVMDebugTrace.h"
 
@@ -310,6 +311,14 @@ SkSL::ProgramSettings SkRuntimeEffect::MakeSettings(const Options& options) {
     settings.fForceNoInline = options.forceUnoptimized;
     settings.fOptimize = !options.forceUnoptimized;
     settings.fMaxVersionAllowed = options.maxVersionAllowed;
+
+    // SkSL created by the GPU backend is typically parsed, converted to a backend format,
+    // and the IR is immediately discarded. In that situation, it makes sense to use node
+    // pools to accelerate the IR allocations. Here, SkRuntimeEffect instances are often
+    // long-lived (especially those created internally for runtime FPs). In this situation,
+    // we're willing to pay for a slightly longer compile so that we don't waste huge
+    // amounts of memory.
+    settings.fUseMemoryPool = false;
     return settings;
 }
 
@@ -320,26 +329,24 @@ SkSL::ProgramSettings SkRuntimeEffect::MakeSettings(const Options& options) {
 SkRuntimeEffect::Result SkRuntimeEffect::MakeFromSource(SkString sksl,
                                                         const Options& options,
                                                         SkSL::ProgramKind kind) {
-    std::unique_ptr<SkSL::Program> program;
-    {
-        // We keep this SharedCompiler in a separate scope to make sure it's destroyed before
-        // calling the Make overload at the end, which creates its own (non-reentrant)
-        // SharedCompiler instance
-        SkSL::SharedCompiler compiler;
-        SkSL::Program::Settings settings = MakeSettings(options);
-        program = compiler->convertProgram(kind, std::string(sksl.c_str(), sksl.size()), settings);
+    std::unique_ptr<SkSL::ShaderCaps> caps = SkSL::ShaderCapsFactory::Standalone();
+    SkSL::Compiler compiler(caps.get());
+    SkSL::ProgramSettings settings = MakeSettings(options);
+    std::unique_ptr<SkSL::Program> program =
+            compiler.convertProgram(kind, std::string(sksl.c_str(), sksl.size()), settings);
 
-        if (!program) {
-            RETURN_FAILURE("%s", compiler->errorText().c_str());
-        }
+    if (!program) {
+        RETURN_FAILURE("%s", compiler.errorText().c_str());
     }
+
     return MakeInternal(std::move(program), options, kind);
 }
 
 SkRuntimeEffect::Result SkRuntimeEffect::MakeInternal(std::unique_ptr<SkSL::Program> program,
                                                       const Options& options,
                                                       SkSL::ProgramKind kind) {
-    SkSL::SharedCompiler compiler;
+    std::unique_ptr<SkSL::ShaderCaps> caps = SkSL::ShaderCapsFactory::Standalone();
+    SkSL::Compiler compiler(caps.get());
 
     // TODO(skia:11209): Figure out a way to run ES3+ color filters on the CPU. This doesn't need
     // to be fast - it could just be direct IR evaluation. But without it, there's no way for us
@@ -403,7 +410,7 @@ SkRuntimeEffect::Result SkRuntimeEffect::MakeInternal(std::unique_ptr<SkSL::Prog
     std::vector<Child> children;
     std::vector<SkSL::SampleUsage> sampleUsages;
     int elidedSampleCoords = 0;
-    const SkSL::Context& ctx(compiler->context());
+    const SkSL::Context& ctx(compiler.context());
 
     // Go through program elements, pulling out information that we need
     for (const SkSL::ProgramElement* elem : program->elements()) {
@@ -473,22 +480,18 @@ sk_sp<SkRuntimeEffect> SkRuntimeEffect::makeUnoptimizedClone() {
     // Attempt to recompile the program's source with optimizations off. This ensures that the
     // Debugger shows results on every line, even for things that could be optimized away (static
     // branches, unused variables, etc). If recompilation fails, we fall back to the original code.
-    std::unique_ptr<SkSL::Program> program;
-    {
-        // We keep this SharedCompiler in a separate scope to make sure it's destroyed before
-        // calling MakeInternal at the end, which creates its own (non-reentrant) SharedCompiler
-        // instance.
-        SkSL::SharedCompiler compiler;
-        SkSL::Program::Settings settings = MakeSettings(options);
-        program = compiler->convertProgram(kind, *fBaseProgram->fSource, settings);
+    std::unique_ptr<SkSL::ShaderCaps> caps = SkSL::ShaderCapsFactory::Standalone();
+    SkSL::Compiler compiler(caps.get());
+    SkSL::ProgramSettings settings = MakeSettings(options);
+    std::unique_ptr<SkSL::Program> program =
+            compiler.convertProgram(kind, *fBaseProgram->fSource, settings);
 
-        if (!program) {
-            // Turning off compiler optimizations can theoretically expose a program error that
-            // had been optimized away (e.g. "all control paths return a value" might appear if
-            // optimizing a program simplifies its control flow).
-            // If this happens, the debugger will just have to show the optimized code.
-            return sk_ref_sp(this);
-        }
+    if (!program) {
+        // Turning off compiler optimizations can theoretically expose a program error that
+        // had been optimized away (e.g. "all control paths return a value" might be found on a path
+        // that is completely eliminated in the optimized program).
+        // If this happens, the debugger will just have to show the optimized code.
+        return sk_ref_sp(this);
     }
 
     SkRuntimeEffect::Result result = MakeInternal(std::move(program), options, kind);
@@ -887,7 +890,8 @@ static GrFPResult make_effect_fp(sk_sp<SkRuntimeEffect> effect,
             auto [success, childFP] = as_CFB(child.colorFilter())
                                               ->asFragmentProcessor(/*inputFP=*/nullptr,
                                                                     childArgs.fContext,
-                                                                    *childArgs.fDstColorInfo);
+                                                                    *childArgs.fDstColorInfo,
+                                                                    childArgs.fSurfaceProps);
             if (!success) {
                 return GrFPFailure(std::move(inputFP));
             }
@@ -918,6 +922,29 @@ static GrFPResult make_effect_fp(sk_sp<SkRuntimeEffect> effect,
     return GrFPSuccess(std::move(fp));
 }
 #endif
+
+static void add_children_to_key(SkSpan<const SkRuntimeEffect::ChildPtr> children,
+                                const SkKeyContext& keyContext,
+                                SkPaintParamsKeyBuilder* builder,
+                                SkPipelineDataGatherer* gatherer) {
+    for (const SkRuntimeEffect::ChildPtr& child : children) {
+        std::optional<ChildType> type = child.type();
+        if (type == ChildType::kShader) {
+            as_SB(child.shader())->addToKey(keyContext, builder, gatherer);
+        } else if (type == ChildType::kColorFilter) {
+            as_CFB(child.colorFilter())->addToKey(keyContext, builder, gatherer);
+        } else if (type == ChildType::kBlender) {
+            as_BB(child.blender())->addToKey(keyContext, builder, gatherer,
+                                             /*primitiveColorBlender=*/false);
+        } else {
+            // Patch in a "passthrough" child effect that returns the input color as-is.
+            // TODO(skia:13508): if the child is a blender, we should blend the two inputs using
+            // SrcOver, not pass through the source color.
+            PassthroughShaderBlock::BeginBlock(keyContext, builder, gatherer);
+            builder->endBlock();
+        }
+    }
+}
 
 class RuntimeEffectVMCallbacks : public SkSL::SkVMCallbacks {
 public:
@@ -997,7 +1024,8 @@ public:
 #if SK_SUPPORT_GPU
     GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
                                    GrRecordingContext* context,
-                                   const GrColorInfo& colorInfo) const override {
+                                   const GrColorInfo& colorInfo,
+                                   const SkSurfaceProps& props) const override {
         sk_sp<const SkData> uniforms = SkRuntimeEffectPriv::TransformUniforms(
                 fEffect->uniforms(),
                 fUniforms,
@@ -1005,7 +1033,7 @@ public:
         SkASSERT(uniforms);
 
         SkOverrideDeviceMatrixProvider matrixProvider(SkMatrix::I());
-        GrFPArgs childArgs(context, matrixProvider, &colorInfo);
+        GrFPArgs childArgs(context, matrixProvider, &colorInfo, props);
         return make_effect_fp(fEffect,
                               "runtime_color_filter",
                               std::move(uniforms),
@@ -1015,6 +1043,16 @@ public:
                               childArgs);
     }
 #endif
+
+    void addToKey(const SkKeyContext& keyContext,
+                  SkPaintParamsKeyBuilder* builder,
+                  SkPipelineDataGatherer* gatherer) const override {
+        RuntimeColorFilterBlock::BeginBlock(keyContext, builder, gatherer, {fEffect, fUniforms});
+
+        add_children_to_key(fChildren, keyContext, builder, gatherer);
+
+        builder->endBlock();
+    }
 
     bool onAppendStages(const SkStageRec& rec, bool shaderIsOpaque) const override {
         return false;
@@ -1166,13 +1204,16 @@ public:
                 args.fDstColorInfo->colorSpace());
         SkASSERT(uniforms);
 
+        // We handle the pre-local matrix at this level so strip it out.
+        GrFPArgs fpArgs = args;
+        fpArgs.fPreLocalMatrix = nullptr;
         auto [success, fp] = make_effect_fp(fEffect,
                                             "runtime_shader",
                                             std::move(uniforms),
                                             /*inputFP=*/nullptr,
                                             /*destColorFP=*/nullptr,
                                             SkSpan(fChildren),
-                                            args);
+                                            fpArgs);
         if (!success) {
             return nullptr;
         }
@@ -1187,20 +1228,7 @@ public:
         RuntimeShaderBlock::BeginBlock(keyContext, builder, gatherer,
                                        {fEffect, this->getLocalMatrix(), fUniforms});
 
-        for (const SkRuntimeEffect::ChildPtr& child : fChildren) {
-            std::optional<ChildType> type = child.type();
-            if (type == ChildType::kShader) {
-                as_SB(child.shader())->addToKey(keyContext, builder, gatherer);
-            } else if (type == ChildType::kColorFilter) {
-                as_CFB(child.colorFilter())->addToKey(keyContext, builder, gatherer);
-            } else if (type == ChildType::kBlender) {
-                as_BB(child.blender())->addToKey(keyContext, builder, gatherer);
-            } else {
-                // Patch in a "passthrough" child effect that returns the input color as-is.
-                PassthroughShaderBlock::BeginBlock(keyContext, builder, gatherer);
-                builder->endBlock();
-            }
-        }
+        add_children_to_key(fChildren, keyContext, builder, gatherer);
 
         builder->endBlock();
     }
@@ -1473,7 +1501,8 @@ sk_sp<SkImage> SkRuntimeEffect::makeImage(GrRecordingContext* rContext,
 
         SkOverrideDeviceMatrixProvider matrixProvider(SkMatrix::I());
         GrColorInfo colorInfo(resultInfo.colorInfo());
-        GrFPArgs args(rContext, matrixProvider, &colorInfo);
+        SkSurfaceProps props{}; // the images this function creates always use the defaults
+        GrFPArgs args(rContext, matrixProvider, &colorInfo, props);
         SkSTArray<8, std::unique_ptr<GrFragmentProcessor>> childFPs;
         for (size_t i = 0; i < children.size(); ++i) {
             // TODO: add support for other types of child effects

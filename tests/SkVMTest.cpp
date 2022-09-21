@@ -14,6 +14,7 @@
 #include "src/gpu/ganesh/GrShaderCaps.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/codegen/SkSLVMCodeGenerator.h"
+#include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/tracing/SkVMDebugTrace.h"
 #include "src/utils/SkVMVisualizer.h"
 #include "tests/Test.h"
@@ -2852,7 +2853,7 @@ DEF_TEST(SkVM_Visualizer, r) {
             "}";
     GrShaderCaps caps;
     SkSL::Compiler compiler(&caps);
-    SkSL::Program::Settings settings;
+    SkSL::ProgramSettings settings;
     auto program = compiler.convertProgram(SkSL::ProgramKind::kGeneric,
                                            std::string(src), settings);
     const SkSL::FunctionDefinition* main = SkSL::Program_GetFunction(*program, "main");
@@ -2863,24 +2864,13 @@ DEF_TEST(SkVM_Visualizer, r) {
     SkSL::ProgramToSkVM(*program, *main, &b, &d, /*uniforms=*/{});
 
     skvm::Program p = b.done(nullptr, true, std::move(v));
-#if defined(SKVM_JIT)
-    SkDynamicMemoryWStream asmFile;
-    p.disassemble(&asmFile);
-    auto dumpData = asmFile.detachAsData();
-    std::string dumpString((const char*)dumpData->data(), dumpData->size());
-#else
-    std::string dumpString;
-#endif
     SkDynamicMemoryWStream vizFile;
-    p.visualizer()->dump(&vizFile, dumpString.c_str());
+    p.visualizer()->dump(&vizFile);
     auto vizData = vizFile.detachAsData();
     std::string html((const char*)vizData->data(), vizData->size());
     //b.dump();
     //std::printf(html.c_str());
     // Check that html contains all types of information:
-    if (!dumpString.empty() && !std::strstr(dumpString.c_str(), "Program not JIT'd.")) {
-        REPORTER_ASSERT(r, std::strstr(html.c_str(), "<tr class='machine'>"));  // machine commands
-    }
     REPORTER_ASSERT(r, std::strstr(html.c_str(), "<tr class='normal'>"));       // SkVM byte code
     REPORTER_ASSERT(r, std::strstr(html.c_str(), "<tr class='source'>"));       // C++ source
     REPORTER_ASSERT(r, std::strstr(html.c_str(), "<tr class='dead'>"));         // dead code

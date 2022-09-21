@@ -182,7 +182,7 @@ bool SkShaderBase::onAppendStages(const SkStageRec& rec) const {
     }
 
     ContextRec cr(*opaquePaint, rec.fMatrixProvider.localToDevice(), rec.fLocalM, rec.fDstColorType,
-                  sk_srgb_singleton());
+                  sk_srgb_singleton(), rec.fSurfaceProps);
 
     struct CallbackCtx : SkRasterPipeline_CallbackCtx {
         sk_sp<const SkShader> shader;
@@ -195,7 +195,7 @@ bool SkShaderBase::onAppendStages(const SkStageRec& rec) const {
         auto c = (CallbackCtx*)self;
         int x = (int)c->rgba[0],
             y = (int)c->rgba[1];
-        SkPMColor tmp[SkRasterPipeline_kMaxStride];
+        SkPMColor tmp[SkRasterPipeline_kMaxStride_highp];
         c->ctx->shadeSpan(x,y, tmp, active_pixels);
 
         for (int i = 0; i < active_pixels; i++) {

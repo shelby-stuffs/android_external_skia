@@ -10,6 +10,7 @@
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/graphite/Buffer.h"
+#include "src/gpu/graphite/ComputePipeline.h"
 #include "src/gpu/graphite/GraphicsPipeline.h"
 #include "src/gpu/graphite/Sampler.h"
 #include "src/gpu/graphite/Texture.h"
@@ -76,6 +77,24 @@ bool CommandBuffer::addRenderPass(const RenderPassDesc& renderPassDesc,
     return true;
 }
 
+bool CommandBuffer::addComputePass(const ComputePassDesc& computePassDesc,
+                                   sk_sp<ComputePipeline> pipeline,
+                                   const std::vector<ResourceBinding>& bindings) {
+    if (!this->onAddComputePass(computePassDesc, pipeline.get(), bindings)) {
+        return false;
+    }
+
+    this->trackResource(std::move(pipeline));
+
+    for (const auto& binding : bindings) {
+        this->trackResource(binding.fResource.fBuffer);
+    }
+
+    SkDEBUGCODE(fHasWork = true;)
+
+    return true;
+}
+
 bool CommandBuffer::copyTextureToBuffer(sk_sp<Texture> texture,
                                         SkIRect srcRect,
                                         sk_sp<Buffer> buffer,
@@ -115,5 +134,28 @@ bool CommandBuffer::copyBufferToTexture(const Buffer* buffer,
 
     return true;
 }
+
+bool CommandBuffer::synchronizeBufferToCpu(sk_sp<Buffer> buffer) {
+    SkASSERT(buffer);
+
+    bool didResultInWork = false;
+    if (!this->onSynchronizeBufferToCpu(buffer.get(), &didResultInWork)) {
+        return false;
+    }
+
+    if (didResultInWork) {
+        this->trackResource(std::move(buffer));
+        SkDEBUGCODE(fHasWork = true;)
+    }
+
+    return true;
+}
+
+#ifdef SK_ENABLE_PIET_GPU
+void CommandBuffer::renderPietScene(const skgpu::piet::Scene& scene, sk_sp<Texture> target) {
+    this->onRenderPietScene(scene, target.get());
+    this->trackResource(std::move(target));
+}
+#endif
 
 } // namespace skgpu::graphite

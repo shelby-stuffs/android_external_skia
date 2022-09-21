@@ -2,6 +2,20 @@ Skia Graphics Release Notes
 
 This file includes a list of high level updates for each milestone release.
 
+Milestone 106
+-------------
+  * sk_sp is marked with the [[clang::trivial_abi]] attribute where supported.
+  * SkMesh API: Allows a user to draw a vertex mesh with custom attributes and
+    varyings using SkSL. Mesh data (vertex and index) can be created on a
+    GrDirectContext to avoid re-uploading data per draw. Currently does not
+    work with SkPicture or any backend but GPU.
+  * Added SkColorFilters::Blend(const SkColor4f&, sk_sp<SkColorSpace>, SkBlendMode) to
+    complement the existing SkColorFilters::Blend(SkColor, SkBlendMode) factory.
+  * The experimental C API was removed.
+  * Added support for AVIF decoding using libavif.
+
+* * *
+
 Milestone 104
 -------------
   * New functions SkBitmap::getColor4f and SkPixmap::getColor4f return float colors.
@@ -20,6 +34,8 @@ Milestone 104
   * New functions SkCanvas::getBaseProps and SkCanvas::getTopProps; SkCanvas::getBaseProps is a
     direct replacement for the (now deprecated) SkCanvas::getProps function, while getTopProps is
     a variant that returns the SkSurfaceProps that are active in the current layer.
+  * New function SkEventTracer::newTracingSection(const char* name) enables splitting traces up
+    into different sections for a selection of backend tracing frameworks (Perfetto, SkDebugf).
 
 * * *
 

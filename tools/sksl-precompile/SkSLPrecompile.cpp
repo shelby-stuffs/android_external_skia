@@ -16,11 +16,11 @@
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLDehydrator.h"
 #include "src/sksl/SkSLFileOutputStream.h"
+#include "src/sksl/SkSLModuleLoader.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/SkSLUtil.h"
-#include "src/sksl/ir/SkSLUnresolvedFunction.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
-#include "src/utils/SkOSPath.h"
 #include "src/utils/SkShaderUtils.h"
 
 #include <fstream>
@@ -49,6 +49,16 @@ enum class ResultCode {
     kOutputError = 3,
 };
 
+static std::string base_name(const std::string& path) {
+    size_t slashPos = path.find_last_of("/\\");
+    return path.substr(slashPos == std::string::npos ? 0 : slashPos + 1);
+}
+
+static std::string remove_extension(const std::string& path) {
+    size_t dotPos = path.find_last_of('.');
+    return path.substr(0, dotPos);
+}
+
 /**
  * Displays a usage banner; used when the command line arguments don't make sense.
  */
@@ -65,7 +75,7 @@ ResultCode processCommand(const std::vector<std::string>& paths) {
         return ResultCode::kInputError;
     }
 
-    SkSL::Program::Settings settings;
+    SkSL::ProgramSettings settings;
     auto standaloneCaps = SkSL::ShaderCapsFactory::Standalone();
     const SkSL::ShaderCaps* caps = standaloneCaps.get();
 
@@ -80,7 +90,8 @@ ResultCode processCommand(const std::vector<std::string>& paths) {
     // Each module inherits the symbols from its parent module.
     SkSL::Compiler compiler(caps);
     std::list<SkSL::LoadedModule> modules;
-    std::shared_ptr<SkSL::SymbolTable> inheritedSymbols = nullptr;
+    std::shared_ptr<SkSL::SymbolTable> inheritedSymbols =
+            SkSL::ModuleLoader::Get().rootModule().fSymbols;
     for (int inputIdx = paths.size() - 1; inputIdx >= 1; --inputIdx) {
         const std::string& modulePath = paths[inputIdx];
         std::ifstream in(modulePath);
@@ -92,8 +103,8 @@ ResultCode processCommand(const std::vector<std::string>& paths) {
 
         modules.push_front(compiler.loadModule(SkSL::ProgramKind::kFragment,
                                                SkSL::Compiler::MakeModulePath(modulePath.c_str()),
-                                               /*base=*/inheritedSymbols,
-                                               /*dehydrate=*/inheritedSymbols == nullptr));
+                                               SkSL::ModuleLoader::Get().coreModifiers(),
+                                               /*base=*/inheritedSymbols));
         inheritedSymbols = modules.front().fSymbols;
     }
 
@@ -103,10 +114,7 @@ ResultCode processCommand(const std::vector<std::string>& paths) {
     SkSL::Dehydrator dehydrator;
     dehydrator.write(*module.fSymbols);
     dehydrator.write(module.fElements);
-    SkString baseName = SkOSPath::Basename(inputPath.c_str());
-    if (int extension = baseName.findLastOf('.'); extension > 0) {
-        baseName.resize(extension);
-    }
+    std::string baseName = remove_extension(base_name(inputPath));
 
     SkSL::StringStream buffer;
     dehydrator.finish(buffer);

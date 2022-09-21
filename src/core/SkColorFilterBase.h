@@ -23,6 +23,7 @@ class SkKeyContext;
 class SkPaintParamsKeyBuilder;
 class SkPipelineDataGatherer;
 class SkRuntimeEffect;
+class SkSurfaceProps;
 struct SkStageRec;
 using GrFPResult = std::tuple<bool, std::unique_ptr<GrFragmentProcessor>>;
 
@@ -51,14 +52,13 @@ public:
      */
     virtual GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
                                            GrRecordingContext* context,
-                                           const GrColorInfo& dstColorInfo) const;
+                                           const GrColorInfo& dstColorInfo,
+                                           const SkSurfaceProps& props) const;
 #endif
 
     bool affectsTransparentBlack() const {
         return this->filterColor(SK_ColorTRANSPARENT) != SK_ColorTRANSPARENT;
     }
-
-    static void RegisterFlattenables();
 
     virtual SkRuntimeEffect* asRuntimeEffect() const { return nullptr; }
 
@@ -125,5 +125,13 @@ static inline const SkColorFilterBase* as_CFB(const sk_sp<SkColorFilter>& filter
 static inline sk_sp<SkColorFilterBase> as_CFB_sp(sk_sp<SkColorFilter> filter) {
     return sk_sp<SkColorFilterBase>(static_cast<SkColorFilterBase*>(filter.release()));
 }
+
+
+void SkRegisterComposeColorFilterFlattenable();
+void SkRegisterMatrixColorFilterFlattenable();
+void SkRegisterModeColorFilterFlattenable();
+void SkRegisterSRGBGammaColorFilterFlattenable();
+void SkRegisterTableColorFilterFlattenable();
+void SkRegisterWorkingFormatColorFilterFlattenable();
 
 #endif

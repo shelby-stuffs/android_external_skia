@@ -22,10 +22,10 @@
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/GrTextureProxyPriv.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/gpu/ganesh/mock/GrMockGpu.h"
 #include "src/gpu/ganesh/ops/GrDrawOp.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 
 // This test verifies that lazy proxy callbacks get invoked during flush, after onFlush callbacks,
 // but before Ops are executed. It also ensures that lazy proxy callbacks are invoked both for
@@ -217,7 +217,7 @@ private:
     bool fHasClipTexture;
 };
 
-DEF_GPUTEST(LazyProxyTest, reporter, /* options */) {
+DEF_GPUTEST(LazyProxyTest, reporter, /* options */, CtsEnforcement::kApiLevel_T) {
     GrMockOptions mockOptions;
     mockOptions.fConfigOptions[(int)GrColorType::kAlpha_F16].fRenderability =
             GrMockOptions::ConfigOptions::Renderability::kNonMSAA;
@@ -245,7 +245,7 @@ DEF_GPUTEST(LazyProxyTest, reporter, /* options */) {
 
 static const int kSize = 16;
 
-DEF_GPUTEST(LazyProxyReleaseTest, reporter, /* options */) {
+DEF_GPUTEST(LazyProxyReleaseTest, reporter, /* options */, CtsEnforcement::kApiLevel_T) {
     GrMockOptions mockOptions;
     sk_sp<GrDirectContext> ctx = GrDirectContext::MakeMock(&mockOptions, GrContextOptions());
     auto proxyProvider = ctx->priv().proxyProvider();
@@ -411,7 +411,10 @@ private:
 
 // Test that when a lazy proxy fails to instantiate during flush that we drop the Op that it was
 // associated with.
-DEF_GPUTEST(LazyProxyFailedInstantiationTest, reporter, /* options */) {
+DEF_GPUTEST(LazyProxyFailedInstantiationTest,
+            reporter,
+            /* options */,
+            CtsEnforcement::kApiLevel_T) {
     GrMockOptions mockOptions;
     sk_sp<GrDirectContext> ctx = GrDirectContext::MakeMock(&mockOptions, GrContextOptions());
     GrProxyProvider* proxyProvider = ctx->priv().proxyProvider();

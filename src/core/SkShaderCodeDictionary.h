@@ -8,26 +8,39 @@
 #ifndef SkShaderCodeDictionary_DEFINED
 #define SkShaderCodeDictionary_DEFINED
 
-#include <array>
-#include <unordered_map>
-#include <vector>
 #include "include/core/SkSpan.h"
+#include "include/core/SkTypes.h"
+#include "include/private/SkMacros.h"
 #include "include/private/SkSpinlock.h"
 #include "include/private/SkTHash.h"
+#include "include/private/SkThreadAnnotations.h"
+#include "include/private/SkTo.h"
 #include "include/private/SkUniquePaintParamsID.h"
 #include "src/core/SkArenaAlloc.h"
+#include "src/core/SkBuiltInCodeSnippetID.h"
 #include "src/core/SkEnumBitMask.h"
 #include "src/core/SkPaintParamsKey.h"
-#include "src/core/SkPipelineData.h"
 #include "src/core/SkUniform.h"
 
-namespace SkSL {
-struct ShaderCaps;
-}
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
 
-class SkBlenderID;
+#ifdef SK_GRAPHITE_ENABLED
+namespace skgpu::graphite {
+class RenderStep;
+}
+#endif
+
 class SkRuntimeEffect;
 class SkRuntimeEffectDictionary;
+#ifdef SK_ENABLE_PRECOMPILE
+class SkBlenderID;
+#endif
 
 // TODO: How to represent the type (e.g., 2D) of texture being sampled?
 class SkTextureAndSampler {
@@ -80,7 +93,10 @@ struct SkShaderSnippet {
             , fNumChildren(numChildren)
             , fDataPayloadExpectations(dataPayloadExpectations) {}
 
-    std::string getMangledUniformName(int uniformIndex, int mangleId) const;
+    std::string getMangledUniformName(const SkShaderInfo& shaderInfo,
+                                      int uniformIdx,
+                                      int mangleId) const;
+    std::string getMangledSamplerName(int samplerIdx, int mangleId) const;
 
     bool needsLocalCoords() const {
         return fSnippetRequirementFlags & SnippetRequirementFlags::kLocalCoords;
@@ -104,8 +120,10 @@ struct SkShaderSnippet {
 // for program creation and its invocation.
 class SkShaderInfo {
 public:
-    SkShaderInfo(SkRuntimeEffectDictionary* rteDict = nullptr)
-            : fRuntimeEffectDictionary(rteDict) {}
+    SkShaderInfo(const SkRuntimeEffectDictionary* rteDict = nullptr,
+                 const char* ssboIndex = nullptr)
+            : fRuntimeEffectDictionary(rteDict)
+            , fSsboIndex(ssboIndex) {}
     ~SkShaderInfo() = default;
     SkShaderInfo(SkShaderInfo&&) = default;
     SkShaderInfo& operator=(SkShaderInfo&&) = default;
@@ -127,6 +145,7 @@ public:
     const SkRuntimeEffectDictionary* runtimeEffectDictionary() const {
         return fRuntimeEffectDictionary;
     }
+    const char* ssboIndex() const { return fSsboIndex; }
 
 #ifdef SK_GRAPHITE_ENABLED
     void setBlendInfo(const skgpu::BlendInfo& blendInfo) {
@@ -135,15 +154,19 @@ public:
     const skgpu::BlendInfo& blendInfo() const { return fBlendInfo; }
 #endif
 
-#if (SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)) && defined(SK_METAL)
-    std::string toSkSL() const;
+#if defined(SK_GRAPHITE_ENABLED) && defined(SK_ENABLE_SKSL)
+    std::string toSkSL(const skgpu::graphite::RenderStep* step,
+                       const bool defineLocalCoordsVarying,
+                       const bool defineShadingSsboIndexVarying) const;
 #endif
 
 private:
     std::vector<SkPaintParamsKey::BlockReader> fBlockReaders;
 
     SkEnumBitMask<SnippetRequirementFlags> fSnippetRequirementFlags{SnippetRequirementFlags::kNone};
-    SkRuntimeEffectDictionary* fRuntimeEffectDictionary = nullptr;
+    const SkRuntimeEffectDictionary* fRuntimeEffectDictionary = nullptr;
+
+    const char* fSsboIndex;
 
 #ifdef SK_GRAPHITE_ENABLED
     // The blendInfo doesn't actually contribute to the program's creation but, it contains the
@@ -214,7 +237,7 @@ public:
         return this->getEntry(SkTo<int>(codeSnippetID));
     }
 
-    void getShaderInfo(SkUniquePaintParamsID, SkShaderInfo*);
+    void getShaderInfo(SkUniquePaintParamsID, SkShaderInfo*) const;
 
     int findOrCreateRuntimeEffectSnippet(const SkRuntimeEffect* effect);
 

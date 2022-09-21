@@ -365,6 +365,11 @@ public:
      */
     bool shouldInitializeTextures() const { return fShouldInitializeTextures; }
 
+    /**
+     * When a new GrGpuBuffer is created is it known to contain all zero bytes?
+     */
+    bool buffersAreInitiallyZero() const { return fBuffersAreInitiallyZero; }
+
     /** Returns true if the given backend supports importing AHardwareBuffers via the
      * GrAHardwarebufferImageGenerator. This will only ever be supported on Android devices with API
      * level >= 26.
@@ -512,6 +517,10 @@ public:
         return fAvoidDithering;
     }
 
+    bool disablePerspectiveSDFText() const {
+        return fDisablePerspectiveSDFText;
+    }
+
     /**
      * Checks whether the passed color type is renderable. If so, the same color type is passed
      * back along with the default format used for the color type. If not, provides an alternative
@@ -561,6 +570,7 @@ protected:
     bool fPreferFullscreenClears                     : 1;
     bool fTwoSidedStencilRefsAndMasksMustMatch       : 1;
     bool fMustClearUploadedBufferData                : 1;
+    bool fBuffersAreInitiallyZero                    : 1;
     bool fShouldInitializeTextures                   : 1;
     bool fSupportsAHardwareBufferImages              : 1;
     bool fHalfFloatVertexAttributeSupport            : 1;
@@ -585,6 +595,7 @@ protected:
     bool fNativeDrawIndexedIndirectIsBroken          : 1;
     bool fAvoidReorderingRenderTasks                 : 1;
     bool fAvoidDithering                             : 1;
+    bool fDisablePerspectiveSDFText                  : 1;
 
     // ANGLE performance workaround
     bool fPreferVRAMUseOverFlushes                   : 1;

@@ -42,7 +42,7 @@ namespace SkSL { class Type; }
 struct ProgramBuilder {
     ProgramBuilder(skiatest::Reporter* r, const char* src)
             : fCompiler(&fCaps) {
-        SkSL::Program::Settings settings;
+        SkSL::ProgramSettings settings;
         // The SkSL inliner is well tested in other contexts. Here, we disable inlining entirely,
         // to stress-test the VM generator's handling of function calls with varying signatures.
         settings.fInlineThreshold = 0;
@@ -649,7 +649,7 @@ DEF_TEST(SkSLInterpreterCompound, r) {
 static void expect_failure(skiatest::Reporter* r, const char* src) {
     SkSL::ShaderCaps caps;
     SkSL::Compiler compiler(&caps);
-    SkSL::Program::Settings settings;
+    SkSL::ProgramSettings settings;
     auto program = compiler.convertProgram(SkSL::ProgramKind::kGeneric,
                                            std::string(src), settings);
     REPORTER_ASSERT(r, !program);
@@ -716,10 +716,10 @@ DEF_TEST(SkSLInterpreterFunctions, r) {
         "float main(float x) { return sub(sqr(x), x); }\n"
 
         // Different signatures
-        "float dot(float2 a, float2 b) { return a.x*b.x + a.y*b.y; }\n"
-        "float dot(float3 a, float3 b) { return a.x*b.x + a.y*b.y + a.z*b.z; }\n"
-        "float dot3_test(float x) { return dot(float3(x, x + 1, x + 2), float3(1, -1, 2)); }\n"
-        "float dot2_test(float x) { return dot(float2(x, x + 1), float2(1, -1)); }\n";
+        "float Dot(float2 a, float2 b) { return a.x*b.x + a.y*b.y; }\n"
+        "float Dot(float3 a, float3 b) { return a.x*b.x + a.y*b.y + a.z*b.z; }\n"
+        "float Dot3_test(float x) { return dot(float3(x, x + 1, x + 2), float3(1, -1, 2)); }\n"
+        "float Dot2_test(float x) { return dot(float2(x, x + 1), float2(1, -1)); }\n";
 
     ProgramBuilder program(r, src);
 
@@ -727,8 +727,8 @@ DEF_TEST(SkSLInterpreterFunctions, r) {
     auto sqr  = SkSL::Program_GetFunction(*program, "sqr");
     auto main = SkSL::Program_GetFunction(*program, "main");
     auto tan  = SkSL::Program_GetFunction(*program, "tan");
-    auto dot3 = SkSL::Program_GetFunction(*program, "dot3_test");
-    auto dot2 = SkSL::Program_GetFunction(*program, "dot2_test");
+    auto dot3 = SkSL::Program_GetFunction(*program, "Dot3_test");
+    auto dot2 = SkSL::Program_GetFunction(*program, "Dot2_test");
 
     REPORTER_ASSERT(r, sub);
     REPORTER_ASSERT(r, sqr);
@@ -917,7 +917,7 @@ private:
 DEF_TEST(SkSLInterpreterExternalFunction, r) {
     SkSL::ShaderCaps caps;
     SkSL::Compiler compiler(&caps);
-    SkSL::Program::Settings settings;
+    SkSL::ProgramSettings settings;
     const char* src = "float main() { return externalSqrt(25); }";
     std::vector<std::unique_ptr<SkSL::ExternalFunction>> externalFunctions;
     externalFunctions.push_back(std::make_unique<ExternalSqrt>("externalSqrt", compiler));
@@ -971,7 +971,7 @@ private:
 DEF_TEST(SkSLInterpreterExternalTable, r) {
     SkSL::ShaderCaps caps;
     SkSL::Compiler compiler(&caps);
-    SkSL::Program::Settings settings;
+    SkSL::ProgramSettings settings;
     const char* src =
             "float4 main() { return float4(table(2), table(-1), table(0.4), table(0.6)); }";
     std::vector<std::unique_ptr<SkSL::ExternalFunction>> externalFunctions;
@@ -1001,7 +1001,7 @@ DEF_TEST(SkSLInterpreterExternalTable, r) {
 DEF_TEST(SkSLInterpreterTrace, r) {
     SkSL::ShaderCaps caps;
     SkSL::Compiler compiler(&caps);
-    SkSL::Program::Settings settings;
+    SkSL::ProgramSettings settings;
     settings.fOptimize = false;
 
     constexpr const char kSrc[] =

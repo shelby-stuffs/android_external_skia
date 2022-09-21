@@ -115,15 +115,19 @@ static void check_all_done(skiatest::Reporter* reporter,
                                    ReleaseBalanceExpectation::kBalanced);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(PromiseImageTest, reporter, ctxInfo) {
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(PromiseImageTest, reporter, ctxInfo, CtsEnforcement::kNever) {
     const int kWidth = 10;
     const int kHeight = 10;
 
     auto ctx = ctxInfo.directContext();
 
-    GrBackendTexture backendTex = ctx->createBackendTexture(
-            kWidth, kHeight, kRGBA_8888_SkColorType,
-            SkColors::kTransparent, GrMipmapped::kNo, GrRenderable::kYes, GrProtected::kNo);
+    GrBackendTexture backendTex = ctx->createBackendTexture(kWidth,
+                                                            kHeight,
+                                                            kRGBA_8888_SkColorType,
+                                                            SkColors::kTransparent,
+                                                            GrMipmapped::kNo,
+                                                            GrRenderable::kYes,
+                                                            GrProtected::kNo);
     REPORTER_ASSERT(reporter, backendTex.isValid());
 
     GrBackendFormat backendFormat = backendTex.getBackendFormat();
@@ -185,7 +189,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(PromiseImageTest, reporter, ctxInfo) {
     ctx->deleteBackendTexture(backendTex);
 }
 
-DEF_GPUTEST(PromiseImageTextureShutdown, reporter, ctxInfo) {
+DEF_GPUTEST(PromiseImageTextureShutdown, reporter, ctxInfo, CtsEnforcement::kNever) {
     const int kWidth = 10;
     const int kHeight = 10;
 
@@ -265,15 +269,22 @@ DEF_GPUTEST(PromiseImageTextureShutdown, reporter, ctxInfo) {
     }
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(PromiseImageTextureFullCache, reporter, ctxInfo) {
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(PromiseImageTextureFullCache,
+                                   reporter,
+                                   ctxInfo,
+                                   CtsEnforcement::kNever) {
     const int kWidth = 10;
     const int kHeight = 10;
 
     auto dContext = ctxInfo.directContext();
 
-    GrBackendTexture backendTex = dContext->createBackendTexture(
-            kWidth, kHeight, kAlpha_8_SkColorType,
-            SkColors::kTransparent, GrMipmapped::kNo, GrRenderable::kNo, GrProtected::kNo);
+    GrBackendTexture backendTex = dContext->createBackendTexture(kWidth,
+                                                                 kHeight,
+                                                                 kAlpha_8_SkColorType,
+                                                                 SkColors::kTransparent,
+                                                                 GrMipmapped::kNo,
+                                                                 GrRenderable::kNo,
+                                                                 GrProtected::kNo);
     REPORTER_ASSERT(reporter, backendTex.isValid());
 
     SkImageInfo info =
@@ -343,7 +354,10 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(PromiseImageTextureFullCache, reporter, ctxIn
 }
 
 // Test case where promise image fulfill returns nullptr.
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(PromiseImageNullFulfill, reporter, ctxInfo) {
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(PromiseImageNullFulfill,
+                                   reporter,
+                                   ctxInfo,
+                                   CtsEnforcement::kNever) {
     const int kWidth = 10;
     const int kHeight = 10;
 
