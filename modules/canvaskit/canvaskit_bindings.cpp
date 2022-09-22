@@ -33,6 +33,7 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkSerialProcs.h"
 #include "include/core/SkShader.h"
+#include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkStrokeRec.h"
 #include "include/core/SkSurface.h"
@@ -168,7 +169,7 @@ struct ColorSettings {
             colorType = kRGBA_F16_SkColorType;
             pixFormat = GR_GL_RGBA16F;
         }
-    };
+    }
     SkColorType colorType;
     GrGLenum pixFormat;
 };
@@ -527,33 +528,33 @@ SkPathOrNull MakePathFromCmds(WASMPointerF32 cptr, int numCmds) {
     for(int i = 0; i < numCmds;){
          switch (sk_float_floor2int(cmds[i++])) {
             case MOVE:
-                CHECK_NUM_ARGS(2);
-                x1 = cmds[i++], y1 = cmds[i++];
+                CHECK_NUM_ARGS(2)
+                x1 = cmds[i++]; y1 = cmds[i++];
                 path.moveTo(x1, y1);
                 break;
             case LINE:
-                CHECK_NUM_ARGS(2);
-                x1 = cmds[i++], y1 = cmds[i++];
+                CHECK_NUM_ARGS(2)
+                x1 = cmds[i++]; y1 = cmds[i++];
                 path.lineTo(x1, y1);
                 break;
             case QUAD:
-                CHECK_NUM_ARGS(4);
-                x1 = cmds[i++], y1 = cmds[i++];
-                x2 = cmds[i++], y2 = cmds[i++];
+                CHECK_NUM_ARGS(4)
+                x1 = cmds[i++]; y1 = cmds[i++];
+                x2 = cmds[i++]; y2 = cmds[i++];
                 path.quadTo(x1, y1, x2, y2);
                 break;
             case CONIC:
-                CHECK_NUM_ARGS(5);
-                x1 = cmds[i++], y1 = cmds[i++];
-                x2 = cmds[i++], y2 = cmds[i++];
+                CHECK_NUM_ARGS(5)
+                x1 = cmds[i++]; y1 = cmds[i++];
+                x2 = cmds[i++]; y2 = cmds[i++];
                 x3 = cmds[i++]; // weight
                 path.conicTo(x1, y1, x2, y2, x3);
                 break;
             case CUBIC:
-                CHECK_NUM_ARGS(6);
-                x1 = cmds[i++], y1 = cmds[i++];
-                x2 = cmds[i++], y2 = cmds[i++];
-                x3 = cmds[i++], y3 = cmds[i++];
+                CHECK_NUM_ARGS(6)
+                x1 = cmds[i++]; y1 = cmds[i++];
+                x2 = cmds[i++]; y2 = cmds[i++];
+                x3 = cmds[i++]; y3 = cmds[i++];
                 path.cubicTo(x1, y1, x2, y2, x3, y3);
                 break;
             case CLOSE:
@@ -594,30 +595,30 @@ void PathAddVerbsPointsWeights(SkPath& path, WASMPointerU8 verbsPtr, int numVerb
     for (int v = 0; v < numVerbs; ++v) {
          switch (verbs[v]) {
               case MOVE:
-                  CHECK_NUM_POINTS(2);
+                  CHECK_NUM_POINTS(2)
                   path.moveTo(pts[ptIdx], pts[ptIdx+1]);
                   ptIdx += 2;
                   break;
               case LINE:
-                  CHECK_NUM_POINTS(2);
+                  CHECK_NUM_POINTS(2)
                   path.lineTo(pts[ptIdx], pts[ptIdx+1]);
                   ptIdx += 2;
                   break;
               case QUAD:
-                  CHECK_NUM_POINTS(4);
+                  CHECK_NUM_POINTS(4)
                   path.quadTo(pts[ptIdx], pts[ptIdx+1], pts[ptIdx+2], pts[ptIdx+3]);
                   ptIdx += 4;
                   break;
               case CONIC:
-                  CHECK_NUM_POINTS(4);
-                  CHECK_NUM_WEIGHTS(1);
+                  CHECK_NUM_POINTS(4)
+                  CHECK_NUM_WEIGHTS(1)
                   path.conicTo(pts[ptIdx], pts[ptIdx+1], pts[ptIdx+2], pts[ptIdx+3],
                                weights[wtIdx]);
                   ptIdx += 4;
                   wtIdx++;
                   break;
               case CUBIC:
-                  CHECK_NUM_POINTS(6);
+                  CHECK_NUM_POINTS(6)
                   path.cubicTo(pts[ptIdx  ], pts[ptIdx+1],
                                pts[ptIdx+2], pts[ptIdx+3],
                                pts[ptIdx+4], pts[ptIdx+5]);
@@ -838,7 +839,7 @@ public:
             SkImageGenerator(ii),
             fCallback(callbackObj) {}
 
-    ~WebGLTextureImageGenerator() {
+    ~WebGLTextureImageGenerator() override {
         // This cleans up the associated TextureSource that is used to make the texture
         // (i.e. "makeTexture" below). We expect this destructor to be called when the
         // SkImage that this Generator belongs to is destroyed.
@@ -850,7 +851,7 @@ protected:
                                          const SkImageInfo& info,
                                          const SkIPoint& origin,
                                          GrMipmapped mipmapped,
-                                         GrImageTexGenPolicy texGenPolicy) {
+                                         GrImageTexGenPolicy texGenPolicy) override {
         if (ctx->backend() != GrBackendApi::kOpenGL) {
             return {};
         }
@@ -1284,7 +1285,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
             SkImageInfo dstInfo = toSkImageInfo(di);
 
             return self.readPixels(dstInfo, pixels, dstRowBytes, srcX, srcY);
-        }))
+        }), allow_raw_pointers())
         .function("restore", &SkCanvas::restore)
         .function("restoreToCount", &SkCanvas::restoreToCount)
         .function("rotate", select_overload<void (SkScalar, SkScalar, SkScalar)>(&SkCanvas::rotate))
@@ -1311,8 +1312,9 @@ EMSCRIPTEN_BINDINGS(Skia) {
 
     class_<SkColorFilter>("ColorFilter")
         .smart_ptr<sk_sp<SkColorFilter>>("sk_sp<ColorFilter>>")
-        .class_function("_MakeBlend", optional_override([](WASMPointerF32 cPtr, SkBlendMode mode)->sk_sp<SkColorFilter> {
-            return SkColorFilters::Blend(ptrToSkColor4f(cPtr).toSkColor(), mode);
+        .class_function("_MakeBlend", optional_override([](WASMPointerF32 cPtr, SkBlendMode mode,
+                                                           sk_sp<SkColorSpace> colorSpace)->sk_sp<SkColorFilter> {
+            return SkColorFilters::Blend(ptrToSkColor4f(cPtr), colorSpace, mode);
         }))
         .class_function("MakeCompose", &SkColorFilters::Compose)
         .class_function("MakeLerp", &SkColorFilters::Lerp)
@@ -1516,17 +1518,22 @@ EMSCRIPTEN_BINDINGS(Skia) {
                                  WASMPointerF32 mPtr)->sk_sp<SkShader> {
             return self->makeShader(tx, ty, {filter, mipmap}, OptionalMatrix(mPtr));
         }), allow_raw_pointers())
+#if defined(ENABLE_GPU)
+        .function("_readPixels", optional_override([](sk_sp<SkImage> self,
+                                 SimpleImageInfo sii, WASMPointerU8 pPtr,
+                                 size_t dstRowBytes, int srcX, int srcY,
+                                 GrDirectContext* dContext)->bool {
+            uint8_t* pixels = reinterpret_cast<uint8_t*>(pPtr);
+            SkImageInfo ii = toSkImageInfo(sii);
+            return self->readPixels(dContext, ii, pixels, dstRowBytes, srcX, srcY);
+        }), allow_raw_pointers())
+#endif
         .function("_readPixels", optional_override([](sk_sp<SkImage> self,
                                  SimpleImageInfo sii, WASMPointerU8 pPtr,
                                  size_t dstRowBytes, int srcX, int srcY)->bool {
             uint8_t* pixels = reinterpret_cast<uint8_t*>(pPtr);
             SkImageInfo ii = toSkImageInfo(sii);
-            // TODO(adlai) Migrate CanvasKit API to require DirectContext arg here.
-            GrDirectContext* dContext = nullptr;
-#ifdef ENABLE_GPU
-            dContext = GrAsDirectContext(as_IB(self.get())->context());
-#endif
-            return self->readPixels(dContext, ii, pixels, dstRowBytes, srcX, srcY);
+            return self->readPixels(nullptr, ii, pixels, dstRowBytes, srcX, srcY);
         }), allow_raw_pointers())
         .function("width", &SkImage::width);
 

@@ -75,8 +75,10 @@ DEF_TEST(SpecialImage_BitmapDevice, reporter) {
 }
 #endif
 
-
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SpecialImage_GPUDevice, reporter, ctxInfo) {
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SpecialImage_GPUDevice,
+                                   reporter,
+                                   ctxInfo,
+                                   CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
 
     static const int kWidth = 100;
@@ -87,7 +89,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SpecialImage_GPUDevice, reporter, ctxInfo) {
     auto device = dContext->priv().createDevice(SkBudgeted::kNo, ii, SkBackingFit::kExact,
                                                 1, GrMipmapped::kNo, GrProtected::kNo,
                                                 kBottomLeft_GrSurfaceOrigin, SkSurfaceProps(),
-                                                skgpu::BaseDevice::InitContents::kClear);
+                                                skgpu::v1::Device::InitContents::kClear);
 
     SkBitmap bm;
     SkAssertResult(bm.tryAllocN32Pixels(kWidth, kHeight));

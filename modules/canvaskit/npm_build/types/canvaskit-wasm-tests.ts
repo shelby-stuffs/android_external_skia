@@ -227,6 +227,7 @@ function colorFilterTests(CK: CanvasKit) {
     const filterThree = cf.MakeSRGBToLinearGamma(); // $ExpectType ColorFilter
     const filterFour = cf.MakeCompose(filterOne, filterTwo); // $ExpectType ColorFilter
     const filterFive = cf.MakeLerp(0.7, filterThree, filterFour); // $ExpectType ColorFilter
+    const filterSeven = cf.MakeBlend(CK.MAGENTA, CK.BlendMode.SrcOut, CK.ColorSpace.DISPLAY_P3); // $ExpectType ColorFilter
 
     const r = CK.ColorMatrix.rotated(0, .707, -.707);  // $ExpectType Float32Array
     const b = CK.ColorMatrix.rotated(2, .5, .866);
@@ -236,7 +237,7 @@ function colorFilterTests(CK: CanvasKit) {
     CK.ColorMatrix.postTranslate(cm, 20, 0, -10, 0);
 
     const filterSix = CK.ColorFilter.MakeMatrix(cm); // $ExpectType ColorFilter
-    const luma = CK.ColorFilter.MakeLumaColorFilter(); // $ExpectType ColorFilter
+    const luma = CK.ColorFilter.MakeLuma(); // $ExpectType ColorFilter
 }
 
 function contourMeasureTests(CK: CanvasKit, path?: Path) {
@@ -588,6 +589,7 @@ function paragraphBuilderTests(CK: CanvasKit, fontMgr?: FontMgr, paint?: Paint) 
         decorationThickness: 1.5, // multiplier based on font size
         fontSize: 24,
         fontFeatures: [{name: 'smcp', value: 1}],
+        fontVariations: [{axis: 'wght', value: 100}],
         shadows: [{color: CK.BLACK, blurRadius: 15},
                   {color: CK.RED, blurRadius: 5, offset: [10, 10]}],
     });

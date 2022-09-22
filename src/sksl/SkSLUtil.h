@@ -139,10 +139,6 @@ struct ShaderCaps {
     // Rewrites matrix equality comparisons to avoid an Adreno driver bug. (skia:11308)
     bool fRewriteMatrixComparisons = false;
 
-    // This controls behavior of the SkSL compiler, not the code we generate. By default, SkSL pools
-    // IR nodes per-program. To debug memory corruption, it can be helpful to disable that feature.
-    bool fUseNodePools = true;
-
     const char* fVersionDeclString = "";
 
     const char* fShaderDerivativeExtensionString = nullptr;
@@ -172,6 +168,20 @@ public:
         std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
         result->fVersionDeclString = "#version 400";
         result->fAddAndTrueToLoopCondition = true;
+        return result;
+    }
+
+    static std::unique_ptr<ShaderCaps> BuiltinDeterminantSupport() {
+        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
+        result->fVersionDeclString = "#version 400";
+        result->fBuiltinDeterminantSupport = true;
+        return result;
+    }
+
+    static std::unique_ptr<ShaderCaps> BuiltinFMASupport() {
+        std::unique_ptr<ShaderCaps> result = MakeShaderCaps();
+        result->fVersionDeclString = "#version 400";
+        result->fBuiltinFMASupport = true;
         return result;
     }
 

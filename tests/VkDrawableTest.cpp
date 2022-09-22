@@ -11,8 +11,6 @@
 
 #if SK_SUPPORT_GPU && defined(SK_VULKAN)
 
-#include "include/gpu/vk/GrVkVulkan.h"
-
 #include "include/core/SkBitmap.h"
 #include "include/core/SkDrawable.h"
 #include "include/core/SkSurface.h"
@@ -269,11 +267,11 @@ void draw_drawable_test(skiatest::Reporter* reporter,
     }
 }
 
-DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkDrawableTest, reporter, ctxInfo) {
+DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkDrawableTest, reporter, ctxInfo, CtsEnforcement::kApiLevel_T) {
     draw_drawable_test(reporter, ctxInfo.directContext(), nullptr);
 }
 
-DEF_GPUTEST(VkDrawableImportTest, reporter, options) {
+DEF_GPUTEST(VkDrawableImportTest, reporter, options, CtsEnforcement::kApiLevel_T) {
     for (int typeInt = 0; typeInt < sk_gpu_test::GrContextFactory::kContextTypeCnt; ++typeInt) {
         sk_gpu_test::GrContextFactory::ContextType contextType =
                 (sk_gpu_test::GrContextFactory::ContextType) typeInt;

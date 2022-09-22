@@ -45,6 +45,7 @@
 #include "tools/MSKPPlayer.h"
 #include "tools/ProcStats.h"
 #include "tools/Stats.h"
+#include "tools/ToolUtils.h"
 #include "tools/flags/CommonFlags.h"
 #include "tools/flags/CommonFlagsConfig.h"
 #include "tools/ios_utils.h"
@@ -65,7 +66,6 @@
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
-#include "include/gpu/graphite/SkStuff.h"
 #include "tools/graphite/ContextFactory.h"
 #include "tools/graphite/GraphiteTestContext.h"
 #endif
@@ -203,6 +203,10 @@ static DEFINE_string(properties, "",
 
 static DEFINE_bool(purgeBetweenBenches, false,
                    "Call SkGraphics::PurgeAllCaches() between each benchmark?");
+
+static DEFINE_bool(splitPerfettoTracesByBenchmark, true,
+                  "Create separate perfetto trace files for each benchmark?\n"
+                  "Will only take effect if perfetto tracing is enabled. See --trace.");
 
 static double now_ms() { return SkTime::GetNSecs() * 1e-6; }
 
@@ -351,12 +355,12 @@ struct GraphiteTarget : public Target {
         this->testContext = testCtx;
         this->context = ctx;
 
-        this->recorder = this->context->makeRecorder();
+        this->recorder = this->context->makeRecorder(ToolUtils::CreateTestingRecorderOptions());
         if (!this->recorder) {
             return false;
         }
 
-        this->surface = MakeGraphite(this->recorder.get(), info);
+        this->surface = SkSurface::MakeGraphite(this->recorder.get(), info);
         if (!this->surface) {
             return false;
         }
@@ -1424,9 +1428,15 @@ int main(int argc, char** argv) {
     gSkVMAllowJIT = FLAGS_jit;
     gSkVMJITViaDylib = FLAGS_dylib;
 
+    // The SkSL memory benchmark must run before any GPU painting occurs. SkSL allocates memory for
+    // its modules the first time they are accessed, and this test is trying to measure the size of
+    // those allocations. If a paint has already occurred, some modules will have already been
+    // loaded, so we won't be able to capture a delta for them.
+    log.beginObject("results");
+    RunSkSLMemoryBenchmarks(&log);
+
     int runs = 0;
     BenchmarkStream benchStream;
-    log.beginObject("results");
     AutoreleasePool pool;
     while (Benchmark* b = benchStream.next()) {
         std::unique_ptr<Benchmark> bench(b);
@@ -1461,6 +1471,9 @@ int main(int argc, char** argv) {
                 SkGraphics::PurgeAllCaches();
             }
 
+            if (FLAGS_splitPerfettoTracesByBenchmark) {
+                TRACE_EVENT_API_NEW_TRACE_SECTION(TRACE_STR_COPY(bench->getUniqueName()));
+            }
             TRACE_EVENT2("skia", "Benchmark", "name", TRACE_STR_COPY(bench->getUniqueName()),
                                               "config", TRACE_STR_COPY(config));
 
@@ -1649,8 +1662,6 @@ int main(int argc, char** argv) {
     log.appendS32("max_rss_mb", sk_tools::getMaxResidentSetSizeMB());
     log.endObject(); // config
     log.endBench();
-
-    RunSkSLMemoryBenchmarks(&log);
 
     log.endObject(); // results
     log.endObject(); // root

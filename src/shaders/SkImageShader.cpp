@@ -26,7 +26,7 @@
 #ifdef SK_ENABLE_SKSL
 
 #ifdef SK_GRAPHITE_ENABLED
-#include "src/gpu/graphite/Image_Graphite.h"
+#include "src/gpu/graphite/ImageUtils.h"
 #endif
 
 #include "src/core/SkKeyContext.h"
@@ -386,12 +386,17 @@ void SkImageShader::addToKey(const SkKeyContext& keyContext,
                                         this->getLocalMatrix());
 
 #ifdef SK_GRAPHITE_ENABLED
-    if (as_IB(fImage)->isGraphiteBacked()) {
-        skgpu::graphite::Image* grImage = static_cast<skgpu::graphite::Image*>(fImage.get());
+    auto [ imageToDraw, newSampling ] = skgpu::graphite::GetGraphiteBacked(keyContext.recorder(),
+                                                                           fImage.get(),
+                                                                           fSampling);
 
-        auto mipmapped = (fSampling.mipmap != SkMipmapMode::kNone) ?
-                skgpu::graphite::Mipmapped::kYes : skgpu::graphite::Mipmapped::kNo;
-        auto[view, ct] = grImage->asView(keyContext.recorder(), mipmapped);
+    if (imageToDraw) {
+        imgData.fSampling = newSampling;
+        skgpu::graphite::Mipmapped mipmapped = (newSampling.mipmap != SkMipmapMode::kNone)
+                                                   ? skgpu::graphite::Mipmapped::kYes
+                                                   : skgpu::graphite::Mipmapped::kNo;
+
+        auto [view, _] = as_IB(imageToDraw)->asView(keyContext.recorder(), mipmapped);
         imgData.fTextureProxy = view.refProxy();
     }
 #endif
@@ -656,22 +661,6 @@ bool SkImageShader::doStages(const SkStageRec& rec, TransformShader* updater) co
         return append_misc();
     }
     if (true
-        && (ct == kRGBA_8888_SkColorType || ct == kBGRA_8888_SkColorType) // TODO: all formats
-        && !sampling.useCubic && sampling.filter == SkFilterMode::kLinear
-        && fTileModeX != SkTileMode::kDecal // TODO decal too?
-        && fTileModeY != SkTileMode::kDecal) {
-
-        auto ctx = alloc->make<SkRasterPipeline_SamplerCtx2>();
-        *(SkRasterPipeline_GatherCtx*)(ctx) = *gather;
-        ctx->ct = ct;
-        ctx->tileX = fTileModeX;
-        ctx->tileY = fTileModeY;
-        ctx->invWidth  = 1.0f / ctx->width;
-        ctx->invHeight = 1.0f / ctx->height;
-        p->append(SkRasterPipeline::bilinear, ctx);
-        return append_misc();
-    }
-    if (true
         && (ct == kRGBA_8888_SkColorType || ct == kBGRA_8888_SkColorType)
         && sampling.useCubic
         && fTileModeX == SkTileMode::kClamp && fTileModeY == SkTileMode::kClamp) {
@@ -680,22 +669,6 @@ bool SkImageShader::doStages(const SkStageRec& rec, TransformShader* updater) co
         if (ct == kBGRA_8888_SkColorType) {
             p->append(SkRasterPipeline::swap_rb);
         }
-        return append_misc();
-    }
-    if (true
-        && (ct == kRGBA_8888_SkColorType || ct == kBGRA_8888_SkColorType) // TODO: all formats
-        && sampling.useCubic
-        && fTileModeX != SkTileMode::kDecal // TODO decal too?
-        && fTileModeY != SkTileMode::kDecal) {
-
-        auto ctx = alloc->make<SkRasterPipeline_SamplerCtx2>();
-        *(SkRasterPipeline_GatherCtx*)(ctx) = *gather;
-        ctx->ct = ct;
-        ctx->tileX = fTileModeX;
-        ctx->tileY = fTileModeY;
-        ctx->invWidth  = 1.0f / ctx->width;
-        ctx->invHeight = 1.0f / ctx->height;
-        p->append(SkRasterPipeline::bicubic, ctx);
         return append_misc();
     }
 
@@ -713,6 +686,7 @@ bool SkImageShader::doStages(const SkStageRec& rec, TransformShader* updater) co
         CubicResamplerMatrix(sampling.cubic.B, sampling.cubic.C).getColMajor(sampler->weights);
 
         p->append(SkRasterPipeline::save_xy, sampler);
+        p->append(SkRasterPipeline::bicubic_setup, sampler);
 
         sample(SkRasterPipeline::bicubic_n3x, SkRasterPipeline::bicubic_n3y);
         sample(SkRasterPipeline::bicubic_n1x, SkRasterPipeline::bicubic_n3y);

@@ -34,8 +34,8 @@
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrPaint.h"
 #include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/ops/GrOp.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 #include "tools/ToolUtils.h"
 #include "tools/gpu/TestOps.h"
 
@@ -113,7 +113,8 @@ protected:
                 std::unique_ptr<GrFragmentProcessor> baseFP;
                 if (paintType >= std::size(kPaintColors)) {
                     GrColorInfo colorInfo;
-                    GrFPArgs args(rContext, SkMatrixProvider(SkMatrix::I()), &colorInfo);
+                    SkSurfaceProps props;
+                    GrFPArgs args(rContext, SkMatrixProvider(SkMatrix::I()), &colorInfo, props);
                     baseFP = as_SB(fShader)->asFragmentProcessor(args);
                 } else {
                     baseFP = GrFragmentProcessor::MakeColor(

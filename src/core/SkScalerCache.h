@@ -22,6 +22,7 @@
 class SkScalerContext;
 namespace sktext {
 union IDOrPath;
+union IDOrDrawable;
 }  // namespace sktext
 
 // This class represents a strike: a specific combination of typeface, size, matrix, etc., and
@@ -78,11 +79,15 @@ public:
         return fRoundingSpec;
     }
 
-    size_t prepareForMaskDrawing(
-            SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) SK_EXCLUDES(fMu);
+    std::tuple<SkRect, size_t> prepareForMaskDrawing(
+            SkScalar strikeToSourceScale,
+            SkDrawableGlyphBuffer* accepted,
+            SkSourceGlyphBuffer* rejected) SK_EXCLUDES(fMu);
 
-    size_t prepareForSDFTDrawing(
-            SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) SK_EXCLUDES(fMu);
+    std::tuple<SkRect, size_t> prepareForSDFTDrawing(
+            SkScalar strikeToSourceScale,
+            SkDrawableGlyphBuffer* accepted,
+            SkSourceGlyphBuffer* rejected) SK_EXCLUDES(fMu);
 
     size_t prepareForPathDrawing(
             SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) SK_EXCLUDES(fMu);
@@ -92,6 +97,9 @@ public:
 
     // Convert all the IDs into SkPaths in the span.
     size_t glyphIDsToPaths(SkSpan<sktext::IDOrPath> idsOrPaths) SK_EXCLUDES(fMu);
+
+    // Convert all the IDs into SkDrawables in the span.
+    size_t glyphIDsToDrawables(SkSpan<sktext::IDOrDrawable> idsOrDrawables) SK_EXCLUDES(fMu);
 
     std::tuple<SkScalar, size_t>
             findMaximumGlyphDimension(SkSpan<const SkGlyphID> glyphs) SK_EXCLUDES(fMu);

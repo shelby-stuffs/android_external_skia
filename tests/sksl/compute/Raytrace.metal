@@ -4,16 +4,13 @@ using namespace metal;
 struct Inputs {
     uint3 sk_ThreadPosition;
 };
-struct Outputs {
-};
 struct Globals {
     texture2d<half, access::write> dest;
 };
-kernel void computeMain(texture2d<half, access::write> dest[[texture(0)]], uint3 sk_ThreadPosition [[thread_position_in_grid]]) {
+kernel void computeMain(texture2d<half, access::write> dest [[texture(0)]], uint3 sk_ThreadPosition [[thread_position_in_grid]]) {
     Globals _globals{dest};
     (void)_globals;
     Inputs _in = { sk_ThreadPosition };
-    Outputs _out = {  };
     half4 pixel = half4(0.0h, 0.0h, 0.0h, 1.0h);
     float max_x = 5.0;
     float max_y = 5.0;

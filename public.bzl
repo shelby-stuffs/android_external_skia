@@ -1,28 +1,5 @@
-################################################################################
-# Starlark macros
-################################################################################
-
-def skia_select(conditions, results):
-    """select() for conditions provided externally.
-
-    Instead of {"conditionA": resultA, "conditionB": resultB},
-    this takes two arrays, ["conditionA", "conditionB"] and [resultA, resultB].
-
-    This allows the exact targets of the conditions to be provided externally while
-    the results can live here, hiding the structure of those conditions in Google3.
-
-    Maybe this is too much paranoia?
-
-    Args:
-      conditions: [CONDITION_UNIX, CONDITION_ANDROID, CONDITION_IOS, CONDITION_WASM, ...]
-      results: [RESULT_UNIX, RESULT_ANDROID, RESULT_IOS, RESULT_WASM, ....]
-    Returns:
-      The result matching the active condition.
-    """
-    selector = {}
-    for i in range(len(conditions)):
-        selector[conditions[i]] = results[i]
-    return select(selector)
+# This file contains lists of files and defines used in the legacy G3 build, that is, the G3 build
+# that is not derived from our Bazel rules.
 
 SKIA_PUBLIC_HDRS = [
     "include/android/SkAndroidFrameworkUtils.h",
@@ -126,19 +103,6 @@ SKIA_PUBLIC_HDRS = [
     "include/core/SkVertices.h",
     "include/core/SkYUVAInfo.h",
     "include/core/SkYUVAPixmaps.h",
-    "include/c/sk_canvas.h",
-    "include/c/sk_colorspace.h",
-    "include/c/sk_data.h",
-    "include/c/sk_image.h",
-    "include/c/sk_imageinfo.h",
-    "include/c/sk_maskfilter.h",
-    "include/c/sk_matrix.h",
-    "include/c/sk_paint.h",
-    "include/c/sk_path.h",
-    "include/c/sk_picture.h",
-    "include/c/sk_shader.h",
-    "include/c/sk_surface.h",
-    "include/c/sk_types.h",
     "include/docs/SkPDFDocument.h",
     "include/docs/SkXPSDocument.h",
     "include/effects/Sk1DPathEffect.h",
@@ -186,11 +150,11 @@ SKIA_PUBLIC_HDRS = [
     "include/gpu/graphite/BackendTexture.h",
     "include/gpu/graphite/Context.h",
     "include/gpu/graphite/GraphiteTypes.h",
+    "include/gpu/graphite/ImageProvider.h",
     "include/gpu/graphite/mtl/MtlBackendContext.h",
     "include/gpu/graphite/mtl/MtlTypes.h",
     "include/gpu/graphite/Recorder.h",
     "include/gpu/graphite/Recording.h",
-    "include/gpu/graphite/SkStuff.h",
     "include/gpu/graphite/TextureInfo.h",
     "include/gpu/GrBackendDrawableInfo.h",
     "include/gpu/GrBackendSemaphore.h",
@@ -214,7 +178,8 @@ SKIA_PUBLIC_HDRS = [
     "include/gpu/vk/GrVkExtensions.h",
     "include/gpu/vk/GrVkMemoryAllocator.h",
     "include/gpu/vk/GrVkTypes.h",
-    "include/gpu/vk/GrVkVulkan.h",
+    "include/gpu/vk/VulkanExtensions.h",
+    "include/gpu/vk/VulkanTypes.h",
     "include/pathops/SkPathOps.h",
     "include/ports/SkCFObject.h",
     "include/ports/SkFontConfigInterface.h",
@@ -324,12 +289,6 @@ BASE_SRCS_ALL = [
     "include/private/SkWeakRefCnt.h",
     "src/android/SkAndroidFrameworkUtils.cpp",
     "src/android/SkAnimatedImage.cpp",
-    "src/c/sk_c_from_to.h",
-    "src/c/sk_effects.cpp",
-    "src/c/sk_imageinfo.cpp",
-    "src/c/sk_paint.cpp",
-    "src/c/sk_surface.cpp",
-    "src/c/sk_types_priv.h",
     "src/core/Sk4px.h",
     "src/core/SkAAClip.cpp",
     "src/core/SkAAClip.h",
@@ -399,7 +358,6 @@ BASE_SRCS_ALL = [
     "src/core/SkColorFilterBase.h",
     "src/core/SkColorFilterPriv.h",
     "src/core/SkColorFilter_Matrix.cpp",
-    "src/core/SkColorFilter_Matrix.h",
     "src/core/SkColorSpace.cpp",
     "src/core/SkColorSpacePriv.h",
     "src/core/SkColorSpaceXformSteps.cpp",
@@ -525,23 +483,18 @@ BASE_SRCS_ALL = [
     "src/core/SkMath.cpp",
     "src/core/SkMathPriv.h",
     "src/core/SkMatrix.cpp",
-    "src/core/SkMatrixImageFilter.cpp",
-    "src/core/SkMatrixImageFilter.h",
     "src/core/SkMatrixInvert.cpp",
     "src/core/SkMatrixInvert.h",
     "src/core/SkMatrixPriv.h",
     "src/core/SkMatrixProvider.h",
     "src/core/SkMatrixUtils.h",
     "src/core/SkMessageBus.h",
-    "src/core/SkMiniRecorder.cpp",
-    "src/core/SkMiniRecorder.h",
     "src/core/SkMipmap.cpp",
     "src/core/SkMipmap.h",
     "src/core/SkMipmapAccessor.cpp",
     "src/core/SkMipmapAccessor.h",
     "src/core/SkMipmapBuilder.h",
     "src/core/SkModeColorFilter.cpp",
-    "src/core/SkModeColorFilter.h",
     "src/core/SkNextID.h",
     "src/core/SkOSFile.h",
     "src/core/SkOpts.cpp",
@@ -566,7 +519,6 @@ BASE_SRCS_ALL = [
     "src/core/SkPathRef.cpp",
     "src/core/SkPath_serial.cpp",
     "src/core/SkPicture.cpp",
-    "src/core/SkPictureCommon.h",
     "src/core/SkPictureData.cpp",
     "src/core/SkPictureData.h",
     "src/core/SkPictureFlat.cpp",
@@ -772,6 +724,7 @@ BASE_SRCS_ALL = [
     "src/effects/imagefilters/SkLightingImageFilter.cpp",
     "src/effects/imagefilters/SkMagnifierImageFilter.cpp",
     "src/effects/imagefilters/SkMatrixConvolutionImageFilter.cpp",
+    "src/effects/imagefilters/SkMatrixTransformImageFilter.cpp",
     "src/effects/imagefilters/SkMergeImageFilter.cpp",
     "src/effects/imagefilters/SkMorphologyImageFilter.cpp",
     "src/effects/imagefilters/SkOffsetImageFilter.cpp",
@@ -802,8 +755,6 @@ BASE_SRCS_ALL = [
     "src/gpu/Swizzle.cpp",
     "src/gpu/Swizzle.h",
     # We include the ganesh files, but leave out any specific backend (e.g. GL, Vulkan)
-    "src/gpu/ganesh/BaseDevice.cpp",
-    "src/gpu/ganesh/BaseDevice.h",
     "src/gpu/ganesh/GrAHardwareBufferImageGenerator.cpp",
     "src/gpu/ganesh/GrAHardwareBufferImageGenerator.h",
     "src/gpu/ganesh/GrAHardwareBufferUtils.cpp",
@@ -828,6 +779,10 @@ BASE_SRCS_ALL = [
     "src/gpu/ganesh/GrBuffer.h",
     "src/gpu/ganesh/GrBufferAllocPool.cpp",
     "src/gpu/ganesh/GrBufferAllocPool.h",
+    "src/gpu/ganesh/GrBufferTransferRenderTask.cpp",
+    "src/gpu/ganesh/GrBufferTransferRenderTask.h",
+    "src/gpu/ganesh/GrBufferUpdateRenderTask.cpp",
+    "src/gpu/ganesh/GrBufferUpdateRenderTask.h",
     "src/gpu/ganesh/GrCaps.cpp",
     "src/gpu/ganesh/GrCaps.h",
     "src/gpu/ganesh/GrClientMappedBufferManager.cpp",
@@ -1020,8 +975,22 @@ BASE_SRCS_ALL = [
     "src/gpu/ganesh/GrYUVATextureProxies.h",
     "src/gpu/ganesh/SkGr.cpp",
     "src/gpu/ganesh/SkGr.h",
+    "src/gpu/ganesh/ClipStack.cpp",
+    "src/gpu/ganesh/ClipStack.h",
+    "src/gpu/ganesh/Device.cpp",
+    "src/gpu/ganesh/Device_drawTexture.cpp",
+    "src/gpu/ganesh/Device_v1.h",
+    "src/gpu/ganesh/PathRenderer.cpp",
+    "src/gpu/ganesh/PathRenderer.h",
+    "src/gpu/ganesh/PathRendererChain.cpp",
+    "src/gpu/ganesh/PathRendererChain.h",
+    "src/gpu/ganesh/StencilClip.h",
+    "src/gpu/ganesh/StencilMaskHelper.cpp",
+    "src/gpu/ganesh/StencilMaskHelper.h",
     "src/gpu/ganesh/SurfaceContext.cpp",
     "src/gpu/ganesh/SurfaceContext.h",
+    "src/gpu/ganesh/SurfaceDrawContext.cpp",
+    "src/gpu/ganesh/SurfaceDrawContext.h",
     "src/gpu/ganesh/SurfaceFillContext.cpp",
     "src/gpu/ganesh/SurfaceFillContext.h",
     "src/gpu/ganesh/effects/GrAtlasedShaderHelpers.h",
@@ -1211,22 +1180,6 @@ BASE_SRCS_ALL = [
     "src/gpu/ganesh/tessellate/VertexChunkPatchAllocator.h",
     "src/gpu/ganesh/text/GrAtlasManager.cpp",
     "src/gpu/ganesh/text/GrAtlasManager.h",
-    "src/gpu/ganesh/v1/ClipStack.cpp",
-    "src/gpu/ganesh/v1/ClipStack.h",
-    "src/gpu/ganesh/v1/Device.cpp",
-    "src/gpu/ganesh/v1/Device_drawTexture.cpp",
-    "src/gpu/ganesh/v1/Device_v1.h",
-    "src/gpu/ganesh/v1/PathRenderer.cpp",
-    "src/gpu/ganesh/v1/PathRenderer.h",
-    "src/gpu/ganesh/v1/PathRendererChain.cpp",
-    "src/gpu/ganesh/v1/PathRendererChain.h",
-    "src/gpu/ganesh/v1/StencilClip.h",
-    "src/gpu/ganesh/v1/StencilMaskHelper.cpp",
-    "src/gpu/ganesh/v1/StencilMaskHelper.h",
-    "src/gpu/ganesh/v1/SurfaceDrawContext.cpp",
-    "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h",
-    "src/gpu/ganesh/v1/SurfaceFillContext_v1.cpp",
-    "src/gpu/ganesh/v1/SurfaceFillContext_v1.h",
     "src/gpu/tessellate/AffineMatrix.h",
     "src/gpu/tessellate/CullTest.h",
     "src/gpu/tessellate/FixedCountBufferUtils.cpp",
@@ -1464,6 +1417,8 @@ BASE_SRCS_ALL = [
     "src/sksl/SkSLMemoryLayout.h",
     "src/sksl/SkSLMemoryPool.h",
     "src/sksl/SkSLModifiersPool.h",
+    "src/sksl/SkSLModuleLoader.cpp",
+    "src/sksl/SkSLModuleLoader.h",
     "src/sksl/SkSLOperator.cpp",
     "src/sksl/SkSLOutputStream.cpp",
     "src/sksl/SkSLOutputStream.h",
@@ -1475,8 +1430,6 @@ BASE_SRCS_ALL = [
     "src/sksl/SkSLRehydrator.cpp",
     "src/sksl/SkSLRehydrator.h",
     "src/sksl/SkSLSampleUsage.cpp",
-    "src/sksl/SkSLSharedCompiler.cpp",
-    "src/sksl/SkSLSharedCompiler.h",
     "src/sksl/SkSLString.cpp",
     "src/sksl/SkSLStringStream.h",
     "src/sksl/SkSLThreadContext.cpp",
@@ -1486,13 +1439,13 @@ BASE_SRCS_ALL = [
     "src/sksl/analysis/SkSLCanExitWithoutReturningValue.cpp",
     "src/sksl/analysis/SkSLCheckProgramStructure.cpp",
     "src/sksl/analysis/SkSLFinalizationChecks.cpp",
-    "src/sksl/analysis/SkSLGetComputeShaderMainParams.cpp",
     "src/sksl/analysis/SkSLGetLoopUnrollInfo.cpp",
     "src/sksl/analysis/SkSLIsConstantExpression.cpp",
     "src/sksl/analysis/SkSLIsSameExpressionTree.cpp",
     "src/sksl/analysis/SkSLIsTrivialExpression.cpp",
     "src/sksl/analysis/SkSLNoOpErrorReporter.h",
     "src/sksl/analysis/SkSLProgramUsage.cpp",
+    "src/sksl/analysis/SkSLProgramUsage.h",
     "src/sksl/analysis/SkSLProgramVisitor.h",
     "src/sksl/analysis/SkSLSwitchCaseContainsExit.cpp",
     "src/sksl/codegen/SkSLCodeGenerator.h",
@@ -1608,7 +1561,6 @@ BASE_SRCS_ALL = [
     "src/sksl/ir/SkSLType.h",
     "src/sksl/ir/SkSLTypeReference.cpp",
     "src/sksl/ir/SkSLTypeReference.h",
-    "src/sksl/ir/SkSLUnresolvedFunction.h",
     "src/sksl/ir/SkSLVarDeclarations.cpp",
     "src/sksl/ir/SkSLVarDeclarations.h",
     "src/sksl/ir/SkSLVariable.cpp",
@@ -1622,12 +1574,13 @@ BASE_SRCS_ALL = [
     "src/sksl/tracing/SkVMDebugTracePlayer.cpp",
     "src/sksl/tracing/SkVMDebugTracePlayer.h",
     "src/sksl/transform/SkSLAddConstToVarModifiers.cpp",
-    "src/sksl/transform/SkSLBuiltinVariableScanner.cpp",
     "src/sksl/transform/SkSLEliminateDeadFunctions.cpp",
     "src/sksl/transform/SkSLEliminateDeadGlobalVariables.cpp",
     "src/sksl/transform/SkSLEliminateDeadLocalVariables.cpp",
     "src/sksl/transform/SkSLEliminateEmptyStatements.cpp",
     "src/sksl/transform/SkSLEliminateUnreachableCode.cpp",
+    "src/sksl/transform/SkSLFindAndDeclareBuiltinFunctions.cpp",
+    "src/sksl/transform/SkSLFindAndDeclareBuiltinVariables.cpp",
     "src/sksl/transform/SkSLProgramWriter.h",
     "src/sksl/transform/SkSLTransform.h",
     "src/text/GlyphRun.cpp",
@@ -1674,6 +1627,7 @@ BASE_SRCS_ALL = [
     "src/utils/SkEventTracer.cpp",
     "src/utils/SkFloatToDecimal.cpp",
     "src/utils/SkFloatToDecimal.h",
+    "src/utils/SkGaussianColorFilter.cpp",
     "src/utils/SkFloatUtils.h",
     "src/utils/SkJSON.cpp",
     "src/utils/SkJSON.h",
@@ -1702,8 +1656,6 @@ BASE_SRCS_ALL = [
     "src/utils/SkShadowTessellator.cpp",
     "src/utils/SkShadowTessellator.h",
     "src/utils/SkShadowUtils.cpp",
-    "src/utils/SkShaperJSONWriter.cpp",
-    "src/utils/SkShaperJSONWriter.h",
     "src/utils/SkTestCanvas.h",
     "src/utils/SkTextUtils.cpp",
     "src/utils/SkThreadUtils_pthread.cpp",
@@ -1802,7 +1754,6 @@ PORTS_SRCS_UNIX = [
     "src/ports/SkOSFile_stdio.cpp",
     "src/ports/SkOSLibrary.h",
     "src/ports/SkOSLibrary_posix.cpp",
-    "src/ports/SkTLS_pthread.cpp",
 ]
 
 GL_SRCS_ANDROID = base_gl_srcs + [
@@ -1831,7 +1782,6 @@ PORTS_SRCS_ANDROID = [
     "src/ports/SkOSFile_stdio.cpp",
     "src/ports/SkOSLibrary.h",
     "src/ports/SkOSLibrary_posix.cpp",
-    "src/ports/SkTLS_pthread.cpp",
 ]
 
 PORTS_SRCS_ANDROID_NO_FONT = [
@@ -1845,7 +1795,6 @@ PORTS_SRCS_ANDROID_NO_FONT = [
     "src/ports/SkOSFile_stdio.cpp",
     "src/ports/SkOSLibrary.h",
     "src/ports/SkOSLibrary_posix.cpp",
-    "src/ports/SkTLS_pthread.cpp",
 ]
 
 GL_SRCS_IOS = base_gl_srcs + [
@@ -1870,7 +1819,6 @@ PORTS_SRCS_IOS = [
     "src/ports/SkOSLibrary_posix.cpp",
     "src/ports/SkScalerContext_mac_ct.cpp",
     "src/ports/SkScalerContext_mac_ct.h",
-    "src/ports/SkTLS_pthread.cpp",
     "src/ports/SkTypeface_mac_ct.cpp",
     "src/ports/SkTypeface_mac_ct.h",
     "src/utils/mac/SkCreateCGImageRef.cpp",
@@ -1894,7 +1842,6 @@ PORTS_SRCS_FUCHSIA = [
     "src/ports/SkOSFile_stdio.cpp",
     "src/ports/SkOSLibrary.h",
     "src/ports/SkOSLibrary_posix.cpp",
-    "src/ports/SkTLS_pthread.cpp",
 ]
 
 GL_SRCS_MACOS = base_gl_srcs + [
@@ -1919,7 +1866,6 @@ PORTS_SRCS_WASM = [
     "src/ports/SkOSFile_stdio.cpp",
     "src/ports/SkOSLibrary.h",
     "src/ports/SkOSLibrary_posix.cpp",
-    "src/ports/SkTLS_pthread.cpp",
 ]
 GL_SRCS_WASM = GL_SRCS_UNIX_EGL
 
@@ -1950,6 +1896,7 @@ MTL_SRCS = [
 ]
 
 VULKAN_SRCS = [
+    "src/gpu/vk/VulkanExtensions.cpp",
     "src/gpu/ganesh/vk/GrVkAMDMemoryAllocator.cpp",
     "src/gpu/ganesh/vk/GrVkAMDMemoryAllocator.h",
     "src/gpu/ganesh/vk/GrVkBuffer.cpp",
@@ -1966,7 +1913,6 @@ VULKAN_SRCS = [
     "src/gpu/ganesh/vk/GrVkDescriptorSet.h",
     "src/gpu/ganesh/vk/GrVkDescriptorSetManager.cpp",
     "src/gpu/ganesh/vk/GrVkDescriptorSetManager.h",
-    "src/gpu/ganesh/vk/GrVkExtensions.cpp",
     "src/gpu/ganesh/vk/GrVkFramebuffer.cpp",
     "src/gpu/ganesh/vk/GrVkFramebuffer.h",
     "src/gpu/ganesh/vk/GrVkGpu.cpp",
@@ -2022,169 +1968,90 @@ VULKAN_SRCS = [
 ]
 
 ################################################################################
-## COPTS
-################################################################################
-
-def base_copts(os_conditions):
-    return ["-Wno-implicit-fallthrough"] + skia_select(
-        os_conditions,
-        [
-            # UNIX
-            [
-                # Internal use of deprecated methods. :(
-                "-Wno-deprecated-declarations",
-                # TODO(kjlubick)
-                "-Wno-self-assign",  # Spurious warning in tests/PathOpsDVectorTest.cpp?
-            ],
-            # ANDROID
-            [
-                # 'GrResourceCache' declared with greater visibility than the
-                # type of its field 'GrResourceCache::fPurgeableQueue'... bogus.
-                "-Wno-error=attributes",
-            ],
-            [],  # iOS
-            [],  # wasm
-            [],  # Fuchsia
-            [],  # macOS
-        ],
-    )
-
-################################################################################
 ## DEFINES
 ################################################################################
 
-def base_defines(os_conditions):
-    return [
-        # Chrome DEFINES.
-        "SK_USE_FREETYPE_EMBOLDEN",
-        # Turn on a few Google3-specific build fixes.
-        "SK_BUILD_FOR_GOOGLE3",
-        # Required for building dm.
-        "GR_TEST_UTILS",
-        # Staging flags for API changes
-        "SK_PARAGRAPH_GRAPHEME_EDGES",
-        # Should remove after we update golden images
-        "SK_WEBP_ENCODER_USE_DEFAULT_METHOD",
-        # Experiment to diagnose image diffs in Google3
-        "SK_DISABLE_LOWP_RASTER_PIPELINE",
-        # JPEG is in codec_limited and is included in all
-        # builds except the no_codec android build
-    ] + skia_select(
-        os_conditions,
-        [
-            # UNIX
-            [
-                "PNG_SKIP_SETJMP_CHECK",
-                "SK_BUILD_FOR_UNIX",
-                "SK_CODEC_DECODES_PNG",
-                "SK_CODEC_DECODES_WEBP",
-                "SK_ENCODE_PNG",
-                "SK_ENCODE_WEBP",
-                "SK_R32_SHIFT=16",
-                "SK_GL",
-                "SK_CODEC_DECODES_JPEG",
-                "SK_ENCODE_JPEG",
-                "SK_HAS_ANDROID_CODEC",
-            ],
-            # ANDROID
-            [
-                "SK_BUILD_FOR_ANDROID",
-                "SK_CODEC_DECODES_PNG",
-                "SK_CODEC_DECODES_WEBP",
-                "SK_ENCODE_PNG",
-                "SK_ENCODE_WEBP",
-                "SK_GL",
-                "SK_CODEC_DECODES_JPEG",
-                "SK_ENCODE_JPEG",
-                "SK_HAS_ANDROID_CODEC",
-            ],
-            # IOS
-            [
-                "SK_BUILD_FOR_IOS",
-                "SK_GL",
-                "SK_CODEC_DECODES_JPEG",
-                "SK_ENCODE_JPEG",
-                "SK_HAS_ANDROID_CODEC",
-            ],
-            # WASM
-            [
-                "SK_DISABLE_LEGACY_SHADERCONTEXT",
-                "SK_DISABLE_TRACING",
-                "SK_GL",
-                "SK_SUPPORT_GPU=1",
-                "SK_DISABLE_AAA",
-                "SK_DISABLE_EFFECT_DESERIALIZATION",
-                "SK_FORCE_8_BYTE_ALIGNMENT",
-                "SKNX_NO_SIMD",
-                "SK_CODEC_DECODES_JPEG",
-                "SK_ENCODE_JPEG",
-                "SK_HAS_ANDROID_CODEC",
-            ],
-            # FUCHSIA
-            [
-                "SK_BUILD_FOR_UNIX",
-                "SK_CODEC_DECODES_PNG",
-                "SK_CODEC_DECODES_WEBP",
-                "SK_ENCODE_PNG",
-                "SK_ENCODE_WEBP",
-                "SK_R32_SHIFT=16",
-                "SK_VULKAN",
-                "SK_CODEC_DECODES_JPEG",
-                "SK_ENCODE_JPEG",
-                "SK_HAS_ANDROID_CODEC",
-            ],
-            # MACOS
-            [
-                "SK_BUILD_FOR_MAC",
-                "SK_GL",
-                "SK_CODEC_DECODES_JPEG",
-                "SK_ENCODE_JPEG",
-                "SK_HAS_ANDROID_CODEC",
-            ],
-            # ANDROID W/ NO CODECS
-            [
-                "SK_BUILD_FOR_ANDROID",
-                "SK_GL",
-            ],
-        ],
-    )
-
-################################################################################
-## LINKOPTS
-################################################################################
-
-def base_linkopts(os_conditions):
-    return [
-        "-ldl",
-    ] + skia_select(
-        os_conditions,
-        [
-            [],  # Unix
-            # ANDROID
-            [
-                "-lEGL",
-                "-lGLESv2",
-            ],
-            # IOS
-            [
-                "-framework CoreFoundation",
-                "-framework CoreGraphics",
-                "-framework CoreText",
-                "-framework ImageIO",
-                "-framework MobileCoreServices",
-            ],
-            [],  # wasm
-            [],  # Fuchsia
-            # MACOS
-            [
-                "-framework CoreFoundation",
-                "-framework CoreGraphics",
-                "-framework CoreText",
-                "-framework ImageIO",
-                "-framework ApplicationServices",
-            ],
-        ],
-    )
+BASE_DEFINES = [
+    # Chrome DEFINES.
+    "SK_USE_FREETYPE_EMBOLDEN",
+    # Turn on a few Google3-specific build fixes.
+    "SK_BUILD_FOR_GOOGLE3",
+    # Required for building dm.
+    "GR_TEST_UTILS",
+    # Should remove after we update golden images
+    "SK_WEBP_ENCODER_USE_DEFAULT_METHOD",
+    # Experiment to diagnose image diffs in Google3
+    "SK_DISABLE_LOWP_RASTER_PIPELINE",
+    # JPEG is in codec_limited and is included in all
+    # builds except the no_codec android build
+]
+UNIX_DEFINES = [
+    "PNG_SKIP_SETJMP_CHECK",
+    "SK_BUILD_FOR_UNIX",
+    "SK_CODEC_DECODES_PNG",
+    "SK_CODEC_DECODES_WEBP",
+    "SK_ENCODE_PNG",
+    "SK_ENCODE_WEBP",
+    "SK_R32_SHIFT=16",
+    "SK_GL",
+    "SK_CODEC_DECODES_JPEG",
+    "SK_ENCODE_JPEG",
+    "SK_HAS_ANDROID_CODEC",
+]
+ANDROID_DEFINES = [
+    "SK_BUILD_FOR_ANDROID",
+    "SK_CODEC_DECODES_PNG",
+    "SK_CODEC_DECODES_WEBP",
+    "SK_ENCODE_PNG",
+    "SK_ENCODE_WEBP",
+    "SK_GL",
+    "SK_CODEC_DECODES_JPEG",
+    "SK_ENCODE_JPEG",
+    "SK_HAS_ANDROID_CODEC",
+]
+IOS_DEFINES = [
+    "SK_BUILD_FOR_IOS",
+    "SK_GL",
+    "SK_CODEC_DECODES_JPEG",
+    "SK_ENCODE_JPEG",
+    "SK_HAS_ANDROID_CODEC",
+]
+WASM_DEFINES = [
+    "SK_DISABLE_LEGACY_SHADERCONTEXT",
+    "SK_DISABLE_TRACING",
+    "SK_GL",
+    "SK_SUPPORT_GPU=1",
+    "SK_DISABLE_AAA",
+    "SK_DISABLE_EFFECT_DESERIALIZATION",
+    "SK_FORCE_8_BYTE_ALIGNMENT",
+    "SKNX_NO_SIMD",
+    "SK_CODEC_DECODES_JPEG",
+    "SK_ENCODE_JPEG",
+    "SK_HAS_ANDROID_CODEC",
+]
+FUCHSIA_DEFINES = [
+    "SK_BUILD_FOR_UNIX",
+    "SK_CODEC_DECODES_PNG",
+    "SK_CODEC_DECODES_WEBP",
+    "SK_ENCODE_PNG",
+    "SK_ENCODE_WEBP",
+    "SK_R32_SHIFT=16",
+    "SK_VULKAN",
+    "SK_CODEC_DECODES_JPEG",
+    "SK_ENCODE_JPEG",
+    "SK_HAS_ANDROID_CODEC",
+]
+MACOS_DEFINES = [
+    "SK_BUILD_FOR_MAC",
+    "SK_GL",
+    "SK_CODEC_DECODES_JPEG",
+    "SK_ENCODE_JPEG",
+    "SK_HAS_ANDROID_CODEC",
+]
+ANDROID_NO_CODECS_DEFINES = [
+    "SK_BUILD_FOR_ANDROID",
+    "SK_GL",
+]
 
 ################################################################################
 ## sksg_lib
@@ -2376,6 +2243,8 @@ SKOTTIE_LIB_SRCS = [
     "modules/skottie/src/SkottiePriv.h",
     "modules/skottie/src/SkottieProperty.cpp",
     "modules/skottie/src/SkottieValue.h",
+    "modules/skottie/src/text/Font.cpp",
+    "modules/skottie/src/text/Font.h",
     "modules/skottie/src/text/RangeSelector.cpp",
     "modules/skottie/src/text/RangeSelector.h",
     "modules/skottie/src/text/SkottieShaper.cpp",
@@ -2415,33 +2284,29 @@ SKOTTIE_SHAPER_SRCS = [
 ]
 
 ################################################################################
-## skottie_tool
-################################################################################
-
-SKOTTIE_TOOL_SRCS = [
-    "modules/skottie/src/SkottieTool.cpp",
-    "modules/skresources/src/SkResources.cpp",
-    "modules/skresources/include/SkResources.h",
-    # TODO(benjaminwagner): Add "flags" target.
-    "tools/flags/CommandLineFlags.cpp",
-    "tools/flags/CommandLineFlags.h",
-]
-
-################################################################################
 ## SkShaper
 ################################################################################
 
 # Stubs, pending SkUnicode fission
 SKUNICODE_ICU_BUILTIN_SRCS = [
+    "modules/skunicode/src/SkUnicode.cpp",
+    "modules/skunicode/src/SkUnicode_client.cpp",
     "modules/skunicode/src/SkUnicode_icu.cpp",
     "modules/skunicode/src/SkUnicode_icu.h",
     "modules/skunicode/src/SkUnicode_icu_builtin.cpp",
 ]
 
 SKUNICODE_ICU_RUNTIME_SRCS = [
+    "modules/skunicode/src/SkUnicode.cpp",
+    "modules/skunicode/src/SkUnicode_client.cpp",
     "modules/skunicode/src/SkUnicode_icu.cpp",
     "modules/skunicode/src/SkUnicode_icu.h",
     "modules/skunicode/src/SkUnicode_icu_runtime.cpp",
+]
+
+SKUNICODE_NO_ICU_SRCS = [
+    "modules/skunicode/src/SkUnicode.cpp",
+    "modules/skunicode/src/SkUnicode_client.cpp",
 ]
 
 SKUNICODE_HDRS = [

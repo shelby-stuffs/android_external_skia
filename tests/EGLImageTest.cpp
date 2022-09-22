@@ -43,7 +43,10 @@ static void cleanup(GLTestContext* glctx0,
     }
 }
 
-DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest, reporter, ctxInfo) {
+DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest,
+                                      reporter,
+                                      ctxInfo,
+                                      CtsEnforcement::kApiLevel_T) {
     auto context0 = ctxInfo.directContext();
     sk_gpu_test::GLTestContext* glCtx0 = ctxInfo.glContext();
 
@@ -84,9 +87,13 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest, reporter, ctxInfo) {
     context1->flushAndSubmit();
     static const int kSize = 100;
 
-    auto mbet = sk_gpu_test::ManagedBackendTexture::MakeWithoutData(
-            context1.get(), kSize, kSize, kRGBA_8888_SkColorType, GrMipmapped::kNo,
-            GrRenderable::kNo, GrProtected::kNo);
+    auto mbet = sk_gpu_test::ManagedBackendTexture::MakeWithoutData(context1.get(),
+                                                                    kSize,
+                                                                    kSize,
+                                                                    kRGBA_8888_SkColorType,
+                                                                    GrMipmapped::kNo,
+                                                                    GrRenderable::kNo,
+                                                                    GrProtected::kNo);
 
     if (!mbet) {
         ERRORF(reporter, "Error creating texture for EGL Image");

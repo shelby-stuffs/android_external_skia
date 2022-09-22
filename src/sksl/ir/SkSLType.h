@@ -8,6 +8,7 @@
 #ifndef SKSL_TYPE
 #define SKSL_TYPE
 
+#include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
 #include "include/private/SkSLModifiers.h"
@@ -50,6 +51,11 @@ struct CoercionCost {
 
     bool operator<(CoercionCost rhs) const {
         return std::tie(    fImpossible,     fNarrowingCost,     fNormalCost) <
+               std::tie(rhs.fImpossible, rhs.fNarrowingCost, rhs.fNormalCost);
+    }
+
+    bool operator<=(CoercionCost rhs) const {
+        return std::tie(    fImpossible,     fNarrowingCost,     fNormalCost) <=
                std::tie(rhs.fImpossible, rhs.fNarrowingCost, rhs.fNormalCost);
     }
 
@@ -130,7 +136,7 @@ public:
      * Create a generic type which maps to the listed types--e.g. $genType is a generic type which
      * can match float, float2, float3 or float4.
      */
-    static std::unique_ptr<Type> MakeGenericType(const char* name, std::vector<const Type*> types);
+    static std::unique_ptr<Type> MakeGenericType(const char* name, SkSpan<const Type* const> types);
 
     /** Create a type for literal scalars. */
     static std::unique_ptr<Type> MakeLiteralType(const char* name, const Type& scalarType,
@@ -413,8 +419,9 @@ public:
     /**
      * For generic types, returns the types that this generic type can substitute for.
      */
-    virtual const std::vector<const Type*>& coercibleTypes() const {
-        SK_ABORT("Internal error: not a generic type");
+    virtual SkSpan<const Type* const> coercibleTypes() const {
+        SkDEBUGFAILF("Internal error: not a generic type");
+        return {};
     }
 
     virtual SpvDim_ dimensions() const {
@@ -434,6 +441,10 @@ public:
 
     bool isVoid() const {
         return fTypeKind == TypeKind::kVoid;
+    }
+
+    bool isGeneric() const {
+        return fTypeKind == TypeKind::kGeneric;
     }
 
     virtual bool isScalar() const {

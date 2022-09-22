@@ -1,12 +1,12 @@
 
+const float sk_PrivGuardedDivideEpsilon = false ? 9.9999999392252903e-09 : 0.0;
 out vec4 sk_FragColor;
 uniform vec4 color;
-vec4 blend_src_in_h4h4h4(vec4 src, vec4 dst) {
-    return src * dst.w;
-}
-vec4 blend_dst_in_h4h4h4(vec4 src, vec4 dst) {
-    return dst * src.w;
-}
+float blend_color_saturation_Qhh3(vec3 color);
+vec4 blend_hslc_h4h4h4h2(vec4 src, vec4 dst, vec2 flipSat);
+vec4 blend_dst_in_h4h4h4(vec4 src, vec4 dst);
+vec4 blend_hue_h4h4h4(vec4 src, vec4 dst);
+vec4 blend_src_in_h4h4h4(vec4 src, vec4 dst);
 float blend_color_saturation_Qhh3(vec3 color) {
     return max(max(color.x, color.y), color.z) - min(min(color.x, color.y), color.z);
 }
@@ -27,15 +27,21 @@ vec4 blend_hslc_h4h4h4h2(vec4 src, vec4 dst, vec2 flipSat) {
     float _6_minComp = min(min(_5_result.x, _5_result.y), _5_result.z);
     float _7_maxComp = max(max(_5_result.x, _5_result.y), _5_result.z);
     if (_6_minComp < 0.0 && _4_lum != _6_minComp) {
-        _5_result = _4_lum + (_5_result - _4_lum) * (_4_lum / (_4_lum - _6_minComp));
+        _5_result = _4_lum + (_5_result - _4_lum) * (_4_lum / ((_4_lum - _6_minComp) + sk_PrivGuardedDivideEpsilon));
     }
     if (_7_maxComp > alpha && _7_maxComp != _4_lum) {
-        _5_result = _4_lum + ((_5_result - _4_lum) * (alpha - _4_lum)) / (_7_maxComp - _4_lum);
+        _5_result = _4_lum + ((_5_result - _4_lum) * (alpha - _4_lum)) / ((_7_maxComp - _4_lum) + sk_PrivGuardedDivideEpsilon);
     }
     return vec4((((_5_result + dst.xyz) - dsa) + src.xyz) - sda, (src.w + dst.w) - alpha);
 }
+vec4 blend_dst_in_h4h4h4(vec4 src, vec4 dst) {
+    return dst * src.w;
+}
 vec4 blend_hue_h4h4h4(vec4 src, vec4 dst) {
     return blend_hslc_h4h4h4h2(src, dst, vec2(0.0, 1.0));
+}
+vec4 blend_src_in_h4h4h4(vec4 src, vec4 dst) {
+    return src * dst.w;
 }
 float singleuse_h() {
     return 1.25;
@@ -47,11 +53,11 @@ float add_hhh(float a, float b) {
 float mul_hhh(float a, float b) {
     return a * b;
 }
-float fma_hhhh(float a, float b, float c) {
+float fused_multiply_add_hhhh(float a, float b, float c) {
     return add_hhh(mul_hhh(a, b), c);
 }
 void main() {
-    sk_FragColor = vec4(fma_hhhh(color.x, color.y, color.z));
+    sk_FragColor = vec4(fused_multiply_add_hhhh(color.x, color.y, color.z));
     sk_FragColor *= singleuse_h();
     sk_FragColor *= blend_src_in_h4h4h4(color.xxyy, color.zzww);
     sk_FragColor *= blend_dst_in_h4h4h4(color.xxyy, color.zzww);

@@ -1,4 +1,5 @@
-load("//bazel:macros.bzl", "cc_library", "exports_files_legacy", "objc_library", "select_multi", "selects")
+load("//bazel:macros.bzl", "exports_files_legacy", "select_multi", "selects", "skia_cc_deps", "skia_cc_library", "skia_objc_library")
+load("//bazel:copts.bzl", "DEFAULT_OBJC_COPTS")
 
 licenses(["notice"])
 
@@ -7,7 +8,7 @@ exports_files_legacy()
 selects.config_setting_group(
     name = "dawn_unix",
     match_all = [
-        "//bazel/common_config_settings:dawn_backend",
+        "//src/gpu:dawn_backend",
         "@platforms//os:linux",
     ],
 )
@@ -15,7 +16,7 @@ selects.config_setting_group(
 selects.config_setting_group(
     name = "gl_unix",
     match_all = [
-        "//bazel/common_config_settings:gl_backend",
+        "//src/gpu:gl_backend",
         "@platforms//os:linux",
     ],
 )
@@ -23,7 +24,7 @@ selects.config_setting_group(
 selects.config_setting_group(
     name = "gl_mac",
     match_all = [
-        "//bazel/common_config_settings:gl_backend",
+        "//src/gpu:gl_backend",
         "@platforms//os:macos",
     ],
 )
@@ -31,12 +32,12 @@ selects.config_setting_group(
 selects.config_setting_group(
     name = "vulkan_unix",
     match_all = [
-        "//bazel/common_config_settings:vulkan_backend",
+        "//src/gpu:vulkan_backend",
         "@platforms//os:linux",
     ],
 )
 
-cc_library(
+skia_cc_library(
     name = "sk_app",
     testonly = True,
     srcs = [
@@ -45,20 +46,19 @@ cc_library(
         "RasterWindowContext.h",
     ] + select_multi(
         {
-            "//bazel/common_config_settings:dawn_backend": [
+            "//src/gpu:dawn_backend": [
                 "DawnWindowContext.h",
                 "DawnWindowContext.cpp",
             ],
-            "//bazel/common_config_settings:gl_backend": [
+            "//src/gpu:gl_backend": [
                 "GLWindowContext.cpp",
                 "GLWindowContext.h",
             ],
-            "//bazel/common_config_settings:vulkan_backend": [
+            "//src/gpu:vulkan_backend": [
                 "VulkanWindowContext.h",
                 "VulkanWindowContext.cpp",
             ],
         },
-        default = [],
     ) + select({
         "@platforms//os:linux": ["//tools/sk_app/unix:srcs"],
         "//conditions:default": [],
@@ -81,7 +81,7 @@ cc_library(
     }),
 )
 
-objc_library(
+skia_objc_library(
     name = "sk_app_objc",
     testonly = True,
     srcs = [
@@ -90,13 +90,16 @@ objc_library(
         "RasterWindowContext.h",
     ] + select_multi(
         {
-            "//bazel/common_config_settings:gl_backend": [
+            # TODO(kjlubick, jmbetancourt) Graphite and Metal backend
+            "//src/gpu:dawn_backend": [
+                "DawnWindowContext.h",
+                "DawnWindowContext.cpp",
+            ],
+            "//src/gpu:gl_backend": [
                 "GLWindowContext.cpp",
                 "GLWindowContext.h",
             ],
-            #TODO dawn and metal backend
         },
-        default = [],
     ) + select({
         "@platforms//os:macos": ["//tools/sk_app/mac:srcs"],
         "//conditions:default": [],
@@ -108,21 +111,24 @@ objc_library(
         "Window.h",
         "WindowContext.h",
     ],
-    copts = [
+    copts = DEFAULT_OBJC_COPTS + [
         "-Wno-deprecated-declarations",
         "-DGL_SILENCE_DEPRECATION",
     ],
-    sdk_frameworks = [
-        "QuartzCore",
-        "Cocoa",
-        "Foundation",
-    ],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":platform_deps",
         "//:skia_internal",
         "//tools/skui",
         "//tools/timer",
-    ] + select({
+    ],
+)
+
+skia_cc_deps(
+    name = "platform_deps",
+    testonly = True,
+    visibility = ["//visibility:private"],
+    deps = select({
         "@platforms//os:macos": ["//tools/sk_app/mac:deps"],
         "//conditions:default": [],
     }),

@@ -19,7 +19,6 @@
 #include "src/sksl/ir/SkSLConstructorCompoundCast.h"
 #include "src/sksl/ir/SkSLConstructorScalarCast.h"
 #include "src/sksl/ir/SkSLExpression.h"
-#include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 
 #include <algorithm>
@@ -118,7 +117,7 @@ public:
         return fTargetType.isInterfaceBlock();
     }
 
-    const std::vector<const Type*>& coercibleTypes() const override {
+    SkSpan<const Type* const> coercibleTypes() const override {
         return fTargetType.coercibleTypes();
     }
 
@@ -186,18 +185,22 @@ class GenericType final : public Type {
 public:
     inline static constexpr TypeKind kTypeKind = TypeKind::kGeneric;
 
-    GenericType(const char* name, std::vector<const Type*> coercibleTypes)
-        : INHERITED(name, "G", kTypeKind)
-        , fCoercibleTypes(std::move(coercibleTypes)) {}
+    GenericType(const char* name, SkSpan<const Type* const> coercibleTypes)
+        : INHERITED(name, "G", kTypeKind) {
+        fNumTypes = coercibleTypes.size();
+        SkASSERT(fNumTypes <= SK_ARRAY_COUNT(fCoercibleTypes));
+        std::copy(coercibleTypes.begin(), coercibleTypes.end(), fCoercibleTypes);
+    }
 
-    const std::vector<const Type*>& coercibleTypes() const override {
-        return fCoercibleTypes;
+    SkSpan<const Type* const> coercibleTypes() const override {
+        return SkSpan(fCoercibleTypes, fNumTypes);
     }
 
 private:
     using INHERITED = Type;
 
-    std::vector<const Type*> fCoercibleTypes;
+    const Type* fCoercibleTypes[9];
+    size_t fNumTypes;
 };
 
 class LiteralType : public Type {
@@ -552,8 +555,8 @@ std::unique_ptr<Type> Type::MakeArrayType(std::string_view name, const Type& com
                                        componentType, columns);
 }
 
-std::unique_ptr<Type> Type::MakeGenericType(const char* name, std::vector<const Type*> types) {
-    return std::make_unique<GenericType>(name, std::move(types));
+std::unique_ptr<Type> Type::MakeGenericType(const char* name, SkSpan<const Type* const> types) {
+    return std::make_unique<GenericType>(name, types);
 }
 
 std::unique_ptr<Type> Type::MakeLiteralType(const char* name, const Type& scalarType,
@@ -626,7 +629,7 @@ CoercionCost Type::coercionCost(const Type& other) const {
         }
     }
     if (fTypeKind == TypeKind::kGeneric) {
-        const std::vector<const Type*>& types = this->coercibleTypes();
+        SkSpan<const Type* const> types = this->coercibleTypes();
         for (size_t i = 0; i < types.size(); i++) {
             if (types[i]->matches(other)) {
                 return CoercionCost::Normal((int) i + 1);
@@ -881,7 +884,7 @@ std::unique_ptr<Expression> Type::coerceExpression(std::unique_ptr<Expression> e
     }
 
     const Position pos = expr->fPosition;
-    const Program::Settings& settings = context.fConfig->fSettings;
+    const ProgramSettings& settings = context.fConfig->fSettings;
     if (!expr->coercionCost(*this).isPossible(settings.fAllowNarrowingConversions)) {
         context.fErrors->error(pos, "expected '" + this->displayName() + "', but found '" +
                 expr->type().displayName() + "'");

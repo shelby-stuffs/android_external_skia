@@ -66,7 +66,7 @@ DEF_TEST(SkRuntimeEffectInvalid_SkCapsDisallowed, r) {
     test_invalid_effect(
             r,
             "half4 main(float2 p) { return sk_Caps.floatIs32Bits ? half4(1) : half4(0); }",
-            "unknown identifier 'sk_Caps'");
+            "type '<INVALID>' does not have a field named 'floatIs32Bits'");
 }
 
 DEF_TEST(SkRuntimeEffect_DeadCodeEliminationStackOverflow, r) {
@@ -588,7 +588,10 @@ DEF_TEST(SkRuntimeEffectSimple, r) {
     test_RuntimeEffect_Shaders(r, nullptr);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRuntimeEffectSimple_GPU, r, ctxInfo) {
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRuntimeEffectSimple_GPU,
+                                   r,
+                                   ctxInfo,
+                                   CtsEnforcement::kApiLevel_T) {
     test_RuntimeEffect_Shaders(r, ctxInfo.directContext());
 }
 
@@ -698,7 +701,10 @@ DEF_TEST(SkRuntimeEffectObeysCapabilities_CPU, r) {
     test_RuntimeEffectObeysCapabilities(r, surface.get());
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRuntimeEffectObeysCapabilities_GPU, r, ctxInfo) {
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRuntimeEffectObeysCapabilities_GPU,
+                                   r,
+                                   ctxInfo,
+                                   CtsEnforcement::kApiLevel_T) {
     SkImageInfo info = SkImageInfo::Make(2, 2, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
     sk_sp<SkSurface> surface =
             SkSurface::MakeRenderTarget(ctxInfo.directContext(), SkBudgeted::kNo, info);
@@ -1012,7 +1018,10 @@ DEF_TEST(SkRuntimeEffect_Blender_CPU, r) {
     test_RuntimeEffect_Blenders(r, /*rContext=*/nullptr);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRuntimeEffect_Blender_GPU, r, ctxInfo) {
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRuntimeEffect_Blender_GPU,
+                                   r,
+                                   ctxInfo,
+                                   CtsEnforcement::kApiLevel_T) {
     test_RuntimeEffect_Blenders(r, ctxInfo.directContext());
 }
 
@@ -1156,7 +1165,10 @@ DEF_TEST(SkRuntimeStructNameReuse, r) {
     test_RuntimeEffectStructNameReuse(r, nullptr);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRuntimeStructNameReuse_GPU, r, ctxInfo) {
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRuntimeStructNameReuse_GPU,
+                                   r,
+                                   ctxInfo,
+                                   CtsEnforcement::kApiLevel_T) {
     test_RuntimeEffectStructNameReuse(r, ctxInfo.directContext());
 }
 
@@ -1317,7 +1329,7 @@ DEF_TEST(SkRuntimeShaderIsOpaque, r) {
     test("return cOnes.eval(xy);", false);
 }
 
-DEF_GPUTEST_FOR_ALL_CONTEXTS(GrSkSLFP_Specialized, r, ctxInfo) {
+DEF_GPUTEST_FOR_ALL_CONTEXTS(GrSkSLFP_Specialized, r, ctxInfo, CtsEnforcement::kApiLevel_T) {
     struct FpAndKey {
         std::unique_ptr<GrFragmentProcessor> fp;
         SkTArray<uint32_t, true>             key;
@@ -1354,11 +1366,11 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(GrSkSLFP_Specialized, r, ctxInfo) {
     SkASSERT(sRed.key != sGreen.key);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrSkSLFP_UniformArray, r, ctxInfo) {
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrSkSLFP_UniformArray, r, ctxInfo, CtsEnforcement::kApiLevel_T) {
     // Make a fill-context to draw into.
     GrDirectContext* directContext = ctxInfo.directContext();
     SkImageInfo info = SkImageInfo::Make(1, 1, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    std::unique_ptr<skgpu::SurfaceFillContext> testCtx =
+    std::unique_ptr<skgpu::v1::SurfaceFillContext> testCtx =
             directContext->priv().makeSFC(info, SkBackingFit::kExact);
 
     // Make an effect that takes a uniform array as input.

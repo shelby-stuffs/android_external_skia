@@ -649,7 +649,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLMatrices, r, ctxInfo) {
     EXPECT_EQUAL(f22 * 2, "(f22 * 2.0)");
     EXPECT_EQUAL(f22 == Float2x2(1), "(f22 == float2x2(1.0))");
     EXPECT_EQUAL(h42[0][1], "h42[0].y");
-    EXPECT_EQUAL(f43 * Float4(0), "(f43 * float4(0.0))");
+    EXPECT_EQUAL(f43 * Float4(0), "float3(0.0)");
     EXPECT_EQUAL(h23 * 2, "(h23 * 2.0)");
     EXPECT_EQUAL(Inverse(f44), "inverse(f44)");
 
@@ -1483,15 +1483,15 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLFunction, r, ctxInfo) {
         DSLWriter::Reset();
         DSLParameter x(kFloat2_Type, "x");
         DSLParameter y(kFloat2_Type, "y");
-        DSLFunction dot(kFloat2_Type, "dot", x, y);
+        DSLFunction dot(kFloat2_Type, "Dot", x, y);
         dot.define(
             Return(x * x + y * y)
         );
         EXPECT_EQUAL(dot(Float2(1.0f, 2.0f), Float2(3.0f, 4.0f)),
-                     "dot(float2(1.0, 2.0), float2(3.0, 4.0))");
+                     "Dot(float2(1.0, 2.0), float2(3.0, 4.0))");
         REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
         EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0],
-                "float2 dot(float2 x, float2 y) { return ((x * x) + (y * y)); }");
+                "float2 Dot(float2 x, float2 y) { return ((x * x) + (y * y)); }");
     }
 
     {
@@ -2052,12 +2052,12 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLInlining, r, ctxInfo) {
     const char* source = "source test";
     std::unique_ptr<SkSL::Program> program = ReleaseProgram(std::make_unique<std::string>(source));
     EXPECT_EQUAL(*program,
+                 "layout(builtin = 17) in bool sk_Clockwise;"
                  "layout(location = 0, index = 0, builtin = 10001) out half4 sk_FragColor;"
-                 "layout(builtin = 17)in bool sk_Clockwise;"
                  "void main() {"
                  ";"
                  ";"
-                 "(sk_FragColor = (4.0 , half4(half(9.0))));"
+                 "(sk_FragColor = (4.0, half4(half(9.0))));"
                  "}");
     REPORTER_ASSERT(r, *program->fSource == source);
 }

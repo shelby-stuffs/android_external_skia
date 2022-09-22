@@ -20,13 +20,18 @@
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
-#include "src/sksl/SkSLSharedCompiler.h"
+#include "src/sksl/SkSLUtil.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
+
+#if SK_SUPPORT_GPU
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrStagingBufferManager.h"
+#endif  // SK_SUPPORT_GPU
 
 #include <locale>
 #include <string>
@@ -328,15 +333,21 @@ SkMeshSpecification::Result SkMeshSpecification::MakeFromSourceWithStructs(
     std::vector<Uniform> uniforms;
     size_t offset = 0;
 
-    SkSL::SharedCompiler compiler;
-    SkSL::Program::Settings settings;
+    std::unique_ptr<SkSL::ShaderCaps> caps = SkSL::ShaderCapsFactory::Standalone();
+    SkSL::Compiler compiler(caps.get());
+
+    // Disable memory pooling; this might slow down compilation slightly, but it will ensure that a
+    // long-lived mesh specification doesn't waste memory.
+    SkSL::ProgramSettings settings;
+    settings.fUseMemoryPool = false;
+
     // TODO(skia:11209): Add SkCapabilities to the API, check against required version.
-    std::unique_ptr<SkSL::Program> vsProgram = compiler->convertProgram(
+    std::unique_ptr<SkSL::Program> vsProgram = compiler.convertProgram(
             SkSL::ProgramKind::kMeshVertex,
             std::string(vs.c_str()),
             settings);
     if (!vsProgram) {
-        RETURN_FAILURE("VS: %s", compiler->errorText().c_str());
+        RETURN_FAILURE("VS: %s", compiler.errorText().c_str());
     }
 
     if (auto [result, error] = gather_uniforms_and_check_for_main(
@@ -352,13 +363,13 @@ SkMeshSpecification::Result SkMeshSpecification::MakeFromSourceWithStructs(
         RETURN_FAILURE("Color transform intrinsics are not permitted in custom mesh shaders");
     }
 
-    std::unique_ptr<SkSL::Program> fsProgram = compiler->convertProgram(
+    std::unique_ptr<SkSL::Program> fsProgram = compiler.convertProgram(
             SkSL::ProgramKind::kMeshFragment,
             std::string(fs.c_str()),
             settings);
 
     if (!fsProgram) {
-        RETURN_FAILURE("FS: %s", compiler->errorText().c_str());
+        RETURN_FAILURE("FS: %s", compiler.errorText().c_str());
     }
 
     if (auto [result, error] = gather_uniforms_and_check_for_main(
@@ -455,6 +466,20 @@ const Uniform* SkMeshSpecification::findUniform(std::string_view name) const {
     return iter == fUniforms.end() ? nullptr : &(*iter);
 }
 
+const Attribute* SkMeshSpecification::findAttribute(std::string_view name) const {
+    auto iter = std::find_if(fAttributes.begin(), fAttributes.end(), [name](const Attribute& a) {
+        return name.compare(a.name.c_str()) == 0;
+    });
+    return iter == fAttributes.end() ? nullptr : &(*iter);
+}
+
+const Varying* SkMeshSpecification::findVarying(std::string_view name) const {
+    auto iter = std::find_if(fVaryings.begin(), fVaryings.end(), [name](const Varying& v) {
+        return name.compare(v.name.c_str()) == 0;
+    });
+    return iter == fVaryings.end() ? nullptr : &(*iter);
+}
+
 //////////////////////////////////////////////////////////////////////////////
 
 SkMesh::SkMesh()  = default;
@@ -467,9 +492,6 @@ SkMesh& SkMesh::operator=(const SkMesh&) = default;
 SkMesh& SkMesh::operator=(SkMesh&&)      = default;
 
 sk_sp<IndexBuffer> SkMesh::MakeIndexBuffer(GrDirectContext* dc, const void* data, size_t size) {
-    if (!data) {
-        return nullptr;
-    }
     if (!dc) {
         return SkMeshPriv::CpuIndexBuffer::Make(data, size);
     }
@@ -487,9 +509,6 @@ sk_sp<IndexBuffer> SkMesh::MakeIndexBuffer(GrDirectContext* dc, sk_sp<const SkDa
 }
 
 sk_sp<VertexBuffer> SkMesh::MakeVertexBuffer(GrDirectContext* dc, const void* data, size_t size) {
-    if (!data) {
-        return nullptr;
-    }
     if (!dc) {
         return SkMeshPriv::CpuVertexBuffer::Make(data, size);
     }
@@ -617,5 +636,85 @@ bool SkMesh::validate() const {
 
     return sm.ok();
 }
+
+//////////////////////////////////////////////////////////////////////////////
+
+static inline bool check_update(const void* data, size_t offset, size_t size, size_t bufferSize) {
+    SkSafeMath sm;
+    return data                                &&
+           size                                &&
+           SkIsAlign4(offset)                  &&
+           SkIsAlign4(size)                    &&
+           sm.add(offset, size) <= bufferSize  &&
+           sm.ok();
+}
+
+bool SkMesh::IndexBuffer::update(GrDirectContext* dc,
+                                 const void* data,
+                                 size_t offset,
+                                 size_t size) {
+    return check_update(data, offset, size, this->size()) && this->onUpdate(dc, data, offset, size);
+}
+
+bool SkMesh::VertexBuffer::update(GrDirectContext* dc,
+                                  const void* data,
+                                  size_t offset,
+                                  size_t size) {
+    return check_update(data, offset, size, this->size()) && this->onUpdate(dc, data, offset, size);
+}
+
+#if SK_SUPPORT_GPU
+bool SkMeshPriv::UpdateGpuBuffer(GrDirectContext* dc,
+                                 sk_sp<GrGpuBuffer> buffer,
+                                 const void* data,
+                                 size_t offset,
+                                 size_t size) {
+    if (!dc || dc != buffer->getContext()) {
+        return false;
+    }
+    SkASSERT(!dc->abandoned()); // If dc is abandoned then buffer->getContext() should be null.
+
+    if (!dc->priv().caps()->transferFromBufferToBufferSupport()) {
+        auto ownedData = SkData::MakeWithCopy(data, size);
+        dc->priv().drawingManager()->newBufferUpdateTask(std::move(ownedData),
+                                                         std::move(buffer),
+                                                         offset);
+        return true;
+    }
+
+    sk_sp<GrGpuBuffer> tempBuffer;
+    size_t tempOffset = 0;
+    if (auto* sbm = dc->priv().getGpu()->stagingBufferManager()) {
+        auto alignment = dc->priv().caps()->transferFromBufferToBufferAlignment();
+        auto [sliceBuffer, sliceOffset, ptr] = sbm->allocateStagingBufferSlice(size, alignment);
+        if (sliceBuffer) {
+            std::memcpy(ptr, data, size);
+            tempBuffer.reset(SkRef(sliceBuffer));
+            tempOffset = sliceOffset;
+        }
+    }
+
+    if (!tempBuffer) {
+        tempBuffer = dc->priv().resourceProvider()->createBuffer(size,
+                                                                 GrGpuBufferType::kXferCpuToGpu,
+                                                                 kDynamic_GrAccessPattern,
+                                                                 GrResourceProvider::ZeroInit::kNo);
+        if (!tempBuffer) {
+            return false;
+        }
+        if (!tempBuffer->updateData(data, 0, size, /*preserve=*/false)) {
+            return false;
+        }
+    }
+
+    dc->priv().drawingManager()->newBufferTransferTask(std::move(tempBuffer),
+                                                       tempOffset,
+                                                       std::move(buffer),
+                                                       offset,
+                                                       size);
+
+    return true;
+}
+#endif  // SK_SUPPORT_GPU
 
 #endif  // SK_ENABLE_SKSL

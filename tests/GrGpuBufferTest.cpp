@@ -11,10 +11,10 @@
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrGpuBuffer.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 #include "tests/Test.h"
 #include "tools/gpu/GrContextFactory.h"
 
@@ -169,12 +169,17 @@ private:
     friend class ::GrOp;
 };
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrGpuBufferTransferTest, reporter, ctxInfo) {
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrGpuBufferTransferTest,
+                                   reporter,
+                                   ctxInfo,
+                                   CtsEnforcement::kApiLevel_T) {
     if (!ctxInfo.directContext()->priv().caps()->transferFromBufferToBufferSupport()) {
         return;
     }
 
     GrDirectContext* dc = ctxInfo.directContext();
+
+    GrDrawingManager* dm = dc->priv().drawingManager();
 
     GrResourceProvider* rp = ctxInfo.directContext()->priv().resourceProvider();
 
@@ -201,6 +206,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrGpuBufferTransferTest, reporter, ctxInfo) {
     auto create_vertex_buffer = [&](sk_sp<GrGpuBuffer> srcBuffer,
                                     int srcBaseVertex,
                                     int vbBaseVertex,
+                                    bool useTask,
                                     bool minSizedTransfers) {
         // make initialization data of offscreen points.
         int dstVertexCount = vbBaseVertex + 6;
@@ -226,12 +232,22 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrGpuBufferTransferTest, reporter, ctxInfo) {
 
         if (minSizedTransfers) {
             for (size_t n = kTotalSize/alignment, i = 0; i < n; ++i) {
-                gpu->transferFromBufferToBuffer(srcBuffer,
-                                                srcOffset + i*alignment,
-                                                vb,
-                                                vbOffset + i*alignment,
-                                                alignment);
+                if (useTask) {
+                    dm->newBufferTransferTask(srcBuffer,
+                                              srcOffset + i*alignment,
+                                              vb,
+                                              vbOffset + i*alignment,
+                                              alignment);
+                } else {
+                    gpu->transferFromBufferToBuffer(srcBuffer,
+                                                    srcOffset + i*alignment,
+                                                    vb,
+                                                    vbOffset + i*alignment,
+                                                    alignment);
+                }
             }
+        } else if (useTask) {
+            dm->newBufferTransferTask(srcBuffer, srcOffset, vb, vbOffset, kTotalSize);
         } else {
             gpu->transferFromBufferToBuffer(srcBuffer, srcOffset, vb, vbOffset, kTotalSize);
         }
@@ -252,53 +268,64 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrGpuBufferTransferTest, reporter, ctxInfo) {
 
     auto pm = GrPixmap::Allocate(sdc->imageInfo().makeColorType(GrColorType::kRGBA_F32));
 
-    for (bool minSizedTransfers : {false, true}) {
-        for (int srcBaseVertex : {0, 5}) {
-            auto src = create_cpu_to_gpu_buffer(srcBaseVertex);
-            if (!src) {
-                ERRORF(reporter, "Could not create src buffer");
-                return;
-            }
-            for (int vbBaseVertex : {0, 2}) {
-                auto vb = create_vertex_buffer(src, srcBaseVertex, vbBaseVertex, minSizedTransfers);
-                if (!vb) {
-                    ERRORF(reporter, "Could not create vertex buffer");
+    for (bool useTask : {false, true}) {
+        for (bool minSizedTransfers : {false, true}) {
+            for (int srcBaseVertex : {0, 5}) {
+                auto src = create_cpu_to_gpu_buffer(srcBaseVertex);
+                if (!src) {
+                    ERRORF(reporter, "Could not create src buffer");
                     return;
                 }
+                for (int vbBaseVertex : {0, 2}) {
+                    auto vb = create_vertex_buffer(src,
+                                                   srcBaseVertex,
+                                                   vbBaseVertex,
+                                                   useTask,
+                                                   minSizedTransfers);
+                    if (!vb) {
+                        ERRORF(reporter, "Could not create vertex buffer");
+                        return;
+                    }
 
-                static constexpr SkColor4f kRed{1, 0, 0, 1};
+                    static constexpr SkColor4f kRed{1, 0, 0, 1};
 
-                static constexpr SkRect kBounds{0, 0, 1, 1};
+                    static constexpr SkRect kBounds{0, 0, 1, 1};
 
-                sdc->clear(kRed);
+                    sdc->clear(kRed);
 
-                sdc->addDrawOp(nullptr, TestVertexOp::Make(dc,
-                                                           vb,
-                                                           vbBaseVertex,
-                                                           /*vertexCount=*/6,
-                                                           kBounds));
+                    sdc->addDrawOp(nullptr, TestVertexOp::Make(dc,
+                                                               vb,
+                                                               vbBaseVertex,
+                                                               /*vertexCount=*/6,
+                                                               kBounds));
 
-                auto color = static_cast<SkPMColor4f*>(pm.addr());
-                *color = kRed.premul();
-                if (!sdc->readPixels(dc, pm, {0, 0})) {
-                    ERRORF(reporter, "Read back failed.");
-                    return;
+                    auto color = static_cast<SkPMColor4f*>(pm.addr());
+                    *color = kRed.premul();
+                    if (!sdc->readPixels(dc, pm, {0, 0})) {
+                        ERRORF(reporter, "Read back failed.");
+                        return;
+                    }
+
+                    static constexpr SkPMColor4f kGreen{0, 1, 0, 1};
+
+                    REPORTER_ASSERT(reporter, *color == kGreen, "src base vertex: %d, "
+                                                                "vb base vertex: %d, "
+                                                                "use task: %d, "
+                                                                "minSizedTransfers: %d",
+                                                                srcBaseVertex,
+                                                                vbBaseVertex,
+                                                                useTask,
+                                                                minSizedTransfers);
                 }
-
-                static constexpr SkPMColor4f kGreen{0, 1, 0, 1};
-
-                REPORTER_ASSERT(reporter, *color == kGreen, "src base vertex: %d, "
-                                                            "vb base vertex: %d, "
-                                                            "minSizedTransfers: %d",
-                                                            srcBaseVertex,
-                                                            vbBaseVertex,
-                                                            minSizedTransfers);
             }
         }
     }
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrGpuBufferUpdateDataTest, reporter, ctxInfo) {
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrGpuBufferUpdateDataTest,
+                                   reporter,
+                                   ctxInfo,
+                                   CtsEnforcement::kApiLevel_T) {
     GrDirectContext* dc = ctxInfo.directContext();
 
     GrGpu* gpu = ctxInfo.directContext()->priv().getGpu();

@@ -228,7 +228,8 @@ protected:
             emoiFont.setSubpixel(true);
             emoiFont.setTypeface(fEmojiTypeface);
             emoiFont.setSize(SkIntToScalar(19));
-            canvas->drawSimpleText(fEmojiText, strlen(fEmojiText), SkTextEncoding::kUTF8, 670, 90, emoiFont, paint);
+            canvas->drawSimpleText(fEmojiText, strlen(fEmojiText), SkTextEncoding::kUTF8, 670, 90,
+                                   emoiFont, paint);
         }
 
         // render offscreen buffer

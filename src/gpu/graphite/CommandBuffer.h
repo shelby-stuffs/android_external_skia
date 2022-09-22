@@ -14,6 +14,7 @@
 #include "include/private/SkTArray.h"
 #include "src/gpu/graphite/AttachmentTypes.h"
 #include "src/gpu/graphite/CommandTypes.h"
+#include "src/gpu/graphite/ComputeTypes.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/DrawWriter.h"
 
@@ -21,16 +22,23 @@ namespace skgpu {
 class RefCntedCallback;
 }
 
+#ifdef SK_ENABLE_PIET_GPU
+namespace skgpu::piet {
+class Scene;
+}
+#endif
+
 namespace skgpu::graphite {
+
 class Buffer;
+class ComputePipeline;
 class DrawPass;
-class Gpu;
+class SharedContext;
 class GraphicsPipeline;
 class Resource;
 class Sampler;
 class Texture;
 class TextureProxy;
-
 
 class CommandBuffer : public SkRefCnt {
 public:
@@ -53,6 +61,10 @@ public:
                        sk_sp<Texture> depthStencilTexture,
                        const std::vector<std::unique_ptr<DrawPass>>& drawPasses);
 
+    bool addComputePass(const ComputePassDesc&,
+                        sk_sp<ComputePipeline> pipeline,
+                        const std::vector<ResourceBinding>& bindings);
+
     //---------------------------------------------------------------
     // Can only be used outside renderpasses
     //---------------------------------------------------------------
@@ -65,6 +77,11 @@ public:
                              sk_sp<Texture>,
                              const BufferTextureCopyData*,
                              int count);
+    bool synchronizeBufferToCpu(sk_sp<Buffer>);
+
+#ifdef SK_ENABLE_PIET_GPU
+    void renderPietScene(const skgpu::piet::Scene& scene, sk_sp<Texture> target);
+#endif
 
 protected:
     CommandBuffer();
@@ -76,6 +93,10 @@ private:
                                  const Texture* depthStencilTexture,
                                  const std::vector<std::unique_ptr<DrawPass>>& drawPasses) = 0;
 
+    virtual bool onAddComputePass(const ComputePassDesc&,
+                                  const ComputePipeline*,
+                                  const std::vector<ResourceBinding>& bindings) = 0;
+
     virtual bool onCopyTextureToBuffer(const Texture*,
                                        SkIRect srcRect,
                                        const Buffer*,
@@ -85,6 +106,11 @@ private:
                                        const Texture*,
                                        const BufferTextureCopyData*,
                                        int count) = 0;
+    virtual bool onSynchronizeBufferToCpu(const Buffer*, bool* outDidResultInWork) = 0;
+
+#ifdef SK_ENABLE_PIET_GPU
+    virtual void onRenderPietScene(const skgpu::piet::Scene& scene, const Texture* target) = 0;
+#endif
 
 #ifdef SK_DEBUG
     bool fHasWork = false;

@@ -28,7 +28,7 @@
 #include "src/core/SkMatrixProvider.h"
 #include "src/gpu/ganesh/GrPaint.h"
 #include "src/gpu/ganesh/SkGr.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "tools/ToolUtils.h"
 
 #include <utility>
@@ -85,8 +85,10 @@ static void draw_gradient_tiles(SkCanvas* canvas, bool alignGradients) {
                 // Use non-public API to leverage general GrPaint capabilities
                 SkMatrix view = canvas->getTotalMatrix();
                 SkMatrixProvider matrixProvider(view);
+                SkSurfaceProps props;
                 GrPaint grPaint;
-                SkPaintToGrPaint(rContext, sdc->colorInfo(), paint, matrixProvider, &grPaint);
+                SkPaintToGrPaint(rContext, sdc->colorInfo(), paint, matrixProvider, props,
+                                 &grPaint);
                 sdc->fillRectWithEdgeAA(nullptr, std::move(grPaint),
                                         static_cast<GrQuadAAFlags>(aa), view, tile);
             } else {

@@ -21,6 +21,7 @@
 #include "include/private/SkChecksum.h"
 #include "include/private/SkTHash.h"
 #include "src/core/SkDevice.h"
+#include "src/core/SkDistanceFieldGen.h"
 #include "src/core/SkDraw.h"
 #include "src/core/SkEnumerate.h"
 #include "src/core/SkGlyph.h"
@@ -178,17 +179,23 @@ public:
         return fRoundingSpec;
     }
 
-    void prepareForMaskDrawing(
-            SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) override;
+    SkRect prepareForMaskDrawing(
+            SkScalar strikeToSourceScale,
+            SkDrawableGlyphBuffer* accepted,
+            SkSourceGlyphBuffer* rejected) override;
 
-    void prepareForSDFTDrawing(
-            SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) override;
+    SkRect prepareForSDFTDrawing(
+            SkScalar strikeToSourceScale,
+            SkDrawableGlyphBuffer* accepted,
+            SkSourceGlyphBuffer* rejected) override;
 
     void prepareForPathDrawing(
             SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) override;
 
     void prepareForDrawableDrawing(
             SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) override;
+
+    sktext::SkStrikePromise strikePromise() override;
 
     SkScalar findMaximumGlyphDimension(SkSpan<const SkGlyphID> glyphs) override;
 
@@ -204,48 +211,6 @@ public:
 
 private:
     SkGlyphDigest digest(SkPackedGlyphID);
-
-    template <typename Rejector>
-    void commonMaskLoop(
-            SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected, Rejector&& reject);
-
-    // Same thing as MaskSummary, but for paths.
-    struct PathSummary {
-        constexpr static uint16_t kIsPath = 0;
-        SkPackedGlyphID packedID;
-        // If drawing glyphID can be done with a path, this is 0, otherwise it is the max
-        // dimension of the glyph.
-        uint16_t maxDimensionOrPath;
-    };
-
-    struct PathSummaryTraits {
-        static SkPackedGlyphID GetKey(PathSummary summary) {
-            return summary.packedID;
-        }
-
-        static uint32_t Hash(SkPackedGlyphID packedID) {
-            return SkChecksum::CheapMix(packedID.value());
-        }
-    };
-
-    // Same thing as MaskSummary, but for drawables.
-    struct DrawableSummary {
-        constexpr static uint16_t kIsDrawable = 0;
-        SkGlyphID glyphID;
-        // If drawing glyphID can be done with a drawable, this is 0, otherwise it is the max
-        // dimension of the glyph.
-        uint16_t maxDimensionOrDrawable;
-    };
-
-    struct DrawableSummaryTraits {
-        static SkGlyphID GetKey(DrawableSummary summary) {
-            return summary.glyphID;
-        }
-
-        static uint32_t Hash(SkGlyphID packedID) {
-            return SkChecksum::CheapMix(packedID);
-        }
-    };
 
     void writeGlyphPath(const SkGlyph& glyph, Serializer* serializer) const;
     void writeGlyphDrawable(const SkGlyph& glyph, Serializer* serializer) const;
@@ -268,8 +233,8 @@ private:
 
     // The masks and paths that currently reside in the GPU process.
     SkTHashMap<SkPackedGlyphID, SkGlyphDigest, SkPackedGlyphID::Hash> fSentGlyphs;
-    SkTHashTable<PathSummary, SkPackedGlyphID, PathSummaryTraits> fSentPaths;
-    SkTHashTable<DrawableSummary, SkGlyphID, DrawableSummaryTraits> fSentDrawables;
+    SkTHashMap<SkGlyphID, bool> fSentPaths;
+    SkTHashMap<SkGlyphID, bool> fSentDrawables;
 
     // The Masks, SDFT Mask, and Paths that need to be sent to the GPU task for the processed
     // TextBlobs. Cleared after diffs are serialized.
@@ -374,6 +339,11 @@ void RemoteStrike::setStrikeSpec(const SkStrikeSpec& strikeSpec) {
 }
 
 void RemoteStrike::writeGlyphPath(const SkGlyph& glyph, Serializer* serializer) const {
+    if (glyph.isEmpty()) {
+        serializer->write<uint64_t>(0u);
+        return;
+    }
+
     const SkPath* path = glyph.path();
 
     if (path == nullptr) {
@@ -431,63 +401,76 @@ SkScalar RemoteStrike::findMaximumGlyphDimension(SkSpan<const SkGlyphID> glyphs)
     return maxDimension;
 }
 
-template <typename Rejector>
-void RemoteStrike::commonMaskLoop(
-        SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected, Rejector&& reject) {
-    accepted->forEachInput(
-            [&](size_t i, SkPackedGlyphID packedID, SkPoint position) {
-                SkGlyphDigest digest = this->digest(packedID);
-                // Reject things that are too big.
-                if (reject(digest)) {
-                    rejected->reject(i);
-                }
-            });
-}
-
-void RemoteStrike::prepareForMaskDrawing(
-        SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) {
-    for (auto [i, variant, _] : SkMakeEnumerate(accepted->input())) {
+SkRect RemoteStrike::prepareForMaskDrawing(
+        SkScalar strikeToSourceScale,
+        SkDrawableGlyphBuffer* accepted,
+        SkSourceGlyphBuffer* rejected) {
+    SkGlyphRect boundingRect = skglyph::empty_rect();
+    for (auto [i, variant, pos] : SkMakeEnumerate(accepted->input())) {
         SkPackedGlyphID packedID = variant.packedID();
-
         SkGlyphDigest digest = this->digest(packedID);
-
-        // Reject things that are too big.
-        // N.B. this must have the same behavior as SkScalerCache::prepareForMaskDrawing.
-        if (!digest.canDrawAsMask()) {
+        if (digest.canDrawAsMask()) {
+            if (!digest.isEmpty()) {
+                const SkGlyphRect glyphBounds =
+                        digest.bounds().scaleAndOffset(strikeToSourceScale, pos);
+                boundingRect = skglyph::rect_union(boundingRect, glyphBounds);
+                accepted->accept(packedID, glyphBounds.leftTop(), digest.maskFormat());
+            }
+        } else {
+            // Reject things that are too big.
+            // N.B. this must have the same behavior as SkScalerCache::prepareForMaskDrawing.
             rejected->reject(i);
         }
     }
+    return boundingRect.rect();
 }
 
-void RemoteStrike::prepareForSDFTDrawing(
-        SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) {
-    this->commonMaskLoop(accepted, rejected,
-                         [](SkGlyphDigest digest){return !digest.canDrawAsSDFT();});
+SkRect RemoteStrike::prepareForSDFTDrawing(SkScalar strikeToSourceScale,
+                                           SkDrawableGlyphBuffer* accepted,
+                                           SkSourceGlyphBuffer* rejected) {
+    SkGlyphRect boundingRect = skglyph::empty_rect();
+    for (auto [i, variant, pos] : SkMakeEnumerate(accepted->input())) {
+        SkPackedGlyphID packedID = variant.packedID();
+        SkGlyphDigest digest = this->digest(packedID);
+        if (digest.canDrawAsSDFT()) {
+            if (!digest.isEmpty()) {
+                // The SDFT glyphs have 2-pixel wide padding that should not be used in
+                // calculating the source rectangle.
+                const SkGlyphRect glyphBounds = digest.bounds()
+                                .inset(SK_DistanceFieldInset, SK_DistanceFieldInset)
+                                .scaleAndOffset(strikeToSourceScale, pos);
+                boundingRect = skglyph::rect_union(boundingRect, glyphBounds);
+                accepted->accept(packedID, glyphBounds.leftTop(), digest.maskFormat());
+            }
+        } else {
+            // Reject things that are too big.
+            // N.B. this must have the same behavior as SkScalerCache::prepareForMaskDrawing.
+            rejected->reject(i);
+        }
+    }
+    return boundingRect.rect();
 }
 
 void RemoteStrike::prepareForPathDrawing(
         SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) {
     accepted->forEachInput(
             [&](size_t i, SkPackedGlyphID packedID, SkPoint position) {
-                PathSummary* summary = fSentPaths.find(packedID);
-                if (summary == nullptr) {
-
+                bool* hasPath = fSentPaths.find(packedID.glyphID());
+                if (hasPath == nullptr) {
                     // Put the new SkGlyph in the glyphs to send.
                     this->ensureScalerContext();
                     fPathsToSend.emplace_back(fContext->makeGlyph(packedID, &fAlloc));
                     SkGlyph* glyph = &fPathsToSend.back();
 
-                    uint16_t maxDimensionOrPath = glyph->maxDimension();
                     glyph->setPath(&fAlloc, fContext.get());
-                    if (glyph->path() != nullptr) {
-                        maxDimensionOrPath = PathSummary::kIsPath;
-                    }
-
-                    PathSummary newSummary = {packedID, maxDimensionOrPath};
-                    summary = fSentPaths.set(newSummary);
+                    // If the glyph is empty, count it as having a path so that it is not rejected.
+                    bool markAsPath = glyph->isEmpty() || glyph->path() != nullptr;
+                    hasPath = fSentPaths.set(packedID.glyphID(), markAsPath);
                 }
 
-                if (summary->maxDimensionOrPath != PathSummary::kIsPath) {
+                if (*hasPath) {
+                    accepted->accept(packedID, position);
+                } else {
                     rejected->reject(i);
                 }
             });
@@ -498,28 +481,31 @@ void RemoteStrike::prepareForDrawableDrawing(
     accepted->forEachInput(
             [&](size_t i, SkPackedGlyphID packedID, SkPoint position) {
                 SkGlyphID glyphID = packedID.glyphID();
-                DrawableSummary* summary = fSentDrawables.find(glyphID);
-                if (summary == nullptr) {
+                bool* hasDrawable = fSentDrawables.find(glyphID);
+                if (hasDrawable == nullptr) {
 
                     // Put the new SkGlyph in the glyphs to send.
                     this->ensureScalerContext();
                     fDrawablesToSend.emplace_back(fContext->makeGlyph(packedID, &fAlloc));
                     SkGlyph* glyph = &fDrawablesToSend.back();
 
-                    uint16_t maxDimensionOrDrawable = glyph->maxDimension();
                     glyph->setDrawable(&fAlloc, fContext.get());
-                    if (glyph->drawable() != nullptr) {
-                        maxDimensionOrDrawable = DrawableSummary::kIsDrawable;
-                    }
-
-                    DrawableSummary newSummary = {glyph->getGlyphID(), maxDimensionOrDrawable};
-                    summary = fSentDrawables.set(newSummary);
+                    // If the glyph is empty, count it as having a drawable so that it is not
+                    // rejected.
+                    bool makeAsDrawable = glyph->isEmpty() || glyph->drawable() != nullptr;
+                    hasDrawable = fSentDrawables.set(glyphID, makeAsDrawable);
                 }
 
-                if (summary->maxDimensionOrDrawable != DrawableSummary::kIsDrawable) {
+                if (*hasDrawable) {
+                    accepted->accept(packedID, position);
+                } else {
                     rejected->reject(i);
                 }
             });
+}
+
+sktext::SkStrikePromise RemoteStrike::strikePromise() {
+    return sktext::SkStrikePromise{*this->fStrikeSpec};
 }
 
 // -- WireTypeface ---------------------------------------------------------------------------------
@@ -552,7 +538,6 @@ public:
     void writeStrikeData(std::vector<uint8_t>* memory);
 
     sktext::ScopedStrikeForGPU findOrCreateScopedStrike(const SkStrikeSpec& strikeSpec) override;
-    sktext::StrikeRef findOrCreateStrikeRef(const SkStrikeSpec& strikeSpec) override;
 
     // Methods for testing
     void setMaxEntriesInDescriptorMapForTesting(size_t count);
@@ -670,10 +655,6 @@ sktext::ScopedStrikeForGPU SkStrikeServerImpl::findOrCreateScopedStrike(
     return sktext::ScopedStrikeForGPU{this->getOrCreateCache(strikeSpec)};
 }
 
-sktext::StrikeRef SkStrikeServerImpl::findOrCreateStrikeRef(const SkStrikeSpec& strikeSpec) {
-    return sktext::StrikeRef{this->getOrCreateCache(strikeSpec)};
-}
-
 void SkStrikeServerImpl::checkForDeletedEntries() {
     auto it = fDescToRemoteStrike.begin();
     while (fDescToRemoteStrike.size() > fMaxEntriesInDescriptorMap &&
@@ -787,14 +768,14 @@ protected:
         // Just ignore the resulting SubRunContainer. Since we're passing in a null SubRunAllocator
         // no SubRuns will be produced.
         STSubRunAllocator<sizeof(SubRunContainer), alignof(SubRunContainer)> tempAlloc;
-        auto [_, container] = SubRunContainer::MakeInAlloc(glyphRunList,
-                                                           drawMatrix,
-                                                           drawingPaint,
-                                                           this->strikeDeviceInfo(),
-                                                           fStrikeServerImpl,
-                                                           &tempAlloc,
-                                                           SubRunContainer::kStrikeCalculationsOnly,
-                                                           "Cache Diff");
+        auto container = SubRunContainer::MakeInAlloc(glyphRunList,
+                                                      drawMatrix,
+                                                      drawingPaint,
+                                                      this->strikeDeviceInfo(),
+                                                      fStrikeServerImpl,
+                                                      &tempAlloc,
+                                                      SubRunContainer::kStrikeCalculationsOnly,
+                                                      "Cache Diff");
         // Calculations only. No SubRuns.
         SkASSERT(container->isEmpty());
     }
@@ -806,6 +787,7 @@ protected:
         SkMatrix positionMatrix = this->localToDevice();
         positionMatrix.preTranslate(glyphRunList.origin().x(), glyphRunList.origin().y());
 
+#ifdef SK_SUPPORT_LEGACY_SLUG_CONVERT
         // TODO these two passes can be converted into one when the SkRemoteGlyphCache's strike
         //  cache is fortified with enough information for supporting slug creation.
 
@@ -813,14 +795,14 @@ protected:
         // the analysis. Just ignore the resulting SubRunContainer. Since we're passing in a null
         // SubRunAllocator no SubRuns will be produced.
         STSubRunAllocator<sizeof(SubRunContainer), alignof(SubRunContainer)> tempAlloc;
-        auto [_, container] = SubRunContainer::MakeInAlloc(glyphRunList,
-                                                           positionMatrix,
-                                                           drawingPaint,
-                                                           this->strikeDeviceInfo(),
-                                                           fStrikeServerImpl,
-                                                           &tempAlloc,
-                                                           SubRunContainer::kStrikeCalculationsOnly,
-                                                           "Convert Slug Analysis");
+        auto container = SubRunContainer::MakeInAlloc(glyphRunList,
+                                                      positionMatrix,
+                                                      drawingPaint,
+                                                      this->strikeDeviceInfo(),
+                                                      fStrikeServerImpl,
+                                                      &tempAlloc,
+                                                      SubRunContainer::kStrikeCalculationsOnly,
+                                                      "Convert Slug Analysis");
         // Calculations only. No SubRuns.
         SkASSERT(container->isEmpty());
 
@@ -831,6 +813,15 @@ protected:
                                    drawingPaint,
                                    this->strikeDeviceInfo(),
                                    SkStrikeCache::GlobalStrikeCache());
+#else
+        // Use the SkStrikeServer's strike cache to generate the Slug.
+        return skgpu::v1::MakeSlug(this->localToDevice(),
+                                   glyphRunList,
+                                   initialPaint,
+                                   drawingPaint,
+                                   this->strikeDeviceInfo(),
+                                   fStrikeServerImpl);
+#endif
     }
 
 private:
@@ -848,11 +839,13 @@ SkStrikeServer::~SkStrikeServer() = default;
 std::unique_ptr<SkCanvas> SkStrikeServer::makeAnalysisCanvas(int width, int height,
                                                              const SkSurfaceProps& props,
                                                              sk_sp<SkColorSpace> colorSpace,
-                                                             bool DFTSupport) {
+                                                             bool DFTSupport,
+                                                             bool DFTPerspSupport) {
 #if SK_SUPPORT_GPU
     GrContextOptions ctxOptions;
     auto control = sktext::gpu::SDFTControl{DFTSupport,
                                             props.isUseDeviceIndependentFonts(),
+                                            DFTPerspSupport,
                                             ctxOptions.fMinDistanceFieldFontSize,
                                             ctxOptions.fGlyphsAsPathsFontSize};
 

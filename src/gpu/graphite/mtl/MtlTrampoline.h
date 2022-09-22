@@ -19,10 +19,10 @@ class SingleOwner;
 namespace skgpu::graphite {
 struct ContextOptions;
 class GlobalCache;
-class Gpu;
 struct MtlBackendContext;
 class QueueManager;
 class ResourceProvider;
+class SharedContext;
 
 /*
  * This class is used to hold functions which trampoline from the Graphite cpp code
@@ -30,15 +30,13 @@ class ResourceProvider;
  */
 class MtlTrampoline {
 public:
-    static sk_sp<skgpu::graphite::Gpu> MakeGpu(const MtlBackendContext&, const ContextOptions&);
-    static std::unique_ptr<QueueManager> MakeQueueManager(Gpu*);
-    static std::unique_ptr<ResourceProvider> MakeResourceProvider(const Gpu*,
-                                                                  sk_sp<GlobalCache>,
-                                                                  SingleOwner*);
+    static sk_sp<SharedContext> MakeSharedContext(const MtlBackendContext&, const ContextOptions&);
+    static std::unique_ptr<QueueManager> MakeQueueManager(const MtlBackendContext&,
+                                                          const SharedContext*);
+    static std::unique_ptr<ResourceProvider> MakeResourceProvider(SharedContext*, SingleOwner*);
 
 };
 
 } // namespace skgpu::graphite
 
 #endif // skgpu_graphite_MtlTrampoline_DEFINED
-

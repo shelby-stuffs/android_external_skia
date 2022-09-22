@@ -8,23 +8,41 @@
 #ifndef skgpu_graphite_MtlQueueManager_DEFINED
 #define skgpu_graphite_MtlQueueManager_DEFINED
 
+#include "include/ports/SkCFObject.h"
 #include "src/gpu/graphite/QueueManager.h"
+
+#ifdef SK_ENABLE_PIET_GPU
+#include "src/gpu/piet/Render.h"
+#endif
+
+#import <Metal/Metal.h>
 
 namespace skgpu::graphite {
 
-class Gpu;
-class MtlGpu;
+class MtlSharedContext;
+class SharedContext;
 
 class MtlQueueManager : public QueueManager {
 public:
-    MtlQueueManager(Gpu*);
+    MtlQueueManager(sk_cfp<id<MTLCommandQueue>> queue, const SharedContext*);
     ~MtlQueueManager() override {}
 
 private:
-    MtlGpu* mtlGpu() const;
+    const MtlSharedContext* mtlSharedContext() const;
 
     sk_sp<CommandBuffer> getNewCommandBuffer() override;
     OutstandingSubmission onSubmitToGpu() override;
+
+#if GRAPHITE_TEST_UTILS
+    void testingOnly_startCapture() override;
+    void testingOnly_endCapture() override;
+#endif
+
+    sk_cfp<id<MTLCommandQueue>> fQueue;
+
+#ifdef SK_ENABLE_PIET_GPU
+    skgpu::piet::MtlRenderer fPietRenderer;
+#endif
 };
 
 } // namespace skgpu::graphite

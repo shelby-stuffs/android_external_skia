@@ -19,36 +19,39 @@
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/DrawList.h"
 #include "src/gpu/graphite/DrawPass.h"
-#include "src/gpu/graphite/Gpu.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/RenderPassTask.h"
 #include "src/gpu/graphite/ResourceTypes.h"
+#include "src/gpu/graphite/SharedContext.h"
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/UploadTask.h"
 #include "src/gpu/graphite/geom/BoundsManager.h"
 #include "src/gpu/graphite/geom/Geometry.h"
 
+#ifdef SK_ENABLE_PIET_GPU
+#include "src/gpu/graphite/PietRenderTask.h"
+#endif
+
 namespace skgpu::graphite {
 
 sk_sp<DrawContext> DrawContext::Make(sk_sp<TextureProxy> target,
-                                     sk_sp<SkColorSpace> colorSpace,
-                                     SkColorType colorType,
-                                     SkAlphaType alphaType) {
+                                     const SkColorInfo& colorInfo,
+                                     const SkSurfaceProps& props) {
     if (!target) {
         return nullptr;
     }
 
     // TODO: validate that the color type and alpha type are compatible with the target's info
-    SkImageInfo imageInfo = SkImageInfo::Make(target->dimensions(),
-                                              colorType,
-                                              alphaType,
-                                              std::move(colorSpace));
-    return sk_sp<DrawContext>(new DrawContext(std::move(target), imageInfo));
+    SkImageInfo imageInfo = SkImageInfo::Make(target->dimensions(), colorInfo);
+    return sk_sp<DrawContext>(new DrawContext(std::move(target), imageInfo, props));
 }
 
-DrawContext::DrawContext(sk_sp<TextureProxy> target, const SkImageInfo& ii)
+DrawContext::DrawContext(sk_sp<TextureProxy> target,
+                         const SkImageInfo& ii,
+                         const SkSurfaceProps& props)
         : fTarget(std::move(target))
         , fImageInfo(ii)
+        , fSurfaceProps(props)
         , fPendingDraws(std::make_unique<DrawList>())
         , fPendingUploads(std::make_unique<UploadList>()) {
     // TBD - Will probably want DrawLists (and its internal commands) to come from an arena
@@ -96,6 +99,15 @@ bool DrawContext::recordUpload(Recorder* recorder,
                                          levels,
                                          dstRect);
 }
+
+#ifdef SK_ENABLE_PIET_GPU
+bool DrawContext::recordPietSceneRender(Recorder*,
+                                        sk_sp<TextureProxy> targetProxy,
+                                        sk_sp<const skgpu::piet::Scene> scene) {
+    fPendingPietRenders.push_back(PietRenderInstance(std::move(scene), std::move(targetProxy)));
+    return true;
+}
+#endif
 
 void DrawContext::snapDrawPass(Recorder* recorder) {
     if (fPendingDraws->drawCount() == 0) {
@@ -183,5 +195,14 @@ sk_sp<Task> DrawContext::snapUploadTask(Recorder* recorder) {
 
     return uploadTask;
 }
+
+#ifdef SK_ENABLE_PIET_GPU
+sk_sp<Task> DrawContext::snapPietRenderTask(Recorder* recorder) {
+    if (fPendingPietRenders.empty()) {
+        return nullptr;
+    }
+    return sk_sp<Task>(new PietRenderTask(std::move(fPendingPietRenders)));
+}
+#endif
 
 } // namespace skgpu::graphite

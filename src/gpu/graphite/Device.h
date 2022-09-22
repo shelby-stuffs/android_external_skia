@@ -46,12 +46,14 @@ class Device final : public SkBaseDevice  {
 public:
     ~Device() override;
 
-    static sk_sp<Device> Make(Recorder*, const SkImageInfo&, SkBudgeted);
+    static sk_sp<Device> Make(Recorder*,
+                              const SkImageInfo&,
+                              SkBudgeted,
+                              const SkSurfaceProps&);
     static sk_sp<Device> Make(Recorder*,
                               sk_sp<TextureProxy>,
-                              sk_sp<SkColorSpace>,
-                              SkColorType,
-                              SkAlphaType);
+                              const SkColorInfo&,
+                              const SkSurfaceProps&);
 
     Device* asGraphiteDevice() override { return this; }
 
@@ -147,7 +149,7 @@ private:
                    const SkPaint&) override {}
 
     void drawDrawable(SkCanvas*, SkDrawable*, const SkMatrix*) override {}
-    void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override {}
+    void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override;
     void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override {}
     void drawShadow(const SkPath&, const SkDrawShadowRec&) override {}
 
@@ -163,12 +165,12 @@ private:
     enum class DrawFlags : unsigned {
         kNone             = 0b000,
 
-        // Any SkMaskFilter on the SkPaint passed into drawShape() is ignored.
+        // Any SkMaskFilter on the SkPaint passed into drawGeometry() is ignored.
         // - drawPaint, drawVertices, drawAtlas
         // - drawShape after it's applied the mask filter.
         kIgnoreMaskFilter = 0b001,
 
-        // Any SkPathEffect on the SkPaint passed into drawShape() is ignored.
+        // Any SkPathEffect on the SkPaint passed into drawGeometry() is ignored.
         // - drawPaint, drawImageLattice, drawImageRect, drawEdgeAAImageSet, drawVertices, drawAtlas
         // - drawShape after it's applied the path effect.
         kIgnorePathEffect = 0b010,
@@ -184,7 +186,9 @@ private:
                       const Geometry&,
                       const SkPaint&,
                       const SkStrokeRec&,
-                      SkEnumBitMask<DrawFlags> = DrawFlags::kNone);
+                      SkEnumBitMask<DrawFlags> = DrawFlags::kNone,
+                      sk_sp<SkBlender> primitiveBlender = nullptr,
+                      bool skipColorXform = false);
 
     // Like drawGeometry() but is Shape-only, depth-only, fill-only, and lets the ClipStack define
     // the transform, clip, and DrawOrder (although Device still tracks stencil buffer usage).

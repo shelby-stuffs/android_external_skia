@@ -41,8 +41,8 @@
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkOpts.h"
-#include "src/core/SkPictureCommon.h"
 #include "src/core/SkPictureData.h"
+#include "src/core/SkPicturePriv.h"
 #include "src/core/SkRecordDraw.h"
 #include "src/core/SkRecorder.h"
 #include "src/core/SkTLazy.h"
@@ -57,6 +57,7 @@
 #include "tools/DDLTileHelper.h"
 #include "tools/Resources.h"
 #include "tools/RuntimeBlendUtils.h"
+#include "tools/ToolUtils.h"
 #include "tools/UrlDataManager.h"
 #include "tools/debugger/DebugCanvas.h"
 #include "tools/gpu/BackendSurfaceFactory.h"
@@ -86,7 +87,6 @@
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
-#include "include/gpu/graphite/SkStuff.h"
 // TODO: Remove this src include once we figure out public readPixels call for Graphite.
 #include "src/gpu/graphite/Surface_Graphite.h"
 #include "tools/graphite/ContextFactory.h"
@@ -2150,7 +2150,8 @@ Result GraphiteSink::draw(const Src& src,
         return Result::Fatal("Could not create a context.");
     }
 
-    std::unique_ptr<skgpu::graphite::Recorder> recorder = context->makeRecorder();
+    std::unique_ptr<skgpu::graphite::Recorder> recorder =
+                                context->makeRecorder(ToolUtils::CreateTestingRecorderOptions());
     if (!recorder) {
         return Result::Fatal("Could not create a recorder.");
     }
@@ -2158,7 +2159,7 @@ Result GraphiteSink::draw(const Src& src,
     dst->allocPixels(ii);
 
     {
-        sk_sp<SkSurface> surface = MakeGraphite(recorder.get(), ii);
+        sk_sp<SkSurface> surface = SkSurface::MakeGraphite(recorder.get(), ii);
         if (!surface) {
             return Result::Fatal("Could not create a surface.");
         }

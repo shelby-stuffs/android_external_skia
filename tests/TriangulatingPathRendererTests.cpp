@@ -488,8 +488,8 @@ CreatePathFn kNonEdgeAAPaths[] = {
 };
 
 #if SK_GPU_V1
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/ops/TriangulatingPathRenderer.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 
 // A simple concave path. Test this with a non-invertible matrix.
 static SkPath create_path_17() {
@@ -789,7 +789,8 @@ static std::unique_ptr<GrFragmentProcessor> create_linear_gradient_processor(
         pts, colors, nullptr, std::size(colors), SkTileMode::kClamp);
     GrColorInfo colorInfo(GrColorType::kRGBA_8888, kPremul_SkAlphaType, nullptr);
     SkMatrixProvider matrixProvider(SkMatrix::I());
-    return as_SB(shader)->asFragmentProcessor({rContext, matrixProvider, &colorInfo});
+    SkSurfaceProps props; // default props for testing
+    return as_SB(shader)->asFragmentProcessor({rContext, matrixProvider, &colorInfo, props});
 }
 
 static void test_path(GrRecordingContext* rContext,
@@ -823,7 +824,10 @@ static void test_path(GrRecordingContext* rContext,
     pr.drawPath(args);
 }
 
-DEF_GPUTEST_FOR_ALL_CONTEXTS(TriangulatingPathRendererTests, reporter, ctxInfo) {
+DEF_GPUTEST_FOR_ALL_CONTEXTS(TriangulatingPathRendererTests,
+                             reporter,
+                             ctxInfo,
+                             CtsEnforcement::kNever) {
     auto ctx = ctxInfo.directContext();
     auto sdc = skgpu::v1::SurfaceDrawContext::Make(
             ctx, GrColorType::kRGBA_8888, nullptr, SkBackingFit::kApprox, {800, 800},
