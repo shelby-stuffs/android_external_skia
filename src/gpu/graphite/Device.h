@@ -5,8 +5,8 @@
  * found in the LICENSE file.
  */
 
-#ifndef skgpu_Device_DEFINED
-#define skgpu_Device_DEFINED
+#ifndef skgpu_graphite_Device_DEFINED
+#define skgpu_graphite_Device_DEFINED
 
 #include "src/core/SkDevice.h"
 #include "src/core/SkEnumBitMask.h"
@@ -19,12 +19,6 @@
 #include "src/text/gpu/SubRunContainer.h"
 
 class SkStrokeRec;
-
-namespace {
-class DirectMaskSubRun;
-class TransformedMaskSubRun;
-class SDFTSubRun;
-}
 
 namespace sktext::gpu { class AtlasSubRun; }
 
@@ -41,6 +35,7 @@ class Renderer;
 class Shape;
 class StrokeStyle;
 class TextureProxy;
+class TextureProxyView;
 
 class Device final : public SkBaseDevice  {
 public:
@@ -49,11 +44,13 @@ public:
     static sk_sp<Device> Make(Recorder*,
                               const SkImageInfo&,
                               SkBudgeted,
-                              const SkSurfaceProps&);
+                              const SkSurfaceProps&,
+                              bool addInitialClear);
     static sk_sp<Device> Make(Recorder*,
                               sk_sp<TextureProxy>,
                               const SkColorInfo&,
-                              const SkSurfaceProps&);
+                              const SkSurfaceProps&,
+                              bool addInitialClear);
 
     Device* asGraphiteDevice() override { return this; }
 
@@ -75,6 +72,7 @@ public:
 #if GRAPHITE_TEST_UTILS
     TextureProxy* proxy();
 #endif
+    TextureProxyView readSurfaceView();
 
 private:
     class IntersectionTreeSet;
@@ -153,9 +151,9 @@ private:
     void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override {}
     void drawShadow(const SkPath&, const SkDrawShadowRec&) override {}
 
-    void drawDevice(SkBaseDevice*, const SkSamplingOptions&, const SkPaint&) override {}
+    void drawDevice(SkBaseDevice*, const SkSamplingOptions&, const SkPaint&) override;
     void drawSpecial(SkSpecialImage*, const SkMatrix& localToDevice,
-                     const SkSamplingOptions&, const SkPaint&) override {}
+                     const SkSamplingOptions&, const SkPaint&) override;
 
     sk_sp<SkSpecialImage> makeSpecial(const SkBitmap&) override;
     sk_sp<SkSpecialImage> makeSpecial(const SkImage*) override;
@@ -177,7 +175,7 @@ private:
     };
     SK_DECL_BITMASK_OPS_FRIENDS(DrawFlags);
 
-    Device(Recorder*, sk_sp<DrawContext>);
+    Device(Recorder*, sk_sp<DrawContext>, bool addInitialClear);
 
     // Handles applying path effects, mask filters, stroke-and-fill styles, and hairlines.
     // Ignores geometric style on the paint in favor of explicitly provided SkStrokeRec and flags.
@@ -209,7 +207,7 @@ private:
     // return a retry error code? or does drawGeometry() handle all the fallbacks, knowing that
     // a particular shape type needs to be pre-chopped?
     // TODO: Move this into a RendererSelector object provided by the Context.
-    static const Renderer* ChooseRenderer(const Geometry&, const Clip&, const SkStrokeRec&);
+    const Renderer* chooseRenderer(const Geometry&, const Clip&, const SkStrokeRec&) const;
 
     bool needsFlushBeforeDraw(int numNewDraws) const;
 
@@ -235,13 +233,11 @@ private:
     bool fDrawsOverlap;
 
     friend class ClipStack; // for recordDraw
-    friend class ::DirectMaskSubRun; // for drawAtlasSubRun
-    friend class ::TransformedMaskSubRun; // for drawAtlasSubRun
-    friend class ::SDFTSubRun; // for drawAtlasSubRun
+    friend class sktext::gpu::AtlasSubRun; // for drawAtlasSubRun
 };
 
 SK_MAKE_BITMASK_OPS(Device::DrawFlags)
 
-} // namespace skgpu
+} // namespace skgpu::graphite
 
-#endif // skgpu_Device_DEFINED
+#endif // skgpu_graphite_Device_DEFINED

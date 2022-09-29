@@ -1107,12 +1107,6 @@ static void start_pipeline(size_t dx, size_t dy, size_t xlimit, size_t ylimit, v
     }
 }
 
-#if SK_HAS_MUSTTAIL
-    #define JUMPER_MUSTTAIL [[clang::musttail]]
-#else
-    #define JUMPER_MUSTTAIL
-#endif
-
 #if JUMPER_NARROW_STAGES
     #define STAGE(name, ...)                                                    \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail,        \
@@ -1122,7 +1116,7 @@ static void start_pipeline(size_t dx, size_t dy, size_t xlimit, size_t ylimit, v
             name##_k(Ctx{program},params->dx,params->dy,params->tail, r,g,b,a,  \
                      params->dr, params->dg, params->db, params->da);           \
             auto next = (Stage)load_and_inc(program);                           \
-            JUMPER_MUSTTAIL return next(params,program, r,g,b,a);               \
+            next(params,program, r,g,b,a);                                      \
         }                                                                       \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail,        \
                          F& r, F& g, F& b, F& a, F& dr, F& dg, F& db, F& da)
@@ -1134,7 +1128,7 @@ static void start_pipeline(size_t dx, size_t dy, size_t xlimit, size_t ylimit, v
                              F r, F g, F b, F a, F dr, F dg, F db, F da) {           \
             name##_k(Ctx{program},dx,dy,tail, r,g,b,a, dr,dg,db,da);                 \
             auto next = (Stage)load_and_inc(program);                                \
-            JUMPER_MUSTTAIL return next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);   \
+            next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);                          \
         }                                                                            \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail,             \
                          F& r, F& g, F& b, F& a, F& dr, F& dg, F& db, F& da)
@@ -1374,7 +1368,16 @@ SI U32 to_unorm(F v, F scale, F bias = 1.0f) {
     return round(min(max(0, v), bias), scale);
 }
 
-SI I32 cond_to_mask(I32 cond) { return if_then_else(cond, I32(~0), I32(0)); }
+SI I32 cond_to_mask(I32 cond) {
+#if defined(JUMPER_IS_SCALAR)
+    // In scalar mode, conditions are bools (0 or 1), but we want to store and operate on masks
+    // (eg, using bitwise operations to select values).
+    return if_then_else(cond, I32(~0), I32(0));
+#else
+    // In SIMD mode, our various instruction sets already represent conditions as masks.
+    return cond;
+#endif
+}
 
 // Now finally, normal Stages!
 
@@ -3041,7 +3044,7 @@ static void start_pipeline(const size_t x0,     const size_t y0,
             split(x, &r,&g);                                                                   \
             split(y, &b,&a);                                                                   \
             auto next = (Stage)load_and_inc(program);                                          \
-            JUMPER_MUSTTAIL return next(params,program, r,g,b,a);                              \
+            next(params,program, r,g,b,a);                                                     \
         }                                                                                      \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F& x, F& y)
 
@@ -3055,7 +3058,7 @@ static void start_pipeline(const size_t x0,     const size_t y0,
             name##_k(Ctx{program}, params->dx,params->dy,params->tail, x,y, r,g,b,a,       \
                      params->dr,params->dg,params->db,params->da);                         \
             auto next = (Stage)load_and_inc(program);                                      \
-            JUMPER_MUSTTAIL return next(params,program, r,g,b,a);                          \
+            next(params,program, r,g,b,a);                                                 \
         }                                                                                  \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F x, F y,         \
                          U16&  r, U16&  g, U16&  b, U16&  a,                               \
@@ -3069,7 +3072,7 @@ static void start_pipeline(const size_t x0,     const size_t y0,
             name##_k(Ctx{program}, params->dx,params->dy,params->tail, r,g,b,a,            \
                      params->dr,params->dg,params->db,params->da);                         \
             auto next = (Stage)load_and_inc(program);                                      \
-            JUMPER_MUSTTAIL return next(params,program, r,g,b,a);                          \
+            next(params,program, r,g,b,a);                                                 \
         }                                                                                  \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail,                   \
                          U16&  r, U16&  g, U16&  b, U16&  a,                               \
@@ -3086,7 +3089,7 @@ static void start_pipeline(const size_t x0,     const size_t y0,
             split(x, &r,&g);                                                               \
             split(y, &b,&a);                                                               \
             auto next = (Stage)load_and_inc(program);                                      \
-            JUMPER_MUSTTAIL return next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);         \
+            next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);                                \
         }                                                                                  \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F& x, F& y)
 
@@ -3101,7 +3104,7 @@ static void start_pipeline(const size_t x0,     const size_t y0,
                  y = join<F>(b,a);                                                         \
             name##_k(Ctx{program}, dx,dy,tail, x,y, r,g,b,a, dr,dg,db,da);                 \
             auto next = (Stage)load_and_inc(program);                                      \
-            JUMPER_MUSTTAIL return next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);         \
+            next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);                                \
         }                                                                                  \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F x, F y,         \
                          U16&  r, U16&  g, U16&  b, U16&  a,                               \
@@ -3116,7 +3119,7 @@ static void start_pipeline(const size_t x0,     const size_t y0,
                              U16 dr, U16 dg, U16 db, U16 da) {                             \
             name##_k(Ctx{program}, dx,dy,tail, r,g,b,a, dr,dg,db,da);                      \
             auto next = (Stage)load_and_inc(program);                                      \
-            JUMPER_MUSTTAIL return next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);         \
+            next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);                                \
         }                                                                                  \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail,                   \
                          U16&  r, U16&  g, U16&  b, U16&  a,                               \
@@ -3380,17 +3383,25 @@ STAGE_PP(set_rgb, const float rgb[3]) {
 }
 
 STAGE_PP(clamp_0, Ctx::None) { /*definitely a noop*/ }
-STAGE_PP(clamp_1, Ctx::None) { /*_should_ be a noop*/ }
+STAGE_PP(clamp_1, Ctx::None) {
+    r = min(r, 255);
+    g = min(g, 255);
+    b = min(b, 255);
+    a = min(a, 255);
+}
 
 STAGE_PP(clamp_a, Ctx::None) {
+    a = min(a, 255);
     r = min(r, a);
     g = min(g, a);
     b = min(b, a);
 }
 
 STAGE_PP(clamp_gamut, Ctx::None) {
-    // It shouldn't be possible to get out-of-gamut
-    // colors when working in lowp.
+    a = min(a, 255);
+    r = min(r, a);
+    g = min(g, a);
+    b = min(b, a);
 }
 
 STAGE_PP(premul, Ctx::None) {
@@ -3660,6 +3671,11 @@ SI void load_8888_(const uint32_t* ptr, size_t tail, U16* r, U16* g, U16* b, U16
 #endif
 }
 SI void store_8888_(uint32_t* ptr, size_t tail, U16 r, U16 g, U16 b, U16 a) {
+    r = min(r, 255);
+    g = min(g, 255);
+    b = min(b, 255);
+    a = min(a, 255);
+
 #if 1 && defined(JUMPER_IS_NEON)
     uint8x8x4_t rgba = {{
         cast<U8>(r),
@@ -3715,6 +3731,10 @@ SI void load_565_(const uint16_t* ptr, size_t tail, U16* r, U16* g, U16* b) {
     from_565(load<U16>(ptr, tail), r,g,b);
 }
 SI void store_565_(uint16_t* ptr, size_t tail, U16 r, U16 g, U16 b) {
+    r = min(r, 255);
+    g = min(g, 255);
+    b = min(b, 255);
+
     // Round from [0,255] to [0,31] or [0,63], as if x * (31/255.0f) + 0.5f.
     // (Don't feel like you need to find some fundamental truth in these...
     // they were brute-force searched.)
@@ -3762,6 +3782,11 @@ SI void load_4444_(const uint16_t* ptr, size_t tail, U16* r, U16* g, U16* b, U16
     from_4444(load<U16>(ptr, tail), r,g,b,a);
 }
 SI void store_4444_(uint16_t* ptr, size_t tail, U16 r, U16 g, U16 b, U16 a) {
+    r = min(r, 255);
+    g = min(g, 255);
+    b = min(b, 255);
+    a = min(a, 255);
+
     // Round from [0,255] to [0,15], producing the same value as (x*(15/255.0f) + 0.5f).
     U16 R = (r + 8) / 17,
         G = (g + 8) / 17,
@@ -3815,6 +3840,9 @@ SI void load_88_(const uint16_t* ptr, size_t tail, U16* r, U16* g) {
 }
 
 SI void store_88_(uint16_t* ptr, size_t tail, U16 r, U16 g) {
+    r = min(r, 255);
+    g = min(g, 255);
+
 #if 1 && defined(JUMPER_IS_NEON)
     uint8x8x2_t rg = {{
         cast<U8>(r),
@@ -3862,6 +3890,7 @@ SI U16 load_8(const uint8_t* ptr, size_t tail) {
     return cast<U16>(load<U8>(ptr, tail));
 }
 SI void store_8(uint8_t* ptr, size_t tail, U16 v) {
+    v = min(v, 255);
     store(ptr, tail, cast<U8>(v));
 }
 

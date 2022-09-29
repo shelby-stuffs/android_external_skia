@@ -311,7 +311,25 @@ protected:
 
         // Bottom-right corner
         {
-            // <add tile here>
+            const SkRect kTile = SkRect::MakeXYWH(2*kTileWidth, 2*kTileHeight,
+                                                  kTileWidth, kTileHeight);
+
+            SkPaint circlePaint;
+            circlePaint.setColor(SK_ColorBLUE);
+            circlePaint.setBlendMode(SkBlendMode::kSrc);
+
+            canvas->clipRect(kTile);
+            canvas->drawRect(kTile.makeInset(10, 20), circlePaint);
+
+            SkPaint restorePaint;
+            restorePaint.setBlendMode(SkBlendMode::kPlus);
+
+            canvas->saveLayer(nullptr, &restorePaint);
+                circlePaint.setColor(SK_ColorRED);
+                circlePaint.setBlendMode(SkBlendMode::kSrc);
+
+                canvas->drawRect(kTile.makeInset(15, 25), circlePaint);
+            canvas->restore();
         }
     }
 

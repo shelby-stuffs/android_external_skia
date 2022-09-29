@@ -179,6 +179,7 @@ SKIA_PUBLIC_HDRS = [
     "include/gpu/vk/GrVkMemoryAllocator.h",
     "include/gpu/vk/GrVkTypes.h",
     "include/gpu/vk/VulkanExtensions.h",
+    "include/gpu/vk/VulkanMemoryAllocator.h",
     "include/gpu/vk/VulkanTypes.h",
     "include/pathops/SkPathOps.h",
     "include/ports/SkCFObject.h",
@@ -231,6 +232,7 @@ SKIA_PUBLIC_HDRS = [
     "include/utils/SkShadowUtils.h",
     "include/utils/SkTextUtils.h",
     "include/utils/SkTraceEventPhase.h",
+    "include/utils/mac/SkCGUtils.h",
 ]
 
 ################################################################################
@@ -317,9 +319,6 @@ BASE_SRCS_ALL = [
     "src/core/SkBitmapCache.h",
     "src/core/SkBitmapDevice.cpp",
     "src/core/SkBitmapDevice.h",
-    "src/core/SkBitmapProcState.cpp",
-    "src/core/SkBitmapProcState.h",
-    "src/core/SkBitmapProcState_matrixProcs.cpp",
     "src/core/SkBlendMode.cpp",
     "src/core/SkBlendModeBlender.cpp",
     "src/core/SkBlendModeBlender.h",
@@ -752,6 +751,7 @@ BASE_SRCS_ALL = [
     "src/gpu/ResourceKey.cpp",
     "src/gpu/ResourceKey.h",
     "src/gpu/ShaderErrorHandler.cpp",
+    "src/gpu/SkRenderEngineAbortf.h",
     "src/gpu/Swizzle.cpp",
     "src/gpu/Swizzle.h",
     # We include the ganesh files, but leave out any specific backend (e.g. GL, Vulkan)
@@ -1356,8 +1356,6 @@ BASE_SRCS_ALL = [
     "src/sfnt/SkPanose.h",
     "src/sfnt/SkSFNTHeader.h",
     "src/sfnt/SkTTCFHeader.h",
-    "src/shaders/SkBitmapProcShader.cpp",
-    "src/shaders/SkBitmapProcShader.h",
     "src/shaders/SkColorFilterShader.cpp",
     "src/shaders/SkColorFilterShader.h",
     "src/shaders/SkColorShader.cpp",
@@ -1400,8 +1398,6 @@ BASE_SRCS_ALL = [
     "src/sksl/SkSLConstantFolder.h",
     "src/sksl/SkSLContext.cpp",
     "src/sksl/SkSLContext.h",
-    "src/sksl/SkSLDSLParser.cpp",
-    "src/sksl/SkSLDSLParser.h",
     "src/sksl/SkSLDehydrator.cpp",
     "src/sksl/SkSLDehydrator.h",
     "src/sksl/SkSLErrorReporter.cpp",
@@ -1423,6 +1419,8 @@ BASE_SRCS_ALL = [
     "src/sksl/SkSLOutputStream.cpp",
     "src/sksl/SkSLOutputStream.h",
     "src/sksl/SkSLParsedModule.h",
+    "src/sksl/SkSLParser.cpp",
+    "src/sksl/SkSLParser.h",
     "src/sksl/SkSLPool.cpp",
     "src/sksl/SkSLPool.h",
     "src/sksl/SkSLPosition.cpp",
@@ -1658,8 +1656,6 @@ BASE_SRCS_ALL = [
     "src/utils/SkShadowUtils.cpp",
     "src/utils/SkTestCanvas.h",
     "src/utils/SkTextUtils.cpp",
-    "src/utils/SkThreadUtils_pthread.cpp",
-    "src/utils/SkThreadUtils_win.cpp",
     "src/utils/SkUTF.cpp",
     "src/utils/SkUTF.h",
     "src/utils/SkVMVisualizer.cpp",
@@ -1896,9 +1892,6 @@ MTL_SRCS = [
 ]
 
 VULKAN_SRCS = [
-    "src/gpu/vk/VulkanExtensions.cpp",
-    "src/gpu/ganesh/vk/GrVkAMDMemoryAllocator.cpp",
-    "src/gpu/ganesh/vk/GrVkAMDMemoryAllocator.h",
     "src/gpu/ganesh/vk/GrVkBuffer.cpp",
     "src/gpu/ganesh/vk/GrVkBuffer.h",
     "src/gpu/ganesh/vk/GrVkCaps.cpp",
@@ -1922,8 +1915,6 @@ VULKAN_SRCS = [
     "src/gpu/ganesh/vk/GrVkImageLayout.h",
     "src/gpu/ganesh/vk/GrVkImageView.cpp",
     "src/gpu/ganesh/vk/GrVkImageView.h",
-    "src/gpu/ganesh/vk/GrVkInterface.cpp",
-    "src/gpu/ganesh/vk/GrVkInterface.h",
     "src/gpu/ganesh/vk/GrVkManagedResource.h",
     "src/gpu/ganesh/vk/GrVkMemory.cpp",
     "src/gpu/ganesh/vk/GrVkMemory.h",
@@ -1965,6 +1956,9 @@ VULKAN_SRCS = [
     "src/gpu/ganesh/vk/GrVkUtil.h",
     "src/gpu/ganesh/vk/GrVkVaryingHandler.cpp",
     "src/gpu/ganesh/vk/GrVkVaryingHandler.h",
+    "src/gpu/vk/VulkanExtensions.cpp",
+    "src/gpu/vk/VulkanInterface.cpp",
+    "src/gpu/vk/VulkanInterface.h",
 ]
 
 ################################################################################

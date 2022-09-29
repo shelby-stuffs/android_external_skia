@@ -239,6 +239,7 @@ struct SimpleParagraphStyle {
     size_t ellipsisLen;
     SkScalar heightMultiplier;
     size_t maxLines;
+    bool replaceTabCharacters;
     para::TextAlign textAlign;
     para::TextDirection textDirection;
     para::TextHeightBehavior textHeightBehavior;
@@ -270,6 +271,7 @@ para::ParagraphStyle toParagraphStyle(const SimpleParagraphStyle& s) {
         ps.setMaxLines(s.maxLines);
     }
     ps.setTextHeightBehavior(s.textHeightBehavior);
+    ps.setReplaceTabCharacters(s.replaceTabCharacters);
     return ps;
 }
 
@@ -436,6 +438,14 @@ JSArray GetShapedLines(para::Paragraph& self) {
     return jlines;
 }
 
+std::vector<SkUnicode::Position> convertArrayU32(WASMPointerU32 array, size_t count) {
+    std::vector<size_t> vec;
+    vec.resize(count);
+    SkUnicode::Position* data = reinterpret_cast<SkUnicode::Position*>(array);
+    std::memcpy(vec.data(), data, count * sizeof(size_t));
+    return vec;
+}
+
 EMSCRIPTEN_BINDINGS(Paragraph) {
 
     class_<para::Paragraph>("Paragraph")
@@ -575,7 +585,54 @@ EMSCRIPTEN_BINDINGS(Paragraph) {
                                                               SkScalar offset) {
                           para::PlaceholderStyle ps(width, height, alignment, baseline, offset);
                           self.addPlaceholder(ps);
-                      }));
+                      }))
+            .function("getText",
+                      optional_override([](para::ParagraphBuilderImpl& self) -> JSString {
+                          auto text = self.getText();
+                          return emscripten::val(std::string(text.data(), text.size()).c_str());
+                      }))
+            .function("_buildWithClientInfo",
+                      optional_override([](para::ParagraphBuilderImpl& self,
+                                           WASMPointerU32 bidis, size_t bidisNum,
+                                           WASMPointerU32 words, size_t wordsNum,
+                                           WASMPointerU32 graphemes, size_t graphemesNum,
+                                           WASMPointerU32 softBreaks, size_t softBreaksNum,
+                                           WASMPointerU32 hardBreaks, size_t hardBreaksNum) {
+                      SkUnicode::Position* data = reinterpret_cast<SkUnicode::Position*>(bidis);
+                      std::vector<SkUnicode::BidiRegion> bidiRegions;
+                      for (size_t i = 0; i < bidisNum; i += 3) {
+                          auto start = data[i];
+                          auto end = data[i+1];
+                          auto level = SkToU8(data[i+2]);
+                          bidiRegions.emplace_back(start, end, level);
+                      }
+                      auto soft =
+                          convertArrayU32(softBreaks, softBreaksNum);
+                      auto hard =
+                          convertArrayU32(hardBreaks, hardBreaksNum);
+                      std::vector<SkUnicode::LineBreakBefore> lineBreaks;
+                      for (size_t s = 0, h = 0; s < softBreaksNum || h < hardBreaksNum; ) {
+                          auto sPos = soft[s];
+                          auto hPos = hard[h];
+                          if (hPos <= sPos) {
+                              lineBreaks.emplace_back(hPos,
+                                                      SkUnicode::LineBreakType::kHardLineBreak);
+                              if (hPos == sPos) {
+                                  ++s;
+                              }
+                              ++h;
+                          } else if (hPos > sPos) {
+                              lineBreaks.emplace_back(sPos,
+                                                      SkUnicode::LineBreakType::kSoftLineBreak);
+                              s++;
+                          }
+                      }
+                      return self.BuildWithClientInfo(
+                                        std::move(bidiRegions),
+                                        convertArrayU32(words, wordsNum),
+                                        convertArrayU32(graphemes, graphemesNum),
+                                        std::move(lineBreaks));
+                  }));
 
     class_<para::TypefaceFontProvider, base<SkFontMgr>>("TypefaceFontProvider")
       .smart_ptr<sk_sp<para::TypefaceFontProvider>>("sk_sp<TypefaceFontProvider>")
@@ -602,16 +659,17 @@ EMSCRIPTEN_BINDINGS(Paragraph) {
         .field("width",     &SimpleFontStyle::width);
 
     value_object<SimpleParagraphStyle>("ParagraphStyle")
-        .field("disableHinting",     &SimpleParagraphStyle::disableHinting)
-        .field("_ellipsisPtr",       &SimpleParagraphStyle::ellipsisPtr)
-        .field("_ellipsisLen",       &SimpleParagraphStyle::ellipsisLen)
-        .field("heightMultiplier",   &SimpleParagraphStyle::heightMultiplier)
-        .field("maxLines",           &SimpleParagraphStyle::maxLines)
-        .field("textAlign",          &SimpleParagraphStyle::textAlign)
-        .field("textDirection",      &SimpleParagraphStyle::textDirection)
-        .field("textHeightBehavior", &SimpleParagraphStyle::textHeightBehavior)
-        .field("textStyle",          &SimpleParagraphStyle::textStyle)
-        .field("strutStyle",         &SimpleParagraphStyle::strutStyle);
+        .field("disableHinting",       &SimpleParagraphStyle::disableHinting)
+        .field("_ellipsisPtr",         &SimpleParagraphStyle::ellipsisPtr)
+        .field("_ellipsisLen",         &SimpleParagraphStyle::ellipsisLen)
+        .field("heightMultiplier",     &SimpleParagraphStyle::heightMultiplier)
+        .field("maxLines",             &SimpleParagraphStyle::maxLines)
+        .field("replaceTabCharacters", &SimpleParagraphStyle::replaceTabCharacters)
+        .field("textAlign",            &SimpleParagraphStyle::textAlign)
+        .field("textDirection",        &SimpleParagraphStyle::textDirection)
+        .field("textHeightBehavior",   &SimpleParagraphStyle::textHeightBehavior)
+        .field("textStyle",            &SimpleParagraphStyle::textStyle)
+        .field("strutStyle",           &SimpleParagraphStyle::strutStyle);
 
     value_object<SimpleStrutStyle>("StrutStyle")
         .field("_fontFamiliesPtr", &SimpleStrutStyle::fontFamiliesPtr)

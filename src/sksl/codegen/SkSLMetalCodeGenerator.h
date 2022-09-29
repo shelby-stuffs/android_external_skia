@@ -18,7 +18,6 @@
 
 #include <cstdint>
 #include <initializer_list>
-#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -136,15 +135,9 @@ protected:
 
     std::string typeName(const Type& type);
 
-    std::string textureTypeName(const Type& type, const Modifiers* modifiers);
-
     void writeStructDefinition(const StructDefinition& s);
 
     void writeType(const Type& type);
-
-    void writeTextureType(const Type& type, const Modifiers& modifiers);
-
-    void writeParameterType(const Type& type, const Modifiers& modifiers);
 
     void writeExtension(const Extension& ext);
 
@@ -306,7 +299,6 @@ protected:
     int fVarCount = 0;
     int fIndentation = 0;
     bool fAtLineStart = false;
-    std::set<std::string> fWrittenIntrinsics;
     // true if we have run into usages of dFdx / dFdy
     bool fFoundDerivatives = false;
     SkTHashMap<const FunctionDeclaration*, Requirements> fRequirements;
@@ -318,6 +310,11 @@ protected:
     bool fIgnoreVariableReferenceModifiers = false;
     static constexpr char kTextureSuffix[] = "_Tex";
     static constexpr char kSamplerSuffix[] = "_Smplr";
+
+    // Workaround/polyfill flags
+    bool fWrittenInverse2 = false, fWrittenInverse3 = false, fWrittenInverse4 = false;
+    bool fWrittenMatrixCompMult = false;
+    bool fWrittenOuterProduct = false;
 
     using INHERITED = CodeGenerator;
 };

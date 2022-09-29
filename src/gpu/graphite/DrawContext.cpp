@@ -24,6 +24,7 @@
 #include "src/gpu/graphite/ResourceTypes.h"
 #include "src/gpu/graphite/SharedContext.h"
 #include "src/gpu/graphite/TextureProxy.h"
+#include "src/gpu/graphite/TextureProxyView.h"
 #include "src/gpu/graphite/UploadTask.h"
 #include "src/gpu/graphite/geom/BoundsManager.h"
 #include "src/gpu/graphite/geom/Geometry.h"
@@ -64,6 +65,19 @@ DrawContext::~DrawContext() {
     fDrawPasses.clear();
 }
 
+TextureProxyView DrawContext::readSurfaceView(const Caps* caps) {
+    TextureProxy* proxy = this->target();
+
+    if (!caps->isTexturable(proxy->textureInfo())) {
+        return {};
+    }
+
+    Swizzle swizzle = caps->getReadSwizzle(this->imageInfo().colorType(),
+                                           proxy->textureInfo());
+
+    return TextureProxyView(sk_ref_sp(proxy), swizzle);
+}
+
 void DrawContext::clear(const SkColor4f& clearColor) {
     fPendingLoadOp = LoadOp::kClear;
     SkPMColor4f pmColor = clearColor.premul();
@@ -75,7 +89,7 @@ void DrawContext::clear(const SkColor4f& clearColor) {
     fDrawPasses.clear();
 }
 
-void DrawContext::recordDraw(const Renderer& renderer,
+void DrawContext::recordDraw(const Renderer* renderer,
                              const Transform& localToDevice,
                              const Geometry& geometry,
                              const Clip& clip,
@@ -145,7 +159,10 @@ sk_sp<Task> DrawContext::snapRenderPassTask(Recorder* recorder) {
     // this DrawPass then
     SkASSERT(storeOp == StoreOp::kStore);
     if (drawPass->requiresMSAA()) {
-        desc.fColorAttachment.fTextureInfo = caps->getDefaultMSAATextureInfo(targetInfo);
+        // TODO: If the resolve texture isn't readable, the MSAA color attachment will need to be
+        // persistently associated with the framebuffer, in which case it's not discardable.
+        desc.fColorAttachment.fTextureInfo = caps->getDefaultMSAATextureInfo(targetInfo,
+                                                                             Discardable::kYes);
         if (loadOp != LoadOp::kClear) {
             desc.fColorAttachment.fLoadOp = LoadOp::kDiscard;
         } else {

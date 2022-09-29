@@ -875,6 +875,8 @@ optional("gpu_shared") {
 
   deps = []
   public_defines = []
+  public_deps = []
+
   if (skia_enable_gpu) {
     public_defines += [ "SK_SUPPORT_GPU=1" ]
   }
@@ -893,6 +895,9 @@ optional("gpu_shared") {
 
   if (skia_use_vulkan) {
     sources += skia_shared_vk_sources
+    if (skia_use_vma) {
+      public_deps += [ "third_party/vulkanmemoryallocator" ]
+    }
   }
 }
 
@@ -916,9 +921,6 @@ optional("gpu") {
   public_deps = []
 
   sources = skia_gpu_sources
-  if (!skia_enable_skgpu_v1) {
-    sources -= skia_skgpu_v1_sources
-  }
 
   libs = []
   frameworks = []
@@ -966,9 +968,6 @@ optional("gpu") {
 
   if (skia_use_vulkan) {
     public_defines += [ "SK_VULKAN" ]
-    if (skia_use_vma) {
-      deps += [ "third_party/vulkanmemoryallocator" ]
-    }
     sources += skia_vk_sources
     if (skia_enable_vulkan_debug_layers) {
       public_defines += [ "SK_ENABLE_VK_LAYERS" ]
@@ -1174,6 +1173,9 @@ optional("graphite") {
     if (is_ios) {
       frameworks += [ "UIKit.framework" ]
     }
+  }
+  if (skia_use_vulkan) {
+    public_defines += [ "SK_VULKAN" ]
   }
 }
 
@@ -2441,7 +2443,8 @@ if (skia_enable_tools) {
     ]
   }
 
-  if (!is_ios && target_cpu != "wasm" && !(is_win && target_cpu == "arm64")) {
+  if (!is_ios && target_cpu != "wasm" &&
+      !((is_win || is_mac) && target_cpu == "arm64")) {
     test_app("skiaserve") {
       sources = [
         "tools/skiaserve/Request.cpp",
