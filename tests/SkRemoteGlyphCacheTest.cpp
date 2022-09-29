@@ -11,8 +11,8 @@
 #include "include/core/SkTextBlob.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/private/SkMutex.h"
-#include "include/private/chromium/GrSlug.h"
 #include "include/private/chromium/SkChromeRemoteGlyphCache.h"
+#include "include/private/chromium/Slug.h"
 #include "src/core/SkDraw.h"
 #include "src/core/SkFontPriv.h"
 #include "src/core/SkReadBuffer.h"
@@ -24,7 +24,7 @@
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
-#include "src/gpu/ganesh/text/GrSDFTControl.h"
+#include "src/text/gpu/SDFTControl.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
@@ -33,6 +33,8 @@
 // Since SkRemoteGlyphCache is not re-entrant, we can't use it while drawing slugs to simulate
 // text blobs in the GPU stack.
 #if !defined(SK_EXPERIMENTAL_SIMULATE_DRAWGLYPHRUNLIST_WITH_SLUG_STRIKE_SERIALIZE)
+
+using Slug = sktext::gpu::Slug;
 
 class DiscardableManager : public SkStrikeServer::DiscardableHandleManager,
                            public SkStrikeClient::DiscardableHandleManager {
@@ -200,7 +202,7 @@ SkBitmap RasterBlobThroughSlug(sk_sp<SkTextBlob> blob, int width, int height, co
         surface->getCanvas()->concat(*matrix);
     }
     auto canvas = surface->getCanvas();
-    auto slug = GrSlug::ConvertBlob(canvas, *blob, {x, height/2.0f}, paint);
+    auto slug = Slug::ConvertBlob(canvas, *blob, {x, height/2.0f}, paint);
     slug->draw(canvas);
     SkBitmap bitmap;
     bitmap.allocN32Pixels(width, height);
@@ -208,7 +210,7 @@ SkBitmap RasterBlobThroughSlug(sk_sp<SkTextBlob> blob, int width, int height, co
     return bitmap;
 }
 
-SkBitmap RasterSlug(sk_sp<GrSlug> slug, int width, int height, const SkPaint& paint,
+SkBitmap RasterSlug(sk_sp<Slug> slug, int width, int height, const SkPaint& paint,
                     GrRecordingContext* rContext, const SkMatrix* matrix = nullptr,
                     SkScalar x = 0) {
     auto surface = MakeSurface(width, height, rContext);
@@ -300,7 +302,7 @@ DEF_GPUTEST_FOR_CONTEXTS(SkRemoteGlyphCache_StrikeSerializationSlug,
             10, 10, props, nullptr, dContext->supportsDistanceFieldText());
 
     // Generate strike updates.
-    (void)GrSlug::ConvertBlob(analysisCanvas.get(), *serverBlob, {0, 0}, paint);
+    (void)Slug::ConvertBlob(analysisCanvas.get(), *serverBlob, {0, 0}, paint);
 
     std::vector<uint8_t> serverStrikeData;
     server.writeStrikeData(&serverStrikeData);
@@ -340,7 +342,7 @@ DEF_GPUTEST_FOR_CONTEXTS(SkRemoteGlyphCache_SlugSerialization,
             10, 10, props, nullptr, dContext->supportsDistanceFieldText());
 
     // Generate strike updates.
-    auto srcSlug = GrSlug::ConvertBlob(analysisCanvas.get(), *serverBlob, {0.3f, 0}, paint);
+    auto srcSlug = Slug::ConvertBlob(analysisCanvas.get(), *serverBlob, {0.3f, 0}, paint);
     auto dstSlugData = srcSlug->serialize();
 
     std::vector<uint8_t> serverStrikeData;
@@ -642,7 +644,7 @@ sk_sp<SkTextBlob> make_blob_causing_fallback(
     SkRect glyphBounds;
     font.getWidths(runBuffer.glyphs, 1, nullptr, &glyphBounds);
 
-    REPORTER_ASSERT(reporter, glyphBounds.width() > SkStrikeCommon::kSkSideTooBigForAtlas);
+    REPORTER_ASSERT(reporter, glyphBounds.width() > SkGlyphDigest::kSkSideTooBigForAtlas);
 
     for (int i = 0; i < runSize; i++) {
         runBuffer.pos[i] = i * 10;
@@ -725,13 +727,13 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsSDFTWithAllARGBF
 
         SkTextBlobBuilder builder;
         SkRect bounds = SkRect::MakeIWH(100, 100);
-        const auto& runBuffer = builder.allocRunPosH(font, SK_ARRAY_COUNT(glyphs), 100, &bounds);
+        const auto& runBuffer = builder.allocRunPosH(font, std::size(glyphs), 100, &bounds);
         SkASSERT(runBuffer.utf8text == nullptr);
         SkASSERT(runBuffer.clusters == nullptr);
 
         std::copy(std::begin(glyphs), std::end(glyphs), runBuffer.glyphs);
 
-        for (size_t i = 0; i < SK_ARRAY_COUNT(glyphs); i++) {
+        for (size_t i = 0; i < std::size(glyphs); i++) {
             runBuffer.pos[i] = i * 100;
         }
 
@@ -818,7 +820,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsDFT, reporter, c
 
     // A scale transform forces fallback to dft.
     SkMatrix matrix = SkMatrix::Scale(16, 16);
-    GrSDFTControl control = direct->priv().asRecordingContext()->priv().getSDFTControl(true);
+    sktext::gpu::SDFTControl control =
+            direct->priv().asRecordingContext()->priv().getSDFTControl(true);
     SkScalar approximateDeviceTextSize = SkFontPriv::ApproximateTransformedTextSize(font, matrix);
     REPORTER_ASSERT(reporter, control.isSDFT(approximateDeviceTextSize, paint));
 

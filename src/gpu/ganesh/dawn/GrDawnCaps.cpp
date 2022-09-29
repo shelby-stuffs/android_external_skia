@@ -33,6 +33,12 @@ GrDawnCaps::GrDawnCaps(const GrContextOptions& contextOptions) : INHERITED(conte
     fShaderCaps->fMaxFragmentSamplers = 6;
     fShaderCaps->fShaderDerivativeSupport = true;
 
+    // We haven't yet implemented GrGpu::transferFromBufferToBuffer for Dawn but GrDawnBuffer uses
+    // transfers to implement buffer mapping and updates and transfers must be 4 byte aligned.
+    fTransferFromBufferToBufferAlignment = 4;
+    // Buffer updates are sometimes implemented through transfers in GrDawnBuffer.
+    fBufferUpdateDataPreserveAlignment = 4;
+
     this->finishInitialization(contextOptions);
 }
 
@@ -153,14 +159,14 @@ bool GrDawnCaps::onAreColorTypeAndFormatCompatible(GrColorType ct,
 
 // FIXME: taken from GrVkPipelineState; refactor.
 static uint32_t get_blend_info_key(const GrPipeline& pipeline) {
-    GrXferProcessor::BlendInfo blendInfo = pipeline.getXferProcessor().getBlendInfo();
+    skgpu::BlendInfo blendInfo = pipeline.getXferProcessor().getBlendInfo();
 
     static const uint32_t kBlendWriteShift = 1;
     static const uint32_t kBlendCoeffShift = 5;
     static_assert((int)skgpu::BlendCoeff::kLast < (1 << kBlendCoeffShift));
     static_assert((int)skgpu::BlendEquation::kFirstAdvanced - 1 < 4);
 
-    uint32_t key = blendInfo.fWriteColor;
+    uint32_t key = blendInfo.fWritesColor;
     key |= ((int)blendInfo.fSrcBlend << kBlendWriteShift);
     key |= ((int)blendInfo.fDstBlend << (kBlendWriteShift + kBlendCoeffShift));
     key |= ((int)blendInfo.fEquation << (kBlendWriteShift + 2 * kBlendCoeffShift));

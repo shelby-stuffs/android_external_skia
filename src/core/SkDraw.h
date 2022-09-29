@@ -30,7 +30,7 @@ struct SkRect;
 class SkRRect;
 class SkVertices;
 
-class SkDraw : public SkGlyphRunListPainter::BitmapDevicePainter {
+class SkDraw : public SkGlyphRunListPainterCPU::BitmapDevicePainter {
 public:
     SkDraw();
 
@@ -62,8 +62,8 @@ public:
                        const SkSamplingOptions&, const SkPaint&) const override;
     void    drawSprite(const SkBitmap&, int x, int y, const SkPaint&) const;
     void    drawGlyphRunList(SkCanvas* canvas,
-                             SkGlyphRunListPainter* glyphPainter,
-                             const SkGlyphRunList& glyphRunList,
+                             SkGlyphRunListPainterCPU* glyphPainter,
+                             const sktext::GlyphRunList& glyphRunList,
                              const SkPaint& paint) const;
     /* If skipColorXform, skips color conversion when assigning per-vertex colors */
     void drawVertices(const SkVertices*,
@@ -102,6 +102,10 @@ public:
                            SkMask* mask, SkMask::CreateMode mode,
                            SkStrokeRec::InitStyle style);
 
+#if defined(SK_SUPPORT_LEGACY_ALPHA_BITMAP_AS_COVERAGE)
+    void drawDevMask(const SkMask& mask, const SkPaint&) const;
+#endif
+
     enum RectType {
         kHair_RectType,
         kFill_RectType,
@@ -121,6 +125,9 @@ public:
                                     SkPoint* strokeSize);
 
 private:
+#if defined(SK_SUPPORT_LEGACY_ALPHA_BITMAP_AS_COVERAGE)
+    void drawBitmapAsMask(const SkBitmap&, const SkSamplingOptions&, const SkPaint&) const;
+#endif
     void drawFixedVertices(const SkVertices* vertices,
                            sk_sp<SkBlender> blender,
                            const SkPaint& paint,

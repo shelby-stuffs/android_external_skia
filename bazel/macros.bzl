@@ -7,15 +7,20 @@ load("@bazel_skylib//lib:selects.bzl", _selects = "selects")
 load("@rules_python//python:defs.bzl", _py_binary = "py_binary")
 load("@py_deps//:requirements.bzl", _requirement = "requirement")
 load("@bazel_gazelle//:def.bzl", _gazelle = "gazelle")
+load("@emsdk//emscripten_toolchain:wasm_rules.bzl", _wasm_cc_binary = "wasm_cc_binary")
+load("@io_bazel_rules_go//go:def.bzl", _go_binary = "go_binary", _go_library = "go_library")
 
 # re-export symbols that are commonly used or that are not supported in G3
 # (and thus we need to stub out)
-selects = _selects
+gazelle = _gazelle
+go_binary = _go_binary
+go_library = _go_library
 py_binary = _py_binary
 requirement = _requirement
-gazelle = _gazelle
+selects = _selects
+wasm_cc_binary = _wasm_cc_binary
 
-def select_multi(values_map, default, name = ""):
+def select_multi(values_map, default):
     """select() but allowing multiple matches of the keys.
 
     select_multi works around a restriction in native select() that prevents multiple
@@ -48,7 +53,6 @@ def select_multi(values_map, default, name = ""):
         values_map: dictionary of labels to a list of labels, just like select()
         default: list of labels, the value that should be used if any of the options do not match.
             This is typically an empty list
-        name: string unused, https://github.com/bazelbuild/buildtools/blob/master/WARNINGS.md#unnamed-macro
 
     Returns:
         A list of values that is filled in by the generated select statements.
@@ -63,40 +67,10 @@ def select_multi(values_map, default, name = ""):
         })
     return rv
 
-def generated_cc_atom(name, enforce_iwyu = False, **kwargs):
-    """A self-annotating label for a generated cc_library for exactly one file.
-
-    Args:
-        name: string, the name of the cc_library
-        enforce_iwyu: boolean, if true, this file will fail to compile if the headers to not comply
-            with the include-what-you-use standards. This does not affect dependencies nor
-            dependents, only the file listed in srcs/hdrs.
-        **kwargs: All other arguments are passed verbatim to cc_library
-    """
-    if len(kwargs.get("srcs", [])) > 1 or len(kwargs.get("hdrs", [])) > 1:
-        fail("Cannot have more than one src or hdr file in generated_cc_atom")
-    if len(kwargs.get("srcs", [])) > 0 and len(kwargs.get("hdrs", [])) > 0:
-        fail("Cannot set both srcs and hdrs in generated_cc_atom")
-    if len(kwargs.get("srcs", [])) == 0 and len(kwargs.get("hdrs", [])) == 0:
-        fail("Must set exactly one of srcs or hdrs in generated_cc_atom")
-    deps = kwargs.get("deps", [])
-    deps.append("//bazel:defines_from_flags")
-    kwargs["deps"] = deps
-
-    features = kwargs.get("features", [])
-    if enforce_iwyu:
-        features.append("skia_opt_file_into_iwyu")
-    native.cc_library(
-        name = name,
-        features = features,
-        **kwargs
-    )
-
 # buildifier: disable=unnamed-macro
-# buildifier: disable=native-package
-def enforce_iwyu_on_package():
-    """A self-annotating macro to set force_iwyu = True on all rules in this package."""
-    native.package(features = ["skia_opt_file_into_iwyu"])
+def cc_binary(**kwargs):
+    """A shim around cc_binary that lets us tweak settings for G3 if necessary."""
+    native.cc_binary(**kwargs)
 
 # buildifier: disable=unnamed-macro
 def cc_library(**kwargs):
@@ -104,6 +78,62 @@ def cc_library(**kwargs):
     native.cc_library(**kwargs)
 
 # buildifier: disable=unnamed-macro
-def exports_files_legacy():
-    """A self-annotating macro to export all files in this package for legacy G3 rules."""
-    pass
+def objc_library(**kwargs):
+    """A shim around objc_library that lets us tweak settings for G3 if necessary."""
+    native.objc_library(**kwargs)
+
+# buildifier: disable=unnamed-macro
+def exports_files_legacy(label_list = None, visibility = None):
+    """A self-annotating macro to export all files in this package for legacy G3 rules.
+
+    Args:
+        label_list: If provided, this will act like a normal exports_files rule. If not
+           provided, nothing happens.
+        visibility: Should be provided if label_list is set
+    """
+    if label_list:
+        native.exports_files(label_list, visibility = visibility)
+
+def split_srcs_and_hdrs(name, files):
+    """Take a list of files and creates filegroups for C++ sources and headers.
+
+    The reason we make filegroups is that they are more friendly towards a file being
+    listed twice than just returning a sorted list of files.
+
+    For example, in //src/codecs, "SkEncodedInfo.cpp" is needed for some, but not all
+    the codecs. It is easier for devs to list the file for the codecs that need it
+    rather than making a complicated select statement to make sure it is only in the
+    list of files once.
+
+    Bazel is smart enough to not compile the same file twice, even if it shows up in
+    multiple filegroups.
+
+    The "_srcs" and "_hdrs" filegroups will only be created if there are a non-zero amount
+    of files of both types. Otherwise, it will fail because we do not need the macro.
+
+    Args:
+        name: The prefix of the generated filegroups. One will have the suffix "_srcs" and
+            the other "_hdrs".
+        files: List of file names, e.g. ["SkAAClip.cpp", "SkAAClip.h"]
+    """
+    srcs = []
+    hdrs = []
+    for f in files:
+        if f.endswith(".cpp"):
+            srcs.append(f)
+        elif f.endswith(".h"):
+            hdrs.append(f)
+        else:
+            fail("Neither .cpp nor .h file " + f)
+
+    if len(srcs) == 0 or len(hdrs) == 0:
+        fail("The list consist of either only source or header files. No need to use this macro.")
+
+    native.filegroup(
+        name = name + "_srcs",
+        srcs = srcs,
+    )
+    native.filegroup(
+        name = name + "_hdrs",
+        srcs = hdrs,
+    )

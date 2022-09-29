@@ -17,10 +17,8 @@
 
 namespace skgpu::graphite {
 
-MtlCaps::MtlCaps(const id<MTLDevice> device)
+MtlCaps::MtlCaps(const id<MTLDevice> device, const ContextOptions& options)
         : Caps() {
-    fShaderCaps = std::make_unique<SkSL::ShaderCaps>();
-
     this->initGPUFamily(device);
     this->initCaps(device);
     this->initShaderCaps();
@@ -28,6 +26,8 @@ MtlCaps::MtlCaps(const id<MTLDevice> device)
     this->initFormatTable();
 
     // Metal-specific MtlCaps
+
+    this->finishInitialization(options);
 }
 
 // translates from older MTLFeatureSet interface to MTLGPUFamily interface
@@ -327,7 +327,7 @@ void MtlCaps::setColorType(SkColorType colorType, std::initializer_list<MTLPixel
 }
 
 size_t MtlCaps::GetFormatIndex(MTLPixelFormat pixelFormat) {
-    static_assert(SK_ARRAY_COUNT(kMtlFormats) == MtlCaps::kNumMtlFormats,
+    static_assert(std::size(kMtlFormats) == MtlCaps::kNumMtlFormats,
                   "Size of kMtlFormats array must match static value in header");
     for (size_t i = 0; i < MtlCaps::kNumMtlFormats; ++i) {
         if (kMtlFormats[i] == pixelFormat) {
@@ -579,7 +579,7 @@ UniqueKey MtlCaps::makeGraphicsPipelineKey(const GraphicsPipelineDesc& pipelineD
         static const skgpu::UniqueKey::Domain kGraphicsPipelineDomain = UniqueKey::GenerateDomain();
         SkSpan<const uint32_t> pipelineDescKey = pipelineDesc.asKey();
         UniqueKey::Builder builder(&pipelineKey, kGraphicsPipelineDomain,
-                                   pipelineDescKey.size() + 1, "GraphicsPipeline");
+                                   pipelineDescKey.size() + 2, "GraphicsPipeline");
         // add graphicspipelinedesc key
         for (unsigned int i = 0; i < pipelineDescKey.size(); ++i) {
             builder[i] = pipelineDescKey[i];
@@ -589,8 +589,10 @@ UniqueKey MtlCaps::makeGraphicsPipelineKey(const GraphicsPipelineDesc& pipelineD
         renderPassDesc.fColorAttachment.fTextureInfo.getMtlTextureInfo(&colorInfo);
         renderPassDesc.fDepthStencilAttachment.fTextureInfo.getMtlTextureInfo(&depthStencilInfo);
         SkASSERT(colorInfo.fFormat < 65535 && depthStencilInfo.fFormat < 65535);
-        uint32_t renderPassKey = colorInfo.fFormat << 16 | depthStencilInfo.fFormat;
-        builder[pipelineDescKey.size()] = renderPassKey;
+        uint32_t colorAttachmentKey = colorInfo.fFormat << 16 | colorInfo.fSampleCount;
+        uint32_t dsAttachmentKey = depthStencilInfo.fFormat << 16 | depthStencilInfo.fSampleCount;
+        builder[pipelineDescKey.size()] = colorAttachmentKey;
+        builder[pipelineDescKey.size()+1] = dsAttachmentKey;
         builder.finish();
     }
 

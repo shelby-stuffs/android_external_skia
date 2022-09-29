@@ -63,7 +63,7 @@ static SkPath make_conic_path() {
     return path;
 }
 
-SK_MAYBE_UNUSED static SkPath make_quad_path(int maxPow2) {
+[[maybe_unused]] static SkPath make_quad_path(int maxPow2) {
     SkRandom rand;
     SkPath path;
     for (int i = 0; i < kNumCubicsInChalkboard; ++i) {
@@ -73,7 +73,7 @@ SK_MAYBE_UNUSED static SkPath make_quad_path(int maxPow2) {
     return path;
 }
 
-SK_MAYBE_UNUSED static SkPath make_line_path(int maxPow2) {
+[[maybe_unused]] static SkPath make_line_path(int maxPow2) {
     SkRandom rand;
     SkPath path;
     for (int i = 0; i < kNumCubicsInChalkboard; ++i) {
@@ -137,7 +137,7 @@ DEF_PATH_TESS_BENCH(GrPathCurveTessellator, make_cubic_path(8), SkMatrix::I()) {
     GrPipeline noVaryingsPipeline(GrScissorTest::kDisabled, SkBlendMode::kSrcOver,
                                   skgpu::Swizzle::RGBA());
     auto tess = PathCurveTessellator::Make(&arena,
-                                           fTarget->caps().shaderCaps()->infinitySupport());
+                                           fTarget->caps().shaderCaps()->fInfinitySupport);
     tess->prepare(fTarget.get(),
                   fMatrix,
                   {gAlmostIdentity, fPath, SK_PMColor4fTRANSPARENT},
@@ -149,7 +149,7 @@ DEF_PATH_TESS_BENCH(GrPathWedgeTessellator, make_cubic_path(8), SkMatrix::I()) {
     GrPipeline noVaryingsPipeline(GrScissorTest::kDisabled, SkBlendMode::kSrcOver,
                                   skgpu::Swizzle::RGBA());
     auto tess = PathWedgeTessellator::Make(&arena,
-                                           fTarget->caps().shaderCaps()->infinitySupport());
+                                           fTarget->caps().shaderCaps()->fInfinitySupport);
     tess->prepare(fTarget.get(),
                   fMatrix,
                   {gAlmostIdentity, fPath, SK_PMColor4fTRANSPARENT},
@@ -230,8 +230,8 @@ DEF_PATH_TESS_BENCH(middle_out_triangulation,
     int baseVertex;
     VertexWriter vertexWriter = fTarget->makeVertexWriter(
             sizeof(SkPoint), maxVerts, &buffer, &baseVertex);
-    AffineMatrix m(gAlmostIdentity);
-    for (PathMiddleOutFanIter it(fPath); !it.done();) {
+    tess::AffineMatrix m(gAlmostIdentity);
+    for (tess::PathMiddleOutFanIter it(fPath); !it.done();) {
         for (auto [p0, p1, p2] : it.nextStack()) {
             vertexWriter << m.map2Points(p0, p1) << m.mapPoint(p2);
         }
@@ -306,6 +306,8 @@ static std::vector<PathStrokeList> make_motionmark_paths() {
     return pathStrokes;
 }
 
+using PatchAttribs = tess::PatchAttribs;
+
 class TessPrepareBench : public Benchmark {
 public:
     TessPrepareBench(MakePathStrokesFn makePathStrokesFn,
@@ -344,7 +346,6 @@ private:
         for (int i = 0; i < loops; ++i) {
             fTessellator->prepare(fTarget.get(),
                                   SkMatrix::Scale(fMatrixScale, fMatrixScale),
-                                  {fMatrixScale, fMatrixScale},
                                   fPathStrokes.data(),
                                   fTotalVerbCount);
             fTarget->resetAllocator();

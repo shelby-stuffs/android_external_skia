@@ -7,13 +7,34 @@
 
 #include "src/gpu/graphite/Caps.h"
 
+#include "include/gpu/ShaderErrorHandler.h"
+#include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/TextureInfo.h"
 #include "src/sksl/SkSLUtil.h"
 
 namespace skgpu::graphite {
 
-Caps::Caps() {}
+Caps::Caps() : fShaderCaps(std::make_unique<SkSL::ShaderCaps>()) {}
 Caps::~Caps() {}
+
+void Caps::finishInitialization(const ContextOptions& options) {
+    this->initSkCaps(fShaderCaps.get());
+
+    if (options.fShaderErrorHandler) {
+        fShaderErrorHandler = options.fShaderErrorHandler;
+    } else {
+        fShaderErrorHandler = DefaultShaderErrorHandler();
+    }
+
+#if GRAPHITE_TEST_UTILS
+    fMaxTextureAtlasSize = options.fMaxTextureAtlasSize;
+#endif
+    fGlyphCacheTextureMaximumBytes = options.fGlyphCacheTextureMaximumBytes;
+    fMinDistanceFieldFontSize = options.fMinDistanceFieldFontSize;
+    fGlyphsAsPathsFontSize = options.fGlyphsAsPathsFontSize;
+    fAllowMultipleGlyphCacheTextures = options.fAllowMultipleGlyphCacheTextures;
+    fSupportBilerpFromGlyphAtlas = options.fSupportBilerpFromGlyphAtlas;
+}
 
 bool Caps::isTexturable(const TextureInfo& info) const {
     if (info.numSamples() > 1) {

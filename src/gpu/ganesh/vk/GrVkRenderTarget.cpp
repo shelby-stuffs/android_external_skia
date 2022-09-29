@@ -146,7 +146,8 @@ sk_sp<GrVkRenderTarget> GrVkRenderTarget::MakeWrappedRenderTarget(
                                    std::move(mutableState),
                                    GrAttachment::UsageFlags::kColorAttachment,
                                    kBorrow_GrWrapOwnership,
-                                   GrWrapCacheable::kNo);
+                                   GrWrapCacheable::kNo,
+                                   /*label=*/"VkImage_WrappedAttachment");
     if (!wrappedAttachment) {
         return nullptr;
     }
@@ -163,7 +164,7 @@ sk_sp<GrVkRenderTarget> GrVkRenderTarget::MakeWrappedRenderTarget(
                                                   std::move(colorAttachment),
                                                   nullptr,
                                                   CreateType::kDirectlyWrapped,
-                                                  /*label=*/{});
+                                                  /*label=*/"Vk_MakeWrappedRenderTarget");
     return sk_sp<GrVkRenderTarget>(vkRT);
 }
 
@@ -198,6 +199,7 @@ sk_sp<GrVkRenderTarget> GrVkRenderTarget::MakeSecondaryCBRenderTarget(
                                    GrAttachment::UsageFlags::kColorAttachment,
                                    kBorrow_GrWrapOwnership,
                                    GrWrapCacheable::kNo,
+                                   "VkImage_ColorAttachment",
                                    true);
 
     std::unique_ptr<GrVkSecondaryCommandBuffer> scb(
@@ -211,7 +213,8 @@ sk_sp<GrVkRenderTarget> GrVkRenderTarget::MakeSecondaryCBRenderTarget(
             std::move(scb)));
 
     GrVkRenderTarget* vkRT =
-            new GrVkRenderTarget(gpu, dimensions, std::move(framebuffer), /*label=*/{});
+            new GrVkRenderTarget(gpu, dimensions, std::move(framebuffer),
+                                 /*label=*/"Vk_MakeSecondaryCBRenderTarget");
 
     return sk_sp<GrVkRenderTarget>(vkRT);
 }

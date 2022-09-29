@@ -13,7 +13,6 @@
 #include "include/gpu/gl/GrGLInterface.h"
 #include "src/gpu/ganesh/gl/GrGLCaps.h"
 #include "src/gpu/ganesh/gl/GrGLUtil.h"
-#include "src/gpu/ganesh/glsl/GrGLSL.h"
 
 struct GrContextOptions;
 
@@ -60,6 +59,7 @@ public:
     GrGLDriver driver() const { return fDriverInfo.fDriver; }
     GrGLDriverVersion driverVersion() const { return fDriverInfo.fDriverVersion; }
     bool isOverCommandBuffer() const { return fDriverInfo.fIsOverCommandBuffer; }
+    bool isRunningOverVirgl() const { return fDriverInfo.fIsRunningOverVirgl; }
 
     const GrGLCaps* caps() const { return fGLCaps.get(); }
     GrGLCaps* caps() { return fGLCaps.get(); }

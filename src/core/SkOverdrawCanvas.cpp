@@ -16,11 +16,13 @@
 #include "include/private/SkTo.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkDrawShadowInfo.h"
+#include "src/core/SkGlyphBuffer.h"
 #include "src/core/SkGlyphRunPainter.h"
 #include "src/core/SkImagePriv.h"
 #include "src/core/SkLatticeIter.h"
 #include "src/core/SkStrikeCache.h"
 #include "src/core/SkTextBlobPriv.h"
+#include "src/text/GlyphRun.h"
 #include "src/utils/SkPatchUtils.h"
 
 SkOverdrawCanvas::SkOverdrawCanvas(SkCanvas* canvas)
@@ -43,12 +45,12 @@ SkOverdrawCanvas::SkOverdrawCanvas(SkCanvas* canvas)
 }
 
 namespace {
-class TextDevice : public SkNoPixelsDevice, public SkGlyphRunListPainter::BitmapDevicePainter {
+class TextDevice : public SkNoPixelsDevice, public SkGlyphRunListPainterCPU::BitmapDevicePainter {
 public:
     TextDevice(SkCanvas* overdrawCanvas, const SkSurfaceProps& props)
             : SkNoPixelsDevice{SkIRect::MakeWH(32767, 32767), props},
               fOverdrawCanvas{overdrawCanvas},
-              fPainter{props, kN32_SkColorType, nullptr, SkStrikeCache::GlobalStrikeCache()} {}
+              fPainter{props, kN32_SkColorType, nullptr} {}
 
     void paintMasks(SkDrawableGlyphBuffer* accepted, const SkPaint& paint) const override {
         for (auto t : accepted->accepted()) {
@@ -63,7 +65,7 @@ public:
                        const SkSamplingOptions&, const SkPaint&) const override {}
 
     void onDrawGlyphRunList(SkCanvas* canvas,
-                            const SkGlyphRunList& glyphRunList,
+                            const sktext::GlyphRunList& glyphRunList,
                             const SkPaint& initialPaint,
                             const SkPaint& drawingPaint) override {
         SkASSERT(!glyphRunList.hasRSXForm());
@@ -73,19 +75,19 @@ public:
 
 private:
     SkCanvas* const fOverdrawCanvas;
-    SkGlyphRunListPainter fPainter;
+    SkGlyphRunListPainterCPU fPainter;
 };
 }  // namespace
 
 void SkOverdrawCanvas::onDrawTextBlob(
         const SkTextBlob* blob, SkScalar x, SkScalar y, const SkPaint& paint) {
-    SkGlyphRunBuilder b;
+    sktext::GlyphRunBuilder b;
     auto glyphRunList = b.blobToGlyphRunList(*blob, {x, y});
     this->onDrawGlyphRunList(glyphRunList, paint);
 }
 
 void SkOverdrawCanvas::onDrawGlyphRunList(
-        const SkGlyphRunList& glyphRunList,
+        const sktext::GlyphRunList& glyphRunList,
         const SkPaint& paint) {
     SkSurfaceProps props{0, kUnknown_SkPixelGeometry};
     this->getProps(&props);

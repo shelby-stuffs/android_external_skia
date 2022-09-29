@@ -1125,7 +1125,7 @@ public:
                 continue;
             }
 
-            while (fCurrentSampleSize < (int) SK_ARRAY_COUNT(sampleSizes)) {
+            while (fCurrentSampleSize < (int) std::size(sampleSizes)) {
                 int sampleSize = sampleSizes[fCurrentSampleSize];
                 fCurrentSampleSize++;
                 if (10 * sampleSize > std::min(codec->getInfo().width(), codec->getInfo().height())) {
@@ -1165,7 +1165,7 @@ public:
             }
 
             while (fCurrentColorType < fColorTypes.count()) {
-                while (fCurrentSampleSize < (int) SK_ARRAY_COUNT(brdSampleSizes)) {
+                while (fCurrentSampleSize < (int) std::size(brdSampleSizes)) {
                     while (fCurrentSubsetType <= kLastSingle_SubsetType) {
 
                         sk_sp<SkData> encoded(SkData::MakeFromFileName(path.c_str()));
@@ -1229,14 +1229,14 @@ public:
     }
 
     void fillCurrentOptions(NanoJSONResultsWriter& log) const {
-        log.appendString("source_type", fSourceType);
-        log.appendString("bench_type",  fBenchType);
+        log.appendCString("source_type", fSourceType);
+        log.appendCString("bench_type",  fBenchType);
         if (0 == strcmp(fSourceType, "skp")) {
             log.appendString("clip",
                     SkStringPrintf("%d %d %d %d", fClip.fLeft, fClip.fTop,
-                                                  fClip.fRight, fClip.fBottom).c_str());
+                                                  fClip.fRight, fClip.fBottom));
             SkASSERT_RELEASE(fCurrentScale < fScales.count());  // debugging paranoia
-            log.appendString("scale", SkStringPrintf("%.2g", fScales[fCurrentScale]).c_str());
+            log.appendString("scale", SkStringPrintf("%.2g", fScales[fCurrentScale]));
         }
     }
 
@@ -1371,7 +1371,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     for (int i = 1; i < FLAGS_properties.count(); i += 2) {
-        log.appendString(FLAGS_properties[i-1], FLAGS_properties[i]);
+        log.appendCString(FLAGS_properties[i-1], FLAGS_properties[i]);
     }
 
     if (1 == FLAGS_key.count() % 2) {
@@ -1381,7 +1381,7 @@ int main(int argc, char** argv) {
     if (FLAGS_key.count()) {
         log.beginObject("key");
         for (int i = 1; i < FLAGS_key.count(); i += 2) {
-            log.appendString(FLAGS_key[i - 1], FLAGS_key[i]);
+            log.appendCString(FLAGS_key[i - 1], FLAGS_key[i]);
         }
         log.endObject(); // key
     }
@@ -1541,7 +1541,7 @@ int main(int argc, char** argv) {
             log.beginObject(config);
 
             log.beginObject("options");
-            log.appendString("name", bench->getName());
+            log.appendCString("name", bench->getName());
             benchStream.fillCurrentOptions(log);
             log.endObject(); // options
 

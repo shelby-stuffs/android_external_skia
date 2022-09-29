@@ -201,10 +201,11 @@ static bool detect_shader_settings(const std::string& text,
                 if (consume_suffix(&settingsText, " ForceHighPrecision")) {
                     settings->fForceHighPrecision = true;
                 }
-                if (consume_suffix(&settingsText, " NoES2Restrictions")) {
-                    settings->fEnforceES2Restrictions = false;
-                }
                 if (consume_suffix(&settingsText, " NoInline")) {
+                    settings->fInlineThreshold = 0;
+                }
+                if (consume_suffix(&settingsText, " NoOptimize")) {
+                    settings->fOptimize = false;
                     settings->fInlineThreshold = 0;
                 }
                 if (consume_suffix(&settingsText, " NoRTFlip")) {
@@ -298,6 +299,8 @@ ResultCode processCommand(const std::vector<std::string>& args) {
         kind = SkSL::ProgramKind::kVertex;
     } else if (skstd::ends_with(inputPath, ".frag") || skstd::ends_with(inputPath, ".sksl")) {
         kind = SkSL::ProgramKind::kFragment;
+    } else if (skstd::ends_with(inputPath, ".compute")) {
+        kind = SkSL::ProgramKind::kCompute;
     } else if (skstd::ends_with(inputPath, ".rtb")) {
         kind = SkSL::ProgramKind::kRuntimeBlender;
     } else if (skstd::ends_with(inputPath, ".rtcf")) {

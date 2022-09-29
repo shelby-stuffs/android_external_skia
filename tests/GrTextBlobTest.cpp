@@ -7,10 +7,14 @@
 
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTextBlob.h"
+#include "src/core/SkDevice.h"
 #include "src/core/SkSurfacePriv.h"
-#include "src/gpu/ganesh/text/GrTextBlob.h"
+#include "src/gpu/ganesh/GrColorInfo.h"
+#include "src/text/GlyphRun.h"
+#include "src/text/gpu/TextBlob.h"
 #include "tests/Test.h"
 #include "tools/ToolUtils.h"
 
@@ -202,20 +206,6 @@ DEF_TEST(BagOfBytesBasic, r) {
     }
 }
 
-// Helper for defining allocators with inline/reserved storage.
-// For argument declarations, stick to the base type (SubRunAllocator).
-// Note: Inheriting from the storage first means the storage will outlive the
-// SubRunAllocator, letting ~SubRunAllocator read it as it calls destructors.
-// (This is mostly only relevant for strict tools like MSAN.)
-
-template <size_t inlineSize>
-class GrSTSubRunAllocator : private BagOfBytes::Storage<inlineSize>, public SubRunAllocator {
-public:
-    explicit GrSTSubRunAllocator(int firstHeapAllocation =
-                                     BagOfBytes::PlatformMinimumSizeWithOverhead(inlineSize, 1))
-            : SubRunAllocator{this->data(), SkTo<int>(this->size()), firstHeapAllocation} {}
-};
-
 DEF_TEST(SubRunAllocator, r) {
     static int created = 0;
     static int destroyed = 0;
@@ -269,7 +259,7 @@ DEF_TEST(SubRunAllocator, r) {
 
     // Exercise on stack arena
     {
-        GrSTSubRunAllocator<64> arena;
+        sktext::gpu::STSubRunAllocator<64, 16> arena;
         exercise(&arena);
     }
 
@@ -310,7 +300,7 @@ DEF_TEST(SubRunAllocator, r) {
             ~I() {}
             int i;
         };
-        GrSTSubRunAllocator<64> arena;
+        sktext::gpu::STSubRunAllocator<64, 16> arena;
         auto a = arena.makeUniqueArray<I>(8, [](size_t i) { return i; });
         for (size_t i = 0; i < 8; i++) {
             REPORTER_ASSERT(r, a[i].i == (int)i);
@@ -322,4 +312,34 @@ DEF_TEST(SubRunAllocator, r) {
         void* ptr = arena.alignedBytes(4081, 8);
         REPORTER_ASSERT(r, ((intptr_t)ptr & 7) == 0);
     }
+}
+
+using TextBlob = sktext::gpu::TextBlob;
+
+DEF_TEST(KeyEqualityOnPerspective, r) {
+    SkTextBlobBuilder builder;
+    SkFont font(SkTypeface::MakeDefault(), 16);
+    auto runBuffer = builder.allocRun(font, 1, 0.0f, 0.0f);
+    runBuffer.glyphs[0] = 3;
+    auto blob = builder.make();
+    sktext::GlyphRunBuilder grBuilder;
+    auto glyphRunList = grBuilder.blobToGlyphRunList(*blob, {100, 100});
+    SkPaint paint;
+
+    // Build the strike device.
+    SkSurfaceProps props;
+    sktext::gpu::SDFTControl control(false, false, 1, 100);
+    SkStrikeDeviceInfo strikeDevice{props, SkScalerContextFlags::kBoostContrast, &control};
+    SkMatrix matrix1;
+    matrix1.setAll(1, 0, 0, 0, 1, 0, 1, 1, 1);
+    SkMatrix matrix2;
+    matrix2.setAll(1, 0, 0, 0, 1, 0, 2, 2, 1);
+    auto key1 = std::get<1>(
+            TextBlob::Key::Make(glyphRunList, paint, matrix1, strikeDevice));
+    auto key2 = std::get<1>(
+            TextBlob::Key::Make(glyphRunList, paint, matrix1, strikeDevice));
+    auto key3 = std::get<1>(
+            TextBlob::Key::Make(glyphRunList, paint, matrix2, strikeDevice));
+    REPORTER_ASSERT(r, key1 == key2);
+    REPORTER_ASSERT(r, !(key1 == key3));
 }

@@ -1,33 +1,28 @@
-load("//bazel:macros.bzl", "enforce_iwyu_on_package", "exports_files_legacy", "generated_cc_atom")
-load("@rules_cc//cc:defs.bzl", "cc_binary")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//bazel:macros.bzl", "cc_binary", "exports_files_legacy", "go_binary", "go_library")
+load("//bazel:cc_library_with_flags.bzl", "cc_library_with_flags")
+load("@rules_python//python:defs.bzl", "py_binary")
 
 licenses(["notice"])
 
 exports_files_legacy()
 
-enforce_iwyu_on_package()
-
 cc_binary(
     name = "bazel_test_exe",
-    visibility = ["//:__subpackages__"],
+    srcs = [
+        "bazel_test.cpp",
+    ],
     deps = [
-        ":bazel_test_src",
-    ] + select({
-        "@platforms//os:windows": ["//src/ports:SkDebug_win_src"],
-        "@platforms//os:android": ["//src/ports:SkDebug_android_src"],
-        "//conditions:default": ["//src/ports:SkDebug_stdio_src"],
-    }),
+        ":skia_with_svg",
+        "@libpng",
+    ],
 )
 
-generated_cc_atom(
-    name = "bazel_test_src",
-    srcs = ["bazel_test.cpp"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//include/core:SkTypes_hdr",
-        "//third_party:libpng",
-    ],
+cc_library_with_flags(
+    name = "skia_with_svg",
+    set_flags = {
+        "enable_svg_canvas": ["True"],
+    },
+    target = "//:skia_public",
 )
 
 go_binary(
@@ -41,4 +36,19 @@ go_library(
     srcs = ["hello_world.go"],
     importpath = "go.skia.org/skia/experimental/bazel_test",
     visibility = ["//visibility:private"],
+)
+
+py_binary(
+    name = "print_os",
+    srcs = ["print_os.py"],
+)
+
+genrule(
+    name = "generate_file",
+    srcs = [],
+    outs = [
+        "some_file.txt",
+    ],
+    cmd = "$(location :print_os) $@",
+    exec_tools = [":print_os"],
 )

@@ -35,6 +35,10 @@
 #define SK_ENABLE_DUMP_GPU
 #endif
 
+#ifndef SK_ENABLE_PRECOMPILE
+#define SK_ENABLE_PRECOMPILE
+#endif
+
 #ifndef SK_ENABLE_SKSL
 #define SK_ENABLE_SKSL
 #endif
@@ -73,6 +77,10 @@
 
 #ifndef SK_HAS_WUFFS_LIBRARY
 #define SK_HAS_WUFFS_LIBRARY
+#endif
+
+#ifndef SK_SUPPORT_GPU
+#define SK_SUPPORT_GPU 1
 #endif
 
 #ifndef SK_TOOLS_REQUIRE_RESOURCES

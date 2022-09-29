@@ -12,7 +12,9 @@
 #include "include/core/SkPath.h"
 #include "include/core/SkTypeface.h"
 #include "src/core/SkEnumerate.h"
+#include "src/core/SkGlyphBuffer.h"
 #include "src/core/SkScalerContext.h"
+#include "src/text/StrikeForGPU.h"
 
 static SkFontMetrics use_or_generate_metrics(
         const SkFontMetrics* metrics, SkScalerContext* context) {
@@ -172,6 +174,18 @@ std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::preparePaths(
     return {glyphs, delta};
 }
 
+size_t SkScalerCache::glyphIDsToPaths(SkSpan<sktext::IDOrPath> idsOrPaths) {
+    size_t increase = 0;
+    SkAutoMutexExclusive lock{fMu};
+    for (sktext::IDOrPath& idOrPath : idsOrPaths) {
+        auto [glyph, size] = this->glyph(SkPackedGlyphID{idOrPath.fGlyphID});
+        increase += size;
+        increase += this->preparePath(glyph);
+        new (&idOrPath.fPath) SkPath{*glyph->path()};
+    }
+    return increase;
+}
+
 std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::prepareImages(
         SkSpan<const SkPackedGlyphID> glyphIDs, const SkGlyph* results[]) {
     const SkGlyph** cursor = results;
@@ -200,6 +214,19 @@ std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::prepareDrawables(
     }
 
     return {{results, glyphIDs.size()}, delta};
+}
+
+std::tuple<SkScalar, size_t> SkScalerCache::findMaximumGlyphDimension(
+        SkSpan<const SkGlyphID> glyphs) {
+    size_t totalIncrease = 0;
+    SkScalar maxDimension = 0;
+    SkAutoMutexExclusive lock{fMu};
+    for (SkGlyphID glyphID : glyphs) {
+        auto [digest, increase] = this->digest(SkPackedGlyphID{glyphID});
+        totalIncrease += increase;
+        maxDimension = std::max(static_cast<SkScalar>(digest.maxDimension()), maxDimension);
+    }
+    return {maxDimension, totalIncrease};
 }
 
 template <typename Fn>
@@ -244,7 +271,7 @@ size_t SkScalerCache::prepareForMaskDrawing(
             if (digest.canDrawAsMask()) {
                 accepted->accept(fGlyphForIndex[digest.index()], i);
             } else {
-                rejected->reject(i, digest.maxDimension());
+                rejected->reject(i);
             }
         });
 
@@ -281,7 +308,7 @@ size_t SkScalerCache::prepareForPathDrawing(
                 accepted->accept(glyph, i);
             } else {
                 // Glyph does not have a path.
-                rejected->reject(i, digest.maxDimension());
+                rejected->reject(i);
             }
         });
 
@@ -302,7 +329,7 @@ size_t SkScalerCache::prepareForDrawableDrawing(
                 accepted->accept(glyph, i);
             } else {
                 // Glyph does not have a drawable.
-                rejected->reject(i, glyph->maxDimension());
+                rejected->reject(i);
             }
         });
 

@@ -161,8 +161,7 @@ private:
                                           const void* data,
                                           size_t size) override;
 
-    sk_sp<GrGpuBuffer> onCreateBuffer(size_t size, GrGpuBufferType type, GrAccessPattern,
-                                      const void* data) override;
+    sk_sp<GrGpuBuffer> onCreateBuffer(size_t size, GrGpuBufferType type, GrAccessPattern) override;
 
     bool onReadPixels(GrSurface*,
                       SkIRect,
@@ -178,6 +177,12 @@ private:
                        const GrMipLevel[],
                        int mipLevelCount,
                        bool) override;
+
+    bool onTransferFromBufferToBuffer(sk_sp<GrGpuBuffer> src,
+                                      size_t srcOffset,
+                                      sk_sp<GrGpuBuffer> dst,
+                                      size_t dstOffset,
+                                      size_t size) override;
 
     bool onTransferPixelsTo(GrTexture*,
                             SkIRect,

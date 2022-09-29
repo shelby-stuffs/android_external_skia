@@ -10,7 +10,7 @@
 
 #include "include/core/SkData.h"
 #include "include/core/SkTypes.h"
-#include "include/third_party/skcms/skcms.h"
+#include "modules/skcms/skcms.h"
 #include "src/core/SkUtils.h"  // unaligned_{load,store}
 #include <cstdint>
 
@@ -1514,8 +1514,8 @@ SI void clip_color(F* r, F* g, F* b, F a) {
       l  = lum(*r, *g, *b);
 
     auto clip = [=](F c) {
-        c = if_then_else(mn >= 0, c, l + (c - l) * (    l) / (l - mn)   );
-        c = if_then_else(mx >  a,    l + (c - l) * (a - l) / (mx - l), c);
+        c = if_then_else(mn < 0 && l != mn, l + (c - l) * (    l) / (l - mn), c);
+        c = if_then_else(mx > a && l != mx, l + (c - l) * (a - l) / (mx - l), c);
         c = max(c, 0);  // Sometimes without this we may dip just a little negative.
         return c;
     };

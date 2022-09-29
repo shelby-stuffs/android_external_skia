@@ -423,7 +423,7 @@ private:
             };
             SkString fnName = fragBuilder->getMangledFunctionName("coverage_from_dash_edge");
             fragBuilder->emitFunction(SkSLType::kFloat, fnName.c_str(),
-                                      {fnArgs, SK_ARRAY_COUNT(fnArgs)}, R"(
+                                      {fnArgs, std::size(fnArgs)}, R"(
                     float linearDist;
                     angleToEdge = clamp(angleToEdge, -3.1415, 3.1415);
                     linearDist = diameter * sin(angleToEdge / 2);
@@ -636,7 +636,7 @@ private:
             fragBuilder->codeAppend("float grad_dot = dot(grad, grad);");
 
             // avoid calling inversesqrt on zero.
-            if (args.fShaderCaps->floatIs32Bits()) {
+            if (args.fShaderCaps->fFloatIs32Bits) {
                 fragBuilder->codeAppend("grad_dot = max(grad_dot, 1.1755e-38);");
             } else {
                 fragBuilder->codeAppend("grad_dot = max(grad_dot, 6.1036e-5);");
@@ -661,7 +661,7 @@ private:
                     fragBuilder->codeAppendf("grad = 2.0*offset*%s.zw;", ellipseRadii.fsIn());
                 }
                 fragBuilder->codeAppend("grad_dot = dot(grad, grad);");
-                if (!args.fShaderCaps->floatIs32Bits()) {
+                if (!args.fShaderCaps->fFloatIs32Bits) {
                     fragBuilder->codeAppend("grad_dot = max(grad_dot, 6.1036e-5);");
                 }
                 if (egp.fUseScale) {
@@ -824,7 +824,7 @@ private:
 
             fragBuilder->codeAppend("float grad_dot = 4.0*dot(grad, grad);");
             // avoid calling inversesqrt on zero.
-            if (args.fShaderCaps->floatIs32Bits()) {
+            if (args.fShaderCaps->fFloatIs32Bits) {
                 fragBuilder->codeAppend("grad_dot = max(grad_dot, 1.1755e-38);");
             } else {
                 fragBuilder->codeAppend("grad_dot = max(grad_dot, 6.1036e-5);");
@@ -855,7 +855,7 @@ private:
                     fragBuilder->codeAppendf("grad *= %s.z;", offsets0.fsIn());
                 }
                 fragBuilder->codeAppend("grad_dot = 4.0*dot(grad, grad);");
-                if (!args.fShaderCaps->floatIs32Bits()) {
+                if (!args.fShaderCaps->fFloatIs32Bits) {
                     fragBuilder->codeAppend("grad_dot = max(grad_dot, 6.1036e-5);");
                 }
                 fragBuilder->codeAppend("invlen = inversesqrt(grad_dot);");
@@ -956,8 +956,8 @@ static constexpr SkPoint kOctagonInner[] = {
     SkPoint::Make(-kCosPi8, -kSinPi8),
 };
 
-static const int kIndicesPerFillCircle = SK_ARRAY_COUNT(gFillCircleIndices);
-static const int kIndicesPerStrokeCircle = SK_ARRAY_COUNT(gStrokeCircleIndices);
+static const int kIndicesPerFillCircle = std::size(gFillCircleIndices);
+static const int kIndicesPerStrokeCircle = std::size(gStrokeCircleIndices);
 static const int kVertsPerStrokeCircle = 16;
 static const int kVertsPerFillCircle = 9;
 
@@ -1811,7 +1811,7 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-class EllipseOp : public GrMeshDrawOp {
+class EllipseOp final : public GrMeshDrawOp {
 private:
     using Helper = GrSimpleMeshDrawOpHelper;
 
@@ -1894,7 +1894,7 @@ public:
         // minimum value to avoid divides by zero. With large ovals and low precision this
         // leads to blurring at the edge of the oval.
         const SkScalar kMaxOvalRadius = 16384;
-        if (!context->priv().caps()->shaderCaps()->floatIs32Bits() &&
+        if (!context->priv().caps()->shaderCaps()->fFloatIs32Bits &&
             (params.fXRadius >= kMaxOvalRadius || params.fYRadius >= kMaxOvalRadius)) {
             return nullptr;
         }
@@ -1938,8 +1938,8 @@ public:
 
     GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip,
                                       GrClampType clampType) override {
-        fUseScale = !caps.shaderCaps()->floatIs32Bits() &&
-                    !caps.shaderCaps()->hasLowFragmentPrecision();
+        fUseScale = !caps.shaderCaps()->fFloatIs32Bits &&
+                    !caps.shaderCaps()->fHasLowFragmentPrecision;
         SkPMColor4f* color = &fEllipses.front().fColor;
         return fHelper.finalizeProcessors(caps, clip, clampType,
                                           GrProcessorAnalysisCoverage::kSingleChannel, color,
@@ -2103,7 +2103,7 @@ private:
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-class DIEllipseOp : public GrMeshDrawOp {
+class DIEllipseOp final : public GrMeshDrawOp {
 private:
     using Helper = GrSimpleMeshDrawOpHelper;
 
@@ -2179,7 +2179,7 @@ public:
         // minimum value to avoid divides by zero. With large ovals and low precision this
         // leads to blurring at the edge of the oval.
         const SkScalar kMaxOvalRadius = 16384;
-        if (!context->priv().caps()->shaderCaps()->floatIs32Bits() &&
+        if (!context->priv().caps()->shaderCaps()->fFloatIs32Bits &&
             (params.fXRadius >= kMaxOvalRadius || params.fYRadius >= kMaxOvalRadius)) {
             return nullptr;
         }
@@ -2227,8 +2227,8 @@ public:
 
     GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip,
                                       GrClampType clampType) override {
-        fUseScale = !caps.shaderCaps()->floatIs32Bits() &&
-                    !caps.shaderCaps()->hasLowFragmentPrecision();
+        fUseScale = !caps.shaderCaps()->fFloatIs32Bits &&
+                    !caps.shaderCaps()->fHasLowFragmentPrecision;
         SkPMColor4f* color = &fEllipses.front().fColor;
         return fHelper.finalizeProcessors(caps, clip, clampType,
                                           GrProcessorAnalysisCoverage::kSingleChannel, color,
@@ -2443,7 +2443,7 @@ static const uint16_t gOverstrokeRRectIndices[] = {
 static const uint16_t* gStandardRRectIndices = gOverstrokeRRectIndices + 6 * 4;
 
 // overstroke count is arraysize minus the center indices
-static const int kIndicesPerOverstrokeRRect = SK_ARRAY_COUNT(gOverstrokeRRectIndices) - 6;
+static const int kIndicesPerOverstrokeRRect = std::size(gOverstrokeRRectIndices) - 6;
 // fill count skips overstroke indices and includes center
 static const int kIndicesPerFillRRect = kIndicesPerOverstrokeRRect - 6 * 4 + 6;
 // stroke count is fill count minus center indices
@@ -2502,7 +2502,7 @@ static const uint16_t* rrect_type_to_indices(RRectType type) {
 //   each vertex is also given the normalized x & y distance from the interior rect's edge
 //      the GP takes the min of those depths +1 to get the normalized distance to the outer edge
 
-class CircularRRectOp : public GrMeshDrawOp {
+class CircularRRectOp final : public GrMeshDrawOp {
 private:
     using Helper = GrSimpleMeshDrawOpHelper;
 
@@ -2867,7 +2867,7 @@ static sk_sp<const GrBuffer> get_rrect_index_buffer(RRectType type,
     }
 }
 
-class EllipticalRRectOp : public GrMeshDrawOp {
+class EllipticalRRectOp final : public GrMeshDrawOp {
 private:
     using Helper = GrSimpleMeshDrawOpHelper;
 
@@ -2960,7 +2960,7 @@ public:
 
     GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip,
                                       GrClampType clampType) override {
-        fUseScale = !caps.shaderCaps()->floatIs32Bits();
+        fUseScale = !caps.shaderCaps()->fFloatIs32Bits;
         SkPMColor4f* color = &fRRects.front().fColor;
         return fHelper.finalizeProcessors(caps, clip, clampType,
                                           GrProcessorAnalysisCoverage::kSingleChannel, color,
@@ -3361,7 +3361,7 @@ GrOp::Owner GrOvalOpFactory::MakeOvalOp(GrRecordingContext* context,
     }
 
     // Otherwise, if we have shader derivative support, render as device-independent
-    if (shaderCaps->shaderDerivativeSupport()) {
+    if (shaderCaps->fShaderDerivativeSupport) {
         SkScalar a = viewMatrix[SkMatrix::kMScaleX];
         SkScalar b = viewMatrix[SkMatrix::kMSkewX];
         SkScalar c = viewMatrix[SkMatrix::kMSkewY];

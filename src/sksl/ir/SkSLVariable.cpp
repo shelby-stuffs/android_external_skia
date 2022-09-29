@@ -7,14 +7,21 @@
 
 #include "src/sksl/ir/SkSLVariable.h"
 
+#include "include/private/SkSLLayout.h"
 #include "include/private/SkStringView.h"
+#include "include/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLMangler.h"
+#include "src/sksl/SkSLModifiersPool.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLThreadContext.h"
+#include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
+
+#include <type_traits>
+#include <utility>
 
 namespace SkSL {
 
@@ -41,6 +48,30 @@ std::unique_ptr<Variable> Variable::Convert(const Context& context, Position pos
     }
     if (!context.fConfig->fIsBuiltinCode && skstd::starts_with(name, '$')) {
         context.fErrors->error(namePos, "name '" + std::string(name) + "' is reserved");
+    }
+    if (baseType->isUnsizedArray()) {
+        if (!ProgramConfig::IsCompute(ThreadContext::Context().fConfig->fKind)) {
+            context.fErrors->error(pos, "unsized arrays are not permitted here");
+        } else if (storage != Variable::Storage::kGlobal) {
+            context.fErrors->error(pos, "unsized arrays must be global");
+        } else if (!(modifiers.fFlags & (Modifiers::kIn_Flag | Modifiers::kOut_Flag))) {
+            context.fErrors->error(pos, "unsized arrays must be declared 'in' and/or 'out'");
+        }
+    }
+    if (ProgramConfig::IsCompute(ThreadContext::Context().fConfig->fKind) &&
+            modifiers.fLayout.fBuiltin == -1) {
+        if (storage == Variable::Storage::kGlobal &&
+                (modifiers.fFlags & (Modifiers::kIn_Flag | Modifiers::kOut_Flag))) {
+            if (baseType->typeKind() != Type::TypeKind::kTexture && !baseType->isArray() &&
+                    !isArray) {
+                context.fErrors->error(pos, "unsupported compute shader in / out type");
+            }
+            if (baseType->typeKind() != Type::TypeKind::kTexture &&
+                    (modifiers.fLayout.fBinding == -1 || modifiers.fLayout.fSet == -1)) {
+                context.fErrors->error(pos,
+                        "compute shader in / out variables must have a layout binding and set");
+            }
+        }
     }
 
     return Make(context, pos, modifiersPos, modifiers, baseType, name, isArray,

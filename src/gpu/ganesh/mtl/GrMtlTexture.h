@@ -65,6 +65,8 @@ protected:
          return false;
      }
 
+    void onSetLabel() override;
+
 private:
     enum Wrapped { kWrapped };
 

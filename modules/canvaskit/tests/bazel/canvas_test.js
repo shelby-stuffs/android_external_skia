@@ -59,8 +59,6 @@ describe('Canvas Behavior', () => {
         paint.setAntiAlias(true);
         paint.setColor(CanvasKit.Color(66, 129, 164, 1.0));
 
-        canvas.clear(CanvasKit.Color(255, 255, 255, 1.0));
-
         canvas.drawPath(path, paint);
         canvas.drawText('This is text', 10, 280, textPaint, textFont);
 
@@ -72,7 +70,6 @@ describe('Canvas Behavior', () => {
     });
 
     gm('patheffects_canvas', (canvas) => {
-        canvas.clear(CanvasKit.WHITE);
         const path = starPath(CanvasKit, 100, 100, 100);
         const paint = new CanvasKit.Paint();
 
@@ -125,8 +122,6 @@ describe('Canvas Behavior', () => {
         paint.setAntiAlias(true);
         paint.setColor(CanvasKit.CYAN);
 
-        canvas.clear(CanvasKit.WHITE);
-
         canvas.drawCircle(30, 50, 15, paint);
 
         paint.setStyle(CanvasKit.PaintStyle.Fill);
@@ -147,8 +142,6 @@ describe('Canvas Behavior', () => {
         paint.setStrokeWidth(3.0);
         paint.setAntiAlias(true);
         paint.setColor(CanvasKit.BLACK);
-
-        canvas.clear(CanvasKit.WHITE);
 
         canvas.drawRRect(CanvasKit.RRectXY(
             CanvasKit.LTRBRect(10, 10, 50, 50), 5, 10), paint);
@@ -176,8 +169,6 @@ describe('Canvas Behavior', () => {
         paint.setAntiAlias(true);
         paint.setColor(CanvasKit.BLACK);
 
-        canvas.clear(CanvasKit.WHITE);
-
         canvas.drawRRect([10, 10, 210, 210,
           // top left corner, going clockwise
           10, 30,
@@ -200,8 +191,6 @@ describe('Canvas Behavior', () => {
         paint.setStrokeWidth(3.0);
         paint.setAntiAlias(true);
         paint.setColor(CanvasKit.BLACK);
-
-        canvas.clear(CanvasKit.WHITE);
 
         const rrect = CanvasKit.Malloc(Float32Array, 12);
         rrect.toTypedArray().set([10, 10, 210, 210,
@@ -229,8 +218,6 @@ describe('Canvas Behavior', () => {
         paint.setAntiAlias(true);
         paint.setColor(CanvasKit.BLACK);
 
-        canvas.clear(CanvasKit.WHITE);
-
         const outer = CanvasKit.RRectXY(CanvasKit.LTRBRect(10, 60, 210, 260), 10, 5);
         const inner = CanvasKit.RRectXY(CanvasKit.LTRBRect(50, 90, 160, 210), 30, 30);
 
@@ -241,6 +228,8 @@ describe('Canvas Behavior', () => {
     });
 
     gm('colorfilters_canvas', (canvas) => {
+        canvas.clear(CanvasKit.Color(230, 230, 230));
+
         const paint = new CanvasKit.Paint();
 
         const blue = CanvasKit.ColorFilter.MakeBlend(
@@ -251,8 +240,6 @@ describe('Canvas Behavior', () => {
 
         paint.setStyle(CanvasKit.PaintStyle.Fill);
         paint.setAntiAlias(true);
-
-        canvas.clear(CanvasKit.Color(230, 230, 230));
 
         paint.setColorFilter(blue)
         canvas.drawRect(CanvasKit.LTRBRect(10, 10, 60, 60), paint);
@@ -282,7 +269,6 @@ describe('Canvas Behavior', () => {
     });
 
     gm('blendmodes_canvas', (canvas) => {
-        canvas.clear(CanvasKit.WHITE);
 
         const blendModeNames = Object.keys(CanvasKit.BlendMode).filter((key) => key !== 'values');
 
@@ -404,7 +390,6 @@ describe('Canvas Behavior', () => {
 
     // inspired by https://fiddle.skia.org/c/feb2a08bb09ede5309678d6a0ab3f981
     gm('savelayer_rect_paint_canvas', (canvas) => {
-        canvas.clear(CanvasKit.WHITE);
         const redPaint = new CanvasKit.Paint();
         redPaint.setColor(CanvasKit.RED);
         const solidBluePaint = new CanvasKit.Paint();
@@ -465,7 +450,6 @@ describe('Canvas Behavior', () => {
     // identical to the test above, except the save layer only has the paint, not
     // the rectangle.
     gm('savelayer_paint_canvas', (canvas) => {
-        canvas.clear(CanvasKit.WHITE);
         const redPaint = new CanvasKit.Paint();
         redPaint.setColor(CanvasKit.RED);
         const solidBluePaint = new CanvasKit.Paint();
@@ -524,7 +508,6 @@ describe('Canvas Behavior', () => {
         // Note: fiddle.skia.org quietly draws a white background before doing
         // other things, which is noticed in cases like this where we use saveLayer
         // with the rec struct.
-        canvas.clear(CanvasKit.WHITE);
         canvas.scale(8, 8);
         const redPaint = new CanvasKit.Paint();
         redPaint.setColor(CanvasKit.RED);
@@ -549,7 +532,6 @@ describe('Canvas Behavior', () => {
     });
 
     gm('drawpoints_canvas', (canvas) => {
-        canvas.clear(CanvasKit.WHITE);
         const paint = new CanvasKit.Paint();
         paint.setAntiAlias(true);
         paint.setStyle(CanvasKit.PaintStyle.Stroke);
@@ -588,8 +570,7 @@ describe('Canvas Behavior', () => {
         paint.delete();
     });
 
-    gm('drawPoints in different modes', (canvas) => {
-        canvas.clear(CanvasKit.WHITE);
+    gm('drawPoints_in_different_modes', (canvas) => {
         // From https://bugs.chromium.org/p/skia/issues/detail?id=11012
         const boxPaint = new CanvasKit.Paint();
         boxPaint.setStyle(CanvasKit.PaintStyle.Stroke);
@@ -634,8 +615,6 @@ describe('Canvas Behavior', () => {
     gm('drawImageNine_canvas', (canvas, fetchedByteBuffers) => {
         const img = CanvasKit.MakeImageFromEncoded(fetchedByteBuffers[0]);
         expect(img).toBeTruthy();
-
-        canvas.clear(CanvasKit.WHITE);
         const paint = new CanvasKit.Paint();
 
         canvas.drawImageNine(img, CanvasKit.LTRBiRect(40, 40, 400, 300),
@@ -648,8 +627,6 @@ describe('Canvas Behavior', () => {
     gm('makeImageShaderCubic_canvas', (canvas, fetchedByteBuffers) => {
         const img = CanvasKit.MakeImageFromEncoded(fetchedByteBuffers[0]);
         expect(img).toBeTruthy();
-
-        canvas.clear(CanvasKit.WHITE);
         const paint = new CanvasKit.Paint();
         const shader = img.makeShaderCubic(CanvasKit.TileMode.Decal, CanvasKit.TileMode.Clamp,
                                            1/3 /*B*/, 1/3 /*C*/,
@@ -667,8 +644,6 @@ describe('Canvas Behavior', () => {
         const img = CanvasKit.MakeImageFromEncoded(fetchedByteBuffers[0]);
         expect(img).toBeTruthy();
         const imgWithMipMap = img.makeCopyWithDefaultMipmaps();
-
-        canvas.clear(CanvasKit.WHITE);
         const paint = new CanvasKit.Paint();
         const shader = imgWithMipMap.makeShaderOptions(CanvasKit.TileMode.Decal,
                                                        CanvasKit.TileMode.Clamp,
@@ -775,12 +750,12 @@ describe('Canvas Behavior', () => {
         );
         expect3x3MatricesToMatch(expected, matr);
 
-        // The 3x3 should be expanded into a 4x4, with 0s in the 3rd row and column.
+        // The 3x3 should be expanded into a 4x4, with identity in the 3rd row and column.
         matr = canvas.getLocalToDevice();
         expect4x4MatricesToMatch([
             0.707106, -0.707106, 0,  7.071067,
             0.707106,  0.707106, 0, 21.213203,
-            0       ,  0       , 0,  0       ,
+            0       ,  0       , 1,  0       ,
             0       ,  0       , 0,  1       ], matr);
     });
 
@@ -807,13 +782,13 @@ describe('Canvas Behavior', () => {
                             0,    0,  1];
         expect3x3MatricesToMatch(expected, matr);
 
-        // The 3x2 should be expanded into a 4x4, with 0s in the 3rd row and column
+        // The 3x2 should be expanded into a 4x4, with identity in the 3rd row and column
         // and the perspective filled in.
         matr = canvas.getLocalToDevice();
         expect4x4MatricesToMatch([
             1.4, -0.2, 0, 12,
             0.2,  1.4, 0, 24,
-            0  ,  0  , 0,  0,
+            0  ,  0  , 1,  0,
             0  ,  0  , 0,  1], matr);
     });
 
@@ -836,11 +811,22 @@ describe('Canvas Behavior', () => {
         // TODO(nifong) add more involved test for camera-related math.
     });
 
+    it('can change the device clip bounds to the canvas and read it back', () => {
+        // We need to use the Canvas constructor with a width/height or there is no maximum
+        // clip area, and all clipping will result in a clip of [0, 0, 0, 0]
+        const canvas = new CanvasKit.Canvas(300, 400);
+        let clip = canvas.getDeviceClipBounds();
+        expect(clip).toEqual(Int32Array.of(0, 0, 300, 400));
+
+        canvas.clipRect(CanvasKit.LTRBRect(10, 20, 30, 45), CanvasKit.ClipOp.Intersect, false);
+        canvas.getDeviceClipBounds(clip);
+        expect(clip).toEqual(Int32Array.of(10, 20, 30, 45));
+    });
+
     gm('concat_with4x4_canvas', (canvas) => {
         const path = starPath(CanvasKit, CANVAS_WIDTH/2, CANVAS_HEIGHT/2);
         const paint = new CanvasKit.Paint();
         paint.setAntiAlias(true);
-        canvas.clear(CanvasKit.WHITE);
 
         // Rotate it a bit on all 3 major axis, centered on the screen.
         // To play with rotations, see https://jsfiddle.skia.org/canvaskit/0525300405796aa87c3b84cc0d5748516fca0045d7d6d9c7840710ab771edcd4
@@ -867,6 +853,8 @@ describe('Canvas Behavior', () => {
     });
 
     gm('particles_canvas', (canvas) => {
+        canvas.clear(CanvasKit.BLACK);
+
         const curveParticles = {
             'MaxCount': 1000,
             'Drawable': {
@@ -902,8 +890,6 @@ describe('Canvas Behavior', () => {
         paint.setAntiAlias(true);
         paint.setColor(CanvasKit.WHITE);
         const font = new CanvasKit.Font(null, 12);
-
-        canvas.clear(CanvasKit.BLACK);
 
         // Draw a 5x5 set of different times in the particle system
         // like a filmstrip of motion of particles.

@@ -7,20 +7,23 @@
 
 #include "include/gpu/graphite/Context.h"
 
+#include "include/core/SkCombinationBuilder.h"
 #include "include/core/SkPathTypes.h"
+#include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/TextureInfo.h"
-#include "src/core/SkKeyContext.h"
-#include "src/core/SkKeyHelpers.h"
 #include "src/core/SkShaderCodeDictionary.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/CommandBuffer.h"
+#include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/GlobalCache.h"
 #include "src/gpu/graphite/Gpu.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
+#include "src/gpu/graphite/QueueManager.h"
+#include "src/gpu/graphite/RecordingPriv.h"
 #include "src/gpu/graphite/Renderer.h"
 #include "src/gpu/graphite/ResourceProvider.h"
 
@@ -30,64 +33,84 @@
 
 namespace skgpu::graphite {
 
-Context::Context(sk_sp<Gpu> gpu, BackendApi backend)
+#define ASSERT_SINGLE_OWNER SKGPU_ASSERT_SINGLE_OWNER(this->singleOwner())
+
+//--------------------------------------------------------------------------------------------------
+Context::Context(sk_sp<Gpu> gpu, std::unique_ptr<QueueManager> queueManager, BackendApi backend)
         : fGpu(std::move(gpu))
+        , fQueueManager(std::move(queueManager))
         , fGlobalCache(sk_make_sp<GlobalCache>())
         , fBackend(backend) {
 }
 Context::~Context() {}
 
 #ifdef SK_METAL
-std::unique_ptr<Context> Context::MakeMetal(const MtlBackendContext& backendContext) {
-    sk_sp<Gpu> gpu = MtlTrampoline::MakeGpu(backendContext);
+std::unique_ptr<Context> Context::MakeMetal(const MtlBackendContext& backendContext,
+                                            const ContextOptions& options) {
+    sk_sp<Gpu> gpu = MtlTrampoline::MakeGpu(backendContext, options);
     if (!gpu) {
         return nullptr;
     }
 
-    return std::unique_ptr<Context>(new Context(std::move(gpu), BackendApi::kMetal));
+    auto queueManager = MtlTrampoline::MakeQueueManager(gpu.get());
+    if (!queueManager) {
+        return nullptr;
+    }
+
+    auto context = std::unique_ptr<Context>(new Context(std::move(gpu),
+                                                        std::move(queueManager),
+                                                        BackendApi::kMetal));
+    SkASSERT(context);
+
+    // We have to create this after the Context because we need to pass in the Context's
+    // SingleOwner object.
+    auto resourceProvider = MtlTrampoline::MakeResourceProvider(context->fGpu.get(),
+                                                                context->fGlobalCache,
+                                                                context->singleOwner());
+    if (!resourceProvider) {
+        return nullptr;
+    }
+    context->fResourceProvider = std::move(resourceProvider);
+    return context;
 }
 #endif
 
 std::unique_ptr<Recorder> Context::makeRecorder() {
+    ASSERT_SINGLE_OWNER
+
     return std::unique_ptr<Recorder>(new Recorder(fGpu, fGlobalCache));
 }
 
 void Context::insertRecording(const InsertRecordingInfo& info) {
-    sk_sp<RefCntedCallback> callback;
-    if (info.fFinishedProc) {
-        callback = RefCntedCallback::Make(info.fFinishedProc, info.fFinishedContext);
-    }
+    ASSERT_SINGLE_OWNER
 
-    SkASSERT(info.fRecording);
-    if (!info.fRecording) {
-        if (callback) {
-            callback->setFailureResult();
-        }
-        return;
-    }
-
-    SkASSERT(!fCurrentCommandBuffer);
-    // For now we only allow one CommandBuffer. So we just ref it off the InsertRecordingInfo and
-    // hold onto it until we submit.
-    fCurrentCommandBuffer = info.fRecording->fCommandBuffer;
-    if (callback) {
-        fCurrentCommandBuffer->addFinishedProc(std::move(callback));
-    }
+    fQueueManager->addRecording(info, fResourceProvider.get());
 }
 
 void Context::submit(SyncToCpu syncToCpu) {
-    SkASSERT(fCurrentCommandBuffer);
+    ASSERT_SINGLE_OWNER
 
-    fGpu->submit(std::move(fCurrentCommandBuffer));
-
-    fGpu->checkForFinishedWork(syncToCpu);
+    fQueueManager->submitToGpu();
+    fQueueManager->checkForFinishedWork(syncToCpu);
 }
 
 void Context::checkAsyncWorkCompletion() {
-    fGpu->checkForFinishedWork(SyncToCpu::kNo);
+    ASSERT_SINGLE_OWNER
+
+    fQueueManager->checkForFinishedWork(SyncToCpu::kNo);
 }
 
-void Context::preCompile(const PaintCombo& paintCombo) {
+#ifdef SK_ENABLE_PRECOMPILE
+
+SkBlenderID Context::addUserDefinedBlender(sk_sp<SkRuntimeEffect> effect) {
+    auto dict = this->priv().shaderCodeDictionary();
+
+    return dict->addUserDefinedBlender(std::move(effect));
+}
+
+void Context::precompile(SkCombinationBuilder* combinationBuilder) {
+    ASSERT_SINGLE_OWNER
+
     static const Renderer* kRenderers[] = {
             &Renderer::StencilTessellatedCurvesAndTris(SkPathFillType::kWinding),
             &Renderer::StencilTessellatedCurvesAndTris(SkPathFillType::kEvenOdd),
@@ -100,38 +123,34 @@ void Context::preCompile(const PaintCombo& paintCombo) {
     };
 
     SkShaderCodeDictionary* dict = fGlobalCache->shaderCodeDictionary();
-    SkKeyContext keyContext(dict);
 
-    SkPaintParamsKeyBuilder builder(dict, SkBackend::kGraphite);
+    combinationBuilder->buildCombinations(
+            dict,
+            [&](SkUniquePaintParamsID uniqueID) {
+                GraphicsPipelineDesc desc;
 
-    for (auto bm: paintCombo.fBlendModes) {
-        for (auto& shaderCombo: paintCombo.fShaders) {
-            for (auto shaderType: shaderCombo.fTypes) {
-                for (auto tm: shaderCombo.fTileModes) {
-                    auto uniqueID = CreateKey(keyContext, &builder, shaderType, tm, bm);
-
-                    GraphicsPipelineDesc desc;
-
-                    for (const Renderer* r : kRenderers) {
-                        for (auto&& s : r->steps()) {
-                            if (s->performsShading()) {
-                                desc.setProgram(s, uniqueID);
-                            }
-                            // TODO: Combine with renderpass description set to generate full
-                            // GraphicsPipeline and MSL program. Cache that compiled pipeline on
-                            // the resource provider in a map from desc -> pipeline so that any
-                            // later desc created from equivalent RenderStep + Combination get it.
+                for (const Renderer* r : kRenderers) {
+                    for (auto&& s : r->steps()) {
+                        if (s->performsShading()) {
+                            desc.setProgram(s, uniqueID);
                         }
+                        // TODO: Combine with renderpass description set to generate full
+                        // GraphicsPipeline and MSL program. Cache that compiled pipeline on
+                        // the resource provider in a map from desc -> pipeline so that any
+                        // later desc created from equivalent RenderStep + Combination get it.
                     }
                 }
-            }
-        }
-    }
+            });
+
     // TODO: Iterate over the renderers and make descriptions for the steps that don't perform
     // shading, and just use ShaderType::kNone.
 }
 
+#endif // SK_ENABLE_PRECOMPILE
+
 BackendTexture Context::createBackendTexture(SkISize dimensions, const TextureInfo& info) {
+    ASSERT_SINGLE_OWNER
+
     if (!info.isValid() || info.backend() != this->backend()) {
         return {};
     }
@@ -139,6 +158,8 @@ BackendTexture Context::createBackendTexture(SkISize dimensions, const TextureIn
 }
 
 void Context::deleteBackendTexture(BackendTexture& texture) {
+    ASSERT_SINGLE_OWNER
+
     if (!texture.isValid() || texture.backend() != this->backend()) {
         return;
     }

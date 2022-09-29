@@ -841,7 +841,7 @@ static std::unique_ptr<GrFragmentProcessor> make_circle_blur(GrRecordingContext*
         return nullptr;
     }
 
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
         uniform shader blurProfile;
         uniform half4 circleData;
 
@@ -944,7 +944,7 @@ static std::unique_ptr<GrFragmentProcessor> make_rect_blur(GrRecordingContext* c
                 srcRect.bottom() * scale.height()};
     }
 
-    if (!caps.floatIs32Bits()) {
+    if (!caps.fFloatIs32Bits) {
         // We promote the math that gets us into the Gaussian space to full float when the rect
         // coords are large. If we don't have full float then fail. We could probably clip the rect
         // to an outset device bounds instead.
@@ -976,7 +976,7 @@ static std::unique_ptr<GrFragmentProcessor> make_rect_blur(GrRecordingContext* c
     // rectangle (and similar in y).
     bool isFast = insetRect.isSorted();
 
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
         // Effect that is a LUT for integral of normal distribution. The value at x:[0,6*sigma] is
         // the integral from -inf to (3*sigma - x). I.e. x is mapped from [0, 6*sigma] to
         // [3*sigma to -3*sigma]. The flip saves a reversal in the shader.
@@ -1382,7 +1382,7 @@ static std::unique_ptr<GrFragmentProcessor> make_rrect_blur(GrRecordingContext* 
         return nullptr;
     }
 
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
         uniform shader ninePatchFP;
 
         uniform half cornerRadius;

@@ -21,7 +21,6 @@
 #include "src/core/SkWriteBuffer.h"
 #include "src/image/SkImage_Base.h"
 #include "src/shaders/SkBitmapProcShader.h"
-#include "src/shaders/SkEmptyShader.h"
 #include "src/shaders/SkTransformShader.h"
 
 #ifdef SK_ENABLE_SKSL
@@ -32,6 +31,7 @@
 
 #include "src/core/SkKeyContext.h"
 #include "src/core/SkKeyHelpers.h"
+#include "src/core/SkPaintParamsKey.h"
 #endif
 
 SkM44 SkImageShader::CubicResamplerMatrix(float B, float C) {
@@ -78,7 +78,7 @@ static SkTileMode optimize(SkTileMode tm, int dimension) {
 // TODO: currently this only *always* used in asFragmentProcessor(), which is excluded on no-gpu
 // builds. No-gpu builds only use needs_subset() in asserts, so release+no-gpu doesn't use it, which
 // can cause builds to fail if unused warnings are treated as errors.
-SK_MAYBE_UNUSED static bool needs_subset(SkImage* img, const SkRect& subset) {
+[[maybe_unused]] static bool needs_subset(SkImage* img, const SkRect& subset) {
     return subset != SkRect::Make(img->dimensions());
 }
 
@@ -300,7 +300,7 @@ sk_sp<SkShader> SkImageShader::MakeRaw(sk_sp<SkImage> image,
         return nullptr;
     }
     if (!image) {
-        return sk_make_sp<SkEmptyShader>();
+        return SkShaders::Empty();
     }
     return sk_sp<SkShader>{new SkImageShader(
             image, SkRect::Make(image->dimensions()), tmx, tmy, options, localMatrix,
@@ -322,7 +322,7 @@ sk_sp<SkShader> SkImageShader::MakeSubset(sk_sp<SkImage> image,
         }
     }
     if (!image || subset.isEmpty()) {
-        return sk_make_sp<SkEmptyShader>();
+        return SkShaders::Empty();
     }
 
     // Validate subset and check if we can drop it
@@ -391,14 +391,13 @@ void SkImageShader::addToKey(const SkKeyContext& keyContext,
 
         auto mipmapped = (fSampling.mipmap != SkMipmapMode::kNone) ?
                 skgpu::graphite::Mipmapped::kYes : skgpu::graphite::Mipmapped::kNo;
-        // TODO: In practice which SkBudgeted value used shouldn't matter because we're not going
-        // to create a new texture here. But should the SkImage know its SkBudgeted state?
-        auto[view, ct] = grImage->asView(keyContext.recorder(), mipmapped, SkBudgeted::kNo);
+        auto[view, ct] = grImage->asView(keyContext.recorder(), mipmapped);
         imgData.fTextureProxy = view.refProxy();
     }
 #endif
 
-    ImageShaderBlock::AddToKey(keyContext, builder, gatherer, imgData);
+    ImageShaderBlock::BeginBlock(keyContext, builder, gatherer, imgData);
+    builder->endBlock();
 }
 #endif
 

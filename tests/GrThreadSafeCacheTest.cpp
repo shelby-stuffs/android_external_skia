@@ -46,6 +46,7 @@ static std::unique_ptr<skgpu::v1::SurfaceDrawContext> new_SDC(GrRecordingContext
                                                SkBackingFit::kExact,
                                                {wh, wh},
                                                SkSurfaceProps(),
+                                               /*label=*/{},
                                                1,
                                                GrMipmapped::kNo,
                                                GrProtected::kNo,
@@ -539,10 +540,10 @@ private:
             if (!failFillingIn) {
                 ++fStats->fNumHWCreations;
 
-                sk_sp<GrGpuBuffer> tmp = rp->createBuffer(fVertexData->size(),
+                sk_sp<GrGpuBuffer> tmp = rp->createBuffer(fVertexData->vertices(),
+                                                          fVertexData->size(),
                                                           GrGpuBufferType::kVertex,
-                                                          kStatic_GrAccessPattern,
-                                                          fVertexData->vertices());
+                                                          kStatic_GrAccessPattern);
                 fVertexData->setGpuBuffer(std::move(tmp));
             }
         }

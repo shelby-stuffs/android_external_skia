@@ -7,6 +7,10 @@
 #define SKSL_ENABLE_TRACING
 #endif
 
+#ifndef SK_ENABLE_PRECOMPILE
+#define SK_ENABLE_PRECOMPILE
+#endif
+
 #ifndef SK_ENABLE_SKSL
 #define SK_ENABLE_SKSL
 #endif
@@ -29,6 +33,10 @@
 
 #ifndef SK_IN_RENDERENGINE
 #define SK_IN_RENDERENGINE
+#endif
+
+#ifndef SK_SUPPORT_GPU
+#define SK_SUPPORT_GPU 1
 #endif
 
 #ifndef SK_USE_VMA

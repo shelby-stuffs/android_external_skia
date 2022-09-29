@@ -8,6 +8,7 @@
 #ifndef skgpu_graphite_Caps_DEFINED
 #define skgpu_graphite_Caps_DEFINED
 
+#include "include/core/SkCapabilities.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
 #include "src/core/SkEnumBitMask.h"
@@ -15,18 +16,19 @@
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/graphite/ResourceTypes.h"
 
-namespace SkSL {
-struct ShaderCaps;
-}
+namespace SkSL { struct ShaderCaps; }
+
+namespace skgpu { class ShaderErrorHandler; }
 
 namespace skgpu::graphite {
 
+struct ContextOptions;
 class GraphicsPipelineDesc;
 class GraphiteResourceKey;
 struct RenderPassDesc;
 class TextureInfo;
 
-class Caps : public SkRefCnt {
+class Caps : public SkCapabilities {
 public:
     ~Caps() override;
 
@@ -77,8 +79,22 @@ public:
     // SkColorType and TextureInfo.
     skgpu::Swizzle getWriteSwizzle(SkColorType, const TextureInfo&) const;
 
+    skgpu::ShaderErrorHandler* shaderErrorHandler() const { return fShaderErrorHandler; }
+
+    float minDistanceFieldFontSize() const { return fMinDistanceFieldFontSize; }
+    float glyphsAsPathsFontSize() const { return fGlyphsAsPathsFontSize; }
+
+    size_t glyphCacheTextureMaximumBytes() const { return fGlyphCacheTextureMaximumBytes; }
+
+    bool allowMultipleGlyphCacheTextures() const { return fAllowMultipleGlyphCacheTextures; }
+    bool supportBilerpFromGlyphAtlas() const { return fSupportBilerpFromGlyphAtlas; }
+
 protected:
     Caps();
+
+    // Subclasses must call this at the end of their init method in order to do final processing on
+    // the caps.
+    void finishInitialization(const ContextOptions&);
 
     // TODO: This value should be set by some context option. For now just making it 4.
     uint32_t defaultMSAASamples() const { return 4; }
@@ -105,6 +121,26 @@ protected:
     std::unique_ptr<SkSL::ShaderCaps> fShaderCaps;
 
     bool fClampToBorderSupport = true;
+
+    //////////////////////////////////////////////////////////////////////////////////////////
+    // Client-provided Caps
+
+    /**
+     * If present, use this object to report shader compilation failures. If not, report failures
+     * via SkDebugf and assert.
+     */
+    ShaderErrorHandler* fShaderErrorHandler = nullptr;
+
+#if GRAPHITE_TEST_UTILS
+    int  fMaxTextureAtlasSize = 2048;
+#endif
+    size_t fGlyphCacheTextureMaximumBytes = 2048 * 1024 * 4;
+
+    float fMinDistanceFieldFontSize = 18;
+    float fGlyphsAsPathsFontSize = 324;
+
+    bool fAllowMultipleGlyphCacheTextures = true;
+    bool fSupportBilerpFromGlyphAtlas = false;
 
 private:
     virtual bool onIsTexturable(const TextureInfo&) const = 0;

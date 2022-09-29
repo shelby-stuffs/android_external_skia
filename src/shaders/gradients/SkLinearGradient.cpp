@@ -14,6 +14,7 @@
 
 #ifdef SK_ENABLE_SKSL
 #include "src/core/SkKeyHelpers.h"
+#include "src/core/SkPaintParamsKey.h"
 #endif
 
 static SkMatrix pts_to_unit_matrix(const SkPoint pts[2]) {
@@ -116,11 +117,13 @@ void SkLinearGradient::addToKey(const SkKeyContext& keyContext,
                                             SkM44(this->getLocalMatrix()),
                                             fStart, fEnd,
                                             0.0f, 0.0f,
+                                            0.0f, 0.0f,
                                             fTileMode,
                                             fColorCount,
                                             fOrigColors4f,
                                             fOrigPos);
 
-    GradientShaderBlocks::AddToKey(keyContext, builder, gatherer, data);
+    GradientShaderBlocks::BeginBlock(keyContext, builder, gatherer, data);
+    builder->endBlock();
 }
 #endif

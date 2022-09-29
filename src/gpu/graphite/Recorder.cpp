@@ -7,8 +7,10 @@
 
 #include "include/gpu/graphite/Recorder.h"
 
+#include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/graphite/Recording.h"
 #include "src/core/SkPipelineData.h"
+#include "src/gpu/AtlasTypes.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/ContextPriv.h"
@@ -20,16 +22,33 @@
 #include "src/gpu/graphite/ResourceProvider.h"
 #include "src/gpu/graphite/TaskGraph.h"
 #include "src/gpu/graphite/UploadBufferManager.h"
+#include "src/gpu/graphite/text/AtlasManager.h"
+#include "src/text/gpu/StrikeCache.h"
+#include "src/text/gpu/TextBlobRedrawCoordinator.h"
 
 namespace skgpu::graphite {
 
 #define ASSERT_SINGLE_OWNER SKGPU_ASSERT_SINGLE_OWNER(this->singleOwner())
 
+static int32_t next_id() {
+    static std::atomic<int32_t> nextID{1};
+    int32_t id;
+    do {
+        id = nextID.fetch_add(1, std::memory_order_relaxed);
+    } while (id == SK_InvalidGenID);
+    return id;
+}
+
 Recorder::Recorder(sk_sp<Gpu> gpu, sk_sp<GlobalCache> globalCache)
         : fGpu(std::move(gpu))
         , fGraph(new TaskGraph)
         , fUniformDataCache(new UniformDataCache)
-        , fTextureDataCache(new TextureDataCache) {
+        , fTextureDataCache(new TextureDataCache)
+        , fRecorderID(next_id())
+        , fAtlasManager(std::make_unique<AtlasManager>(this))
+        , fTokenTracker(std::make_unique<TokenTracker>())
+        , fStrikeCache(std::make_unique<sktext::gpu::StrikeCache>())
+        , fTextBlobCache(std::make_unique<sktext::gpu::TextBlobRedrawCoordinator>(fRecorderID)) {
 
     fResourceProvider = fGpu->makeResourceProvider(std::move(globalCache), this->singleOwner());
     fDrawBufferManager.reset(new DrawBufferManager(fResourceProvider.get(),
@@ -43,6 +62,9 @@ Recorder::~Recorder() {
     for (auto& device : fTrackedDevices) {
         device->abandonRecorder();
     }
+
+    // TODO: needed?
+    fStrikeCache->freeAll();
 }
 
 std::unique_ptr<Recording> Recorder::snap() {
@@ -54,9 +76,7 @@ std::unique_ptr<Recording> Recorder::snap() {
     // TODO: fulfill all promise images in the TextureDataCache here
     // TODO: create all the samplers needed in the TextureDataCache here
 
-    auto commandBuffer = fResourceProvider->createCommandBuffer();
-
-    if (!fGraph->addCommands(fResourceProvider.get(), commandBuffer.get())) {
+    if (!fGraph->prepareResources(fResourceProvider.get())) {
         // Leaving 'fTrackedDevices' alone since they were flushed earlier and could still be
         // attached to extant SkSurfaces.
         size_t requiredAlignment = fGpu->caps()->requiredUniformBufferAlignment();
@@ -64,15 +84,16 @@ std::unique_ptr<Recording> Recorder::snap() {
         fTextureDataCache = std::make_unique<TextureDataCache>();
         // We leave the UniformDataCache alone
         fGraph->reset();
+        fResourceProvider->resetAfterSnap();
         return nullptr;
     }
 
-    fDrawBufferManager->transferToCommandBuffer(commandBuffer.get());
-    fUploadBufferManager->transferToCommandBuffer(commandBuffer.get());
+    std::unique_ptr<Recording> recording(new Recording(std::move(fGraph)));
+    fDrawBufferManager->transferToRecording(recording.get());
+    fUploadBufferManager->transferToRecording(recording.get());
 
-    fGraph->reset();
-    std::unique_ptr<Recording> recording(new Recording(std::move(commandBuffer),
-                                                       std::move(fTextureDataCache)));
+    fGraph = std::make_unique<TaskGraph>();
+    fResourceProvider->resetAfterSnap();
     fTextureDataCache = std::make_unique<TextureDataCache>();
     return recording;
 }

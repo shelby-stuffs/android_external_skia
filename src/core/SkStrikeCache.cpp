@@ -15,7 +15,6 @@
 #include "include/core/SkTypeface.h"
 #include "include/private/SkMutex.h"
 #include "include/private/SkTemplates.h"
-#include "src/core/SkGlyphRunPainter.h"
 #include "src/core/SkScalerCache.h"
 
 #if SK_SUPPORT_GPU
@@ -43,8 +42,12 @@ auto SkStrikeCache::findOrCreateStrike(const SkStrikeSpec& strikeSpec) -> sk_sp<
     return strike;
 }
 
-SkScopedStrikeForGPU SkStrikeCache::findOrCreateScopedStrike(const SkStrikeSpec& strikeSpec) {
-    return SkScopedStrikeForGPU{this->findOrCreateStrike(strikeSpec).release()};
+sktext::ScopedStrikeForGPU SkStrikeCache::findOrCreateScopedStrike(const SkStrikeSpec& strikeSpec) {
+    return sktext::ScopedStrikeForGPU{this->findOrCreateStrike(strikeSpec).release()};
+}
+
+sktext::StrikeRef SkStrikeCache::findOrCreateStrikeRef(const SkStrikeSpec& strikeSpec) {
+    return sktext::StrikeRef{this->findOrCreateStrike(strikeSpec)};
 }
 
 void SkStrikeCache::PurgeAll() {

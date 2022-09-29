@@ -32,45 +32,58 @@ third_party deps using `./tools/git-sync-deps`.
 ### Linux Hosts (you are running Bazel on a Linux machine)
 You can run a command like:
 ```
-bazel build //example:hello_world_gl --config=clang_linux
+bazel build //example:hello_world_gl
 ```
 
-This uses the `clang_linux` configuration (defined in `//.bazelrc`), which is a hermetic C++
-toolchain we put together to compile Skia on a Linux host (implementation is in `//toolchain`.
-It builds the _target_ defined in `//examples/BUILD.bazel` named "hello_world_gl", which uses
-the `sk_app` framework we designed to make simple applications using Skia.
+This uses a hermetic C++ toolchain we put together to compile Skia on a Linux host
+(implementation is in `//toolchain`. It builds the _target_ defined in
+`//examples/BUILD.bazel` named "hello_world_gl", which uses the `sk_app` framework
+we designed to make simple applications using Skia.
 
 Bazel will put this executable in `//bazel-bin/example/hello_world_gl` and tell you it did so in
 the logs. You can run this executable yourself, or have Bazel run it by modifying the command to
 be:
 ```
-bazel run //example:hello_world_gl --config=clang_linux
+bazel run //example:hello_world_gl
 ```
 
 If you want to pass one or more flags to `bazel run`, add them on the end after a `--` like:
 ```
-bazel run //example:hello_world_gl --config=clang_linux -- --flag_one=apple --flag_two=cherry
+bazel run //example:hello_world_gl -- --flag_one=apple --flag_two=cherry
 ```
 
 ### Mac Hosts (you are running Bazel on a Mac machine)
 You can run a command like:
 ```
-bazel build //example:bazel_test_exe --config=clang_mac
+bazel build //example:bazel_test_exe
 ```
 
-Similar to the Linux guide, this uses the `clang_mac` configuration (defined in `//.bazelrc`).
-
 When building for Mac, we require the user to have Xcode installed on their device so that we can
-use system headers and Mac-specific includes when compiling. Our Bazel toolchain assumes you have
-`xcode-select` in your path so that we may symlink the user's current Xcode directory in the
-toolchain's cache. Make sure `xcode-select -p` returns a valid path.
+use system headers and Mac-specific includes when compiling. Googlers, as per usual, follow the
+instructions at [go/skia-corp-xcode](http://go/skia-corp-xcode) to install Xcode.
+
+Our Bazel toolchain assumes you have `xcode-select` in your path so that we may symlink the
+user's current Xcode directory in the toolchain's cache. Make sure `xcode-select -p`
+returns a valid path.
+
+Your Xcode path should resemble `/Applications/Xcode.app/Contents/Developer/`. Either move your
+Xcode or use `xcode-select` to use the Xcode in this location.
 
 ## .bazelrc Tips
 You should make a [.bazelrc file](https://bazel.build/docs/bazelrc) in your home directory where
 you can specify settings that apply only to you. These can augment or replace the ones we define
-in `//.bazelrc`
+in the `//.bazelrc` configuration file.
 
-You may want some or all of the following entries in your `~/.bazelrc` file.
+Skia defines some [configs](https://bazel.build/docs/bazelrc#config), that is, group of settings
+and features in `//bazel/buildrc`. This file contains configs for builds that we use  regularly
+(for example, in our continuous integration system).
+
+If you want to define Skia-specific configs (and options which do not conflict with other Bazel
+projects), you make a file in `//bazel/user/buildrc` which will automatically be read in. This
+file is covered by a `.gitignore` rule and should not be checked in.
+
+You may want some or all of the following entries in your `~/.bazelrc` or `//bazel/user/buildrc`
+file.
 
 ### Build Skia faster locally
 Many Linux machines have a [RAM disk mounted at /dev/shm](https://www.cyberciti.biz/tips/what-is-devshm-and-its-practical-usage.html)
@@ -84,7 +97,7 @@ build:clang --sandbox_base=/dev/shm
 
 ### Authenticate to RBE on a Linux VM
 We are in the process of setting up Remote Build Execution (RBE) for Bazel. Some users have reported
-errors when trying to use RBE (via `--config=linux-rbe`) on Linux VMs such as:
+errors when trying to use RBE (via `--config=linux_rbe`) on Linux VMs such as:
 ```
 ERROR: Failed to query remote execution capabilities: 
 Error code 404 trying to get security access token from Compute Engine metadata for the default

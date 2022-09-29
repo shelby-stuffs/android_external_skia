@@ -201,12 +201,12 @@ public:
      * @param size            size of buffer to create.
      * @param intendedType    hint to the graphics subsystem about what the buffer will be used for.
      * @param accessPattern   hint to the graphics subsystem about how the data will be accessed.
-     * @param data            optional data with which to initialize the buffer.
      *
      * @return the buffer if successful, otherwise nullptr.
      */
-    sk_sp<GrGpuBuffer> createBuffer(size_t size, GrGpuBufferType intendedType,
-                                    GrAccessPattern accessPattern, const void* data = nullptr);
+    sk_sp<GrGpuBuffer> createBuffer(size_t size,
+                                    GrGpuBufferType intendedType,
+                                    GrAccessPattern accessPattern);
 
     /**
      * Resolves MSAA. The resolveRect must already be in the native destination space.
@@ -298,6 +298,23 @@ public:
                                  1,
                                  prepForTexSampling);
     }
+
+    /**
+     * Transfer bytes from one GPU buffer to another. The src buffer must have type kXferCpuToGpu
+     * and the dst buffer must not. Neither buffer may currently be mapped. The offsets and size
+     * must be aligned to GrCaps::transferFromBufferToBufferAlignment.
+     *
+     * @param src        the buffer to read from
+     * @param srcOffset  the aligned offset at the src at which the transfer begins.
+     * @param dst        the buffer to write to
+     * @param dstOffset  the aligned offset in the dst at which the transfer begins
+     * @param size       the aligned number of bytes to transfer;
+     */
+    bool transferFromBufferToBuffer(sk_sp<GrGpuBuffer> src,
+                                    size_t srcOffset,
+                                    sk_sp<GrGpuBuffer> dst,
+                                    size_t dstOffset,
+                                    size_t size);
 
     /**
      * Updates the pixels in a rectangle of a texture using a buffer. If the texture is MIP mapped,
@@ -445,6 +462,9 @@ public:
         int transfersFromSurface() const { return fTransfersFromSurface; }
         void incTransfersFromSurface() { fTransfersFromSurface++; }
 
+        void incBufferTransfers() { fBufferTransfers++; }
+        int bufferTransfers() const { return fBufferTransfers; }
+
         int stencilAttachmentCreates() const { return fStencilAttachmentCreates; }
         void incStencilAttachmentCreates() { fStencilAttachmentCreates++; }
 
@@ -481,6 +501,7 @@ public:
         int fTextureUploads = 0;
         int fTransfersToTexture = 0;
         int fTransfersFromSurface = 0;
+        int fBufferTransfers = 0;
         int fStencilAttachmentCreates = 0;
         int fMSAAAttachmentCreates = 0;
         int fNumDraws = 0;
@@ -500,6 +521,7 @@ public:
         void incTextureCreates() {}
         void incTextureUploads() {}
         void incTransfersToTexture() {}
+        void incBufferTransfers() {}
         void incTransfersFromSurface() {}
         void incStencilAttachmentCreates() {}
         void incMSAAAttachmentCreates() {}
@@ -727,8 +749,9 @@ private:
     virtual sk_sp<GrRenderTarget> onWrapVulkanSecondaryCBAsRenderTarget(const SkImageInfo&,
                                                                         const GrVkDrawableInfo&);
 
-    virtual sk_sp<GrGpuBuffer> onCreateBuffer(size_t size, GrGpuBufferType intendedType,
-                                              GrAccessPattern, const void* data) = 0;
+    virtual sk_sp<GrGpuBuffer> onCreateBuffer(size_t size,
+                                              GrGpuBufferType intendedType,
+                                              GrAccessPattern) = 0;
 
     // overridden by backend-specific derived class to perform the surface read
     virtual bool onReadPixels(GrSurface*,
@@ -747,10 +770,17 @@ private:
                                int mipLevelCount,
                                bool prepForTexSampling) = 0;
 
+    // overridden by backend-specific derived class to perform the buffer transfer
+    virtual bool onTransferFromBufferToBuffer(sk_sp<GrGpuBuffer> src,
+                                              size_t srcOffset,
+                                              sk_sp<GrGpuBuffer> dst,
+                                              size_t dstOffset,
+                                              size_t size) = 0;
+
     // overridden by backend-specific derived class to perform the texture transfer
     virtual bool onTransferPixelsTo(GrTexture*,
                                     SkIRect,
-                                    GrColorType textiueColorType,
+                                    GrColorType textureColorType,
                                     GrColorType bufferColorType,
                                     sk_sp<GrGpuBuffer> transferBuffer,
                                     size_t offset,

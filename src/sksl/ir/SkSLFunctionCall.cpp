@@ -5,26 +5,45 @@
  * found in the LICENSE file.
  */
 
+#include "src/sksl/ir/SkSLFunctionCall.h"
+
+#include "include/core/SkSpan.h"
+#include "include/core/SkTypes.h"
+#include "include/private/SkFloatingPoint.h"
+#include "include/private/SkSLModifiers.h"
+#include "include/private/SkTArray.h"
+#include "include/sksl/DSLCore.h"
+#include "include/sksl/DSLExpression.h"
+#include "include/sksl/DSLType.h"
+#include "include/sksl/SkSLErrorReporter.h"
+#include "src/core/SkMatrixInvert.h"
 #include "src/sksl/SkSLAnalysis.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLProgramSettings.h"
-#include "src/sksl/dsl/priv/DSLWriter.h"
 #include "src/sksl/ir/SkSLChildCall.h"
+#include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLConstructorCompound.h"
+#include "src/sksl/ir/SkSLExternalFunction.h"
 #include "src/sksl/ir/SkSLExternalFunctionCall.h"
 #include "src/sksl/ir/SkSLExternalFunctionReference.h"
-#include "src/sksl/ir/SkSLFunctionCall.h"
+#include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionReference.h"
 #include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLMethodReference.h"
 #include "src/sksl/ir/SkSLTypeReference.h"
+#include "src/sksl/ir/SkSLVariable.h"
+#include "src/sksl/ir/SkSLVariableReference.h"
 
-#include "include/private/SkFloatingPoint.h"
-#include "include/sksl/DSLCore.h"
-#include "src/core/SkMatrixInvert.h"
-
+#include <algorithm>
 #include <array>
+#include <cfloat>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string_view>
 
 namespace SkSL {
 
@@ -117,8 +136,10 @@ static std::unique_ptr<Expression> coalesce_n_way_vector(const Expression* arg0,
 
         value = coalesce(value, *arg0Value, *arg1Value);
 
-        // If coalescing the intrinsic yields a non-finite value, do not optimize.
-        if (!std::isfinite(value)) {
+        if (value >= -FLT_MAX && value <= FLT_MAX) {
+            // This result will fit inside a float Literal.
+        } else {
+            // The value is outside the float range or is NaN (all if-checks fail); do not optimize.
             return nullptr;
         }
     }
@@ -236,8 +257,10 @@ static std::unique_ptr<Expression> evaluate_n_way_intrinsic(const Context& conte
 
         array[index] = eval(*arg0Value, *arg1Value, *arg2Value);
 
-        // If evaluation of the intrinsic yields a non-finite value, do not optimize.
-        if (!std::isfinite(array[index])) {
+        if (array[index] >= -FLT_MAX && array[index] <= FLT_MAX) {
+            // This result will fit inside a float Literal.
+        } else {
+            // The value is outside the float range or is NaN (all if-checks fail); do not optimize.
             return nullptr;
         }
     }
@@ -654,9 +677,7 @@ static std::unique_ptr<Expression> optimize_intrinsic_call(const Context& contex
             // Refract uses its arguments out-of-order in such a way that we end up trying to create
             // an invalid Position range, so we rewrite the arguments' positions to avoid that here.
             auto clone = [&](const Expression* expr) {
-                std::unique_ptr<Expression> result = expr->clone();
-                result->fPosition = pos;
-                return DSLExpression(std::move(result));
+                return DSLExpression(expr->clone(pos));
             };
             auto I    = [&] { return clone(arguments[0]); };
             auto N    = [&] { return clone(arguments[1]); };
@@ -742,7 +763,7 @@ static std::unique_ptr<Expression> optimize_intrinsic_call(const Context& contex
             }
 
             double dmat[16];
-            std::copy(mat, mat + SK_ARRAY_COUNT(mat), dmat);
+            std::copy(mat, mat + std::size(mat), dmat);
             return assemble_compound(context, arguments[0]->fPosition, returnType, dmat);
         }
         // 8.7 : Vector Relational Functions
@@ -793,14 +814,14 @@ bool FunctionCall::hasProperty(Property property) const {
     return false;
 }
 
-std::unique_ptr<Expression> FunctionCall::clone() const {
-    return std::make_unique<FunctionCall>(fPosition, &this->type(), &this->function(),
+std::unique_ptr<Expression> FunctionCall::clone(Position pos) const {
+    return std::make_unique<FunctionCall>(pos, &this->type(), &this->function(),
                                           this->arguments().clone());
 }
 
 std::string FunctionCall::description() const {
     std::string result = std::string(this->function().name()) + "(";
-    std::string separator;
+    const char* separator = "";
     for (const std::unique_ptr<Expression>& arg : this->arguments()) {
         result += separator;
         result += arg->description();
@@ -855,6 +876,17 @@ const FunctionDeclaration* FunctionCall::FindBestFunctionForCall(
     return best;
 }
 
+static std::string build_argument_type_list(SkSpan<const std::unique_ptr<Expression>> arguments) {
+    std::string result = "(";
+    const char* separator = "";
+    for (const std::unique_ptr<Expression>& arg : arguments) {
+        result += separator;
+        separator = ", ";
+        result += arg->type().displayName();
+    }
+    return result + ")";
+}
+
 std::unique_ptr<Expression> FunctionCall::Convert(const Context& context,
                                                   Position pos,
                                                   std::unique_ptr<Expression> functionValue,
@@ -890,18 +922,12 @@ std::unique_ptr<Expression> FunctionCall::Convert(const Context& context,
             const FunctionReference& ref = functionValue->as<FunctionReference>();
             const std::vector<const FunctionDeclaration*>& functions = ref.functions();
             const FunctionDeclaration* best = FindBestFunctionForCall(context, functions,
-                    arguments);
+                                                                      arguments);
             if (best) {
                 return FunctionCall::Convert(context, pos, *best, std::move(arguments));
             }
-            std::string msg = "no match for " + std::string(functions[0]->name()) + "(";
-            std::string separator;
-            for (size_t i = 0; i < arguments.size(); i++) {
-                msg += separator;
-                separator = ", ";
-                msg += arguments[i]->type().displayName();
-            }
-            msg += ")";
+            std::string msg = "no match for " + std::string(functions.front()->name()) +
+                              build_argument_type_list(arguments);
             context.fErrors->error(pos, msg);
             return nullptr;
         }
@@ -911,19 +937,14 @@ std::unique_ptr<Expression> FunctionCall::Convert(const Context& context,
 
             const std::vector<const FunctionDeclaration*>& functions = ref.functions();
             const FunctionDeclaration* best = FindBestFunctionForCall(context, functions,
-                    arguments);
+                                                                      arguments);
             if (best) {
                 return FunctionCall::Convert(context, pos, *best, std::move(arguments));
             }
-            std::string msg = "no match for " + arguments.back()->type().displayName() +
-                              "::" + std::string(functions[0]->name().substr(1)) + "(";
-            std::string separator;
-            for (size_t i = 0; i < arguments.size() - 1; i++) {
-                msg += separator;
-                separator = ", ";
-                msg += arguments[i]->type().displayName();
-            }
-            msg += ")";
+            std::string msg =
+                    "no match for " + arguments.back()->type().displayName() +
+                    "::" + std::string(functions.front()->name().substr(1)) +
+                    build_argument_type_list(SkSpan(arguments).first(arguments.size() - 1));
             context.fErrors->error(pos, msg);
             return nullptr;
         }
@@ -962,14 +983,8 @@ std::unique_ptr<Expression> FunctionCall::Convert(const Context& context,
     FunctionDeclaration::ParamTypes types;
     const Type* returnType;
     if (!function.determineFinalTypes(arguments, &types, &returnType)) {
-        std::string msg = "no match for " + std::string(function.name()) + "(";
-        std::string separator ;
-        for (const std::unique_ptr<Expression>& arg : arguments) {
-            msg += separator;
-            msg += arg->type().displayName();
-            separator = ", ";
-        }
-        msg += ")";
+        std::string msg = "no match for " + std::string(function.name()) +
+                          build_argument_type_list(arguments);
         context.fErrors->error(pos, msg);
         return nullptr;
     }
@@ -990,6 +1005,11 @@ std::unique_ptr<Expression> FunctionCall::Convert(const Context& context,
                 return nullptr;
             }
         }
+    }
+
+    if (function.isMain()) {
+        context.fErrors->error(pos, "call to 'main' is not allowed");
+        return nullptr;
     }
 
     if (function.intrinsicKind() == k_eval_IntrinsicKind) {

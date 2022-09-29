@@ -25,10 +25,10 @@
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/spirv.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <stack>
-#include <string>
 #include <string_view>
 #include <vector>
 
@@ -102,17 +102,13 @@ public:
         virtual void store(SpvId value, OutputStream& out) = 0;
     };
 
-    SPIRVCodeGenerator(const Context* context,
-                       const Program* program,
-                       OutputStream* out)
+    SPIRVCodeGenerator(const Context* context, const Program* program, OutputStream* out)
             : INHERITED(context, program, out)
-            , fDefaultLayout(MemoryLayout::k140_Standard)
+            , fDefaultLayout(MemoryLayout::Standard::k140)
             , fCapabilities(0)
             , fIdCount(1)
             , fCurrentBlock(0)
-            , fSynthetics(fContext, /*builtin=*/true) {
-        this->setupIntrinsics();
-    }
+            , fSynthetics(fContext, /*builtin=*/true) {}
 
     bool generateCode() override;
 
@@ -120,7 +116,8 @@ private:
     enum IntrinsicOpcodeKind {
         kGLSL_STD_450_IntrinsicOpcodeKind,
         kSPIRV_IntrinsicOpcodeKind,
-        kSpecial_IntrinsicOpcodeKind
+        kSpecial_IntrinsicOpcodeKind,
+        kInvalid_IntrinsicOpcodeKind,
     };
 
     enum SpecialIntrinsic {
@@ -150,8 +147,6 @@ private:
         const Type* type;
         std::unique_ptr<SPIRVCodeGenerator::LValue> lvalue;
     };
-
-    void setupIntrinsics();
 
     /**
      * Pass in the type to automatically add a RelaxedPrecision decoration for the id when
@@ -523,7 +518,7 @@ private:
         int32_t unsignedOp;
         int32_t boolOp;
     };
-    SkTHashMap<IntrinsicKind, Intrinsic> fIntrinsicMap;
+    Intrinsic getIntrinsic(IntrinsicKind) const;
     SkTHashMap<const FunctionDeclaration*, SpvId> fFunctionMap;
     SkTHashMap<const Variable*, SpvId> fVariableMap;
     SkTHashMap<const Type*, SpvId> fStructMap;

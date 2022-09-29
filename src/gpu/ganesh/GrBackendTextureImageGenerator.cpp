@@ -21,7 +21,6 @@
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrTextureProxyPriv.h"
 #include "src/gpu/ganesh/SkGr.h"
-#include "src/gpu/ganesh/gl/GrGLTexture.h"
 
 GrBackendTextureImageGenerator::RefHelper::RefHelper(
         sk_sp<GrTexture> texture,
@@ -231,7 +230,8 @@ GrSurfaceProxyView GrBackendTextureImageGenerator::onGenerateTexture(
                                          mipmapped,
                                          subset,
                                          SkBackingFit::kExact,
-                                         budgeted);
+                                         budgeted,
+                                         /*label=*/"BackendTextureImageGenerator_GenerateTexture");
         return {std::move(copy), fSurfaceOrigin, readSwizzle};
     }
 }

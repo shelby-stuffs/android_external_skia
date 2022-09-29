@@ -26,11 +26,20 @@
 
 enum class SkPathFillType;
 class SkPipelineDataGatherer;
+class SkTextureDataBlock;
+
+namespace skgpu { enum class MaskFormat; }
 
 namespace skgpu::graphite {
 class DrawWriter;
-class DrawGeometry;
+class DrawParams;
 class ResourceProvider;
+
+struct Varying {
+    const char* fName;
+    SkSLType fType;
+    // TODO: add modifier (e.g., flat and noperspective) support
+};
 
 class RenderStep {
 public:
@@ -39,7 +48,7 @@ public:
     // The DrawWriter is configured with the vertex and instance strides of the RenderStep, and its
     // primitive type. The recorded draws will be executed with a graphics pipeline compatible with
     // this RenderStep.
-    virtual void writeVertices(DrawWriter*, const DrawGeometry&) const = 0;
+    virtual void writeVertices(DrawWriter*, const DrawParams&) const = 0;
 
     // Write out the uniform values (aligned for the layout). These values will be de-duplicated
     // across all draws using the RenderStep before uploading to the GPU, but it can be assumed the
@@ -50,7 +59,11 @@ public:
     // nice if we could remember the offsets for the layout/gpu and reuse them across draws.
     // Similarly, it would be nice if this could write into reusable storage and then DrawPass or
     // UniformCache handles making an sk_sp if we need to assign a new unique ID to the uniform data
-    virtual void writeUniforms(const DrawGeometry&, SkPipelineDataGatherer*) const = 0;
+    virtual void writeUniforms(const DrawParams&, SkPipelineDataGatherer*) const = 0;
+
+    // Write out the textures and samplers that depend on the RenderStep.
+    // E.g., atlas textures and samplers for text rendering.
+    virtual void writeTextures(const DrawParams&, SkPipelineDataGatherer*) const {}
 
     // Returns a name formatted as "Subclass[variant]", where "Subclass" matches the C++ class name
     // and variant is a unique term describing instance's specific configuration.
@@ -73,8 +86,9 @@ public:
     // and then including the function bodies returned here.
     virtual const char* vertexSkSL() const = 0;
 
-    bool          requiresMSAA()    const { return fFlags & Flags::kRequiresMSAA;    }
-    bool          performsShading() const { return fFlags & Flags::kPerformsShading; }
+    bool          requiresMSAA()    const { return fFlags & Flags::kRequiresMSAA;      }
+    bool          performsShading() const { return fFlags & Flags::kPerformsShading;   }
+    bool          hasTextures()     const { return fFlags & Flags::kHasTextures; }
 
     PrimitiveType primitiveType()   const { return fPrimitiveType;  }
     size_t        vertexStride()    const { return fVertexStride;   }
@@ -92,13 +106,14 @@ public:
     size_t numUniforms()            const { return fUniforms.size();      }
     size_t numVertexAttributes()    const { return fVertexAttrs.size();   }
     size_t numInstanceAttributes()  const { return fInstanceAttrs.size(); }
+    size_t numVaryings()            const { return fVaryings.size(); }
 
     // The uniforms of a RenderStep are bound to the kRenderStep slot, the rest of the pipeline
     // may still use uniforms bound to other slots.
-    SkSpan<const SkUniform> uniforms()           const { return SkMakeSpan(fUniforms);      }
-    SkSpan<const Attribute> vertexAttributes()   const { return SkMakeSpan(fVertexAttrs);   }
-    SkSpan<const Attribute> instanceAttributes() const { return SkMakeSpan(fInstanceAttrs); }
-
+    SkSpan<const SkUniform> uniforms()           const { return SkSpan(fUniforms);      }
+    SkSpan<const Attribute> vertexAttributes()   const { return SkSpan(fVertexAttrs);   }
+    SkSpan<const Attribute> instanceAttributes() const { return SkSpan(fInstanceAttrs); }
+    SkSpan<const Varying>   varyings()           const { return SkSpan(fVaryings);      }
 
     // TODO: Actual API to do things
     // 6. Some Renderers benefit from being able to share vertices between RenderSteps. Must find a
@@ -113,6 +128,7 @@ protected:
         kNone            = 0b000,
         kRequiresMSAA    = 0b001,
         kPerformsShading = 0b010,
+        kHasTextures     = 0b100,
     };
     SK_DECL_BITMASK_OPS_FRIENDS(Flags);
 
@@ -126,13 +142,15 @@ protected:
                PrimitiveType primitiveType,
                DepthStencilSettings depthStencilSettings,
                std::initializer_list<Attribute> vertexAttrs,
-               std::initializer_list<Attribute> instanceAttrs)
+               std::initializer_list<Attribute> instanceAttrs,
+               std::initializer_list<Varying> varyings = {})
             : fFlags(flags)
             , fPrimitiveType(primitiveType)
             , fDepthStencilSettings(depthStencilSettings)
             , fUniforms(uniforms)
             , fVertexAttrs(vertexAttrs)
             , fInstanceAttrs(instanceAttrs)
+            , fVaryings(varyings)
             , fVertexStride(0)
             , fInstanceStride(0)
             , fName(className) {
@@ -168,6 +186,7 @@ private:
     std::vector<SkUniform> fUniforms;
     std::vector<Attribute> fVertexAttrs;
     std::vector<Attribute> fInstanceAttrs;
+    std::vector<Varying>   fVaryings;
 
     size_t fVertexStride;   // derived from vertex attribute set
     size_t fInstanceStride; // derived from instance attribute set
@@ -203,9 +222,14 @@ public:
 
     static const Renderer& ConvexTessellatedWedges();
 
-    // TODO: Not on the immediate sprint target, but show what needs to be added for DrawList's API
-    // static const Renderer& StrokePath();
-    // TODO: Will add more of these as primitive rendering etc. is fleshed out
+    static const Renderer& TessellatedStrokes();
+
+    static const Renderer& TextDirect();
+
+    static const Renderer& TextSDF(bool useLCDText);
+
+    // TODO: Add renderers for primitives (rect, rrect, etc.), special draws (atlas, vertices, text)
+    // and support inverse filled strokes.
 
     // The maximum number of render steps that any Renderer is allowed to have.
     static constexpr int kMaxRenderSteps = 4;

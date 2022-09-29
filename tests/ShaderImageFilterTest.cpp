@@ -37,7 +37,7 @@ static void test_unscaled(skiatest::Reporter* reporter) {
     SkScalar radius = SkIntToScalar(5);
 
     sk_sp<SkShader> gradient = SkGradientShader::MakeRadial(
-            center, radius, colors, pos, SK_ARRAY_COUNT(colors), SkTileMode::kClamp);
+            center, radius, colors, pos, std::size(colors), SkTileMode::kClamp);
 
     // Test using the image filter
     {
@@ -85,7 +85,7 @@ static void test_scaled(skiatest::Reporter* reporter) {
     SkScalar radius = SkIntToScalar(5);
 
     sk_sp<SkShader> gradient = SkGradientShader::MakeRadial(
-        center, radius, colors, pos, SK_ARRAY_COUNT(colors), SkTileMode::kClamp);
+        center, radius, colors, pos, std::size(colors), SkTileMode::kClamp);
 
     // Test using the image filter
     {
@@ -137,7 +137,7 @@ static void test_runtime_shader(skiatest::Reporter* r, SkSurface* surface) {
     // All 3 variations should produce the same pixel output
     std::vector<sk_sp<SkImageFilter>> filters = {
             SkMakeRuntimeImageFilter(effect, /*uniforms=*/nullptr, input),
-            SkImageFilters::RuntimeShader(builder, /*childShaderName=*/nullptr, input),
+            SkImageFilters::RuntimeShader(builder, /*childShaderName=*/"", input),
             SkImageFilters::RuntimeShader(builder, /*childShaderName=*/"child", input)};
 
     for (auto&& filter : filters) {

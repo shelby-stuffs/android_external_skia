@@ -8,6 +8,7 @@
 #include "src/image/SkSurface_Gpu.h"
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkCapabilities.h"
 #include "include/core/SkDeferredDisplayList.h"
 #include "include/core/SkSurfaceCharacterization.h"
 #include "include/gpu/GrBackendSurface.h"
@@ -131,8 +132,13 @@ sk_sp<SkImage> SkSurface_Gpu::onNewImageSnapshot(const SkIRect* subset) {
         }
         auto rect = subset ? *subset : SkIRect::MakeSize(srcView.dimensions());
         GrMipmapped mipmapped = srcView.mipmapped();
-        srcView = GrSurfaceProxyView::Copy(rContext, std::move(srcView), mipmapped, rect,
-                                           SkBackingFit::kExact, budgeted);
+        srcView = GrSurfaceProxyView::Copy(rContext,
+                                           std::move(srcView),
+                                           mipmapped,
+                                           rect,
+                                           SkBackingFit::kExact,
+                                           budgeted,
+                                           /*label=*/"SurfaceGpu_NewImageSnapshot");
     }
 
     const SkImageInfo info = fDevice->imageInfo();
@@ -389,6 +395,10 @@ bool SkSurface_Gpu::onDraw(sk_sp<const SkDeferredDisplayList> ddl, SkIPoint offs
 
     direct->priv().createDDLTask(std::move(ddl), view.asRenderTargetProxyRef(), offset);
     return true;
+}
+
+sk_sp<const SkCapabilities> SkSurface_Gpu::onCapabilities() {
+    return fDevice->recordingContext()->skCapabilities();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

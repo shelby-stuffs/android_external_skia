@@ -59,7 +59,7 @@ GrProcessorSet::Analysis StrokeTessellateOp::finalize(const GrCaps& caps,
                                                       GrClampType clampType) {
     // Make sure the finalize happens before combining. We might change fNeedsStencil here.
     SkASSERT(fPathStrokeList.fNext == nullptr);
-    if (!caps.shaderCaps()->infinitySupport()) {
+    if (!caps.shaderCaps()->fInfinitySupport) {
         // The GPU can't infer curve type based in infinity, so we need to send in an attrib
         // explicitly stating the curve type.
         fPatchAttribs |= PatchAttribs::kExplicitCurveType;
@@ -91,7 +91,7 @@ GrOp::CombineResult StrokeTessellateOp::onCombineIfPossible(GrOp* grOp, SkArenaA
 
     auto combinedAttribs = fPatchAttribs | op->fPatchAttribs;
     if (!(combinedAttribs & PatchAttribs::kStrokeParams) &&
-        !StrokeParams::StrokesHaveEqualParams(this->headStroke(), op->headStroke())) {
+        !tess::StrokesHaveEqualParams(this->headStroke(), op->headStroke())) {
         // The paths have different stroke properties. We will need to enable dynamic stroke if we
         // still decide to combine them.
         if (this->headStroke().isHairlineStyle()) {
@@ -179,7 +179,12 @@ void StrokeTessellateOp::prePrepareTessellator(GrTessellationShader::ProgramArgs
         fStencilProgram = GrTessellationShader::MakeProgram(args, fTessellationShader, pipeline,
                                                             &kMarkStencil);
         fillStencil = &kTestAndResetStencil;
-        args.fXferBarrierFlags = GrXferBarrierFlags::kNone;
+        // TODO: Currently if we have a texture barrier for a dst read it will get put in before
+        // both the stencil draw and the fill draw. In reality we only really need the barrier
+        // once to guard the reads of the color buffer in the fill from the previous writes. Maybe
+        // we can investigate how to remove one of these barriers but it is probably not something
+        // that is required a lot and thus the extra barrier shouldn't be too much of a perf hit to
+        // general Skia use.
     }
 
     fFillProgram = GrTessellationShader::MakeProgram(args, fTessellationShader, pipeline,
@@ -213,13 +218,8 @@ void StrokeTessellateOp::onPrepare(GrOpFlushState* flushState) {
                                     &flushState->caps()}, flushState->detachAppliedClip());
     }
     SkASSERT(fTessellator);
-    std::array<float, 2> matrixMinMaxScales;
-    if (!fViewMatrix.getMinMaxScales(matrixMinMaxScales.data())) {
-        matrixMinMaxScales.fill(1);
-    }
     fTessellator->prepare(flushState,
                           fViewMatrix,
-                          matrixMinMaxScales,
                           &fPathStrokeList,
                           fTotalCombinedVerbCnt);
 }

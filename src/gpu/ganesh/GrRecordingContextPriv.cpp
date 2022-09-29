@@ -59,8 +59,8 @@ void GrRecordingContextPriv::moveRenderTasksToDDL(SkDeferredDisplayList* ddl) {
     this->context()->drawingManager()->moveRenderTasksToDDL(ddl);
 }
 
-GrSDFTControl GrRecordingContextPriv::getSDFTControl(bool useSDFTForSmallText) const {
-    return GrSDFTControl{
+sktext::gpu::SDFTControl GrRecordingContextPriv::getSDFTControl(bool useSDFTForSmallText) const {
+    return sktext::gpu::SDFTControl{
             this->caps()->shaderCaps()->supportsDistanceFieldText(),
             useSDFTForSmallText,
             this->options().fMinDistanceFieldFontSize,
@@ -128,14 +128,16 @@ std::unique_ptr<skgpu::SurfaceContext> GrRecordingContextPriv::makeSC(const GrIm
     if (this->abandoned()) {
         return nullptr;
     }
-    sk_sp<GrTextureProxy> proxy = this->proxyProvider()->createProxy(format,
-                                                                     info.dimensions(),
-                                                                     renderable,
-                                                                     sampleCount,
-                                                                     mipmapped,
-                                                                     fit,
-                                                                     budgeted,
-                                                                     isProtected);
+    sk_sp<GrTextureProxy> proxy =
+            this->proxyProvider()->createProxy(format,
+                                               info.dimensions(),
+                                               renderable,
+                                               sampleCount,
+                                               mipmapped,
+                                               fit,
+                                               budgeted,
+                                               isProtected,
+                                               /*label=*/"MakeSurfaceContext");
     if (!proxy) {
         return nullptr;
     }
@@ -166,6 +168,7 @@ std::unique_ptr<skgpu::SurfaceFillContext> GrRecordingContextPriv::makeSFC(GrIma
                                                    fit,
                                                    info.dimensions(),
                                                    SkSurfaceProps(),
+                                                   /*label=*/"RecordingContextPriv_MakeSFC",
                                                    sampleCount,
                                                    mipmapped,
                                                    isProtected,
@@ -174,14 +177,16 @@ std::unique_ptr<skgpu::SurfaceFillContext> GrRecordingContextPriv::makeSFC(GrIma
     }
     GrBackendFormat format = this->caps()->getDefaultBackendFormat(info.colorType(),
                                                                    GrRenderable::kYes);
-    sk_sp<GrTextureProxy> proxy = this->proxyProvider()->createProxy(format,
-                                                                     info.dimensions(),
-                                                                     GrRenderable::kYes,
-                                                                     sampleCount,
-                                                                     mipmapped,
-                                                                     fit,
-                                                                     budgeted,
-                                                                     isProtected);
+    sk_sp<GrTextureProxy> proxy =
+            this->proxyProvider()->createProxy(format,
+                                               info.dimensions(),
+                                               GrRenderable::kYes,
+                                               sampleCount,
+                                               mipmapped,
+                                               fit,
+                                               budgeted,
+                                               isProtected,
+                                               /*label=*/"MakeSurfaceFillContextUsingImageInfo");
     if (!proxy) {
         return nullptr;
     }
@@ -221,29 +226,33 @@ std::unique_ptr<skgpu::SurfaceFillContext> GrRecordingContextPriv::makeSFC(
     SkASSERT(sampleCount >= 1);
     SkASSERT(format.isValid() && format.backend() == fContext->backend());
     if (alphaType == kPremul_SkAlphaType || alphaType == kOpaque_SkAlphaType) {
-        return skgpu::v1::SurfaceDrawContext::Make(this->context(),
-                                                   std::move(colorSpace),
-                                                   fit,
-                                                   dimensions,
-                                                   format,
-                                                   sampleCount,
-                                                   mipmapped,
-                                                   isProtected,
-                                                   readSwizzle,
-                                                   writeSwizzle,
-                                                   origin,
-                                                   budgeted,
-                                                   SkSurfaceProps());
+        return skgpu::v1::SurfaceDrawContext::Make(
+                this->context(),
+                std::move(colorSpace),
+                fit,
+                dimensions,
+                format,
+                sampleCount,
+                mipmapped,
+                isProtected,
+                readSwizzle,
+                writeSwizzle,
+                origin,
+                budgeted,
+                SkSurfaceProps(),
+                /*label=*/"MakeCustomConfiguredSurfaceFillContextUsingCustomSwizzles");
     }
 
-    sk_sp<GrTextureProxy> proxy = this->proxyProvider()->createProxy(format,
-                                                                     dimensions,
-                                                                     GrRenderable::kYes,
-                                                                     sampleCount,
-                                                                     mipmapped,
-                                                                     fit,
-                                                                     budgeted,
-                                                                     isProtected);
+    sk_sp<GrTextureProxy> proxy =
+            this->proxyProvider()->createProxy(format,
+                                               dimensions,
+                                               GrRenderable::kYes,
+                                               sampleCount,
+                                               mipmapped,
+                                               fit,
+                                               budgeted,
+                                               isProtected,
+                                               /*label=*/"MakeCustomConfiguredSurfaceFillContext");
     if (!proxy) {
         return nullptr;
     }

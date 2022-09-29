@@ -7,18 +7,24 @@
 
 #include "src/sksl/ir/SkSLType.h"
 
+#include "include/private/SkSLString.h"
 #include "include/private/SkStringView.h"
+#include "include/private/SkTFitsIn.h"
+#include "include/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLProgramSettings.h"
-#include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLConstructorArrayCast.h"
 #include "src/sksl/ir/SkSLConstructorCompoundCast.h"
 #include "src/sksl/ir/SkSLConstructorScalarCast.h"
+#include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
-#include "src/sksl/ir/SkSLType.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <optional>
 #include <string_view>
 
@@ -100,6 +106,10 @@ public:
         return fTargetType.isArray();
     }
 
+    bool isUnsizedArray() const override {
+        return fTargetType.isUnsizedArray();
+    }
+
     bool isStruct() const override {
         return fTargetType.isStruct();
     }
@@ -126,14 +136,17 @@ public:
         : INHERITED(name, abbrev, kTypeKind)
         , fComponentType(componentType)
         , fCount(count) {
-        // Only allow explicitly-sized arrays.
-        SkASSERT(count > 0);
+        SkASSERT(count > 0 || count == kUnsizedArray);
         // Disallow multi-dimensional arrays.
         SkASSERT(!componentType.is<ArrayType>());
     }
 
     bool isArray() const override {
         return true;
+    }
+
+    bool isUnsizedArray() const override {
+        return fCount == kUnsizedArray;
     }
 
     const Type& componentType() const override {
@@ -157,6 +170,7 @@ public:
     }
 
     size_t slotCount() const override {
+        SkASSERT(fCount != kUnsizedArray);
         SkASSERT(fCount > 0);
         return fCount * fComponentType.slotCount();
     }
@@ -522,6 +536,9 @@ private:
 
 std::string Type::getArrayName(int arraySize) const {
     std::string_view name = this->name();
+    if (arraySize == kUnsizedArray) {
+        return String::printf("%.*s[]", (int)name.size(), name.data());
+    }
     return String::printf("%.*s[%d]", (int)name.size(), name.data(), arraySize);
 }
 
@@ -637,12 +654,12 @@ const Type* Type::applyPrecisionQualifiers(const Context& context,
         // We want to discourage precision modifiers internally. Instead, use the type that
         // corresponds to the precision you need. (e.g. half vs float, short vs int)
         context.fErrors->error(pos, "precision qualifiers are not allowed");
-        return nullptr;
+        return context.fTypes.fPoison.get();
     }
 
     if ((int(lowp) + int(mediump) + int(highp)) != 1) {
         context.fErrors->error(pos, "only one precision qualifier can be used");
-        return nullptr;
+        return context.fTypes.fPoison.get();
     }
 
     // We're going to return a whole new type, so the modifier bits can be cleared out.
@@ -673,7 +690,7 @@ const Type* Type::applyPrecisionQualifiers(const Context& context,
                 break;
 
             default:
-                mediumpType = nullptr;
+                mediumpType = context.fTypes.fPoison.get();
                 break;
         }
 
@@ -687,7 +704,7 @@ const Type* Type::applyPrecisionQualifiers(const Context& context,
 
     context.fErrors->error(pos, "type '" + this->displayName() +
                                  "' does not support precision qualifiers");
-    return nullptr;
+    return context.fTypes.fPoison.get();
 }
 
 const Type& Type::toCompound(const Context& context, int columns, int rows) const {
@@ -951,18 +968,34 @@ bool Type::checkForOutOfRangeLiteral(const Context& context, const Expression& e
 
 bool Type::checkForOutOfRangeLiteral(const Context& context, double value, Position pos) const {
     SkASSERT(this->isScalar());
-    if (this->isInteger()) {
-        if (value < this->minimumValue() || value > this->maximumValue()) {
-            // We found a value that can't fit in the type. Flag it as an error.
-            context.fErrors->error(
-                    pos,
-                    SkSL::String::printf("integer is out of range for type '%s': %.0f",
-                                         this->displayName().c_str(),
-                                         std::floor(value)));
-            return true;
-        }
+    if (!this->isInteger()) {
+        return false;
     }
-    return false;
+    if (value >= this->minimumValue() && value <= this->maximumValue()) {
+        return false;
+    }
+    // We found a value that can't fit in our integral type. Flag it as an error.
+    context.fErrors->error(pos, SkSL::String::printf("integer is out of range for type '%s': %.0f",
+                                                     this->displayName().c_str(),
+                                                     std::floor(value)));
+    return true;
+}
+
+bool Type::checkIfUsableInArray(const Context& context, Position arrayPos) const {
+    if (this->isArray()) {
+        context.fErrors->error(arrayPos, "multi-dimensional arrays are not supported");
+        return false;
+    }
+    if (this->isVoid()) {
+        context.fErrors->error(arrayPos, "type 'void' may not be used in an array");
+        return false;
+    }
+    if (this->isOpaque()) {
+        context.fErrors->error(arrayPos, "opaque type '" + std::string(this->name()) +
+                                         "' may not be used in an array");
+        return false;
+    }
+    return true;
 }
 
 SKSL_INT Type::convertArraySize(const Context& context, Position arrayPos,
@@ -971,17 +1004,7 @@ SKSL_INT Type::convertArraySize(const Context& context, Position arrayPos,
     if (!size) {
         return 0;
     }
-    if (this->isArray()) {
-        context.fErrors->error(arrayPos, "multi-dimensional arrays are not supported");
-        return 0;
-    }
-    if (this->isVoid()) {
-        context.fErrors->error(arrayPos, "type 'void' may not be used in an array");
-        return 0;
-    }
-    if (this->isOpaque()) {
-        context.fErrors->error(arrayPos, "opaque type '" + std::string(this->name()) +
-                                         "' may not be used in an array");
+    if (!this->checkIfUsableInArray(context, arrayPos)) {
         return 0;
     }
     SKSL_INT count;

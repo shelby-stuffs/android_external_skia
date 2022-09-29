@@ -158,7 +158,6 @@ void SkParticleEffectParams::prepare(const skresources::ResourceProvider* resour
         }
 
         SkSL::Program::Settings settings;
-        settings.fRemoveDeadFunctions = false;
         settings.fExternalFunctions = &externalFns;
 
         auto program = compiler.convertProgram(SkSL::ProgramKind::kGeneric, code, settings);
@@ -187,7 +186,7 @@ void SkParticleEffectParams::prepare(const skresources::ResourceProvider* resour
                 uniformIDs.push_back(b.uniform32(skslUniformPtr, i * sizeof(int)).id);
             }
             if (!SkSL::ProgramToSkVM(*program, *fn, &b, /*debugTrace=*/nullptr,
-                                     SkMakeSpan(uniformIDs))) {
+                                     SkSpan(uniformIDs))) {
                 return skvm::Program{};
             }
             return b.done();

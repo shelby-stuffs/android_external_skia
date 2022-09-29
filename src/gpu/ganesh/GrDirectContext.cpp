@@ -256,8 +256,8 @@ bool GrDirectContext::init() {
     GrDrawOpAtlas::AllowMultitexturing allowMultitexturing;
     if (GrContextOptions::Enable::kNo == this->options().fAllowMultipleGlyphCacheTextures ||
         // multitexturing supported only if range can represent the index + texcoords fully
-        !(this->caps()->shaderCaps()->floatIs32Bits() ||
-        this->caps()->shaderCaps()->integerSupport())) {
+        !(this->caps()->shaderCaps()->fFloatIs32Bits ||
+        this->caps()->shaderCaps()->fIntegerSupport)) {
         allowMultitexturing = GrDrawOpAtlas::AllowMultitexturing::kNo;
     } else {
         allowMultitexturing = GrDrawOpAtlas::AllowMultitexturing::kYes;
@@ -968,7 +968,7 @@ SkString GrDirectContext::dump() const {
     SkJSONWriter writer(&stream, SkJSONWriter::Mode::kPretty);
     writer.beginObject();
 
-    writer.appendString("backend", GrBackendApiToStr(this->backend()));
+    writer.appendCString("backend", GrBackendApiToStr(this->backend()));
 
     writer.appendName("caps");
     this->caps()->dumpJSON(&writer);

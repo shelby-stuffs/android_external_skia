@@ -21,7 +21,6 @@
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/gpu/ganesh/glsl/GrGLSLVarying.h"
 #include "src/sksl/SkSLCompiler.h"
-#include "src/sksl/dsl/priv/DSLFPs.h"
 
 const int GrGLSLProgramBuilder::kVarsPerBlock = 8;
 
@@ -276,7 +275,7 @@ void GrGLSLProgramBuilder::writeFPFunction(const GrFragmentProcessor& fp,
         }
     }
 
-    SkASSERT(numParams <= (int)SK_ARRAY_COUNT(params));
+    SkASSERT(numParams <= (int)std::size(params));
 
     // First, emit every child's function. This needs to happen (even for children that aren't
     // sampled), so that all of the expected uniforms are registered.
@@ -294,7 +293,7 @@ void GrGLSLProgramBuilder::writeFPFunction(const GrFragmentProcessor& fp,
 
     fFS.emitFunction(SkSLType::kHalf4,
                      impl.functionName(),
-                     SkMakeSpan(params, numParams),
+                     SkSpan(params, numParams),
                      fFS.code().c_str());
     fFS.deleteStage();
 }
@@ -419,7 +418,7 @@ GrGLSLProgramBuilder::SamplerHandle GrGLSLProgramBuilder::emitInputSampler(
 
 bool GrGLSLProgramBuilder::checkSamplerCounts() {
     const GrShaderCaps& shaderCaps = *this->shaderCaps();
-    if (fNumFragmentSamplers > shaderCaps.maxFragmentSamplers()) {
+    if (fNumFragmentSamplers > shaderCaps.fMaxFragmentSamplers) {
         GrCapsDebugf(this->caps(), "Program would use too many fragment samplers\n");
         return false;
     }

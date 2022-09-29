@@ -7,7 +7,9 @@
 
 #include "include/private/SkSLModifiers.h"
 
+#include "include/core/SkTypes.h"
 #include "include/sksl/SkSLErrorReporter.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLContext.h"
 
 namespace SkSL {
@@ -28,6 +30,7 @@ bool Modifiers::checkPermitted(const Context& context, Position pos, int permitt
         { Modifiers::kMediump_Flag,        "mediump" },
         { Modifiers::kLowp_Flag,           "lowp" },
         { Modifiers::kES3_Flag,            "$es3" },
+        { Modifiers::kThreadgroup_Flag,    "threadgroup" },
     };
 
     bool success = true;

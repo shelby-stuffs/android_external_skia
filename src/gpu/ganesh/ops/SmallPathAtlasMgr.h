@@ -47,11 +47,10 @@ public:
                                         int width, int height, const void* image,
                                         skgpu::AtlasLocator*);
 
-    void setUseToken(SmallPathShapeData*, GrDeferredUploadToken);
+    void setUseToken(SmallPathShapeData*, skgpu::DrawToken);
 
     // GrOnFlushCallbackObject overrides
-    bool preFlush(GrOnFlushResourceProvider* onFlushRP,
-                  SkSpan<const uint32_t> /* taskIDs */) override {
+    bool preFlush(GrOnFlushResourceProvider* onFlushRP) override {
 #if GR_TEST_UTILS
         if (onFlushRP->failFlushTimeCallbacks()) {
             return false;
@@ -64,8 +63,7 @@ public:
         return true;
     }
 
-    void postFlush(GrDeferredUploadToken startTokenForNextFlush,
-                   SkSpan<const uint32_t> /* taskIDs */) override {
+    void postFlush(skgpu::DrawToken startTokenForNextFlush) override {
         if (fAtlas) {
             fAtlas->compact(startTokenForNextFlush);
         }

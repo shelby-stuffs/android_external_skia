@@ -43,7 +43,7 @@ public:
         REPORTER_ASSERT(fReporter, fHasClipTexture);
     }
 
-    bool preFlush(GrOnFlushResourceProvider* onFlushRP, SkSpan<const uint32_t>) override {
+    bool preFlush(GrOnFlushResourceProvider* onFlushRP) override {
 #if GR_TEST_UTILS
         if (onFlushRP->failFlushTimeCallbacks()) {
             return false;
@@ -55,7 +55,7 @@ public:
         return true;
     }
 
-    void postFlush(GrDeferredUploadToken, SkSpan<const uint32_t>) override {
+    void postFlush(skgpu::DrawToken) override {
         REPORTER_ASSERT(fReporter, fHasOpTexture);
         REPORTER_ASSERT(fReporter, fHasClipTexture);
     }
@@ -229,11 +229,12 @@ DEF_GPUTEST(LazyProxyTest, reporter, /* options */) {
         ctx->priv().addOnFlushCallbackObject(&test);
         auto sdc = skgpu::v1::SurfaceDrawContext::Make(ctx.get(), GrColorType::kRGBA_8888, nullptr,
                                                        SkBackingFit::kExact, {100, 100},
-                                                       SkSurfaceProps());
+                                                       SkSurfaceProps(), /*label=*/{});
         REPORTER_ASSERT(reporter, sdc);
         auto mockAtlas = skgpu::v1::SurfaceDrawContext::Make(ctx.get(), GrColorType::kAlpha_F16,
                                                              nullptr, SkBackingFit::kExact,
-                                                             {10, 10}, SkSurfaceProps());
+                                                             {10, 10}, SkSurfaceProps(),
+                                                             /*label=*/{});
         REPORTER_ASSERT(reporter, mockAtlas);
         LazyProxyTest::Clip clip(&test, mockAtlas->asTextureProxy());
         sdc->addDrawOp(&clip,
@@ -417,7 +418,7 @@ DEF_GPUTEST(LazyProxyFailedInstantiationTest, reporter, /* options */) {
     for (bool failInstantiation : {false, true}) {
         auto sdc = skgpu::v1::SurfaceDrawContext::Make(ctx.get(), GrColorType::kRGBA_8888, nullptr,
                                                        SkBackingFit::kExact, {100, 100},
-                                                       SkSurfaceProps());
+                                                       SkSurfaceProps(), /*label=*/{});
         REPORTER_ASSERT(reporter, sdc);
 
         sdc->clear(SkPMColor4f::FromBytes_RGBA(0xbaaaaaad));

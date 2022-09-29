@@ -11,10 +11,10 @@
 #include "include/core/SkPicture.h"
 #include "include/core/SkSurface.h"
 #include "include/private/SkTo.h"
-#include "include/private/chromium/GrSlug.h"
+#include "include/private/chromium/Slug.h"
 #include "src/core/SkBigPicture.h"
 #include "src/core/SkCanvasPriv.h"
-#include "src/core/SkGlyphRun.h"
+#include "src/text/GlyphRun.h"
 #include "src/utils/SkPatchUtils.h"
 
 #include <memory>
@@ -236,12 +236,13 @@ void SkRecorder::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
 }
 
 #if SK_SUPPORT_GPU
-void SkRecorder::onDrawSlug(const GrSlug* slug) {
+void SkRecorder::onDrawSlug(const sktext::gpu::Slug* slug) {
     this->append<SkRecords::DrawSlug>(sk_ref_sp(slug));
 }
 #endif
 
-void SkRecorder::onDrawGlyphRunList(const SkGlyphRunList& glyphRunList, const SkPaint& paint) {
+void SkRecorder::onDrawGlyphRunList(
+        const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
     sk_sp<SkTextBlob> blob = sk_ref_sp(glyphRunList.blob());
     if (glyphRunList.blob() == nullptr) {
         blob = glyphRunList.makeBlob();

@@ -13,9 +13,9 @@
 #include "src/core/SkStrikeCache.h"
 #include "src/core/SkTLazy.h"
 
-#if SK_SUPPORT_GPU
-#include "src/gpu/ganesh/text/GrSDFMaskFilter.h"
-#include "src/gpu/ganesh/text/GrSDFTControl.h"
+#if SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
+#include "src/text/gpu/SDFMaskFilter.h"
+#include "src/text/gpu/SDFTControl.h"
 #include "src/text/gpu/StrikeCache.h"
 #endif
 
@@ -35,6 +35,16 @@ SkStrikeSpec SkStrikeSpec::MakeMask(const SkFont& font, const SkPaint& paint,
     return SkStrikeSpec(font, paint, surfaceProps, scalerContextFlags, deviceMatrix);
 }
 
+SkStrikeSpec SkStrikeSpec::MakeTransformMask(const SkFont& font,
+                                             const SkPaint& paint,
+                                             const SkSurfaceProps& surfaceProps,
+                                             SkScalerContextFlags scalerContextFlags,
+                                             const SkMatrix& deviceMatrix) {
+    SkFont sourceFont{font};
+    sourceFont.setSubpixel(false);
+    return SkStrikeSpec(sourceFont, paint, surfaceProps, scalerContextFlags, deviceMatrix);
+}
+
 std::tuple<SkStrikeSpec, SkScalar> SkStrikeSpec::MakePath(
         const SkFont& font, const SkPaint& paint,
         const SkSurfaceProps& surfaceProps,
@@ -52,37 +62,6 @@ std::tuple<SkStrikeSpec, SkScalar> SkStrikeSpec::MakePath(
     SkScalar strikeToSourceScale = pathFont.setupForAsPaths(&pathPaint);
 
     return {SkStrikeSpec(pathFont, pathPaint, surfaceProps, scalerContextFlags, SkMatrix::I()),
-            strikeToSourceScale};
-}
-
-std::tuple<SkStrikeSpec, SkScalar> SkStrikeSpec::MakeSourceFallback(
-        const SkFont& font,
-        const SkPaint& paint,
-        const SkSurfaceProps& surfaceProps,
-        SkScalerContextFlags scalerContextFlags,
-        SkScalar maxSourceGlyphDimension) {
-
-    // Subtract 2 to account for the bilerp pad around the glyph
-    SkScalar maxAtlasDimension = SkStrikeCommon::kSkSideTooBigForAtlas - 2;
-
-    SkScalar runFontTextSize = font.getSize();
-    SkScalar fallbackTextSize = runFontTextSize;
-    if (maxSourceGlyphDimension > maxAtlasDimension) {
-        // Scale the text size down so the long side of all the glyphs will fit in the atlas.
-        fallbackTextSize = SkScalarFloorToScalar(
-                (maxAtlasDimension / maxSourceGlyphDimension) * runFontTextSize);
-    }
-
-    SkFont fallbackFont{font};
-    fallbackFont.setSize(fallbackTextSize);
-
-    // No sub-pixel needed. The transform to the screen will take care of sub-pixel positioning.
-    fallbackFont.setSubpixel(false);
-
-    // The scale factor to go from strike size to the source size for glyphs.
-    SkScalar strikeToSourceScale = runFontTextSize / fallbackTextSize;
-
-    return {SkStrikeSpec(fallbackFont, paint, surfaceProps, scalerContextFlags, SkMatrix::I()),
             strikeToSourceScale};
 }
 
@@ -170,14 +149,14 @@ SkStrikeSpec SkStrikeSpec::MakePDFVector(const SkTypeface& typeface, int* size) 
                         SkMatrix::I());
 }
 
-#if SK_SUPPORT_GPU
-std::tuple<SkStrikeSpec, SkScalar, GrSDFTMatrixRange>
+#if SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
+std::tuple<SkStrikeSpec, SkScalar, sktext::gpu::SDFTMatrixRange>
 SkStrikeSpec::MakeSDFT(const SkFont& font, const SkPaint& paint,
                        const SkSurfaceProps& surfaceProps, const SkMatrix& deviceMatrix,
-                       const GrSDFTControl& control) {
+                       const sktext::gpu::SDFTControl& control) {
     // Add filter to the paint which creates the SDFT data for A8 masks.
     SkPaint dfPaint{paint};
-    dfPaint.setMaskFilter(GrSDFMaskFilter::Make());
+    dfPaint.setMaskFilter(sktext::gpu::SDFMaskFilter::Make());
 
     auto [dfFont, strikeToSourceScale, matrixRange] = control.getSDFFont(font, deviceMatrix);
 
@@ -210,8 +189,8 @@ SkStrikeSpec::SkStrikeSpec(const SkFont& font, const SkPaint& paint,
     fTypeface = font.refTypefaceOrDefault();
 }
 
-SkScopedStrikeForGPU SkStrikeSpec::findOrCreateScopedStrike(
-        SkStrikeForGPUCacheInterface* cache) const {
+sktext::ScopedStrikeForGPU SkStrikeSpec::findOrCreateScopedStrike(
+        sktext::StrikeForGPUCacheInterface* cache) const {
     return cache->findOrCreateScopedStrike(*this);
 }
 

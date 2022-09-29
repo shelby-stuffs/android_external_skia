@@ -26,9 +26,12 @@
 
 #include <utility>
 
+namespace sktext {
+class GlyphRunList;
+}
+
 class SkData;
 class SkDrawable;
-class SkGlyphRunList;
 class SkImage;
 class SkPaint;
 class SkPath;
@@ -38,10 +41,6 @@ class SkRegion;
 class SkTextBlob;
 class SkVertices;
 struct SkDrawShadowRec;
-
-#if SK_SUPPORT_GPU
-class GrSlug;
-#endif
 
 SkNWayCanvas::SkNWayCanvas(int width, int height) : INHERITED(width, height) {}
 
@@ -317,7 +316,7 @@ void SkNWayCanvas::onDrawAtlas2(const SkImage* image, const SkRSXform xform[], c
     }
 }
 
-void SkNWayCanvas::onDrawGlyphRunList(const SkGlyphRunList& list,
+void SkNWayCanvas::onDrawGlyphRunList(const sktext::GlyphRunList& list,
                                       const SkPaint &paint) {
     Iter iter(fList);
     while (iter.next()) {
@@ -334,7 +333,7 @@ void SkNWayCanvas::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y
 }
 
 #if SK_SUPPORT_GPU
-void SkNWayCanvas::onDrawSlug(const GrSlug* slug) {
+void SkNWayCanvas::onDrawSlug(const sktext::gpu::Slug* slug) {
     Iter iter(fList);
     while (iter.next()) {
         iter->drawSlug(slug);

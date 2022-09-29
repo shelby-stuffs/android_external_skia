@@ -15,8 +15,11 @@
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string_view>
+#include <string>
 #include <vector>
 
 namespace SkSL {
@@ -38,7 +41,7 @@ struct Program;
  */
 class Rehydrator {
 public:
-    static constexpr uint16_t kVersion = 10;
+    static constexpr uint16_t kVersion = 12;
 
     // see binary_format.md for a description of the command data
     enum Command {

@@ -498,6 +498,7 @@ def generate_args(target_os, enable_gpu, renderengine = False):
     'skia_include_multiframe_procs':        'false',
     # Required for some SKSL tests
     'skia_enable_sksl_tracing':             'true',
+    'skia_use_perfetto':                    'false'
   }
   d['target_os'] = target_os
   if target_os == '"android"':
@@ -544,6 +545,7 @@ def generate_args(target_os, enable_gpu, renderengine = False):
     d['skia_use_fixed_gamma_text'] = 'true'
     d['skia_enable_fontmgr_custom_empty'] = 'true'
     d['skia_use_wuffs'] = 'true'
+    d['skia_enable_skottie'] = 'true'
 
   return d
 

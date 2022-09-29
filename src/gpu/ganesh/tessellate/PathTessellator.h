@@ -25,6 +25,7 @@ namespace skgpu::v1 {
 // the caller may or may not be required to draw the path's inner fan separately.
 class PathTessellator {
 public:
+    using PatchAttribs = tess::PatchAttribs;
 
     struct PathDrawList {
         PathDrawList(const SkMatrix& pathMatrix,
@@ -71,19 +72,12 @@ protected:
         }
     }
 
-    void updateResolveLevel(int resolveLevel) {
-        // We should already chopped curves to make sure none needed a higher resolveLevel than
-        // kMaxFixedResolveLevel.
-        fFixedResolveLevel = SkTPin(resolveLevel, fFixedResolveLevel, skgpu::kMaxFixedResolveLevel);
-    }
-
     PatchAttribs fAttribs;
 
-    // Calculated during prepare(). If using fixed count, this is the resolveLevel to use on our
-    // instanced draws. 2^resolveLevel == numSegments.
-    int fFixedResolveLevel = 0;
-
     GrVertexChunkArray fVertexChunkArray;
+    // The max number of vertices that must be drawn to account for the accumulated tessellation
+    // levels of the written patches.
+    int fMaxVertexCount = 0;
 
     sk_sp<const GrGpuBuffer> fFixedVertexBuffer;
     sk_sp<const GrGpuBuffer> fFixedIndexBuffer;

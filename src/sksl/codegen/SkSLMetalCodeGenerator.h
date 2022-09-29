@@ -16,7 +16,7 @@
 #include "src/sksl/codegen/SkSLCodeGenerator.h"
 #include "src/sksl/ir/SkSLType.h"
 
-#include <stdint.h>
+#include <cstdint>
 #include <initializer_list>
 #include <set>
 #include <string>
@@ -85,15 +85,19 @@ protected:
     using Precedence = Operator::Precedence;
 
     typedef int Requirements;
-    inline static constexpr Requirements kNo_Requirements       = 0;
-    inline static constexpr Requirements kInputs_Requirement    = 1 << 0;
-    inline static constexpr Requirements kOutputs_Requirement   = 1 << 1;
-    inline static constexpr Requirements kUniforms_Requirement  = 1 << 2;
-    inline static constexpr Requirements kGlobals_Requirement   = 1 << 3;
-    inline static constexpr Requirements kFragCoord_Requirement = 1 << 4;
+    inline static constexpr Requirements kNo_Requirements          = 0;
+    inline static constexpr Requirements kInputs_Requirement       = 1 << 0;
+    inline static constexpr Requirements kOutputs_Requirement      = 1 << 1;
+    inline static constexpr Requirements kUniforms_Requirement     = 1 << 2;
+    inline static constexpr Requirements kGlobals_Requirement      = 1 << 3;
+    inline static constexpr Requirements kFragCoord_Requirement    = 1 << 4;
+    inline static constexpr Requirements kThreadgroups_Requirement = 1 << 5;
 
     class GlobalStructVisitor;
     void visitGlobalStruct(GlobalStructVisitor* visitor);
+
+    class ThreadgroupStructVisitor;
+    void visitThreadgroupStruct(ThreadgroupStructVisitor* visitor);
 
     void write(std::string_view s);
 
@@ -124,13 +128,21 @@ protected:
 
     void writeGlobalInit();
 
+    void writeThreadgroupStruct();
+
+    void writeThreadgroupInit();
+
     void writePrecisionModifier();
 
     std::string typeName(const Type& type);
 
+    std::string textureTypeName(const Type& type, const Modifiers& modifiers);
+
     void writeStructDefinition(const StructDefinition& s);
 
     void writeType(const Type& type);
+
+    void writeTextureType(const Type& type, const Modifiers& modifiers);
 
     void writeExtension(const Extension& ext);
 
@@ -275,6 +287,13 @@ protected:
     Requirements requirements(const Expression* e);
 
     Requirements requirements(const Statement* s);
+
+    // Returns true if it wrote anything
+    bool writeComputeShaderMainParams();
+
+    // For compute shader main functions, writes and initializes the _in and _out structs (the
+    // instances, not the types themselves)
+    void writeComputeMainInputsAndOutputs();
 
     int getUniformBinding(const Modifiers& m);
 

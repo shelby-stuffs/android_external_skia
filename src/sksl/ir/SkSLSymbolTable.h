@@ -8,20 +8,28 @@
 #ifndef SKSL_SYMBOLTABLE
 #define SKSL_SYMBOLTABLE
 
-#include "include/private/SkSLString.h"
+#include "include/core/SkTypes.h"
+#include "include/private/SkOpts_spi.h"
 #include "include/private/SkSLSymbol.h"
-#include "include/private/SkTArray.h"
 #include "include/private/SkTHash.h"
-#include "include/sksl/SkSLErrorReporter.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <forward_list>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
+
+template <typename T> class SkSpan;
 
 namespace SkSL {
 
 class Context;
 class FunctionDeclaration;
+class Type;
 
 /**
  * Maps identifiers to symbols. Functions, in particular, are mapped to either FunctionDeclaration
@@ -93,13 +101,6 @@ public:
         return ptr;
     }
 
-    template <typename T>
-    const T* takeOwnershipOfIRNode(std::unique_ptr<T> node) {
-        const T* ptr = node.get();
-        fOwnedNodes.push_back(std::move(node));
-        return ptr;
-    }
-
     /**
      * Given type = `float` and arraySize = 5, creates the array type `float[5]` in the symbol
      * table. The created array type is returned. If zero is passed, the base type is returned
@@ -155,10 +156,12 @@ private:
 
     const Symbol* lookup(SymbolTable* writableSymbolTable, const SymbolKey& key);
 
-    static std::vector<const FunctionDeclaration*> GetFunctions(const Symbol& s);
+    const Symbol* buildOverloadSet(SymbolTable* writableSymbolTable,
+                                   const SymbolKey& key,
+                                   const Symbol* symbol,
+                                   SkSpan<const FunctionDeclaration* const> overloadSet);
 
     bool fBuiltin = false;
-    std::vector<std::unique_ptr<IRNode>> fOwnedNodes;
     std::forward_list<std::string> fOwnedStrings;
     SkTHashMap<SymbolKey, const Symbol*, SymbolKey::Hash> fSymbols;
     const Context& fContext;

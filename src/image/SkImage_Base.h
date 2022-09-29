@@ -133,8 +133,7 @@ public:
     // the data in a texture.
     std::tuple<skgpu::graphite::TextureProxyView, SkColorType> asView(
             skgpu::graphite::Recorder*,
-            skgpu::graphite::Mipmapped mipmapped,
-            SkBudgeted) const;
+            skgpu::graphite::Mipmapped mipmapped) const;
 #endif
 
     virtual bool onPinAsTexture(GrRecordingContext*) const { return false; }
@@ -190,7 +189,8 @@ protected:
     static GrSurfaceProxyView CopyView(GrRecordingContext*,
                                        GrSurfaceProxyView src,
                                        GrMipmapped,
-                                       GrImageTexGenPolicy);
+                                       GrImageTexGenPolicy,
+                                       std::string_view label);
 
     static std::unique_ptr<GrFragmentProcessor> MakeFragmentProcessorFromView(GrRecordingContext*,
                                                                               GrSurfaceProxyView,
@@ -231,8 +231,7 @@ private:
 #ifdef SK_GRAPHITE_ENABLED
     virtual std::tuple<skgpu::graphite::TextureProxyView, SkColorType> onAsView(
             skgpu::graphite::Recorder*,
-            skgpu::graphite::Mipmapped mipmapped,
-            SkBudgeted) const {
+            skgpu::graphite::Mipmapped mipmapped) const {
         return {}; // TODO: once incompatible derived classes are removed make this pure virtual
     }
 #endif
@@ -258,7 +257,8 @@ static inline const SkImage_Base* as_IB(const SkImage* image) {
 inline GrSurfaceProxyView SkImage_Base::CopyView(GrRecordingContext* context,
                                                  GrSurfaceProxyView src,
                                                  GrMipmapped mipmapped,
-                                                 GrImageTexGenPolicy policy) {
+                                                 GrImageTexGenPolicy policy,
+                                                 std::string_view label) {
     SkBudgeted budgeted = policy == GrImageTexGenPolicy::kNew_Uncached_Budgeted
                           ? SkBudgeted::kYes
                           : SkBudgeted::kNo;
@@ -266,7 +266,8 @@ inline GrSurfaceProxyView SkImage_Base::CopyView(GrRecordingContext* context,
                                     std::move(src),
                                     mipmapped,
                                     SkBackingFit::kExact,
-                                    budgeted);
+                                    budgeted,
+                                    /*label=*/label);
 }
 #endif
 
