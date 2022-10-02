@@ -546,16 +546,31 @@ static void test_RuntimeEffect_Shaders(skiatest::Reporter* r, GrRecordingContext
     // Sampling children
     //
 
-    // Sampling a null child should return the paint color
+    // Sampling a null shader should return the paint color
     effect.build("uniform shader child;"
                  "half4 main(float2 p) { return child.eval(p); }");
     effect.child("child") = nullptr;
     effect.test(0xFF00FFFF,
                 [](SkCanvas*, SkPaint* paint) { paint->setColor4f({1.0f, 1.0f, 0.0f, 1.0f}); });
 
-    sk_sp<SkShader> rgbwShader = make_RGBW_shader();
+    // Sampling a null color-filter should return the passed-in color
+    effect.build("uniform colorFilter child;"
+                 "half4 main(float2 p) { return child.eval(half4(1, 1, 0, 1)); }");
+    effect.child("child") = nullptr;
+    effect.test(0xFF00FFFF);
+
+    // Sampling a null blender should return blend_src_over(src, dest).
+    effect.build("uniform blender child;"
+                 "half4 main(float2 p) {"
+                 "    float4 src = float4(p - 0.5, 0, 1) * 0.498;"
+                 "    return child.eval(src, half4(0, 0, 0, 1));"
+                 "}");
+    effect.child("child") = nullptr;
+    effect.test({0xFF000000, 0xFF00007F, 0xFF007F00, 0xFF007F7F});
 
     // Sampling a simple child at our coordinates
+    sk_sp<SkShader> rgbwShader = make_RGBW_shader();
+
     effect.build("uniform shader child;"
                  "half4 main(float2 p) { return child.eval(p); }");
     effect.child("child") = rgbwShader;
@@ -1339,10 +1354,9 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(GrSkSLFP_Specialized, r, ctxInfo, CtsEnforcement::k
     // SkSL as a literal, or left as a uniform
     auto make_color_fp = [&](SkPMColor4f color, bool specialize) {
         static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
-        R"(
-            uniform half4 color;
-            half4 main(float2 xy) { return color; }
-        )");
+            "uniform half4 color;"
+            "half4 main(float2 xy) { return color; }"
+        );
         FpAndKey result;
         result.fp = GrSkSLFP::Make(effect, "color_fp", /*inputFP=*/nullptr,
                                    GrSkSLFP::OptFlags::kNone,
@@ -1371,7 +1385,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrSkSLFP_UniformArray, r, ctxInfo, CtsEnforce
     GrDirectContext* directContext = ctxInfo.directContext();
     SkImageInfo info = SkImageInfo::Make(1, 1, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
     std::unique_ptr<skgpu::v1::SurfaceFillContext> testCtx =
-            directContext->priv().makeSFC(info, SkBackingFit::kExact);
+            directContext->priv().makeSFC(info, /*label=*/{}, SkBackingFit::kExact);
 
     // Make an effect that takes a uniform array as input.
     static constexpr std::array<float, 4> kRed  {1.0f, 0.0f, 0.0f, 1.0f};
@@ -1382,10 +1396,9 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrSkSLFP_UniformArray, r, ctxInfo, CtsEnforce
     for (const auto& colorArray : {kRed, kGreen, kBlue, kGray}) {
         // Compile our runtime effect.
         static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
-        R"(
-            uniform half color[4];
-            half4 main(float2 xy) { return half4(color[0], color[1], color[2], color[3]); }
-        )");
+            "uniform half color[4];"
+            "half4 main(float2 xy) { return half4(color[0], color[1], color[2], color[3]); }"
+        );
         // Render our shader into the fill-context with our various input colors.
         testCtx->fillWithFP(GrSkSLFP::Make(effect, "test_fp", /*inputFP=*/nullptr,
                                            GrSkSLFP::OptFlags::kNone,

@@ -290,12 +290,11 @@ static void test_clone(skiatest::Reporter* r, const char* testFile, int flags) {
     if (shaderString.isEmpty()) {
         return;
     }
-    std::unique_ptr<SkSL::ShaderCaps> caps = SkSL::ShaderCapsFactory::Standalone();
     SkSL::ProgramSettings settings;
     settings.fAllowVarDeclarationCloneForTesting = true;
     // TODO(skia:11209): Can we just put the correct #version in the source files that need this?
     settings.fMaxVersionAllowed = is_strict_es2(flags) ? SkSL::Version::k100 : SkSL::Version::k300;
-    SkSL::Compiler compiler(caps.get());
+    SkSL::Compiler compiler(SkSL::ShaderCapsFactory::Standalone());
     std::unique_ptr<SkSL::Program> program = compiler.convertProgram(
             SkSL::ProgramKind::kRuntimeShader, shaderString.c_str(), settings);
     if (!program) {
@@ -319,8 +318,7 @@ static void test_rehydrate(skiatest::Reporter* r, const char* testFile, int flag
     if (shaderString.isEmpty()) {
         return;
     }
-    std::unique_ptr<SkSL::ShaderCaps> caps = SkSL::ShaderCapsFactory::Default();
-    SkSL::Compiler compiler(caps.get());
+    SkSL::Compiler compiler(SkSL::ShaderCapsFactory::Default());
     SkSL::ProgramSettings settings;
     // TODO(skia:11209): Can we just put the correct #version in the source files that need this?
     settings.fMaxVersionAllowed = is_strict_es2(flags) ? SkSL::Version::k100 : SkSL::Version::k300;
@@ -377,6 +375,7 @@ using namespace SkSLTestFlags;
 
 constexpr auto kApiLevel_T = CtsEnforcement::kApiLevel_T;
 constexpr auto kNever = CtsEnforcement::kNever;
+constexpr auto kNextRelease = CtsEnforcement::kNextRelease;
 
 SKSL_TEST(CPU + GPU, kApiLevel_T, ArraySizeFolding,                "folding/ArraySizeFolding.sksl")
 SKSL_TEST(CPU + GPU, kApiLevel_T, AssignmentOps,                   "folding/AssignmentOps.sksl")
@@ -525,6 +524,7 @@ SKSL_TEST(GPU_ES3,   kNever,      MatricesNonsquare,               "shared/Matri
 SKSL_TEST(CPU,       kNever,      MatrixConstructorsES2,           "shared/MatrixConstructorsES2.sksl")
 // SKSL_TEST(GPU_ES3, kNever,     MatrixConstructorsES3,           "shared/MatrixConstructorsES3.sksl")
 SKSL_TEST(CPU + GPU, kApiLevel_T, MatrixEquality,                  "shared/MatrixEquality.sksl")
+SKSL_TEST(GPU_ES3,   kNextRelease,MatrixOpEqualsES3,               "shared/MatrixOpEqualsES3.sksl")
 SKSL_TEST(CPU + GPU, kApiLevel_T, MatrixScalarMath,                "shared/MatrixScalarMath.sksl")
 SKSL_TEST(CPU + GPU, kApiLevel_T, MatrixToVectorCast,              "shared/MatrixToVectorCast.sksl")
 SKSL_TEST(CPU + GPU, kApiLevel_T, MultipleAssignments,             "shared/MultipleAssignments.sksl")

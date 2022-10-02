@@ -227,12 +227,12 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLFloat, r, ctxInfo) {
     EXPECT_EQUAL(y.x().assign(1.0f), "(y.x = 1.0)");
 
     {
-        ExpectError error(r, "floating point value is infinite");
+        ExpectError error(r, "value is out of range for type 'float': inf");
         Float(std::numeric_limits<float>::infinity()).release();
     }
 
     {
-        ExpectError error(r, "floating point value is NaN");
+        ExpectError error(r, "value is out of range for type 'float': nan");
         Float(std::numeric_limits<float>::quiet_NaN()).release();
     }
 
@@ -279,12 +279,12 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLHalf, r, ctxInfo) {
                 "half4(0.0, 1.0, 2.0, 3.0)");
 
     {
-        ExpectError error(r, "floating point value is infinite");
+        ExpectError error(r, "value is out of range for type 'half': inf");
         Half(std::numeric_limits<float>::infinity()).release();
     }
 
     {
-        ExpectError error(r, "floating point value is NaN");
+        ExpectError error(r, "value is out of range for type 'half': nan");
         Half(std::numeric_limits<float>::quiet_NaN()).release();
     }
 
@@ -361,7 +361,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLUInt, r, ctxInfo) {
                 "uint4(0, 1, 2, 3)");
 
     {
-        ExpectError error(r, "integer is out of range for type 'uint': -2");
+        ExpectError error(r, "value is out of range for type 'uint': -2");
         UInt3(UInt2(0, 1), -2).release();
     }
 
@@ -438,7 +438,7 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLUShort, r, ctxInfo) {
                 "ushort4(0, 1, 2, 3)");
 
     {
-        ExpectError error(r, "integer is out of range for type 'ushort': -2");
+        ExpectError error(r, "value is out of range for type 'ushort': -2");
         UShort3(UShort2(0, 1), -2).release();
     }
 
@@ -2067,20 +2067,23 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(DSLPrototypes, r, ctxInfo) {
     {
         DSLParameter x(kFloat_Type, "x");
         DSLFunction sqr(kFloat_Type, "sqr", x);
+        sqr.prototype();
         REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
-        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0], "float sqr(float x);");
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0],
+                     "float sqr(float x);");
         sqr.define(
             Return(x * x)
         );
-        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
-        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0],
-                "float sqr(float x) { return (x * x); }");
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 2);
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[1],
+                     "float sqr(float x) { return (x * x); }");
     }
 
     {
         DSLWriter::Reset();
-            DSLParameter x(kFloat_Type, "x");
+        DSLParameter x(kFloat_Type, "x");
         DSLFunction sqr(kFloat_Type, "sqr", x);
+        sqr.prototype();
         REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
         EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0], "float sqr(float x);");
         DSLFunction(kVoid_Type, "main").define(sqr(5));

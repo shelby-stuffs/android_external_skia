@@ -1,9 +1,6 @@
-# Copyright 2016 Google Inc.
-#
-# Use of this source code is governed by a BSD-style license that can be
-# found in the LICENSE file.
+# DO NOT EDIT: This is a generated file.
+# See //bazel/exporter_tool/README.md for more information.
 
-# Things are easiest for everyone if these source paths are absolute.
 _src = get_path_info("../src", "abspath")
 _include = get_path_info("../include", "abspath")
 
@@ -20,8 +17,6 @@ skia_sksl_sources = [
   "$_src/sksl/SkSLConstantFolder.h",
   "$_src/sksl/SkSLContext.cpp",
   "$_src/sksl/SkSLContext.h",
-  "$_src/sksl/SkSLDSLParser.cpp",
-  "$_src/sksl/SkSLDSLParser.h",
   "$_src/sksl/SkSLDehydrator.cpp",
   "$_src/sksl/SkSLDehydrator.h",
   "$_src/sksl/SkSLErrorReporter.cpp",
@@ -43,6 +38,8 @@ skia_sksl_sources = [
   "$_src/sksl/SkSLOutputStream.cpp",
   "$_src/sksl/SkSLOutputStream.h",
   "$_src/sksl/SkSLParsedModule.h",
+  "$_src/sksl/SkSLParser.cpp",
+  "$_src/sksl/SkSLParser.h",
   "$_src/sksl/SkSLPool.cpp",
   "$_src/sksl/SkSLPool.h",
   "$_src/sksl/SkSLPosition.cpp",
@@ -82,6 +79,7 @@ skia_sksl_sources = [
   "$_src/sksl/dsl/DSLVar.cpp",
   "$_src/sksl/dsl/priv/DSLWriter.cpp",
   "$_src/sksl/dsl/priv/DSLWriter.h",
+  "$_src/sksl/dsl/priv/DSL_priv.h",
   "$_src/sksl/ir/SkSLBinaryExpression.cpp",
   "$_src/sksl/ir/SkSLBinaryExpression.h",
   "$_src/sksl/ir/SkSLBlock.cpp",
@@ -184,9 +182,10 @@ skia_sksl_sources = [
   "$_src/sksl/transform/SkSLEliminateUnreachableCode.cpp",
   "$_src/sksl/transform/SkSLFindAndDeclareBuiltinFunctions.cpp",
   "$_src/sksl/transform/SkSLFindAndDeclareBuiltinVariables.cpp",
+  "$_src/sksl/transform/SkSLProgramWriter.h",
   "$_src/sksl/transform/SkSLTransform.h",
 
-  # headers
+  # Includes
   "$_include/private/SkSLDefines.h",
   "$_include/private/SkSLIRNode.h",
   "$_include/private/SkSLLayout.h",

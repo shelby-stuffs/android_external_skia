@@ -84,6 +84,11 @@ private:
                                   SkYUVAPixmaps* pixmaps) const;
 #endif
 
+#ifdef SK_GRAPHITE_ENABLED
+    sk_sp<SkImage> onMakeTextureImage(skgpu::graphite::Recorder*,
+                                      RequiredImageProperties) const override;
+#endif
+
     class ScopedGenerator;
 
     // Note that this->imageInfo() is not necessarily the info from the generator. It may be

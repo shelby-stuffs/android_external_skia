@@ -36,6 +36,10 @@
 #include "src/gpu/ganesh/effects/GrYUVtoRGBEffect.h"
 #endif
 
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/Log.h"
+#endif
+
 // Ref-counted tuple(SkImageGenerator, SkMutex) which allows sharing one generator among N images
 class SharedGenerator final : public SkNVRefCnt<SharedGenerator> {
 public:
@@ -373,6 +377,7 @@ GrSurfaceProxyView SkImage_Lazy::textureProxyViewFromPlanes(GrRecordingContext* 
                      this->dimensions());
 
     auto sfc = ctx->priv().makeSFC(info,
+                                   "ImageLazy_TextureProxyViewFromPlanes",
                                    SkBackingFit::kExact,
                                    1,
                                    GrMipmapped::kNo,
@@ -575,5 +580,13 @@ GrColorType SkImage_Lazy::colorTypeOfLockTextureProxy(const GrCaps* caps) const 
 
 void SkImage_Lazy::addUniqueIDListener(sk_sp<SkIDChangeListener> listener) const {
     fUniqueIDListeners.add(std::move(listener));
+}
+#endif // SK_SUPPORT_GPU
+
+#ifdef SK_GRAPHITE_ENABLED
+sk_sp<SkImage> SkImage_Lazy::onMakeTextureImage(skgpu::graphite::Recorder*,
+                                                RequiredImageProperties) const {
+    SKGPU_LOG_W("Conversion of Lazy images to Graphite-backed not yet implemented");
+    return nullptr;
 }
 #endif

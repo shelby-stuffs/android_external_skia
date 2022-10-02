@@ -35,9 +35,11 @@ class Geometry;
 class Recorder;
 class Transform;
 
+class Caps;
 class DrawPass;
 class Task;
 class TextureProxy;
+class TextureProxyView;
 
 /**
  * DrawContext records draw commands into a specific Surface, via a general task graph
@@ -55,13 +57,15 @@ public:
     TextureProxy* target()                { return fTarget.get(); }
     const TextureProxy* target()    const { return fTarget.get(); }
 
+    TextureProxyView readSurfaceView(const Caps*);
+
     const SkSurfaceProps& surfaceProps() const { return fSurfaceProps; }
 
     int pendingDrawCount() const { return fPendingDraws->drawCount(); }
 
     void clear(const SkColor4f& clearColor);
 
-    void recordDraw(const Renderer& renderer,
+    void recordDraw(const Renderer* renderer,
                     const Transform& localToDevice,
                     const Geometry& geometry,
                     const Clip& clip,

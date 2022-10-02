@@ -10,6 +10,7 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkFloatingPoint.h"
+#include "include/private/SkHalf.h"
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkTArray.h"
 #include "include/sksl/DSLCore.h"
@@ -39,7 +40,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cfloat>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -114,6 +114,8 @@ static std::unique_ptr<Expression> coalesce_n_way_vector(const Expression* arg0,
     // every component.
 
     Position pos = arg0->fPosition;
+    double minimumValue = returnType.componentType().minimumValue();
+    double maximumValue = returnType.componentType().maximumValue();
 
     const Type& vecType =          arg0->type().isVector()  ? arg0->type() :
                           (arg1 && arg1->type().isVector()) ? arg1->type() :
@@ -138,8 +140,8 @@ static std::unique_ptr<Expression> coalesce_n_way_vector(const Expression* arg0,
 
         value = coalesce(value, *arg0Value, *arg1Value);
 
-        if (value >= -FLT_MAX && value <= FLT_MAX) {
-            // This result will fit inside a float Literal.
+        if (value >= minimumValue && value <= maximumValue) {
+            // This result will fit inside the return type.
         } else {
             // The value is outside the float range or is NaN (all if-checks fail); do not optimize.
             return nullptr;
@@ -232,6 +234,8 @@ static std::unique_ptr<Expression> evaluate_n_way_intrinsic(const Context& conte
     // of scalars and compounds, scalars are interpreted as a compound containing the same value for
     // every component.
 
+    double minimumValue = returnType.componentType().minimumValue();
+    double maximumValue = returnType.componentType().maximumValue();
     int slots = returnType.slotCount();
     double array[16];
 
@@ -259,8 +263,8 @@ static std::unique_ptr<Expression> evaluate_n_way_intrinsic(const Context& conte
 
         array[index] = eval(*arg0Value, *arg1Value, *arg2Value);
 
-        if (array[index] >= -FLT_MAX && array[index] <= FLT_MAX) {
-            // This result will fit inside a float Literal.
+        if (array[index] >= minimumValue && array[index] <= maximumValue) {
+            // This result will fit inside the return type.
         } else {
             // The value is outside the float range or is NaN (all if-checks fail); do not optimize.
             return nullptr;
@@ -636,10 +640,41 @@ static std::unique_ptr<Expression> optimize_intrinsic_call(const Context& contex
             return UInt(((Pack(0) << 0)  & 0x0000FFFF) |
                         ((Pack(1) << 16) & 0xFFFF0000)).release();
         }
+        case k_packSnorm2x16_IntrinsicKind: {
+            auto Pack = [&](int n) -> unsigned int {
+                float x = Get(0, n);
+                return (int)std::round(Intrinsics::evaluate_clamp(x, -1.0, 1.0) * 32767.0);
+            };
+            return UInt(((Pack(0) << 0)  & 0x0000FFFF) |
+                        ((Pack(1) << 16) & 0xFFFF0000)).release();
+        }
+        case k_packHalf2x16_IntrinsicKind: {
+            auto Pack = [&](int n) -> unsigned int {
+                return SkFloatToHalf(Get(0, n));
+            };
+            return UInt(((Pack(0) << 0)  & 0x0000FFFF) |
+                        ((Pack(1) << 16) & 0xFFFF0000)).release();
+        }
         case k_unpackUnorm2x16_IntrinsicKind: {
             SKSL_INT x = *arguments[0]->getConstantValue(0);
-            return Float2(double((x >> 0)  & 0x0000FFFF) / 65535.0,
-                          double((x >> 16) & 0x0000FFFF) / 65535.0).release();
+            uint16_t a = ((x >> 0)  & 0x0000FFFF);
+            uint16_t b = ((x >> 16) & 0x0000FFFF);
+            return Float2(double(a) / 65535.0,
+                          double(b) / 65535.0).release();
+        }
+        case k_unpackSnorm2x16_IntrinsicKind: {
+            SKSL_INT x = *arguments[0]->getConstantValue(0);
+            int16_t a = ((x >> 0)  & 0x0000FFFF);
+            int16_t b = ((x >> 16) & 0x0000FFFF);
+            return Float2(Intrinsics::evaluate_clamp(double(a) / 32767.0, -1.0, 1.0),
+                          Intrinsics::evaluate_clamp(double(b) / 32767.0, -1.0, 1.0)).release();
+        }
+        case k_unpackHalf2x16_IntrinsicKind: {
+            SKSL_INT x = *arguments[0]->getConstantValue(0);
+            uint16_t a = ((x >> 0)  & 0x0000FFFF);
+            uint16_t b = ((x >> 16) & 0x0000FFFF);
+            return Float2(SkHalfToFloat(a),
+                          SkHalfToFloat(b)).release();
         }
         // 8.5 : Geometric Functions
         case k_length_IntrinsicKind:

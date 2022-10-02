@@ -44,7 +44,8 @@ public:
                                                      Protected,
                                                      Renderable) const = 0;
 
-    virtual TextureInfo getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo) const = 0;
+    virtual TextureInfo getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo,
+                                                  Discardable discardable) const = 0;
 
     virtual TextureInfo getDefaultDepthStencilTextureInfo(SkEnumBitMask<DepthStencilFlags>,
                                                           uint32_t sampleCount,
@@ -80,6 +81,13 @@ public:
     virtual size_t getTransferBufferAlignment(size_t bytesPerPixel) const = 0;
 
     bool clampToBorderSupport() const { return fClampToBorderSupport; }
+
+    // Returns whether storage buffers are supported.
+    bool storageBufferSupport() const { return fStorageBufferSupport; }
+
+    // Returns whether storage buffers are preferred over uniform buffers, when both will yield
+    // correct results.
+    bool storageBufferPreferred() const { return fStorageBufferPreferred; }
 
     // Returns the skgpu::Swizzle to use when sampling or reading back from a texture with the
     // passed in SkColorType and TextureInfo.
@@ -134,6 +142,9 @@ protected:
     std::unique_ptr<SkSL::ShaderCaps> fShaderCaps;
 
     bool fClampToBorderSupport = true;
+
+    bool fStorageBufferSupport = false;
+    bool fStorageBufferPreferred = false;
 
     //////////////////////////////////////////////////////////////////////////////////////////
     // Client-provided Caps
