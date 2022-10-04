@@ -7,6 +7,8 @@
 
 #include "src/sksl/SkSLInliner.h"
 
+#ifndef SK_ENABLE_OPTIMIZE_SIZE
+
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
@@ -650,7 +652,7 @@ Inliner::InlinedCall Inliner::inlineCall(FunctionCall* call,
             // ... and can be inlined trivially (e.g. a swizzle, or a constant array index),
             // or any expression without side effects that is only accessed at most once...
             if ((paramUsage.fRead > 1) ? Analysis::IsTrivialExpression(*arg)
-                                       : !arg->hasSideEffects()) {
+                                       : !Analysis::HasSideEffects(*arg)) {
                 // ... we don't need to copy it at all! We can just use the existing expression.
                 varMap.set(param, arg->clone());
                 continue;
@@ -1202,3 +1204,5 @@ bool Inliner::analyze(const std::vector<std::unique_ptr<ProgramElement>>& elemen
 }
 
 }  // namespace SkSL
+
+#endif  // SK_ENABLE_OPTIMIZE_SIZE

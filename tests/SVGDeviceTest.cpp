@@ -18,6 +18,7 @@
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkPathEffect.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTextBlob.h"
@@ -606,6 +607,23 @@ DEF_TEST(SVGDevice_color_shader, reporter) {
     const auto* fill = dom.findAttr(ellipseElement, "fill");
     REPORTER_ASSERT(reporter, fill, "fill attribute not found");
     REPORTER_ASSERT(reporter, !strcmp(fill, "yellow"));
+}
+
+DEF_TEST(SVGDevice_parse_minmax, reporter) {
+    auto check = [&](int64_t n, bool expected) {
+        const auto str = std::to_string(n);
+
+        int val;
+        REPORTER_ASSERT(reporter, SkToBool(SkParse::FindS32(str.c_str(), &val)) == expected);
+        if (expected) {
+            REPORTER_ASSERT(reporter, val == n);
+        }
+    };
+
+    check(std::numeric_limits<int>::max(), true);
+    check(std::numeric_limits<int>::min(), true);
+    check(static_cast<int64_t>(std::numeric_limits<int>::max()) + 1, false);
+    check(static_cast<int64_t>(std::numeric_limits<int>::min()) - 1, false);
 }
 
 #endif

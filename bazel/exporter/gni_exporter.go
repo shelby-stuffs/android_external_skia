@@ -81,9 +81,16 @@ skia_core_sources += skia_skpicture_sources
 skia_core_public += skia_pathops_public
 skia_core_public += skia_skpicture_public`
 
+// The footer written to modules/skshaper/skshaper.gni.
+const skshaperFooter = `
+declare_args() {
+  skia_enable_skshaper = true
+}`
+
 // Map of GNI file names to footer text to be appended to the end of the file.
 var footerMap = map[string]string{
-	"gn/core.gni": coreGNIFooter,
+	"gn/core.gni":                   coreGNIFooter,
+	"modules/skshaper/skshaper.gni": skshaperFooter,
 }
 
 // Match variable definition of a list in a *.gni file. For example:
@@ -113,6 +120,33 @@ func findQueryResultRule(qr *build.QueryResult, name string) *build.Rule {
 		}
 	}
 	return nil
+}
+
+// Given a relative path to a file return the relative path to the
+// top directory (in our case the workspace). For example:
+//
+//	getPathToTopDir("path/to/file.h") -> "../.."
+//
+// The paths are to be delimited by forward slashes ('/') - even on
+// Windows.
+func getPathToTopDir(path string) string {
+	if filepath.IsAbs(path) {
+		return ""
+	}
+	d, _ := filepath.Split(path)
+	if d == "" {
+		return "."
+	}
+	d = strings.TrimSuffix(d, "/")
+	items := strings.Split(d, "/")
+	var sb = strings.Builder{}
+	for i := 0; i < len(items); i++ {
+		if i > 0 {
+			sb.WriteString("/")
+		}
+		sb.WriteString("..")
+	}
+	return sb.String()
 }
 
 // Retrieve all rule attributes which are internal file targets.
@@ -179,18 +213,18 @@ func fileListContainsOnlyCppHeaderFiles(files []string) bool {
 }
 
 // Write the *.gni file header.
-func writeGNFileHeader(writer interfaces.Writer, gniFile *gniFileContents) {
+func writeGNFileHeader(writer interfaces.Writer, gniFile *gniFileContents, pathToWorkspace string) {
 	fmt.Fprintln(writer, "# DO NOT EDIT: This is a generated file.")
 	fmt.Fprintln(writer, "# See //bazel/exporter_tool/README.md for more information.")
 	writer.WriteString("\n")
 	if gniFile.hasSrcs {
-		fmt.Fprintln(writer, `_src = get_path_info("../src", "abspath")`)
+		fmt.Fprintf(writer, "_src = get_path_info(\"%s/src\", \"abspath\")\n", pathToWorkspace)
 	}
 	if gniFile.hasIncludes {
-		fmt.Fprintln(writer, `_include = get_path_info("../include", "abspath")`)
+		fmt.Fprintf(writer, "_include = get_path_info(\"%s/include\", \"abspath\")\n", pathToWorkspace)
 	}
 	if gniFile.hasModules {
-		fmt.Fprintln(writer, `_modules = get_path_info("../modules", "abspath")`)
+		fmt.Fprintf(writer, "_modules = get_path_info(\"%s/modules\", \"abspath\")\n", pathToWorkspace)
 	}
 }
 
@@ -409,7 +443,8 @@ func (e *GNIExporter) exportGNIFile(gniExportDesc GNIExportDesc, qr *build.Query
 		return skerr.Wrap(err)
 	}
 
-	writeGNFileHeader(writer, &gniFileContents)
+	pathToWorkspace := getPathToTopDir(gniExportDesc.GNI)
+	writeGNFileHeader(writer, &gniFileContents, pathToWorkspace)
 	writer.WriteString("\n")
 
 	_, err = writer.Write(gniFileContents.data)

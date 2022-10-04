@@ -51,11 +51,11 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/pathops:pathops_srcs",
 			}},
 		{Var: "skia_precompile_public",
-			Rules: []string{"//include/core:precompile_public_hdrs"}},
+			Rules: []string{"//include/gpu/graphite:precompile_public_hdrs"}},
 		{Var: "skia_precompile_sources",
 			Rules: []string{
-				"//src/core:precompile_hdrs",
-				"//src/core:precompile_srcs",
+				"//src/gpu/graphite:precompile_hdrs",
+				"//src/gpu/graphite:precompile_srcs",
 			}},
 		{Var: "skia_skpicture_public",
 			Rules: []string{"//include/core:skpicture_public_hdrs"}},
@@ -289,8 +289,90 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/gpu/piet:piet_hdrs",
 				"//src/gpu/piet:piet_srcs",
 			}},
-	},
-	},
+	}},
+	{GNI: "modules/svg/svg.gni", Vars: []exporter.GNIFileListExportDesc{
+		{Var: "skia_svg_public",
+			Rules: []string{"//modules/svg/include:public_hdrs"}},
+		{Var: "skia_svg_sources",
+			Rules: []string{
+				"//modules/svg/src:private_hdrs",
+				"//modules/svg/src:srcs",
+			}},
+	}},
+	{GNI: "modules/skparagraph/skparagraph.gni", Vars: []exporter.GNIFileListExportDesc{
+		{Var: "skparagraph_public",
+			Rules: []string{
+				"//modules/skparagraph/include:hdrs",
+				"//modules/skparagraph/utils:utils_hdrs"}},
+		{Var: "skparagraph_sources",
+			Rules: []string{
+				"//modules/skparagraph/src:srcs",
+				"//modules/skparagraph/utils:utils_srcs"}},
+		{Var: "skparagraph_utils",
+			Rules: []string{
+				"//modules/skparagraph/utils:utils_hdrs",
+				"//modules/skparagraph/utils:utils_srcs",
+			}},
+		{Var: "skparagraph_tests",
+			Rules: []string{
+				"//modules/skparagraph/tests:tests_hdrs",
+				"//modules/skparagraph/tests:tests_srcs",
+			}},
+	}},
+	{GNI: "modules/skresources/skresources.gni", Vars: []exporter.GNIFileListExportDesc{
+		{Var: "skia_skresources_public",
+			Rules: []string{"//modules/skresources/include:hdrs"}},
+		{Var: "skia_skresources_sources",
+			Rules: []string{"//modules/skresources/src:srcs"}},
+	}},
+	{GNI: "modules/skshaper/skshaper.gni", Vars: []exporter.GNIFileListExportDesc{
+		{Var: "skia_shaper_public",
+			Rules: []string{"//modules/skshaper/include:hdrs"}},
+		{Var: "skia_shaper_primitive_sources",
+			Rules: []string{"//modules/skshaper/src:srcs"}},
+		{Var: "skia_shaper_harfbuzz_sources",
+			Rules: []string{"//modules/skshaper/src:harfbuzz_srcs"}},
+		{Var: "skia_shaper_coretext_sources",
+			Rules: []string{"//modules/skshaper/src:coretext_srcs"}},
+	}},
+	{GNI: "modules/skunicode/skunicode.gni", Vars: []exporter.GNIFileListExportDesc{
+		{Var: "skia_unicode_public",
+			Rules: []string{"//modules/skunicode/include:hdrs"}},
+		{Var: "skia_unicode_sources",
+			Rules: []string{"//modules/skunicode/src:srcs"}},
+		{Var: "skia_unicode_no_icu",
+			Rules: []string{"//modules/skunicode/src:no_icu"}},
+		{Var: "skia_unicode_builtin_icu_sources",
+			Rules: []string{"//modules/skunicode/src:builtin_srcs"}},
+		{Var: "skia_unicode_runtime_icu_sources",
+			Rules: []string{"//modules/skunicode/src:runtime_srcs"}},
+	}},
+	{GNI: "modules/sksg/sksg.gni", Vars: []exporter.GNIFileListExportDesc{
+		{Var: "skia_sksg_sources",
+			Rules: []string{"//modules/sksg/src:srcs"}},
+	}},
+	{GNI: "modules/skottie/skottie.gni", Vars: []exporter.GNIFileListExportDesc{
+		{Var: "skia_skottie_public",
+			Rules: []string{"//modules/skottie/include:hdrs"}},
+		{Var: "skia_skottie_sources",
+			Rules: []string{
+				"//modules/skottie/src:srcs",
+				"//modules/skottie/src/animator:srcs",
+				"//modules/skottie/src/effects:srcs",
+				"//modules/skottie/src/layers:srcs",
+				"//modules/skottie/src/layers/shapelayer:srcs",
+				"//modules/skottie/src/text:srcs",
+			}},
+	}},
+	{GNI: "modules/skcms/skcms.gni", Vars: []exporter.GNIFileListExportDesc{
+		{Var: "skcms_public_headers",
+			Rules: []string{"//modules/skcms:public_hdrs"}},
+		{Var: "skcms_sources",
+			Rules: []string{
+				"//modules/skcms:srcs",
+				"//modules/skcms:textual_hdrs",
+			}},
+	}},
 }
 
 const (

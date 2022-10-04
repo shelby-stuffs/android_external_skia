@@ -17,10 +17,10 @@
 #include "include/core/SkM44.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkShader.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkTileMode.h"
 #include "include/private/SkColorData.h"
 
-enum class SkShaderType : uint32_t;
 class SkData;
 class SkPaintParamsKeyBuilder;
 class SkPipelineDataGatherer;
@@ -28,9 +28,23 @@ class SkRuntimeEffect;
 class SkUniquePaintParamsID;
 class SkKeyContext;
 
+#ifdef SK_ENABLE_PRECOMPILE
+namespace skgpu::graphite {
+enum class ShaderType : uint32_t;
+}
+#endif
+
 // The KeyHelpers can be used to manually construct an SkPaintParamsKey
 
 struct PassthroughShaderBlock {
+
+    static void BeginBlock(const SkKeyContext&,
+                           SkPaintParamsKeyBuilder*,
+                           SkPipelineDataGatherer*);
+
+};
+
+struct PassthroughBlenderBlock {
 
     static void BeginBlock(const SkKeyContext&,
                            SkPaintParamsKeyBuilder*,
@@ -155,9 +169,19 @@ struct ImageShaderBlock {
 
 };
 
+struct PorterDuffBlendShaderBlock {
+    struct PorterDuffBlendShaderData {
+        SkSpan<const float> fPorterDuffConstants;
+    };
+
+    static void BeginBlock(const SkKeyContext&,
+                           SkPaintParamsKeyBuilder*,
+                           SkPipelineDataGatherer*,
+                           const PorterDuffBlendShaderData&);
+};
+
 struct BlendShaderBlock {
     struct BlendShaderData {
-        // TODO: add support for blenders
         SkBlendMode fBM;
     };
 
@@ -165,7 +189,6 @@ struct BlendShaderBlock {
                            SkPaintParamsKeyBuilder*,
                            SkPipelineDataGatherer*,
                            const BlendShaderData&);
-
 };
 
 struct MatrixColorFilterBlock {
@@ -296,6 +319,11 @@ struct RuntimeColorFilterBlock {
                            SkPaintParamsKeyBuilder*,
                            SkPipelineDataGatherer*,
                            const ColorFilterData&);
+};
+
+struct RuntimeBlenderBlock : public RuntimeColorFilterBlock {
+    // Runtime Blenders use the same key builder as runtime color filters.
+    using BlenderData = ColorFilterData;
 };
 
 #endif // SkKeyHelpers_DEFINED

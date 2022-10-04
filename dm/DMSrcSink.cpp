@@ -10,7 +10,6 @@
 #include "include/codec/SkAndroidCodec.h"
 #include "include/codec/SkCodec.h"
 #include "include/core/SkColorSpace.h"
-#include "include/core/SkCombinationBuilder.h"
 #include "include/core/SkData.h"
 #include "include/core/SkDeferredDisplayListRecorder.h"
 #include "include/core/SkDocument.h"
@@ -84,6 +83,7 @@
 #endif
 
 #ifdef SK_GRAPHITE_ENABLED
+#include "include/gpu/graphite/CombinationBuilder.h"
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
@@ -1121,11 +1121,6 @@ Result SKPSrc::draw(GrDirectContext* dContext, SkCanvas* canvas) const {
             if (context->fDirectContext) {
                 image = image->makeTextureImage(context->fDirectContext);
             }
-#ifdef SK_GRAPHITE_ENABLED
-            else if (context->fRecorder) {
-                image = image->makeTextureImage(context->fRecorder);
-            }
-#endif
         }
 
         return image;

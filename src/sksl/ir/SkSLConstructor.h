@@ -34,15 +34,6 @@ public:
     virtual SkSpan<std::unique_ptr<Expression>> argumentSpan() = 0;
     virtual SkSpan<const std::unique_ptr<Expression>> argumentSpan() const = 0;
 
-    bool hasProperty(Property property) const override {
-        for (const std::unique_ptr<Expression>& arg : this->argumentSpan()) {
-            if (arg->hasProperty(property)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     std::string description() const override {
         std::string result = this->type().description() + "(";
         const char* separator = "";
@@ -57,15 +48,6 @@ public:
 
     const Type& componentType() const {
         return this->type().componentType();
-    }
-
-    bool isCompileTimeConstant() const override {
-        for (const std::unique_ptr<Expression>& arg : this->argumentSpan()) {
-            if (!arg->isCompileTimeConstant()) {
-                return false;
-            }
-        }
-        return true;
     }
 
     bool supportsConstantValues() const override { return true; }

@@ -19,38 +19,45 @@ half4 sk_local_matrix_shader(float4, float4x4, half4 childResult) {
     return childResult;
 }
 
-float $tile(int tm, float f, float min, float max, float normalizer) {
+float $tile(int tm, float f, float low, float high) {
     const int kClamp         = 0;
     const int kRepeat        = 1;
     const int kMirrorRepeat  = 2;
     const int kClampToBorder = 3;
 
     if (tm == kClamp) {
-        return clamp(f, min, max) / normalizer;
+        return clamp(f, low, high);
     } else if (tm == kRepeat) {
-        float length = max - min;
-        return (mod(f - min, length) + min) / normalizer;
+        float length = high - low;
+        return (mod(f - low, length) + low);
     } else if (tm == kMirrorRepeat) {
-        float length = max - min;
+        float length = high - low;
         float length2 = 2 * length;
-        float tmp = mod(f - min, length2);
-        return (mix(tmp, length2 - tmp, step(length, tmp)) + min) / normalizer;
+        float tmp = mod(f - low, length2);
+        return (mix(tmp, length2 - tmp, step(length, tmp)) + low);
     } else { // kClampToBorder
         // For now, just clamp.
-        return clamp(f, min, max) / normalizer;
+        return clamp(f, low, high);
     }
 }
 
-float2 sk_compute_coords(float4 coords,
-                         float4x4 preLocal,
-                         float4 subset,
-                         int tmX,
-                         int tmY,
-                         int imgWidth,
-                         int imgHeight) {
+half4 sk_image_shader(float4 coords,
+                      float4x4 preLocal,
+                      float4 subset,
+                      int tmX,
+                      int tmY,
+                      int imgWidth,
+                      int imgHeight,
+                      sampler2D s) {
     float2 pos = (preLocal * coords).xy;
-    return float2($tile(tmX, pos.x, subset.x, subset.z, float(imgWidth)),
-                  $tile(tmY, pos.y, subset.y, subset.w, float(imgHeight)));
+    pos.x = $tile(tmX, pos.x, subset.x, subset.z);
+    pos.y = $tile(tmY, pos.y, subset.y, subset.w);
+
+    // Clamp to an inset subset to prevent sampling neighboring texels when coords fall exactly at
+    // texel boundaries.
+    float4 insetClamp = float4(floor(subset.xy) + 0.5, ceil(subset.zw) - 0.5);
+    float2 clampedPos = clamp(pos, insetClamp.xy, insetClamp.zw);
+    return sample(s, clampedPos / float2(imgWidth, imgHeight));
 }
 
 float2 $tile_grad(int tileMode, float2 t) {
@@ -486,42 +493,51 @@ half4 sk_blend(int blendMode, half4 src, half4 dst) {
         case kClear:      { return blend_clear(src, dst); }
         case kSrc:        { return blend_src(src, dst); }
         case kDst:        { return blend_dst(src, dst); }
-        case kSrcOver:    { return blend_porter_duff(src, dst, half4(1, 0,  0, -1)); }
-        case kDstOver:    { return blend_porter_duff(src, dst, half4(0, 1, -1,  0)); }
-        case kSrcIn:      { return blend_porter_duff(src, dst, half4(0, 0,  1,  0)); }
-        case kDstIn:      { return blend_porter_duff(src, dst, half4(0, 0,  0,  1)); }
-        case kSrcOut:     { return blend_porter_duff(src, dst, half4(0, 0, -1,  0)); }
-        case kDstOut:     { return blend_porter_duff(src, dst, half4(0, 0,  0, -1)); }
-        case kSrcATop:    { return blend_porter_duff(src, dst, half4(0, 0,  1, -1)); }
-        case kDstATop:    { return blend_porter_duff(src, dst, half4(0, 0, -1,  1)); }
-        case kXor:        { return blend_porter_duff(src, dst, half4(0, 0, -1, -1)); }
-        case kPlus:       { return blend_porter_duff(src, dst, half4(1, 1,  0,  0)); }
+        case kSrcOver:    { return blend_porter_duff(half4(1, 0,  0, -1), src, dst); }
+        case kDstOver:    { return blend_porter_duff(half4(0, 1, -1,  0), src, dst); }
+        case kSrcIn:      { return blend_porter_duff(half4(0, 0,  1,  0), src, dst); }
+        case kDstIn:      { return blend_porter_duff(half4(0, 0,  0,  1), src, dst); }
+        case kSrcOut:     { return blend_porter_duff(half4(0, 0, -1,  0), src, dst); }
+        case kDstOut:     { return blend_porter_duff(half4(0, 0,  0, -1), src, dst); }
+        case kSrcATop:    { return blend_porter_duff(half4(0, 0,  1, -1), src, dst); }
+        case kDstATop:    { return blend_porter_duff(half4(0, 0, -1,  1), src, dst); }
+        case kXor:        { return blend_porter_duff(half4(0, 0, -1, -1), src, dst); }
+        case kPlus:       { return blend_porter_duff(half4(1, 1,  0,  0), src, dst); }
         case kModulate:   { return blend_modulate(src, dst); }
         case kScreen:     { return blend_screen(src, dst); }
-        case kOverlay:    { return blend_overlay(src, dst, /*flip=*/0); }
-        case kDarken:     { return blend_darken(src, dst, /*mode=*/1); }
-        case kLighten:    { return blend_darken(src, dst, /*mode=*/-1); }
+        case kOverlay:    { return blend_overlay(/*flip=*/0, src, dst); }
+        case kDarken:     { return blend_darken(/*mode=*/1, src, dst); }
+        case kLighten:    { return blend_darken(/*mode=*/-1, src, dst); }
         case kColorDodge: { return blend_color_dodge(src, dst); }
         case kColorBurn:  { return blend_color_burn(src, dst); }
-        case kHardLight:  { return blend_overlay(src, dst, /*flip=*/1); }
+        case kHardLight:  { return blend_overlay(/*flip=*/1, src, dst); }
         case kSoftLight:  { return blend_soft_light(src, dst); }
         case kDifference: { return blend_difference(src, dst); }
         case kExclusion:  { return blend_exclusion(src, dst); }
         case kMultiply:   { return blend_multiply(src, dst); }
-        case kHue:        { return blend_hslc(src, dst, /*flipSat=*/half2(0, 1)); }
-        case kSaturation: { return blend_hslc(src, dst, /*flipSat=*/half2(1)); }
-        case kColor:      { return blend_hslc(src, dst, /*flipSat=*/half2(0)); }
-        case kLuminosity: { return blend_hslc(src, dst, /*flipSat=*/half2(1, 0)); }
+        case kHue:        { return blend_hslc(/*flipSat=*/half2(0, 1), src, dst); }
+        case kSaturation: { return blend_hslc(/*flipSat=*/half2(1), src, dst); }
+        case kColor:      { return blend_hslc(/*flipSat=*/half2(0), src, dst); }
+        case kLuminosity: { return blend_hslc(/*flipSat=*/half2(1, 0), src, dst); }
         default: return half4(0);  // Avoids 'blend can exit without returning a value' error
     }
 }
 
-half4 sk_blend_shader(int blendMode, half4 child0, half4 child1) {
-    return sk_blend(blendMode, child1, child0);
+half4 sk_blend_shader(int blendMode, half4 src, half4 dst) {
+    return sk_blend(blendMode, src, dst);
 }
 
 half4 sk_blend_colorfilter(half4 dstColor, int blendMode, float4 srcColor) {
     return sk_blend(blendMode, half4(srcColor), dstColor);
+}
+
+half4 sk_table_colorfilter(half4 inColor, sampler2D s) {
+    half4 coords = unpremul(inColor) * 255.0/256.0 + 0.5/256.0;
+    half4 color = half4(sample(s, half2(coords.r, 3.0/8.0)).r,
+                        sample(s, half2(coords.g, 5.0/8.0)).r,
+                        sample(s, half2(coords.b, 7.0/8.0)).r,
+                        1);
+    return color * sample(s, half2(coords.a, 1.0/8.0)).r;
 }
 
 half4 sk_gaussian_colorfilter(half4 inColor) {
