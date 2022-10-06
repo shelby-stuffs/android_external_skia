@@ -7,10 +7,10 @@
 
 #include "include/gpu/graphite/Context.h"
 
-#include "include/core/SkCombinationBuilder.h"
 #include "include/core/SkPathTypes.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/graphite/BackendTexture.h"
+#include "include/gpu/graphite/CombinationBuilder.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/TextureInfo.h"
@@ -34,6 +34,7 @@
 
 #ifdef SK_VULKAN
 #include "include/gpu/vk/VulkanBackendContext.h"
+#include "src/gpu/graphite/vk/VulkanSharedContext.h"
 #endif
 
 namespace skgpu::graphite {
@@ -75,8 +76,7 @@ std::unique_ptr<Context> Context::MakeMetal(const MtlBackendContext& backendCont
 #ifdef SK_VULKAN
 std::unique_ptr<Context> Context::MakeVulkan(const VulkanBackendContext& backendContext,
                                              const ContextOptions& options) {
-    // TODO: Make a SharedContext
-    sk_sp<SharedContext> sharedContext;
+    sk_sp<SharedContext> sharedContext = VulkanSharedContext::Make(backendContext, options);
     if (!sharedContext) {
         return nullptr;
     }
@@ -121,11 +121,11 @@ void Context::checkAsyncWorkCompletion() {
 
 #ifdef SK_ENABLE_PRECOMPILE
 
-SkBlenderID Context::addUserDefinedBlender(sk_sp<SkRuntimeEffect> effect) {
+BlenderID Context::addUserDefinedBlender(sk_sp<SkRuntimeEffect> effect) {
     return fSharedContext->shaderCodeDictionary()->addUserDefinedBlender(std::move(effect));
 }
 
-void Context::precompile(SkCombinationBuilder* combinationBuilder) {
+void Context::precompile(CombinationBuilder* combinationBuilder) {
     ASSERT_SINGLE_OWNER
 
     combinationBuilder->buildCombinations(

@@ -314,65 +314,18 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		if b.extraConfig("Graphite") {
 			args = append(args, "--nogpu") // disable non-Graphite tests
 
-			// TODO: re-enable - currently fails with "Failed to make lazy image"
+			// Failed to make lazy image.
 			skip(ALL, "gm", ALL, "image_subset")
 
-			// TODO: re-enable - currently fails readback from surface
-			skip(ALL, "gm", ALL, "blurrect_compare")
-			skip(ALL, "gm", ALL, "lattice_alpha")
-			skip(ALL, "gm", ALL, "localmatriximageshader")
-			skip(ALL, "gm", ALL, "savelayer_f16")
-			skip(ALL, "gm", ALL, "anisomips")
-			skip(ALL, "gm", ALL, "path_huge_aa")
+			// Could not readback from surface.
 			skip(ALL, "gm", ALL, "hugebitmapshader")
-
-			// TODO: re-enable - currently fail bc surface to image conversion isn't implemented
-			skip(ALL, "gm", ALL, "xfermodes3")
+			skip(ALL, "gm", ALL, "path_huge_aa")
 			skip(ALL, "gm", ALL, "verylargebitmap")
-			skip(ALL, "gm", ALL, "clipped_thinrect")
-			skip(ALL, "gm", ALL, "textblobgeometrychange")
-			skip(ALL, "gm", ALL, "surface_underdraw")
-			skip(ALL, "gm", ALL, "copy_on_write_savelayer")
-			skip(ALL, "gm", ALL, "simple_snap_image2")
-			skip(ALL, "gm", ALL, "simple_snap_image")
-			skip(ALL, "gm", ALL, "copy_on_write_retain2")
-			skip(ALL, "gm", ALL, "copy_on_write_retain")
-			skip(ALL, "gm", ALL, "surfacenew")
-			skip(ALL, "gm", ALL, "srcmode")
-			skip(ALL, "gm", ALL, "lit_shader_linear_rt")
-			skip(ALL, "gm", ALL, "linear_gradient_rt")
-			skip(ALL, "gm", ALL, "persp_shaders_bw")
-			skip(ALL, "gm", ALL, "persp_shaders_aa")
-			skip(ALL, "gm", ALL, "ninepatch-stretch")
-			skip(ALL, "gm", ALL, "localmatriximagefilter")
-			skip(ALL, "gm", ALL, "lcdblendmodes")
-			skip(ALL, "gm", ALL, "lattice2")
-			skip(ALL, "gm", ALL, "lattice")
-			skip(ALL, "gm", ALL, "fast_slow_blurimagefilter")
-			skip(ALL, "gm", ALL, "imageblurrepeatmode")
-			skip(ALL, "gm", ALL, "imageblurclampmode")
-			skip(ALL, "gm", ALL, "imagealphathreshold_surface")
-			skip(ALL, "gm", ALL, "dstreadshuffle")
-			skip(ALL, "gm", ALL, "drawbitmaprect-imagerect-subset")
-			skip(ALL, "gm", ALL, "drawbitmaprect-imagerect")
-			skip(ALL, "gm", ALL, "drawbitmaprect-subset")
-			skip(ALL, "gm", ALL, "drawbitmaprect")
-			skip(ALL, "gm", ALL, "custommesh_cs")
-			skip(ALL, "gm", ALL, "complexclip_blur_tiled")
-			skip(ALL, "gm", ALL, "bleed_downscale")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_no_bleed")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_text_up")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_dog_down")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_rose")
+			skip(ALL, "gm", ALL, "verylarge_picture_image")
 
-			if b.extraConfig("ASAN") {
-				// skbug.com/12507 (Neon UB during JPEG compression on M1 ASAN Graphite bot)
-				skip(ALL, "gm", ALL, "yuv420_odd_dim") // Oddly enough yuv420_odd_dim_repeat doesn't crash
-				skip(ALL, "gm", ALL, "encode-alpha-jpeg")
-				skip(ALL, "gm", ALL, "encode")
-				skip(ALL, "gm", ALL, "jpg-color-cube")
+			if (b.extraConfig("Metal")) {
+				configs = []string{"grmtl"}
 			}
-			configs = []string{"grmtl"}
 		}
 
 		// ANGLE bot *only* runs the angle configs
@@ -451,7 +404,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 				configs = append(configs, "vkdmsaa")
 			}
 		}
-		if b.extraConfig("Metal") {
+		if b.extraConfig("Metal") && !b.extraConfig("Graphite") {
 			configs = []string{"mtl"}
 			// MSAA doesn't work well on Intel GPUs chromium:527565, chromium:983926
 			if !b.matchGpu("Intel") {
@@ -543,7 +496,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			skip("mtltestprecompile", "svg", ALL, "tiger-8.svg")
 		}
 		// Test reduced shader mode on iPhone 11 as representative iOS device
-		if b.model("iPhone11") && b.extraConfig("Metal") {
+		if b.model("iPhone11") && b.extraConfig("Metal") && !b.extraConfig("Graphite") {
 			configs = append(configs, "mtlreducedshaders")
 		}
 
@@ -1239,14 +1192,14 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		match = append(match, "~FloatingPointTextureTest$")
 	}
 
-	if b.extraConfig("Metal") && b.gpu("RadeonHD8870M") && b.matchOs("Mac") {
+	if b.extraConfig("Metal") && !b.extraConfig("Graphite") && b.gpu("RadeonHD8870M") && b.matchOs("Mac") {
 		// skia:9255
 		match = append(match, "~WritePixelsNonTextureMSAA_Gpu")
 		// skbug.com/11366
 		match = append(match, "~SurfacePartialDraw_Gpu")
 	}
 
-	if b.extraConfig("Metal") && b.gpu("PowerVRGX6450") && b.matchOs("iOS") {
+	if b.extraConfig("Metal") && !b.extraConfig("Graphite") && b.gpu("PowerVRGX6450") && b.matchOs("iOS") {
 		// skbug.com/11885
 		match = append(match, "~flight_animated_image")
 	}

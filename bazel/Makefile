@@ -1,4 +1,5 @@
 EXPORTER_TOOL=bazel-bin/bazel/exporter_tool/exporter_tool_/exporter_tool
+EXPORTER_RULES=-rule='//src/...' -rule='//modules/...' -rule='//include/...'
 
 generate:
 	echo "You do not need to run this any more for C++ code, only if you modify go code"
@@ -14,13 +15,13 @@ generate_cmake:
 .PHONY: generate_gni
 generate_gni:
 	cd .. && bazelisk build //bazel/exporter_tool && ${EXPORTER_TOOL} \
-		-output_format=gni -proj_name=Skia -rule='//src/...' -rule='//include/...' \
-		&& bin/gn format gn/*.gni
+		-output_format=gni -proj_name=Skia ${EXPORTER_RULES} \
+		&& bin/gn format gn/*.gni modules/*/*.gni
 
 .PHONY: check_gni
 check_gni:
 	cd .. && bazelisk build //bazel/exporter_tool && ${EXPORTER_TOOL} \
-		-output_format=gni -proj_name=Skia -rule='//src/...' -rule='//include/...' -check_current
+		-output_format=gni -proj_name=Skia ${EXPORTER_RULES} -check_current
 
 .PHONY: mocks
 mocks:
@@ -66,8 +67,13 @@ rbe_known_good_builds:
 		--config=ck_full_webgl2_debug --remote_download_minimal
 
 iwyu_rbe:
-	bazelisk build //:skia_public --config=for_linux_x64_with_rbe --config=enforce_iwyu \
-	 	--remote_download_minimal --nobuild_runfile_manifests
+	bazelisk build //:skia_public --config=for_linux_x64_with_rbe \
+		--config=enforce_iwyu --remote_download_minimal --nobuild_runfile_manifests
+	bazelisk build //modules/skottie:skottie_tool_gpu --config=for_linux_x64_with_rbe \
+		--config=enforce_iwyu --remote_download_minimal --nobuild_runfile_manifests
 
 iwyu:
-	bazelisk build //:skia_public --config=enforce_iwyu --nobuild_runfile_manifests
+	bazelisk build //:skia_public --config=enforce_iwyu \
+		--nobuild_runfile_manifests
+	bazelisk build //modules/skottie:skottie_tool_gpu --config=enforce_iwyu \
+		--nobuild_runfile_manifests

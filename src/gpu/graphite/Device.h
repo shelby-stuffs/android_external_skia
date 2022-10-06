@@ -44,6 +44,7 @@ public:
     static sk_sp<Device> Make(Recorder*,
                               const SkImageInfo&,
                               SkBudgeted,
+                              Mipmapped,
                               const SkSurfaceProps&,
                               bool addInitialClear);
     static sk_sp<Device> Make(Recorder*,
@@ -207,7 +208,10 @@ private:
     // return a retry error code? or does drawGeometry() handle all the fallbacks, knowing that
     // a particular shape type needs to be pre-chopped?
     // TODO: Move this into a RendererSelector object provided by the Context.
-    const Renderer* chooseRenderer(const Geometry&, const Clip&, const SkStrokeRec&) const;
+    const Renderer* chooseRenderer(const Geometry&,
+                                   const Clip&,
+                                   const SkStrokeRec&,
+                                   bool requireMSAA) const;
 
     bool needsFlushBeforeDraw(int numNewDraws) const;
 

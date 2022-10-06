@@ -60,11 +60,6 @@ public:
         kLast = kVariableReference
     };
 
-    enum class Property {
-        kSideEffects,
-        kContainsRTAdjust
-    };
-
     Expression(Position pos, Kind kind, const Type* type)
         : INHERITED(pos, (int) kind)
         , fType(type) {
@@ -125,14 +120,6 @@ public:
     const AnyConstructor& asAnyConstructor() const;
 
     /**
-     * Returns true if this expression is constant. compareConstant must be implemented for all
-     * constants!
-     */
-    virtual bool isCompileTimeConstant() const {
-        return false;
-    }
-
-    /**
      * Returns true if this expression is incomplete. Specifically, dangling function/method-call
      * references that were never invoked, or type references that were never constructed, are
      * considered incomplete expressions and should result in an error.
@@ -153,17 +140,7 @@ public:
         return ComparisonResult::kUnknown;
     }
 
-    virtual bool hasProperty(Property property) const = 0;
-
-    bool hasSideEffects() const {
-        return this->hasProperty(Property::kSideEffects);
-    }
-
-    bool containsRTAdjust() const {
-        return this->hasProperty(Property::kContainsRTAdjust);
-    }
-
-    virtual CoercionCost coercionCost(const Type& target) const {
+    CoercionCost coercionCost(const Type& target) const {
         return this->type().coercionCost(target);
     }
 
