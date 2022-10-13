@@ -393,32 +393,6 @@ private:
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
-/**
- *  Pass the object and the storage that was offered during SkInPlaceNewCheck, and this will
- *  safely destroy (and free if it was dynamically allocated) the object.
- */
-template <typename T> void SkInPlaceDeleteCheck(T* obj, void* storage) {
-    if (storage == obj) {
-        obj->~T();
-    } else {
-        delete obj;
-    }
-}
-
-/**
- *  Allocates T, using storage if it is large enough, and allocating on the heap (via new) if
- *  storage is not large enough.
- *
- *      obj = SkInPlaceNewCheck<Type>(storage, size);
- *      ...
- *      SkInPlaceDeleteCheck(obj, storage);
- */
-template<typename T, typename... Args>
-T* SkInPlaceNewCheck(void* storage, size_t size, Args&&... args) {
-    return (sizeof(T) <= size) ? new (storage) T(std::forward<Args>(args)...)
-                               : new T(std::forward<Args>(args)...);
-}
-
 template <int N, typename T> class SkAlignedSTStorage {
 public:
     SkAlignedSTStorage() {}
@@ -454,8 +428,8 @@ template<size_t N, typename C> constexpr auto SkMakeArray(C c)
  * Trait for identifying types which are relocatable via memcpy, for container optimizations.
  *
  */
-// TODO: default to std::is_trivially_copyable when possible.
 template <typename T>
-struct sk_is_trivially_relocatable : std::false_type {};
+// Use std::is_trivially_copyable as a default, if not explicitly specialized for a type.
+struct sk_is_trivially_relocatable : std::is_trivially_copyable<T> {};
 
 #endif

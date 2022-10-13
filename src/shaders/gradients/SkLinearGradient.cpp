@@ -47,7 +47,7 @@ sk_sp<SkFlattenable> SkLinearGradient::CreateProc(SkReadBuffer& buffer) {
     pts[0] = buffer.readPoint();
     pts[1] = buffer.readPoint();
     return SkGradientShader::MakeLinear(pts, desc.fColors, std::move(desc.fColorSpace), desc.fPos,
-                                        desc.fCount, desc.fTileMode, desc.fGradFlags,
+                                        desc.fCount, desc.fTileMode, desc.fInterpolation,
                                         desc.fLocalMatrix);
 }
 
@@ -87,13 +87,17 @@ skvm::F32 SkLinearGradient::transformT(skvm::Builder* p, skvm::Uniforms*,
     return coord.x;
 }
 
-SkShader::GradientType SkLinearGradient::asAGradient(GradientInfo* info) const {
+SkShaderBase::GradientType SkLinearGradient::asGradient(GradientInfo* info,
+                                                        SkMatrix* localMatrix) const {
     if (info) {
         commonAsAGradient(info);
         info->fPoint[0] = fStart;
         info->fPoint[1] = fEnd;
     }
-    return kLinear_GradientType;
+    if (localMatrix) {
+        *localMatrix = this->getLocalMatrix();
+    }
+    return GradientType::kLinear;
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -113,7 +117,7 @@ std::unique_ptr<GrFragmentProcessor> SkLinearGradient::asFragmentProcessor(
 void SkLinearGradient::addToKey(const SkKeyContext& keyContext,
                                 SkPaintParamsKeyBuilder* builder,
                                 SkPipelineDataGatherer* gatherer) const {
-    GradientShaderBlocks::GradientData data(kLinear_GradientType,
+    GradientShaderBlocks::GradientData data(GradientType::kLinear,
                                             SkM44(this->getLocalMatrix()),
                                             fStart, fEnd,
                                             0.0f, 0.0f,
@@ -134,7 +138,7 @@ sk_sp<SkShader> SkGradientShader::MakeLinear(const SkPoint pts[2],
                                              const SkScalar pos[],
                                              int colorCount,
                                              SkTileMode mode,
-                                             uint32_t flags,
+                                             const Interpolation& interpolation,
                                              const SkMatrix* localMatrix) {
     if (!pts || !SkScalarIsFinite((pts[1] - pts[0]).length())) {
         return nullptr;
@@ -162,7 +166,7 @@ sk_sp<SkShader> SkGradientShader::MakeLinear(const SkPoint pts[2],
     SkGradientShaderBase::ColorStopOptimizer opt(colors, pos, colorCount, mode);
 
     SkGradientShaderBase::Descriptor desc(opt.fColors, std::move(colorSpace), opt.fPos,
-                                          opt.fCount, mode, flags, localMatrix);
+                                          opt.fCount, mode, interpolation, localMatrix);
     return sk_make_sp<SkLinearGradient>(pts, desc);
 }
 
@@ -176,15 +180,6 @@ sk_sp<SkShader> SkGradientShader::MakeLinear(const SkPoint pts[2],
     SkColorConverter converter(colors, colorCount);
     return MakeLinear(pts, converter.fColors4f.begin(), nullptr, pos, colorCount, mode, flags,
                       localMatrix);
-}
-
-sk_sp<SkShader> SkGradientShader::MakeLinear(const SkPoint pts[2],
-                                             const SkColor4f colors[],
-                                             sk_sp<SkColorSpace> colorSpace,
-                                             const SkScalar pos[],
-                                             int count,
-                                             SkTileMode mode) {
-    return MakeLinear(pts, colors, std::move(colorSpace), pos, count, mode, 0, nullptr);
 }
 
 void SkRegisterLinearGradientShaderFlattenable() {

@@ -35,10 +35,10 @@ namespace SkSL {
 static bool check_modifiers(const Context& context,
                             Position pos,
                             const Modifiers& modifiers) {
-    const int permitted = Modifiers::kHasSideEffects_Flag |
-                          Modifiers::kInline_Flag |
+    const int permitted = Modifiers::kInline_Flag |
                           Modifiers::kNoInline_Flag |
-                          (context.fConfig->fIsBuiltinCode ? Modifiers::kES3_Flag : 0);
+                          (context.fConfig->fIsBuiltinCode ? (Modifiers::kES3_Flag |
+                                                              Modifiers::kPure_Flag) : 0);
     modifiers.checkPermitted(context, pos, permitted, /*permittedLayoutFlags=*/0);
     if ((modifiers.fFlags & Modifiers::kInline_Flag) &&
         (modifiers.fFlags & Modifiers::kNoInline_Flag)) {
@@ -378,11 +378,27 @@ static bool parameters_match(const std::vector<std::unique_ptr<Variable>>& param
 static bool find_existing_declaration(const Context& context,
                                       SymbolTable& symbols,
                                       Position pos,
+                                      const Modifiers* modifiers,
                                       std::string_view name,
                                       std::vector<std::unique_ptr<Variable>>& parameters,
                                       Position returnTypePos,
                                       const Type* returnType,
                                       const FunctionDeclaration** outExistingDecl) {
+    auto invalidDeclDescription = [&]() -> std::string {
+        std::vector<const Variable*> paramPtrs;
+        paramPtrs.reserve(parameters.size());
+        for (std::unique_ptr<Variable>& param : parameters) {
+            paramPtrs.push_back(param.get());
+        }
+        return FunctionDeclaration(pos,
+                                   modifiers,
+                                   name,
+                                   std::move(paramPtrs),
+                                   returnType,
+                                   context.fConfig->fIsBuiltinCode)
+                .description();
+    };
+
     ErrorReporter& errors = *context.fErrors;
     const Symbol* entry = symbols[name];
     *outExistingDecl = nullptr;
@@ -398,31 +414,21 @@ static bool find_existing_declaration(const Context& context,
                 continue;
             }
             if (!type_generically_matches(*returnType, other->returnType())) {
-                std::vector<const Variable*> paramPtrs;
-                paramPtrs.reserve(parameters.size());
-                for (std::unique_ptr<Variable>& param : parameters) {
-                    paramPtrs.push_back(param.get());
-                }
-                FunctionDeclaration invalidDecl(pos,
-                                                &other->modifiers(),
-                                                name,
-                                                std::move(paramPtrs),
-                                                returnType,
-                                                context.fConfig->fIsBuiltinCode);
                 errors.error(returnTypePos,
-                             "functions '" + invalidDecl.description() + "' and '" +
+                             "functions '" + invalidDeclDescription() + "' and '" +
                              other->description() + "' differ only in return type");
                 return false;
             }
             for (size_t i = 0; i < parameters.size(); i++) {
                 if (parameters[i]->modifiers() != other->parameters()[i]->modifiers()) {
-                    errors.error(parameters[i]->fPosition, "modifiers on parameter " +
-                            std::to_string(i + 1) + " differ between declaration and definition");
+                    errors.error(parameters[i]->fPosition,
+                                 "modifiers on parameter " + std::to_string(i + 1) +
+                                 " differ between declaration and definition");
                     return false;
                 }
             }
-            if (other->definition() || other->isBuiltin()) {
-                errors.error(pos, "duplicate definition of " + other->description());
+            if (*modifiers != other->modifiers() || other->definition() || other->isBuiltin()) {
+                errors.error(pos, "duplicate definition of '" + invalidDeclDescription() + "'");
                 return false;
             }
             *outExistingDecl = other;
@@ -467,8 +473,8 @@ const FunctionDeclaration* FunctionDeclaration::Convert(
         !check_return_type(context, returnTypePos, *returnType) ||
         !check_parameters(context, parameters, isMain) ||
         (isMain && !check_main_signature(context, pos, *returnType, parameters)) ||
-        !find_existing_declaration(context, symbols, pos, name, parameters, returnTypePos,
-                                   returnType, &decl)) {
+        !find_existing_declaration(context, symbols, pos, modifiers, name, parameters,
+                                   returnTypePos, returnType, &decl)) {
         return nullptr;
     }
     std::vector<const Variable*> finalParameters;
@@ -511,10 +517,7 @@ std::string FunctionDeclaration::mangledName() const {
 }
 
 std::string FunctionDeclaration::description() const {
-    // We don't want to add `sk_has_side_effects` to every function description, even if it's true.
     int modifierFlags = this->modifiers().fFlags;
-    modifierFlags &= ~Modifiers::kHasSideEffects_Flag;
-
     std::string result =
             (modifierFlags ? Modifiers::DescribeFlags(modifierFlags) + " " : std::string()) +
             this->returnType().displayName() + " " + std::string(this->name()) + "(";

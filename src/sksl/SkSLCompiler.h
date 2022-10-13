@@ -10,7 +10,6 @@
 
 #include "include/core/SkSize.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkSLDefines.h"
 #include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLProgramKind.h"
 #include "include/sksl/SkSLErrorReporter.h"
@@ -19,13 +18,10 @@
 #include "src/sksl/SkSLParsedModule.h"
 
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <type_traits>
-#include <unordered_set>
 #include <vector>
 
 #define SK_FRAGCOLOR_BUILTIN           10001
@@ -51,7 +47,6 @@ namespace dsl {
 }
 
 class Expression;
-class IRNode;
 class Inliner;
 class ModifiersPool;
 class OutputStream;
@@ -62,7 +57,6 @@ struct ShaderCaps;
 class SymbolTable;
 
 struct LoadedModule {
-    ProgramKind                                  fKind;
     std::shared_ptr<SymbolTable>                 fSymbols;
     std::vector<std::unique_ptr<ProgramElement>> fElements;
 };
@@ -101,7 +95,7 @@ public:
     }
 
     /**
-     * Uniform values  by the compiler to implement origin-neutral dFdy, sk_Clockwise, and
+     * Uniform values used by the compiler to implement origin-neutral dFdy, sk_Clockwise, and
      * sk_FragCoord.
      */
     static std::array<float, 2> GetRTFlipVector(int rtHeight, bool flipY) {
@@ -110,19 +104,6 @@ public:
         result[1] = flipY ?     -1.f : 1.f;
         return result;
     }
-
-    struct OptimizationContext {
-        // nodes we have already reported errors for and should not error on again
-        std::unordered_set<const IRNode*> fSilences;
-        // true if we have updated the CFG during this pass
-        bool fUpdated = false;
-        // true if we need to completely regenerate the CFG
-        bool fNeedsRescan = false;
-        // Metadata about function and variable usage within the program
-        ProgramUsage* fUsage = nullptr;
-        // Nodes which we can't throw away until the end of optimization
-        StatementArray fOwnedStatements;
-    };
 
     Compiler(const ShaderCaps* caps);
 
@@ -195,26 +176,11 @@ public:
         return fSymbolTable;
     }
 
-    // When  SKSL_STANDALONE, fPath is used. (fData, fSize) will be (nullptr, 0)
-    // When !SKSL_STANDALONE, fData and fSize are used. fPath will be nullptr.
-    struct ModuleData {
-        const char*    fPath;
-
-        const uint8_t* fData;
-        size_t         fSize;
-    };
-
-    static ModuleData MakeModulePath(const char* path) {
-        return ModuleData{path, /*fData=*/nullptr, /*fSize=*/0};
-    }
-    static ModuleData MakeModuleData(const uint8_t* data, size_t size) {
-        return ModuleData{/*fPath=*/nullptr, data, size};
-    }
-
-    LoadedModule loadModule(ProgramKind kind, ModuleData data, ModifiersPool& modifiersPool,
-                            std::shared_ptr<SymbolTable> base);
-    ParsedModule parseModule(ProgramKind kind, ModuleData data, const ParsedModule& base,
-                             ModifiersPool& modifiersPool);
+    ParsedModule compileModule(ProgramKind kind,
+                               const char* moduleName,
+                               std::string moduleSource,
+                               const ParsedModule& base,
+                               ModifiersPool& modifiersPool);
 
     const ParsedModule& moduleForProgramKind(ProgramKind kind);
 
@@ -238,12 +204,10 @@ private:
     /** Performs final checks to confirm that a fully-assembled/optimized is valid. */
     bool finalize(Program& program);
 
-    /** Optimize a module in preparation for dehydration. */
-    bool optimizeModuleForDehydration(LoadedModule& module, const ParsedModule& base);
-
-    /** Optimize a module after rehydrating it. */
-    bool optimizeRehydratedModule(LoadedModule& module, const ParsedModule& base,
-                                  ModifiersPool& modifiersPool);
+    /** Optimize a module after loading it. */
+    bool optimizeModuleAfterLoading(ProgramKind kind,
+                                    LoadedModule& module,
+                                    const ParsedModule& base);
 
     /** Flattens out function calls when it is safe to do so. */
     bool runInliner(Inliner* inliner,
@@ -267,7 +231,6 @@ private:
     friend class AutoSource;
     friend class ::SkSLCompileBench;
     friend class Parser;
-    friend class Rehydrator;
     friend class ThreadContext;
     friend class dsl::DSLCore;
 };

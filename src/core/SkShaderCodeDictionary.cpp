@@ -7,6 +7,7 @@
 
 #include "src/core/SkShaderCodeDictionary.h"
 
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkTileMode.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/private/SkOpts_spi.h"
@@ -596,11 +597,11 @@ static constexpr char kLocalMatrixShaderName[] = "sk_local_matrix_shader";
 //--------------------------------------------------------------------------------------------------
 static constexpr SkUniform kImageShaderUniforms[] = {
         { "localMatrix", SkSLType::kFloat4x4 },
+        { "imgSize",     SkSLType::kFloat2 },
         { "subset",      SkSLType::kFloat4 },
         { "tilemodeX",   SkSLType::kInt },
         { "tilemodeY",   SkSLType::kInt },
-        { "imgWidth",    SkSLType::kInt },
-        { "imgHeight",   SkSLType::kInt },
+        { "filterMode",  SkSLType::kInt },
 };
 
 static constexpr SkTextureAndSampler kISTexturesAndSamplers[] = {
@@ -611,6 +612,11 @@ static_assert(0 == static_cast<int>(SkTileMode::kClamp),  "ImageShader code depe
 static_assert(1 == static_cast<int>(SkTileMode::kRepeat), "ImageShader code depends on SkTileMode");
 static_assert(2 == static_cast<int>(SkTileMode::kMirror), "ImageShader code depends on SkTileMode");
 static_assert(3 == static_cast<int>(SkTileMode::kDecal),  "ImageShader code depends on SkTileMode");
+
+static_assert(0 == static_cast<int>(SkFilterMode::kNearest),
+              "ImageShader code depends on SkFilterMode");
+static_assert(1 == static_cast<int>(SkFilterMode::kLinear),
+              "ImageShader code depends on SkFilterMode");
 
 static constexpr char kImageShaderName[] = "sk_image_shader";
 

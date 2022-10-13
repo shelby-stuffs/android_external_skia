@@ -36,7 +36,7 @@ class SkRadialGradient final : public SkGradientShaderBase {
 public:
     SkRadialGradient(const SkPoint& center, SkScalar radius, const Descriptor&);
 
-    GradientType asAGradient(GradientInfo* info) const override;
+    GradientType asGradient(GradientInfo* info, SkMatrix* matrix) const override;
 #if SK_SUPPORT_GPU
     std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&) const override;
 #endif
@@ -69,13 +69,17 @@ SkRadialGradient::SkRadialGradient(const SkPoint& center, SkScalar radius, const
     , fRadius(radius) {
 }
 
-SkShader::GradientType SkRadialGradient::asAGradient(GradientInfo* info) const {
+SkShaderBase::GradientType SkRadialGradient::asGradient(GradientInfo* info,
+                                                        SkMatrix* localMatrix) const {
     if (info) {
         commonAsAGradient(info);
         info->fPoint[0] = fCenter;
         info->fRadius[0] = fRadius;
     }
-    return kRadial_GradientType;
+    if (localMatrix) {
+        *localMatrix = this->getLocalMatrix();
+    }
+    return GradientType::kRadial;
 }
 
 sk_sp<SkFlattenable> SkRadialGradient::CreateProc(SkReadBuffer& buffer) {
@@ -86,7 +90,7 @@ sk_sp<SkFlattenable> SkRadialGradient::CreateProc(SkReadBuffer& buffer) {
     const SkPoint center = buffer.readPoint();
     const SkScalar radius = buffer.readScalar();
     return SkGradientShader::MakeRadial(center, radius, desc.fColors, std::move(desc.fColorSpace),
-                                        desc.fPos, desc.fCount, desc.fTileMode, desc.fGradFlags,
+                                        desc.fPos, desc.fCount, desc.fTileMode, desc.fInterpolation,
                                         desc.fLocalMatrix);
 }
 
@@ -134,7 +138,7 @@ std::unique_ptr<GrFragmentProcessor> SkRadialGradient::asFragmentProcessor(
 void SkRadialGradient::addToKey(const SkKeyContext& keyContext,
                                 SkPaintParamsKeyBuilder* builder,
                                 SkPipelineDataGatherer* gatherer) const {
-    GradientShaderBlocks::GradientData data(kRadial_GradientType,
+    GradientShaderBlocks::GradientData data(GradientType::kRadial,
                                             SkM44(this->getLocalMatrix()),
                                             fCenter, { 0.0f, 0.0f },
                                             fRadius, 0.0f,
@@ -155,7 +159,7 @@ sk_sp<SkShader> SkGradientShader::MakeRadial(const SkPoint& center, SkScalar rad
                                              const SkScalar pos[],
                                              int colorCount,
                                              SkTileMode mode,
-                                             uint32_t flags,
+                                             const Interpolation& interpolation,
                                              const SkMatrix* localMatrix) {
     if (radius < 0) {
         return nullptr;
@@ -179,7 +183,7 @@ sk_sp<SkShader> SkGradientShader::MakeRadial(const SkPoint& center, SkScalar rad
     SkGradientShaderBase::ColorStopOptimizer opt(colors, pos, colorCount, mode);
 
     SkGradientShaderBase::Descriptor desc(opt.fColors, std::move(colorSpace), opt.fPos,
-                                          opt.fCount, mode, flags, localMatrix);
+                                          opt.fCount, mode, interpolation, localMatrix);
     return sk_make_sp<SkRadialGradient>(center, radius, desc);
 }
 
@@ -193,15 +197,6 @@ sk_sp<SkShader> SkGradientShader::MakeRadial(const SkPoint& center, SkScalar rad
     SkColorConverter converter(colors, colorCount);
     return MakeRadial(center, radius, converter.fColors4f.begin(), nullptr, pos, colorCount, mode,
                       flags, localMatrix);
-}
-
-sk_sp<SkShader> SkGradientShader::MakeRadial(const SkPoint& center, SkScalar radius,
-                                             const SkColor4f colors[],
-                                             sk_sp<SkColorSpace> colorSpace,
-                                             const SkScalar pos[],
-                                             int count,
-                                             SkTileMode mode) {
-    return MakeRadial(center, radius, colors, std::move(colorSpace), pos, count, mode, 0, nullptr);
 }
 
 void SkRegisterRadialGradientShaderFlattenable() {

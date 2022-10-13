@@ -30,8 +30,6 @@
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"
 #include "src/sksl/SkSLCompiler.h"
-#include "src/sksl/SkSLDehydrator.h"
-#include "src/sksl/SkSLRehydrator.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/ir/SkSLProgram.h"
@@ -313,54 +311,18 @@ static void test_clone(skiatest::Reporter* r, const char* testFile, int flags) {
     SkSL::dsl::End();
 }
 
-static void test_rehydrate(skiatest::Reporter* r, const char* testFile, int flags) {
-    SkString shaderString = load_source(r, testFile, "");
-    if (shaderString.isEmpty()) {
-        return;
-    }
-    SkSL::Compiler compiler(SkSL::ShaderCapsFactory::Default());
-    SkSL::ProgramSettings settings;
-    // TODO(skia:11209): Can we just put the correct #version in the source files that need this?
-    settings.fMaxVersionAllowed = is_strict_es2(flags) ? SkSL::Version::k100 : SkSL::Version::k300;
-    // Inlining causes problems because it can create expressions like bool(1) that can't be
-    // directly instantiated. After a dehydrate/recycle pass, that expression simply becomes "true"
-    // due to optimization - which is fine, but would cause us to fail an equality comparison. We
-    // disable inlining to avoid this issue.
-    settings.fInlineThreshold = 0;
-    std::unique_ptr<SkSL::Program> program = compiler.convertProgram(
-            SkSL::ProgramKind::kRuntimeShader, shaderString.c_str(), settings);
-    if (!program) {
-        ERRORF(r, "%s", compiler.errorText().c_str());
-        return;
-    }
-    SkSL::Dehydrator dehydrator;
-    dehydrator.write(*program);
-    SkSL::StringStream stream;
-    dehydrator.finish(stream);
-
-    SkSL::Rehydrator rehydrator(compiler,
-                                reinterpret_cast<const uint8_t*>(stream.str().data()),
-                                stream.str().length());
-    std::unique_ptr<SkSL::Program> rehydrated = rehydrator.program();
-    REPORTER_ASSERT(r, rehydrated->description() == program->description(),
-            "Mismatch between original and dehydrated/rehydrated:\n-- Original:\n%s\n"
-            "-- Rehydrated:\n%s", program->description().c_str(),
-            rehydrated->description().c_str());
-}
-
 #define SKSL_TEST(flags, ctsEnforcement, name, path)                                       \
     DEF_CONDITIONAL_TEST(SkSL##name##_CPU, r, is_cpu(flags)) { test_cpu(r, path, flags); } \
-    DEF_CONDITIONAL_GPUTEST_FOR_RENDERING_CONTEXTS(                                        \
+    DEF_CONDITIONAL_GANESH_TEST_FOR_RENDERING_CONTEXTS(                                    \
             SkSL##name##_GPU, r, ctxInfo, is_gpu(flags), ctsEnforcement) {                 \
         test_gpu(r, ctxInfo.directContext(), path, flags);                                 \
     }                                                                                      \
-    DEF_TEST(SkSL##name##_Clone, r) { test_clone(r, path, flags); }                        \
-    DEF_TEST(SkSL##name##_Rehydrate, r) { test_rehydrate(r, path, flags); }
+    DEF_TEST(SkSL##name##_Clone, r) { test_clone(r, path, flags); }
 
 /**
  * Test flags:
  * - CPU:     this test should pass on the CPU backend
- * - GPU:     this test should pass on the GPU backends
+ * - GPU:     this test should pass on the Ganesh GPU backends
  * - GPU_ES3: this test should pass on an ES3-compatible GPU when "enforce ES2 restrictions" is off
  *
  * CtsEnforcement:
