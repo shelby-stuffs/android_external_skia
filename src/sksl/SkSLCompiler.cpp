@@ -7,6 +7,7 @@
 
 #include "src/sksl/SkSLCompiler.h"
 
+#include "include/private/SkSLDefines.h"
 #include "include/private/SkSLStatement.h"
 #include "include/private/SkSLSymbol.h"
 #include "include/sksl/DSLCore.h"
@@ -21,7 +22,6 @@
 #include "src/sksl/SkSLOutputStream.h"
 #include "src/sksl/SkSLParser.h"
 #include "src/sksl/SkSLProgramSettings.h"
-#include "src/sksl/SkSLRehydrator.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLExternalFunction.h"
@@ -43,8 +43,11 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <stdio.h>
 #include <utility>
+
+#if defined(SKSL_STANDALONE)
+#include <fstream>
+#endif
 
 #if defined(SKSL_STANDALONE) || SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
 #include "src/sksl/codegen/SkSLGLSLCodeGenerator.h"
@@ -60,13 +63,6 @@
 
 #ifdef SK_ENABLE_WGSL_VALIDATION
 #include "tint/tint.h"
-#endif
-
-#ifdef SKSL_STANDALONE
-#define REHYDRATE 0
-#include <fstream>
-#else
-#define REHYDRATE 1
 #endif
 
 namespace SkSL {
@@ -97,17 +93,17 @@ public:
 
 class AutoProgramConfig {
 public:
-    AutoProgramConfig(std::shared_ptr<Context>& context, ProgramConfig* config)
-            : fContext(context.get())
-            , fOldConfig(fContext->fConfig) {
-        fContext->fConfig = config;
+    AutoProgramConfig(Context& context, ProgramConfig* config)
+            : fContext(context)
+            , fOldConfig(context.fConfig) {
+        fContext.fConfig = config;
     }
 
     ~AutoProgramConfig() {
-        fContext->fConfig = fOldConfig;
+        fContext.fConfig = fOldConfig;
     }
 
-    Context* fContext;
+    Context& fContext;
     ProgramConfig* fOldConfig;
 };
 
@@ -171,53 +167,28 @@ const ParsedModule& Compiler::moduleForProgramKind(ProgramKind kind) {
     SkUNREACHABLE;
 }
 
-LoadedModule Compiler::loadModule(ProgramKind kind,
-                                  ModuleData data,
-                                  ModifiersPool& modifiersPool,
-                                  std::shared_ptr<SymbolTable> base) {
-    SkASSERT(base);
+ParsedModule Compiler::compileModule(ProgramKind kind,
+                                     const char* moduleName,
+                                     std::string moduleSource,
+                                     const ParsedModule& base,
+                                     ModifiersPool& modifiersPool) {
+    SkASSERT(!moduleSource.empty());
+    SkASSERT(base.fSymbols);
+    SkASSERT(this->errorCount() == 0);
+
     // Modules are shared and cannot rely on shader caps.
     AutoShaderCaps autoCaps(fContext, nullptr);
     AutoModifiersPool autoPool(fContext, &modifiersPool);
 
-#if REHYDRATE
-    ProgramConfig config;
-    config.fIsBuiltinCode = true;
-    config.fKind = kind;
-    AutoProgramConfig autoConfig(fContext, &config);
-    SkASSERT(data.fData && (data.fSize != 0));
-    Rehydrator rehydrator(*this, data.fData, data.fSize, std::move(base));
-    LoadedModule module = {kind, rehydrator.symbolTable(), rehydrator.elements()};
-#else
-    SkASSERT(this->errorCount() == 0);
-    SkASSERT(data.fPath);
-    std::ifstream in(data.fPath);
-    std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-    if (in.rdstate()) {
-        printf("error reading %s\n", data.fPath);
-        abort();
-    }
-    ParsedModule baseModule = {std::move(base), /*fElements=*/nullptr};
-    // Built-in modules always use default program settings.
+    // Compile the module from source, using default program settings.
     ProgramSettings settings;
-    LoadedModule module = Parser(this, settings, kind, std::move(text))
-                                  .moduleInheritingFrom(baseModule);
-    if (this->errorCount()) {
-        printf("Unexpected errors: %s\n", this->fErrorText.c_str());
-        SkDEBUGFAILF("%s %s\n", data.fPath, this->fErrorText.c_str());
+    SkSL::Parser parser{this, settings, kind, std::move(moduleSource)};
+    LoadedModule module = parser.moduleInheritingFrom(ParsedModule{base.fSymbols,
+                                                                   /*fElements=*/nullptr});
+    if (this->errorCount() != 0) {
+        SK_ABORT("Unexpected errors compiling %s:\n\n%s\n", moduleName, this->errorText().c_str());
     }
-    this->optimizeModuleForDehydration(module, baseModule);
-#endif
-
-    return module;
-}
-
-ParsedModule Compiler::parseModule(ProgramKind kind,
-                                   ModuleData data,
-                                   const ParsedModule& base,
-                                   ModifiersPool& modifiersPool) {
-    LoadedModule module = this->loadModule(kind, data, modifiersPool, base.fSymbols);
-    this->optimizeRehydratedModule(module, base, modifiersPool);
+    this->optimizeModuleAfterLoading(kind, module, base);
 
     // For modules that just declare (but don't define) intrinsic functions, there will be no new
     // program elements. In that case, we can share our parent's element map:
@@ -255,13 +226,12 @@ ParsedModule Compiler::parseModule(ProgramKind kind,
                 break;
             }
             default:
-                printf("Unsupported element: %s\n", element->description().c_str());
-                SkASSERT(false);
+                SkDEBUGFAILF("Unsupported element: %s\n", element->description().c_str());
                 break;
         }
     }
 
-    return ParsedModule{module.fSymbols, std::move(elements)};
+    return ParsedModule{std::move(module.fSymbols), std::move(elements)};
 }
 
 std::unique_ptr<Program> Compiler::convertProgram(ProgramKind kind,
@@ -358,60 +328,40 @@ std::unique_ptr<Expression> Compiler::convertIdentifier(Position pos, std::strin
     }
 }
 
-bool Compiler::optimizeRehydratedModule(LoadedModule& module,
-                                        const ParsedModule& base,
-                                        ModifiersPool& modifiersPool) {
-#ifdef SK_ENABLE_OPTIMIZE_SIZE
-    // We don't have an inliner, so there's nothing to do.
-    return true;
-#else
-    SkASSERT(!this->errorCount());
+bool Compiler::optimizeModuleAfterLoading(ProgramKind kind,
+                                          LoadedModule& module,
+                                          const ParsedModule& base) {
+    SkASSERT(this->errorCount() == 0);
 
     // Create a temporary program configuration with default settings.
     ProgramConfig config;
     config.fIsBuiltinCode = true;
-    config.fKind = module.fKind;
-    AutoProgramConfig autoConfig(fContext, &config);
-    AutoModifiersPool autoPool(fContext, &modifiersPool);
-
-    std::unique_ptr<ProgramUsage> usage = Analysis::GetUsage(module, base);
-
-    // Perform inline-candidate analysis and inline any functions deemed suitable.
-    Inliner inliner(fContext.get());
-    while (this->errorCount() == 0) {
-        if (!this->runInliner(&inliner, module.fElements, module.fSymbols, usage.get())) {
-            break;
-        }
-    }
-    return this->errorCount() == 0;
-#endif
-}
-
-bool Compiler::optimizeModuleForDehydration(LoadedModule& module, const ParsedModule& base) {
-    SkASSERT(!this->errorCount());
-
-    // Create a temporary program configuration with default settings.
-    ProgramConfig config;
-    config.fIsBuiltinCode = true;
-    config.fKind = module.fKind;
-    AutoProgramConfig autoConfig(fContext, &config);
+    config.fKind = kind;
+    AutoProgramConfig autoConfig(this->context(), &config);
 
     std::unique_ptr<ProgramUsage> usage = Analysis::GetUsage(module, base);
 
     // Remove any unreachable code.
     Transform::EliminateUnreachableCode(module, usage.get());
 
-    while (Transform::EliminateDeadLocalVariables(*fContext, module, usage.get())) {
+    while (Transform::EliminateDeadLocalVariables(this->context(), module, usage.get())) {
         // Removing dead variables may cause more variables to become unreferenced. Try again.
     }
 
-    // Save space by eliminating empty statements from the code.
-    Transform::EliminateEmptyStatements(module);
-
     // Note that we intentionally don't attempt to eliminate unreferenced global variables or
     // functions here, since those can be referenced by the finished program even if they're
-    // unreferenced now. We also don't run the inliner to avoid growing the program; that is done in
-    // `optimizeRehydratedModule` above.
+    // unreferenced now.
+
+#ifndef SK_ENABLE_OPTIMIZE_SIZE
+    // Perform inline-candidate analysis and inline any functions deemed suitable.
+    while (this->errorCount() == 0) {
+        Inliner inliner(fContext.get());
+        if (!this->runInliner(&inliner, module.fElements, module.fSymbols, usage.get())) {
+            break;
+        }
+    }
+#endif
+
     return this->errorCount() == 0;
 }
 

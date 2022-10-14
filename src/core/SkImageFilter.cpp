@@ -319,7 +319,7 @@ skif::DeviceSpace<SkIRect> SkImageFilter_Base::getOutputBounds(
 // TODO (michaelludwig) - Default to using the old onFilterImage, as filters are updated one by one.
 // Once the old function is gone, this onFilterImage() will be made a pure virtual.
 skif::FilterResult SkImageFilter_Base::onFilterImage(const skif::Context& context) const {
-    SkIPoint origin;
+    SkIPoint origin = {0, 0};
     auto image = this->onFilterImage(context, &origin);
     return skif::FilterResult(std::move(image), skif::LayerSpace<SkIPoint>(origin));
 }

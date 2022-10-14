@@ -38,8 +38,8 @@ static SkVector map_as_vector(SkScalar x, SkScalar y, const SkMatrix& matrix) {
 // to be a little more forgiving on matrix types during layer configuration.
 static bool is_nearly_integer_translation(const skif::LayerSpace<SkMatrix>& m,
                                           skif::LayerSpace<SkIPoint>* out=nullptr) {
-    float tx = SkScalarRoundToScalar(m.rc(0,2) / m.rc(2,2));
-    float ty = SkScalarRoundToScalar(m.rc(1,2) / m.rc(2,2));
+    float tx = SkScalarRoundToScalar(sk_ieee_float_divide(m.rc(0,2), m.rc(2,2)));
+    float ty = SkScalarRoundToScalar(sk_ieee_float_divide(m.rc(1,2), m.rc(2,2)));
     SkMatrix expected = SkMatrix::MakeAll(1.f, 0.f, tx,
                                           0.f, 1.f, ty,
                                           0.f, 0.f, 1.f);
@@ -348,6 +348,9 @@ FilterResult FilterResult::resolve(const LayerSpace<SkIRect>& dstBounds) const {
                                                           fImage->getColorSpace(),
                                                           SkISize(dstBounds.size()),
                                                           kPremul_SkAlphaType, {});
+    if (!surface) {
+        return {};
+    }
     SkCanvas* canvas = surface->getCanvas();
     // skbug.com/5075: GPU-backed special surfaces don't reset their contents.
     canvas->clear(SK_ColorTRANSPARENT);

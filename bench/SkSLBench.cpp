@@ -12,11 +12,24 @@
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/mock/GrMockCaps.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLModuleLoader.h"
 #include "src/sksl/SkSLParser.h"
 #include "src/sksl/codegen/SkSLVMCodeGenerator.h"
 #include "src/sksl/ir/SkSLProgram.h"
 
 #include <regex>
+
+#include "src/sksl/generated/sksl_shared.minified.sksl"
+#include "src/sksl/generated/sksl_compute.minified.sksl"
+#include "src/sksl/generated/sksl_frag.minified.sksl"
+#include "src/sksl/generated/sksl_gpu.minified.sksl"
+#include "src/sksl/generated/sksl_public.minified.sksl"
+#include "src/sksl/generated/sksl_rt_shader.minified.sksl"
+#include "src/sksl/generated/sksl_vert.minified.sksl"
+#if defined(SK_GRAPHITE_ENABLED)
+#include "src/sksl/generated/sksl_graphite_frag.minified.sksl"
+#include "src/sksl/generated/sksl_graphite_vert.minified.sksl"
+#endif
 
 class SkSLCompilerStartupBench : public Benchmark {
 protected:
@@ -492,7 +505,7 @@ static void bench(NanoJSONResultsWriter* log, const char* name, int bytes) {
 
 // These benchmarks aren't timed, they produce memory usage statistics. They run standalone, and
 // directly add their results to the nanobench log.
-void RunSkSLMemoryBenchmarks(NanoJSONResultsWriter* log) {
+void RunSkSLModuleBenchmarks(NanoJSONResultsWriter* log) {
     // Heap used by a default compiler (with no modules loaded)
     int64_t before = heap_bytes_used();
     GrShaderCaps caps;
@@ -538,4 +551,80 @@ void RunSkSLMemoryBenchmarks(NanoJSONResultsWriter* log) {
         computeBytes = (computeBytes - before) + baselineBytes;
         bench(log, "sksl_compiler_compute", computeBytes);
     }
+
+    // Report the minified module sizes.
+    int compilerGPUBinarySize = std::size(SKSL_MINIFIED_sksl_shared) +
+                                std::size(SKSL_MINIFIED_sksl_gpu) +
+                                std::size(SKSL_MINIFIED_sksl_vert) +
+                                std::size(SKSL_MINIFIED_sksl_frag) +
+                                std::size(SKSL_MINIFIED_sksl_public) +
+                                std::size(SKSL_MINIFIED_sksl_rt_shader);
+    bench(log, "sksl_binary_size_gpu", compilerGPUBinarySize);
+
+#if defined(SK_GRAPHITE_ENABLED)
+    int compilerGraphiteBinarySize = std::size(SKSL_MINIFIED_sksl_graphite_frag) +
+                                     std::size(SKSL_MINIFIED_sksl_graphite_vert);
+    bench(log, "sksl_binary_size_graphite", compilerGraphiteBinarySize);
+#endif
+
+    int compilerComputeBinarySize = std::size(SKSL_MINIFIED_sksl_compute);
+    bench(log, "sksl_binary_size_compute", compilerComputeBinarySize);
 }
+
+class SkSLModuleLoaderBench : public Benchmark {
+public:
+    SkSLModuleLoaderBench(const char* name, std::vector<SkSL::ProgramKind> moduleList)
+            : fName(name), fModuleList(std::move(moduleList)) {}
+
+    const char* onGetName() override {
+        return fName;
+    }
+
+    bool isSuitableFor(Backend backend) override {
+        return backend == kNonRendering_Backend;
+    }
+
+    int calculateLoops(int defaultLoops) const override {
+        return 1;
+    }
+
+    void onPreDraw(SkCanvas*) override {
+        SkSL::ModuleLoader::Get().unloadModules();
+    }
+
+    void onDraw(int loops, SkCanvas*) override {
+        SkASSERT(loops == 1);
+        GrShaderCaps caps;
+        SkSL::Compiler compiler(&caps);
+        for (SkSL::ProgramKind kind : fModuleList) {
+            compiler.moduleForProgramKind(kind);
+        }
+    }
+
+    const char* fName;
+    std::vector<SkSL::ProgramKind> fModuleList;
+};
+
+DEF_BENCH(return new SkSLModuleLoaderBench("sksl_module_loader_ganesh",
+                                           {
+                                                   SkSL::ProgramKind::kVertex,
+                                                   SkSL::ProgramKind::kFragment,
+                                                   SkSL::ProgramKind::kRuntimeColorFilter,
+                                                   SkSL::ProgramKind::kRuntimeShader,
+                                                   SkSL::ProgramKind::kRuntimeBlender,
+                                                   SkSL::ProgramKind::kPrivateRuntimeShader,
+                                                   SkSL::ProgramKind::kCompute,
+                                           });)
+
+DEF_BENCH(return new SkSLModuleLoaderBench("sksl_module_loader_graphite",
+                                           {
+                                                   SkSL::ProgramKind::kVertex,
+                                                   SkSL::ProgramKind::kFragment,
+                                                   SkSL::ProgramKind::kRuntimeColorFilter,
+                                                   SkSL::ProgramKind::kRuntimeShader,
+                                                   SkSL::ProgramKind::kRuntimeBlender,
+                                                   SkSL::ProgramKind::kPrivateRuntimeShader,
+                                                   SkSL::ProgramKind::kCompute,
+                                                   SkSL::ProgramKind::kGraphiteVertex,
+                                                   SkSL::ProgramKind::kGraphiteFragment,
+                                           });)

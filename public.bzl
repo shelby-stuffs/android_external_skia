@@ -174,6 +174,7 @@ SKIA_PUBLIC_HDRS = [
     "include/gpu/mtl/GrMtlBackendContext.h",
     "include/gpu/mtl/GrMtlTypes.h",
     "include/gpu/ShaderErrorHandler.h",
+    "include/gpu/mtl/MtlMemoryAllocator.h",
     "include/gpu/vk/GrVkBackendContext.h",
     "include/gpu/vk/GrVkExtensions.h",
     "include/gpu/vk/GrVkMemoryAllocator.h",
@@ -638,6 +639,7 @@ BASE_SRCS_ALL = [
     "src/core/SkSurfacePriv.h",
     "src/core/SkSwizzle.cpp",
     "src/core/SkTBlockList.h",
+    "src/core/SkTDArray.cpp",
     "src/core/SkTDPQueue.h",
     "src/core/SkTDynamicHash.h",
     "src/core/SkTInternalLList.h",
@@ -1417,8 +1419,6 @@ BASE_SRCS_ALL = [
     "src/sksl/SkSLConstantFolder.h",
     "src/sksl/SkSLContext.cpp",
     "src/sksl/SkSLContext.h",
-    "src/sksl/SkSLDehydrator.cpp",
-    "src/sksl/SkSLDehydrator.h",
     "src/sksl/SkSLErrorReporter.cpp",
     "src/sksl/SkSLFileOutputStream.h",
     "src/sksl/SkSLGLSL.h",
@@ -1445,8 +1445,6 @@ BASE_SRCS_ALL = [
     "src/sksl/SkSLPool.h",
     "src/sksl/SkSLPosition.cpp",
     "src/sksl/SkSLProgramSettings.h",
-    "src/sksl/SkSLRehydrator.cpp",
-    "src/sksl/SkSLRehydrator.h",
     "src/sksl/SkSLSampleUsage.cpp",
     "src/sksl/SkSLString.cpp",
     "src/sksl/SkSLStringStream.h",
@@ -1596,7 +1594,6 @@ BASE_SRCS_ALL = [
     "src/sksl/transform/SkSLEliminateDeadFunctions.cpp",
     "src/sksl/transform/SkSLEliminateDeadGlobalVariables.cpp",
     "src/sksl/transform/SkSLEliminateDeadLocalVariables.cpp",
-    "src/sksl/transform/SkSLEliminateEmptyStatements.cpp",
     "src/sksl/transform/SkSLEliminateUnreachableCode.cpp",
     "src/sksl/transform/SkSLFindAndDeclareBuiltinFunctions.cpp",
     "src/sksl/transform/SkSLFindAndDeclareBuiltinVariables.cpp",
@@ -1687,15 +1684,15 @@ BASE_SRCS_ALL = [
 ]
 
 TEXTUAL_HDRS = [
-    "src/sksl/generated/sksl_compute.dehydrated.sksl",
-    "src/sksl/generated/sksl_frag.dehydrated.sksl",
-    "src/sksl/generated/sksl_gpu.dehydrated.sksl",
-    "src/sksl/generated/sksl_graphite_frag.dehydrated.sksl",
-    "src/sksl/generated/sksl_graphite_vert.dehydrated.sksl",
-    "src/sksl/generated/sksl_public.dehydrated.sksl",
-    "src/sksl/generated/sksl_rt_shader.dehydrated.sksl",
-    "src/sksl/generated/sksl_shared.dehydrated.sksl",
-    "src/sksl/generated/sksl_vert.dehydrated.sksl",
+    "src/sksl/generated/sksl_compute.minified.sksl",
+    "src/sksl/generated/sksl_frag.minified.sksl",
+    "src/sksl/generated/sksl_gpu.minified.sksl",
+    "src/sksl/generated/sksl_graphite_frag.minified.sksl",
+    "src/sksl/generated/sksl_graphite_vert.minified.sksl",
+    "src/sksl/generated/sksl_public.minified.sksl",
+    "src/sksl/generated/sksl_rt_shader.minified.sksl",
+    "src/sksl/generated/sksl_shared.minified.sksl",
+    "src/sksl/generated/sksl_vert.minified.sksl",
     # Included by GrGLMakeNativeInterface_android.cpp
     "src/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.cpp",
     "src/gpu/ganesh/gl/egl/GrGLMakeNativeInterface_egl.cpp",
@@ -1930,6 +1927,7 @@ MTL_HDRS = [
     "src/gpu/ganesh/mtl/GrMtlUniformHandler.h",
     "src/gpu/ganesh/mtl/GrMtlUtil.h",
     "src/gpu/ganesh/mtl/GrMtlVaryingHandler.h",
+    "src/gpu/mtl/MtlMemoryAllocatorImpl.h",
 ]
 
 MTL_SRCS = [
@@ -1955,6 +1953,7 @@ MTL_SRCS = [
     "src/gpu/ganesh/mtl/GrMtlUniformHandler.mm",
     "src/gpu/ganesh/mtl/GrMtlUtil.mm",
     "src/gpu/ganesh/mtl/GrMtlVaryingHandler.mm",
+    "src/gpu/mtl/MtlMemoryAllocatorImpl.mm",
     "src/image/SkSurface_GpuMtl.mm",
 ]
 
