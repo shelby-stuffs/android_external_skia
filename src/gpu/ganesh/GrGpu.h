@@ -372,8 +372,9 @@ public:
     //
     // Backends may or may not support src and dst rects with differing dimensions. This can assume
     // that GrCaps.canCopySurface() returned true for these surfaces and rects.
-    bool copySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
-                     const SkIRect& dstRect, GrSamplerState::Filter filter);
+    bool copySurface(GrSurface* dst, const SkIRect& dstRect,
+                     GrSurface* src, const SkIRect& srcRect,
+                     GrSamplerState::Filter filter);
 
     // Returns a GrOpsRenderPass which OpsTasks send draw commands to instead of directly
     // to the Gpu object. The 'bounds' rect is the content rect of the renderTarget.
@@ -397,7 +398,7 @@ public:
     void executeFlushInfo(SkSpan<GrSurfaceProxy*>,
                           SkSurface::BackendSurfaceAccess access,
                           const GrFlushInfo&,
-                          const GrBackendSurfaceMutableState* newState);
+                          const skgpu::MutableTextureState* newState);
 
     // Called before render tasks are executed during a flush.
     virtual void willExecute() {}
@@ -585,15 +586,15 @@ public:
                                         size_t length);
 
     virtual bool setBackendTextureState(const GrBackendTexture&,
-                                        const GrBackendSurfaceMutableState&,
-                                        GrBackendSurfaceMutableState* previousState,
+                                        const skgpu::MutableTextureState&,
+                                        skgpu::MutableTextureState* previousState,
                                         sk_sp<skgpu::RefCntedCallback> finishedCallback) {
         return false;
     }
 
     virtual bool setBackendRenderTargetState(const GrBackendRenderTarget&,
-                                             const GrBackendSurfaceMutableState&,
-                                             GrBackendSurfaceMutableState* previousState,
+                                             const skgpu::MutableTextureState&,
+                                             skgpu::MutableTextureState* previousState,
                                              sk_sp<skgpu::RefCntedCallback> finishedCallback) {
         return false;
     }
@@ -683,8 +684,10 @@ protected:
                                         const void* data,
                                         size_t length);
 
-    // Handles cases where a surface will be updated without a call to flushRenderTarget.
-    void didWriteToSurface(GrSurface* surface, GrSurfaceOrigin origin, const SkIRect* bounds,
+    // If the surface is a texture this marks its mipmaps as dirty.
+    void didWriteToSurface(GrSurface* surface,
+                           GrSurfaceOrigin origin,
+                           const SkIRect* bounds,
                            uint32_t mipLevels = 1) const;
 
     void setOOMed() { fOOMed = true; }
@@ -809,8 +812,9 @@ private:
     virtual bool onRegenerateMipMapLevels(GrTexture*) = 0;
 
     // overridden by backend specific derived class to perform the copy surface
-    virtual bool onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
-                               const SkIPoint& dstPoint) = 0;
+    virtual bool onCopySurface(GrSurface* dst, const SkIRect& dstRect,
+                               GrSurface* src, const SkIRect& srcRect,
+                               GrSamplerState::Filter) = 0;
 
     virtual GrOpsRenderPass* onGetOpsRenderPass(
             GrRenderTarget* renderTarget,
@@ -826,7 +830,7 @@ private:
     virtual void prepareSurfacesForBackendAccessAndStateUpdates(
             SkSpan<GrSurfaceProxy*> proxies,
             SkSurface::BackendSurfaceAccess access,
-            const GrBackendSurfaceMutableState* newState) {}
+            const skgpu::MutableTextureState* newState) {}
 
     virtual bool onSubmitToGpu(bool syncCpu) = 0;
 

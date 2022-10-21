@@ -55,8 +55,13 @@ public:
 
     sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const final;
 
+    void onAsyncReadPixels(const SkImageInfo&,
+                           SkIRect srcRect,
+                           ReadPixelsCallback,
+                           ReadPixelsContext) const override;
+
     void onAsyncRescaleAndReadPixels(const SkImageInfo&,
-                                     const SkIRect& srcRect,
+                                     SkIRect srcRect,
                                      RescaleGamma,
                                      RescaleMode,
                                      ReadPixelsCallback,
@@ -64,8 +69,8 @@ public:
 
     void onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace,
                                            sk_sp<SkColorSpace>,
-                                           const SkIRect& srcRect,
-                                           const SkISize& dstSize,
+                                           SkIRect srcRect,
+                                           SkISize dstSize,
                                            RescaleGamma,
                                            RescaleMode,
                                            ReadPixelsCallback,

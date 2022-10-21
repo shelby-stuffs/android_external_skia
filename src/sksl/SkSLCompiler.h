@@ -15,7 +15,6 @@
 #include "include/sksl/SkSLErrorReporter.h"
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLContext.h"  // IWYU pragma: keep
-#include "src/sksl/SkSLParsedModule.h"
 
 #include <array>
 #include <memory>
@@ -38,14 +37,13 @@
 #define SK_POSITION_BUILTIN                0
 #define SK_POINTSIZE_BUILTIN               1
 
-class SkSLCompileBench;
-
 namespace SkSL {
 
 namespace dsl {
     class DSLCore;
 }
 
+class BuiltinMap;
 class Expression;
 class Inliner;
 class ModifiersPool;
@@ -59,6 +57,13 @@ class SymbolTable;
 struct LoadedModule {
     std::shared_ptr<SymbolTable>                 fSymbols;
     std::vector<std::unique_ptr<ProgramElement>> fElements;
+
+    /**
+     * Converts a compiled LoadedModule (containing symbols and ProgramElements) into a BuiltinMap
+     * (useful for looking up symbols quickly by name). Most elements of `fElements` from this
+     * LoadedModule will be moved into the BuiltinMap, and the rest will be deleted.
+     */
+    std::unique_ptr<BuiltinMap> convertToBuiltinMap(const BuiltinMap* parent);
 };
 
 /**
@@ -72,7 +77,7 @@ class SK_API Compiler {
 public:
     inline static constexpr const char FRAGCOLOR_NAME[] = "sk_FragColor";
     inline static constexpr const char RTADJUST_NAME[]  = "sk_RTAdjust";
-    inline static constexpr const char PERVERTEX_NAME[] = "sk_PerVertex";
+    inline static constexpr const char POSITION_NAME[]  = "sk_Position";
     inline static constexpr const char POISON_TAG[]     = "<POISON>";
 
     /**
@@ -176,13 +181,19 @@ public:
         return fSymbolTable;
     }
 
-    ParsedModule compileModule(ProgramKind kind,
+    LoadedModule compileModule(ProgramKind kind,
                                const char* moduleName,
                                std::string moduleSource,
-                               const ParsedModule& base,
-                               ModifiersPool& modifiersPool);
+                               const BuiltinMap* base,
+                               ModifiersPool& modifiersPool,
+                               bool shouldInline);
 
-    const ParsedModule& moduleForProgramKind(ProgramKind kind);
+    /** Optimize a module at minification time, before writing it out. */
+    bool optimizeModuleBeforeMinifying(ProgramKind kind,
+                                       LoadedModule& module,
+                                       const BuiltinMap* base);
+
+    const BuiltinMap* moduleForProgramKind(ProgramKind kind);
 
 private:
     class CompilerErrorReporter : public ErrorReporter {
@@ -204,10 +215,8 @@ private:
     /** Performs final checks to confirm that a fully-assembled/optimized is valid. */
     bool finalize(Program& program);
 
-    /** Optimize a module after loading it. */
-    bool optimizeModuleAfterLoading(ProgramKind kind,
-                                    LoadedModule& module,
-                                    const ParsedModule& base);
+    /** Optimize a module at Skia runtime, after loading it. */
+    bool optimizeModuleAfterLoading(ProgramKind kind, LoadedModule& module, const BuiltinMap* base);
 
     /** Flattens out function calls when it is safe to do so. */
     bool runInliner(Inliner* inliner,
@@ -228,9 +237,6 @@ private:
     static OverrideFlag sOptimizer;
     static OverrideFlag sInliner;
 
-    friend class AutoSource;
-    friend class ::SkSLCompileBench;
-    friend class Parser;
     friend class ThreadContext;
     friend class dsl::DSLCore;
 };

@@ -119,11 +119,6 @@ static bool whitespace_insensitive_compare(const char* a, const char* b) {
     }
 }
 
-// for use from SkSLDSLOnlyTest.cpp
-void StartDSL(const sk_gpu_test::ContextInfo ctxInfo) {
-    Start(ctxInfo.directContext()->priv().getGpu()->shaderCompiler());
-}
-
 DEF_GANESH_TEST_FOR_MOCK_CONTEXT(DSLStartup, r, ctxInfo) {
     AutoDSLContext context(ctxInfo.directContext()->priv().getGpu());
     Expression e1 = 1;
@@ -192,11 +187,14 @@ DEF_GANESH_TEST_FOR_MOCK_CONTEXT(DSLFlags, r, ctxInfo) {
 DEF_GANESH_TEST_FOR_MOCK_CONTEXT(DSLFloat, r, ctxInfo) {
     AutoDSLContext context(ctxInfo.directContext()->priv().getGpu());
     Expression e1 = Float(std::numeric_limits<float>::max());
-    REPORTER_ASSERT(r, atof(e1.release()->description().c_str()) ==
+
+    // We can't use stof here, because old versions of libc++ can throw out_of_range on edge case
+    // inputs like these. (This causes test failure on old Android devices.)
+    REPORTER_ASSERT(r, std::strtof(e1.release()->description().c_str(), nullptr) ==
                        std::numeric_limits<float>::max());
 
     Expression e2 = Float(std::numeric_limits<float>::min());
-    REPORTER_ASSERT(r, atof(e2.release()->description().c_str()) ==
+    REPORTER_ASSERT(r, std::strtof(e2.release()->description().c_str(), nullptr) ==
                        std::numeric_limits<float>::min());
 
     EXPECT_EQUAL(Float2(0),
@@ -251,13 +249,16 @@ DEF_GANESH_TEST_FOR_MOCK_CONTEXT(DSLFloat, r, ctxInfo) {
 
 DEF_GANESH_TEST_FOR_MOCK_CONTEXT(DSLHalf, r, ctxInfo) {
     AutoDSLContext context(ctxInfo.directContext()->priv().getGpu());
+
+    // We can't use stof here, because old versions of libc++ can throw out_of_range on edge case
+    // inputs like these. (This causes test failure on old Android devices.)
     Expression e1 = Half(std::numeric_limits<float>::max());
-    REPORTER_ASSERT(r,
-                    atof(e1.release()->description().c_str()) == std::numeric_limits<float>::max());
+    REPORTER_ASSERT(r, std::strtof(e1.release()->description().c_str(), nullptr) ==
+                       std::numeric_limits<float>::max());
 
     Expression e2 = Half(std::numeric_limits<float>::min());
-    REPORTER_ASSERT(r,
-                    atof(e2.release()->description().c_str()) == std::numeric_limits<float>::min());
+    REPORTER_ASSERT(r, std::strtof(e2.release()->description().c_str(), nullptr) ==
+                       std::numeric_limits<float>::min());
 
     EXPECT_EQUAL(Half2(0),
                 "half2(0.0)");
@@ -1591,6 +1592,13 @@ DEF_GANESH_TEST_FOR_MOCK_CONTEXT(DSLInterfaceBlock, r, ctxInfo) {
     EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements().back(),
                  "uniform InterfaceBlock3 { float z; } arrayVar[4];");
     EXPECT_EQUAL(intf3[1].field("z"), "arrayVar[1].z");
+
+    DSLGlobalVar intf4 = InterfaceBlock(kUniform_Modifier, "InterfaceBlock4",
+                                        {Field(DSLLayout().builtin(123), kFloat_Type, "sk_Widget")},
+                                        "intf");
+    REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 4);
+    EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements().back(),
+                 "uniform InterfaceBlock4 { layout(builtin=123) float sk_Widget; } intf;");
 }
 
 DEF_GANESH_TEST_FOR_MOCK_CONTEXT(DSLReturn, r, ctxInfo) {
@@ -2080,6 +2088,22 @@ DEF_GANESH_TEST_FOR_MOCK_CONTEXT(DSLPrototypes, r, ctxInfo) {
         REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 2);
         EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[1],
                      "float sqr(float x) { return x * x; }");
+    }
+
+    {
+        DSLWriter::Reset();
+        DSLParameter x(kInOut_Modifier, kFloat_Type, "x");
+        DSLFunction sqr(kVoid_Type, "sqr", x);
+        sqr.prototype();
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 1);
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[0],
+                     "void sqr(inout float x);");
+        sqr.define(
+            x *= x
+        );
+        REPORTER_ASSERT(r, SkSL::ThreadContext::ProgramElements().size() == 2);
+        EXPECT_EQUAL(*SkSL::ThreadContext::ProgramElements()[1],
+                     "void sqr(inout float x) { x *= x; }");
     }
 
     {

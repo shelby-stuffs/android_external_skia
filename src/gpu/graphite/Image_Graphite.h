@@ -62,6 +62,27 @@ public:
 
     sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const override;
 
+    void onAsyncReadPixels(const SkImageInfo&,
+                           SkIRect srcRect,
+                           ReadPixelsCallback,
+                           ReadPixelsContext) const override;
+
+    void onAsyncRescaleAndReadPixels(const SkImageInfo&,
+                                     SkIRect srcRect,
+                                     RescaleGamma,
+                                     RescaleMode,
+                                     ReadPixelsCallback,
+                                     ReadPixelsContext) const override;
+
+    void onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace,
+                                           sk_sp<SkColorSpace>,
+                                           SkIRect srcRect,
+                                           SkISize dstSize,
+                                           RescaleGamma,
+                                           RescaleMode,
+                                           ReadPixelsCallback,
+                                           ReadPixelsContext) const override;
+
     TextureProxyView textureProxyView() const { return fTextureProxyView; }
 
 private:

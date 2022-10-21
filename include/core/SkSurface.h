@@ -32,16 +32,19 @@ class SkPaint;
 class SkSurfaceCharacterization;
 class GrBackendRenderTarget;
 class GrBackendSemaphore;
-class GrBackendSurfaceMutableState;
 class GrBackendTexture;
 class GrDirectContext;
 class GrRecordingContext;
 class GrRenderTarget;
 enum GrSurfaceOrigin: int;
 
+namespace skgpu {
+class MutableTextureState;
+}
+
 namespace skgpu::graphite {
-    class BackendTexture;
-    class Recorder;
+class BackendTexture;
+class Recorder;
 }
 
 /** \class SkSurface
@@ -831,6 +834,36 @@ public:
     using RescaleGamma = SkImage::RescaleGamma;
     using RescaleMode  = SkImage::RescaleMode;
 
+    /** Makes surface pixel data available to caller, possibly asynchronously.
+
+        Currently asynchronous reads are only supported on the GPU backend and only when the
+        underlying 3D API supports transfer buffers and CPU/GPU synchronization primitives. In all
+        other cases this operates synchronously.
+
+        Data is read from the source sub-rectangle, then converted to the color space, color type,
+        and alpha type of 'info'. A 'srcRect' that is not contained by the bounds of the surface
+        causes failure.
+
+        When the pixel data is ready the caller's ReadPixelsCallback is called with a
+        AsyncReadResult containing pixel data in the requested color type, alpha type, and color
+        space. The AsyncReadResult will have count() == 1. Upon failure the callback is called
+        with nullptr for AsyncReadResult. For a GPU surface this flushes work but a submit must
+        occur to guarantee a finite time before the callback is called.
+
+        The data is valid for the lifetime of AsyncReadResult with the exception that if the
+        SkSurface is GPU-backed the data is immediately invalidated if the context is abandoned
+        or destroyed.
+
+        @param info            info of the requested pixels
+        @param srcRect         subrectangle of surface to read
+        @param callback        function to call with result of the read
+        @param context         passed to callback
+     */
+    void asyncReadPixels(const SkImageInfo& info,
+                         const SkIRect& srcRect,
+                         ReadPixelsCallback callback,
+                         ReadPixelsContext context);
+
     /** Makes surface pixel data available to caller, possibly asynchronously. It can also rescale
         the surface pixels.
 
@@ -1034,15 +1067,15 @@ public:
         The GrFlushInfo describes additional options to flush. Please see documentation at
         GrFlushInfo for more info.
 
-        If a GrBackendSurfaceMutableState is passed in, at the end of the flush we will transition
-        the surface to be in the state requested by the GrBackendSurfaceMutableState. If the surface
+        If a skgpu::MutableTextureState is passed in, at the end of the flush we will transition
+        the surface to be in the state requested by the skgpu::MutableTextureState. If the surface
         (or SkImage or GrBackendSurface wrapping the same backend object) is used again after this
         flush the state may be changed and no longer match what is requested here. This is often
         used if the surface will be used for presenting or external use and the client wants backend
         object to be prepped for that use. A finishedProc or semaphore on the GrFlushInfo will also
         include the work for any requested state change.
 
-        If the backend API is Vulkan, the caller can set the GrBackendSurfaceMutableState's
+        If the backend API is Vulkan, the caller can set the skgpu::MutableTextureState's
         VkImageLayout to VK_IMAGE_LAYOUT_UNDEFINED or queueFamilyIndex to VK_QUEUE_FAMILY_IGNORED to
         tell Skia to not change those respective states.
 
@@ -1066,7 +1099,7 @@ public:
         @param access  optional state change request after flush
     */
     GrSemaphoresSubmitted flush(const GrFlushInfo& info,
-                                const GrBackendSurfaceMutableState* newState = nullptr);
+                                const skgpu::MutableTextureState* newState = nullptr);
 #endif // SK_SUPPORT_GPU
 
     void flush();

@@ -468,6 +468,7 @@ optional("fontmgr_FontConfigInterface") {
     "src/ports/SkFontConfigTypeface.h",
     "src/ports/SkFontMgr_FontConfigInterface.cpp",
   ]
+  sources_for_tests = [ "tests/FCITest.cpp" ]
 }
 optional("fontmgr_FontConfigInterface_factory") {
   enabled = skia_enable_fontmgr_FontConfigInterface
@@ -535,6 +536,8 @@ optional("fontmgr_win") {
 
   public = [ "include/ports/SkTypeface_win.h" ]
   sources = [
+    "include/ports/SkFontMgr_indirect.h",
+    "include/ports/SkRemotableFontMgr.h",
     "src/fonts/SkFontMgr_indirect.cpp",
     "src/ports/SkFontMgr_win_dw.cpp",
     "src/ports/SkScalerContext_win_dw.cpp",
@@ -667,6 +670,9 @@ if (skia_compile_modules) {
     # path that starts with target_out_dir and then uses ".." to back up into the src dir.
     minify_sksl_outputs += [ "$target_out_dir/" + rebase_path(
                                  "src/sksl/generated/$name.minified.sksl",
+                                 target_out_dir) ]
+    minify_sksl_outputs += [ "$target_out_dir/" + rebase_path(
+                                 "src/sksl/generated/$name.unoptimized.sksl",
                                  target_out_dir) ]
   }
 
@@ -842,14 +848,44 @@ optional("gpu_shared") {
   enabled = skia_enable_gpu || skia_enable_graphite
 
   deps = []
+  libs = []
   public_defines = []
   public_deps = []
+  frameworks = []
 
   if (skia_enable_gpu) {
     public_defines += [ "SK_SUPPORT_GPU=1" ]
   }
   if (skia_enable_graphite) {
     public_defines += [ "SK_GRAPHITE_ENABLED" ]
+  }
+
+  if (skia_use_dawn) {
+    public_defines += [ "SK_DAWN" ]
+
+    # When building for WASM, the WebGPU headers are provided by Emscripten. For native builds we
+    # have to depend on Dawn directly.
+    if (!skia_use_webgpu) {
+      public_deps += [
+        "//third_party/externals/dawn/include/dawn:cpp_headers",
+        "//third_party/externals/dawn/src/dawn:cpp",
+        "//third_party/externals/dawn/src/dawn:proc",
+      ]
+
+      if (dawn_enable_d3d12 || dawn_enable_desktop_gl || dawn_enable_metal ||
+          dawn_enable_opengles || dawn_enable_vulkan) {
+        public_deps += [ "//third_party/externals/dawn/src/dawn/native" ]
+      }
+      if (dawn_enable_d3d12) {
+        libs += [
+          "d3d12.lib",
+          "dxgi.lib",
+          "d3dcompiler.lib",
+        ]
+      } else if (dawn_enable_metal) {
+        frameworks += [ "Metal.framework" ]
+      }
+    }
   }
 
   if (skia_use_direct3d) {
@@ -961,32 +997,7 @@ optional("gpu") {
   }
 
   if (skia_use_dawn) {
-    public_defines += [ "SK_DAWN" ]
     sources += skia_dawn_sources
-
-    # When building for WASM, the WebGPU headers are provided by Emscripten. For native builds we
-    # have to depend on Dawn directly.
-    if (!skia_use_webgpu) {
-      public_deps += [ "//third_party/externals/dawn/include/dawn:cpp_headers" ]
-      deps += [
-        "//third_party/externals/dawn/src/dawn:cpp",
-        "//third_party/externals/dawn/src/dawn:proc",
-      ]
-
-      if (dawn_enable_d3d12 || dawn_enable_desktop_gl || dawn_enable_metal ||
-          dawn_enable_opengles || dawn_enable_vulkan) {
-        deps += [ "//third_party/externals/dawn/src/dawn/native" ]
-      }
-      if (dawn_enable_d3d12) {
-        libs += [
-          "d3d12.lib",
-          "dxgi.lib",
-          "d3dcompiler.lib",
-        ]
-      } else if (dawn_enable_metal) {
-        frameworks += [ "Metal.framework" ]
-      }
-    }
   }
 
   if (skia_use_direct3d) {
@@ -1028,26 +1039,6 @@ optional("piet") {
   public_defines = [ "SK_ENABLE_PIET_GPU" ]
   public_deps = [ "//third_party/piet-gpu" ]
   sources = skia_piet_gpu_sources
-}
-
-optional("gif") {
-  enabled = !skia_use_wuffs && skia_use_libgifcodec
-  _libgifcodec_gni_path = "third_party/externals/libgifcodec/libgifcodec.gni"
-  if ("True" ==
-      exec_script("gn/checkpath.py",
-                  [ rebase_path(_libgifcodec_gni_path, root_build_dir) ],
-                  "trim string")) {
-    public_defines = [ "SK_USE_LIBGIFCODEC" ]
-    public_include_dirs = [
-      ".",
-      skia_libgifcodec_path,
-    ]
-    include_dirs = public_include_dirs
-    import(_libgifcodec_gni_path)
-    sources = rebase_path(libgifcodec_sources + libgifcodec_public,
-                          ".",
-                          skia_libgifcodec_path)
-  }
 }
 
 optional("heif") {
@@ -1134,6 +1125,9 @@ optional("graphite") {
     sources += skia_graphite_piet_sources
   }
 
+  if (skia_use_dawn) {
+    sources += skia_graphite_dawn_sources
+  }
   if (skia_use_metal) {
     public_defines += [ "SK_METAL" ]
     sources += skia_graphite_mtl_sources
@@ -1321,7 +1315,6 @@ skia_component("skia") {
     ":avx",
     ":crc32",
     ":fontmgr_factory",
-    ":gif",
     ":heif",
     ":hsw",
     ":jpeg_decode",
@@ -1372,7 +1365,6 @@ skia_component("skia") {
     "src/codec/SkParseEncodedOrigin.cpp",
     "src/codec/SkSampledCodec.cpp",
     "src/codec/SkSampler.cpp",
-    "src/codec/SkStreamBuffer.cpp",
     "src/codec/SkSwizzler.cpp",
     "src/codec/SkWbmpCodec.cpp",
     "src/images/SkImageEncoder.cpp",
@@ -2007,8 +1999,6 @@ if (skia_enable_tools) {
       "tools/fonts/TestTypeface.cpp",
       "tools/fonts/TestTypeface.h",
       "tools/fonts/ToolUtilsFont.cpp",
-      "tools/random_parse_path.cpp",
-      "tools/random_parse_path.h",
       "tools/timer/TimeUtils.h",
       "tools/timer/Timer.cpp",
       "tools/timer/Timer.h",
@@ -2483,6 +2473,7 @@ if (skia_enable_tools) {
       "fuzz/oss_fuzz/FuzzSKSL2SPIRV.cpp",
       "fuzz/oss_fuzz/FuzzSVG.cpp",
       "fuzz/oss_fuzz/FuzzSkDescriptorDeserialize.cpp",
+      "fuzz/oss_fuzz/FuzzSkMeshSpecification.cpp",
       "fuzz/oss_fuzz/FuzzSkParagraph.cpp",
       "fuzz/oss_fuzz/FuzzSkRuntimeEffect.cpp",
       "fuzz/oss_fuzz/FuzzTextBlobDeserialize.cpp",
@@ -3342,6 +3333,11 @@ if (skia_enable_tools) {
 
     libfuzzer_app("skruntimeeffect") {
       sources = [ "fuzz/oss_fuzz/FuzzSkRuntimeEffect.cpp" ]
+      deps = []
+    }
+
+    libfuzzer_app("skmeshspecification") {
+      sources = [ "fuzz/oss_fuzz/FuzzSkMeshSpecification.cpp" ]
       deps = []
     }
 

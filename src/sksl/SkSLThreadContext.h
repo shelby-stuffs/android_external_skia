@@ -21,6 +21,7 @@
 
 namespace SkSL {
 
+class BuiltinMap;
 class Compiler;
 class ModifiersPool;
 class Pool;
@@ -29,12 +30,10 @@ class ProgramElement;
 class SymbolTable;
 class Variable;
 struct Modifiers;
-struct ParsedModule;
 
 namespace dsl {
 
 class DSLCore;
-class DSLWriter;
 
 } // namespace dsl
 
@@ -43,9 +42,11 @@ class DSLWriter;
  */
 class ThreadContext {
 public:
-    ThreadContext(SkSL::Compiler* compiler,  SkSL::ProgramKind kind,
-              const SkSL::ProgramSettings& settings, SkSL::ParsedModule module, bool isModule);
-
+    ThreadContext(SkSL::Compiler* compiler,
+                  SkSL::ProgramKind kind,
+                  const SkSL::ProgramSettings& settings,
+                  const SkSL::BuiltinMap* module,
+                  bool isModule);
     ~ThreadContext();
 
     /**
@@ -168,7 +169,6 @@ private:
     Program::Inputs fInputs;
 
     friend class dsl::DSLCore;
-    friend class dsl::DSLWriter;
 };
 
 } // namespace SkSL

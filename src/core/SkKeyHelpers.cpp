@@ -17,6 +17,7 @@
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkShaderCodeDictionary.h"
 #include "src/core/SkUniform.h"
+#include "src/shaders/SkImageShader.h"
 
 #ifdef SK_GRAPHITE_ENABLED
 #include "src/gpu/Blend.h"
@@ -99,13 +100,6 @@ void add_linear_gradient_uniform_data(const SkShaderCodeDictionary* dict,
     VALIDATE_UNIFORMS(gatherer, dict, codeSnippetID)
     int stops = codeSnippetID == SkBuiltInCodeSnippetID::kLinearGradientShader4 ? 4 : 8;
 
-    SkM44 lmInverse;
-    bool wasInverted = gradData.fLocalMatrix.invert(&lmInverse);  // TODO: handle failure up stack
-    if (!wasInverted) {
-        lmInverse.setIdentity();
-    }
-
-    gatherer->write(lmInverse);
     gatherer->write(gradData.fColor4fs, stops);
     gatherer->write(gradData.fOffsets, stops);
     gatherer->write(gradData.fPoints[0]);
@@ -122,13 +116,6 @@ void add_radial_gradient_uniform_data(const SkShaderCodeDictionary* dict,
     VALIDATE_UNIFORMS(gatherer, dict, codeSnippetID)
     int stops = codeSnippetID == SkBuiltInCodeSnippetID::kRadialGradientShader4 ? 4 : 8;
 
-    SkM44 lmInverse;
-    bool wasInverted = gradData.fLocalMatrix.invert(&lmInverse);  // TODO: handle failure up stack
-    if (!wasInverted) {
-        lmInverse.setIdentity();
-    }
-
-    gatherer->write(lmInverse);
     gatherer->write(gradData.fColor4fs, stops);
     gatherer->write(gradData.fOffsets, stops);
     gatherer->write(gradData.fPoints[0]);
@@ -145,13 +132,6 @@ void add_sweep_gradient_uniform_data(const SkShaderCodeDictionary* dict,
     VALIDATE_UNIFORMS(gatherer, dict, codeSnippetID)
     int stops = codeSnippetID == SkBuiltInCodeSnippetID::kSweepGradientShader4 ? 4 : 8;
 
-    SkM44 lmInverse;
-    bool wasInverted = gradData.fLocalMatrix.invert(&lmInverse);  // TODO: handle failure up stack
-    if (!wasInverted) {
-        lmInverse.setIdentity();
-    }
-
-    gatherer->write(lmInverse);
     gatherer->write(gradData.fColor4fs, stops);
     gatherer->write(gradData.fOffsets, stops);
     gatherer->write(gradData.fPoints[0]);
@@ -169,13 +149,6 @@ void add_conical_gradient_uniform_data(const SkShaderCodeDictionary* dict,
     VALIDATE_UNIFORMS(gatherer, dict, codeSnippetID)
     int stops = codeSnippetID == SkBuiltInCodeSnippetID::kConicalGradientShader4 ? 4 : 8;
 
-    SkM44 lmInverse;
-    bool wasInverted = gradData.fLocalMatrix.invert(&lmInverse);  // TODO: handle failure up stack
-    if (!wasInverted) {
-        lmInverse.setIdentity();
-    }
-
-    gatherer->write(lmInverse);
     gatherer->write(gradData.fColor4fs, stops);
     gatherer->write(gradData.fOffsets, stops);
     gatherer->write(gradData.fPoints[0]);
@@ -204,7 +177,6 @@ GradientShaderBlocks::GradientData::GradientData(SkShaderBase::GradientType type
 }
 
 GradientShaderBlocks::GradientData::GradientData(SkShaderBase::GradientType type,
-                                                 const SkM44& localMatrix,
                                                  SkPoint point0, SkPoint point1,
                                                  float radius0, float radius1,
                                                  float bias, float scale,
@@ -213,7 +185,6 @@ GradientShaderBlocks::GradientData::GradientData(SkShaderBase::GradientType type
                                                  SkColor4f* color4fs,
                                                  float* offsets)
         : fType(type)
-        , fLocalMatrix(localMatrix)
         , fBias(bias)
         , fScale(scale)
         , fTM(tm)
@@ -348,19 +319,19 @@ void add_image_uniform_data(const SkShaderCodeDictionary* dict,
                             SkPipelineDataGatherer* gatherer) {
     VALIDATE_UNIFORMS(gatherer, dict, SkBuiltInCodeSnippetID::kImageShader)
 
-    SkMatrix lmInverse;
-    bool wasInverted = imgData.fLocalMatrix.invert(&lmInverse);  // TODO: handle failure up stack
-    if (!wasInverted) {
-        lmInverse.setIdentity();
-    }
-
-    gatherer->write(SkM44(lmInverse));
     gatherer->write(SkPoint::Make(imgData.fTextureProxy->dimensions().fWidth,
                                   imgData.fTextureProxy->dimensions().fHeight));
     gatherer->write(imgData.fSubset);
     gatherer->write(SkTo<int>(imgData.fTileModes[0]));
     gatherer->write(SkTo<int>(imgData.fTileModes[1]));
     gatherer->write(SkTo<int>(imgData.fSampling.filter));
+    gatherer->write(imgData.fSampling.useCubic);
+    if (imgData.fSampling.useCubic) {
+        const SkCubicResampler& cubic = imgData.fSampling.cubic;
+        gatherer->write(SkImageShader::CubicResamplerMatrix(cubic.B, cubic.C));
+    } else {
+        gatherer->write(SkM44());
+    }
 
     gatherer->addFlags(dict->getSnippetRequirementFlags(SkBuiltInCodeSnippetID::kImageShader));
 }
@@ -372,12 +343,10 @@ void add_image_uniform_data(const SkShaderCodeDictionary* dict,
 ImageShaderBlock::ImageData::ImageData(const SkSamplingOptions& sampling,
                                        SkTileMode tileModeX,
                                        SkTileMode tileModeY,
-                                       SkRect subset,
-                                       const SkMatrix& localMatrix)
+                                       SkRect subset)
     : fSampling(sampling)
     , fTileModes{tileModeX, tileModeY}
-    , fSubset(subset)
-    , fLocalMatrix(localMatrix) {
+    , fSubset(subset) {
 }
 
 void ImageShaderBlock::BeginBlock(const SkKeyContext& keyContext,
@@ -682,14 +651,12 @@ void PrimitiveBlendModeBlock::BeginBlock(const SkKeyContext& keyContext,
 #endif // SK_GRAPHITE_ENABLED
 }
 
-RuntimeShaderBlock::ShaderData::ShaderData(sk_sp<const SkRuntimeEffect> effect)
+RuntimeEffectBlock::ShaderData::ShaderData(sk_sp<const SkRuntimeEffect> effect)
         : fEffect(std::move(effect)) {}
 
-RuntimeShaderBlock::ShaderData::ShaderData(sk_sp<const SkRuntimeEffect> effect,
-                                           const SkMatrix& localMatrix,
+RuntimeEffectBlock::ShaderData::ShaderData(sk_sp<const SkRuntimeEffect> effect,
                                            sk_sp<const SkData> uniforms)
         : fEffect(std::move(effect))
-        , fLocalMatrix(localMatrix)
         , fUniforms(std::move(uniforms)) {}
 
 static bool skdata_matches(const SkData* a, const SkData* b) {
@@ -698,10 +665,8 @@ static bool skdata_matches(const SkData* a, const SkData* b) {
     return a ? a->equals(b) : (a == b);
 }
 
-bool RuntimeShaderBlock::ShaderData::operator==(const ShaderData& rhs) const {
-    return fEffect == rhs.fEffect &&
-           fLocalMatrix == rhs.fLocalMatrix &&
-           skdata_matches(fUniforms.get(), rhs.fUniforms.get());
+bool RuntimeEffectBlock::ShaderData::operator==(const ShaderData& rhs) const {
+    return fEffect == rhs.fEffect && skdata_matches(fUniforms.get(), rhs.fUniforms.get());
 }
 
 #ifdef SK_GRAPHITE_ENABLED
@@ -713,16 +678,12 @@ static void add_effect_to_recorder(skgpu::graphite::Recorder* recorder,
 
 static void gather_runtime_effect_uniforms(SkSpan<const SkRuntimeEffect::Uniform> rtsUniforms,
                                            SkSpan<const SkUniform> graphiteUniforms,
-                                           int graphiteStartingIndex,
                                            const SkData* uniformData,
                                            SkPipelineDataGatherer* gatherer) {
     // Collect all the other uniforms from the provided SkData.
     const uint8_t* uniformBase = uniformData->bytes();
     for (size_t index = 0; index < rtsUniforms.size(); ++index) {
-        // The runtime shader SkShaderSnippet burns index 0 on the local matrix, so adjust our index
-        // to compensate. (Color filters and blenders don't need any adjustment and pass zero.)
-        int graphiteIndex = index + graphiteStartingIndex;
-        const SkUniform& skUniform = graphiteUniforms[graphiteIndex];
+        const SkUniform& skUniform = graphiteUniforms[index];
         // Get a pointer to the offset in our data for this uniform.
         const uint8_t* uniformPtr = uniformBase + rtsUniforms[index].offset;
         // Pass the uniform data to the gatherer.
@@ -731,7 +692,7 @@ static void gather_runtime_effect_uniforms(SkSpan<const SkRuntimeEffect::Uniform
 }
 #endif
 
-void RuntimeShaderBlock::BeginBlock(const SkKeyContext& keyContext,
+void RuntimeEffectBlock::BeginBlock(const SkKeyContext& keyContext,
                                     SkPaintParamsKeyBuilder* builder,
                                     SkPipelineDataGatherer* gatherer,
                                     const ShaderData& shaderData) {
@@ -748,58 +709,9 @@ void RuntimeShaderBlock::BeginBlock(const SkKeyContext& keyContext,
         SkDEBUGCODE(UniformExpectationsValidator uev(gatherer, entry->fUniforms);)
         gatherer->addFlags(entry->fSnippetRequirementFlags);
 
-        // Pass the local matrix inverse so we can use local coordinates.
-        SkMatrix inverseLocalMatrix;
-        if (!shaderData.fLocalMatrix.invert(&inverseLocalMatrix)) {
-            inverseLocalMatrix.setIdentity();
-        }
-        gatherer->write(SkM44(inverseLocalMatrix));
-
         gather_runtime_effect_uniforms(shaderData.fEffect->uniforms(),
                                        entry->fUniforms,
-                                       /*graphiteStartingIndex=*/1,
                                        shaderData.fUniforms.get(),
-                                       gatherer);
-    }
-
-    builder->beginBlock(codeSnippetID);
-#endif  // SK_GRAPHITE_ENABLED
-}
-
-RuntimeColorFilterBlock::ColorFilterData::ColorFilterData(sk_sp<const SkRuntimeEffect> effect)
-        : fEffect(std::move(effect)) {}
-
-RuntimeColorFilterBlock::ColorFilterData::ColorFilterData(sk_sp<const SkRuntimeEffect> effect,
-                                                          sk_sp<const SkData> uniforms)
-        : fEffect(std::move(effect))
-        , fUniforms(std::move(uniforms)) {}
-
-bool RuntimeColorFilterBlock::ColorFilterData::operator==(const ColorFilterData& rhs) const {
-    return fEffect == rhs.fEffect &&
-           skdata_matches(fUniforms.get(), rhs.fUniforms.get());
-}
-
-void RuntimeColorFilterBlock::BeginBlock(const SkKeyContext& keyContext,
-                                         SkPaintParamsKeyBuilder* builder,
-                                         SkPipelineDataGatherer* gatherer,
-                                         const ColorFilterData& filterData) {
-#ifdef SK_GRAPHITE_ENABLED
-    SkShaderCodeDictionary* dict = keyContext.dict();
-    int codeSnippetID = dict->findOrCreateRuntimeEffectSnippet(filterData.fEffect.get());
-
-    add_effect_to_recorder(keyContext.recorder(), codeSnippetID, filterData.fEffect);
-
-    if (gatherer) {
-        const SkShaderSnippet* entry = dict->getEntry(codeSnippetID);
-        SkASSERT(entry);
-
-        SkDEBUGCODE(UniformExpectationsValidator uev(gatherer, entry->fUniforms);)
-        gatherer->addFlags(entry->fSnippetRequirementFlags);
-
-        gather_runtime_effect_uniforms(filterData.fEffect->uniforms(),
-                                       entry->fUniforms,
-                                       /*graphiteStartingIndex=*/0,
-                                       filterData.fUniforms.get(),
                                        gatherer);
     }
 

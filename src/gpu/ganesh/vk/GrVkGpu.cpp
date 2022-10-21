@@ -1388,7 +1388,7 @@ sk_sp<GrTexture> GrVkGpu::onWrapBackendTexture(const GrBackendTexture& backendTe
         return nullptr;
     }
 
-    sk_sp<GrBackendSurfaceMutableStateImpl> mutableState = backendTex.getMutableState();
+    sk_sp<skgpu::MutableTextureStateRef> mutableState = backendTex.getMutableState();
     SkASSERT(mutableState);
     return GrVkTexture::MakeWrappedTexture(this, backendTex.dimensions(), ownership, cacheable,
                                            ioType, imageInfo, std::move(mutableState));
@@ -1430,7 +1430,7 @@ sk_sp<GrTexture> GrVkGpu::onWrapRenderableBackendTexture(const GrBackendTexture&
 
     sampleCnt = this->vkCaps().getRenderTargetSampleCount(sampleCnt, imageInfo.fFormat);
 
-    sk_sp<GrBackendSurfaceMutableStateImpl> mutableState = backendTex.getMutableState();
+    sk_sp<skgpu::MutableTextureStateRef> mutableState = backendTex.getMutableState();
     SkASSERT(mutableState);
 
     return GrVkTextureRenderTarget::MakeWrappedTextureRenderTarget(this, backendTex.dimensions(),
@@ -1459,7 +1459,7 @@ sk_sp<GrRenderTarget> GrVkGpu::onWrapBackendRenderTarget(const GrBackendRenderTa
         return nullptr;
     }
 
-    sk_sp<GrBackendSurfaceMutableStateImpl> mutableState = backendRT.getMutableState();
+    sk_sp<skgpu::MutableTextureStateRef> mutableState = backendRT.getMutableState();
     SkASSERT(mutableState);
 
     sk_sp<GrVkRenderTarget> tgt = GrVkRenderTarget::MakeWrappedRenderTarget(
@@ -1713,7 +1713,7 @@ bool GrVkGpu::onClearBackendTexture(const GrBackendTexture& backendTexture,
     GrVkImageInfo info;
     SkAssertResult(backendTexture.getVkImageInfo(&info));
 
-    sk_sp<GrBackendSurfaceMutableStateImpl> mutableState = backendTexture.getMutableState();
+    sk_sp<skgpu::MutableTextureStateRef> mutableState = backendTexture.getMutableState();
     SkASSERT(mutableState);
     sk_sp<GrVkTexture> texture =
                 GrVkTexture::MakeWrappedTexture(this, backendTexture.dimensions(),
@@ -1818,7 +1818,7 @@ bool GrVkGpu::onUpdateCompressedBackendTexture(const GrBackendTexture& backendTe
     GrVkImageInfo info;
     SkAssertResult(backendTexture.getVkImageInfo(&info));
 
-    sk_sp<GrBackendSurfaceMutableStateImpl> mutableState = backendTexture.getMutableState();
+    sk_sp<skgpu::MutableTextureStateRef> mutableState = backendTexture.getMutableState();
     SkASSERT(mutableState);
     sk_sp<GrVkTexture> texture = GrVkTexture::MakeWrappedTexture(this,
                                                                  backendTexture.dimensions(),
@@ -1892,11 +1892,11 @@ bool GrVkGpu::onUpdateCompressedBackendTexture(const GrBackendTexture& backendTe
 }
 
 void set_layout_and_queue_from_mutable_state(GrVkGpu* gpu, GrVkImage* image,
-                                             const GrVkSharedImageInfo& newInfo) {
+                                             const skgpu::VulkanMutableTextureState& newState) {
     // Even though internally we use this helper for getting src access flags and stages they
     // can also be used for general dst flags since we don't know exactly what the client
     // plans on using the image for.
-    VkImageLayout newLayout = newInfo.getImageLayout();
+    VkImageLayout newLayout = newState.getImageLayout();
     if (newLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
         newLayout = image->currentLayout();
     }
@@ -1904,7 +1904,7 @@ void set_layout_and_queue_from_mutable_state(GrVkGpu* gpu, GrVkImage* image,
     VkAccessFlags dstAccess = GrVkImage::LayoutToSrcAccessMask(newLayout);
 
     uint32_t currentQueueFamilyIndex = image->currentQueueFamilyIndex();
-    uint32_t newQueueFamilyIndex = newInfo.getQueueFamilyIndex();
+    uint32_t newQueueFamilyIndex = newState.getQueueFamilyIndex();
     auto isSpecialQueue = [](uint32_t queueFamilyIndex) {
         return queueFamilyIndex == VK_QUEUE_FAMILY_EXTERNAL ||
                queueFamilyIndex == VK_QUEUE_FAMILY_FOREIGN_EXT;
@@ -1920,10 +1920,10 @@ void set_layout_and_queue_from_mutable_state(GrVkGpu* gpu, GrVkImage* image,
 }
 
 bool GrVkGpu::setBackendSurfaceState(GrVkImageInfo info,
-                                     sk_sp<GrBackendSurfaceMutableStateImpl> currentState,
+                                     sk_sp<skgpu::MutableTextureStateRef> currentState,
                                      SkISize dimensions,
-                                     const GrVkSharedImageInfo& newInfo,
-                                     GrBackendSurfaceMutableState* previousState,
+                                     const skgpu::VulkanMutableTextureState& newState,
+                                     skgpu::MutableTextureState* previousState,
                                      sk_sp<skgpu::RefCntedCallback> finishedCallback) {
     sk_sp<GrVkImage> texture = GrVkImage::MakeWrapped(this,
                                                       dimensions,
@@ -1942,7 +1942,7 @@ bool GrVkGpu::setBackendSurfaceState(GrVkImageInfo info,
         previousState->setVulkanState(texture->currentLayout(),
                                       texture->currentQueueFamilyIndex());
     }
-    set_layout_and_queue_from_mutable_state(this, texture.get(), newInfo);
+    set_layout_and_queue_from_mutable_state(this, texture.get(), newState);
     if (finishedCallback) {
         this->addFinishedCallback(std::move(finishedCallback));
     }
@@ -1950,28 +1950,28 @@ bool GrVkGpu::setBackendSurfaceState(GrVkImageInfo info,
 }
 
 bool GrVkGpu::setBackendTextureState(const GrBackendTexture& backendTeture,
-                                     const GrBackendSurfaceMutableState& newState,
-                                     GrBackendSurfaceMutableState* previousState,
+                                     const skgpu::MutableTextureState& newState,
+                                     skgpu::MutableTextureState* previousState,
                                      sk_sp<skgpu::RefCntedCallback> finishedCallback) {
     GrVkImageInfo info;
     SkAssertResult(backendTeture.getVkImageInfo(&info));
-    sk_sp<GrBackendSurfaceMutableStateImpl> currentState = backendTeture.getMutableState();
+    sk_sp<skgpu::MutableTextureStateRef> currentState = backendTeture.getMutableState();
     SkASSERT(currentState);
-    SkASSERT(newState.isValid() && newState.fBackend == GrBackend::kVulkan);
+    SkASSERT(newState.isValid() && newState.fBackend == skgpu::BackendApi::kVulkan);
     return this->setBackendSurfaceState(info, std::move(currentState), backendTeture.dimensions(),
                                         newState.fVkState, previousState,
                                         std::move(finishedCallback));
 }
 
 bool GrVkGpu::setBackendRenderTargetState(const GrBackendRenderTarget& backendRenderTarget,
-                                          const GrBackendSurfaceMutableState& newState,
-                                          GrBackendSurfaceMutableState* previousState,
+                                          const skgpu::MutableTextureState& newState,
+                                          skgpu::MutableTextureState* previousState,
                                           sk_sp<skgpu::RefCntedCallback> finishedCallback) {
     GrVkImageInfo info;
     SkAssertResult(backendRenderTarget.getVkImageInfo(&info));
-    sk_sp<GrBackendSurfaceMutableStateImpl> currentState = backendRenderTarget.getMutableState();
+    sk_sp<skgpu::MutableTextureStateRef> currentState = backendRenderTarget.getMutableState();
     SkASSERT(currentState);
-    SkASSERT(newState.fBackend == GrBackend::kVulkan);
+    SkASSERT(newState.fBackend == skgpu::BackendApi::kVulkan);
     return this->setBackendSurfaceState(info, std::move(currentState),
                                         backendRenderTarget.dimensions(), newState.fVkState,
                                         previousState, std::move(finishedCallback));
@@ -2173,7 +2173,7 @@ void GrVkGpu::addImageMemoryBarrier(const GrManagedResource* resource,
 void GrVkGpu::prepareSurfacesForBackendAccessAndStateUpdates(
         SkSpan<GrSurfaceProxy*> proxies,
         SkSurface::BackendSurfaceAccess access,
-        const GrBackendSurfaceMutableState* newState) {
+        const skgpu::MutableTextureState* newState) {
     // Submit the current command buffer to the Queue. Whether we inserted semaphores or not does
     // not effect what we do here.
     if (!proxies.empty() && (access == SkSurface::BackendSurfaceAccess::kPresent || newState)) {
@@ -2195,7 +2195,7 @@ void GrVkGpu::prepareSurfacesForBackendAccessAndStateUpdates(
                 image = vkRT->externalAttachment();
             }
             if (newState) {
-                const GrVkSharedImageInfo& newInfo = newState->fVkState;
+                const skgpu::VulkanMutableTextureState& newInfo = newState->fVkState;
                 set_layout_and_queue_from_mutable_state(this, image, newInfo);
             } else {
                 SkASSERT(access == SkSurface::BackendSurfaceAccess::kPresent);
@@ -2320,7 +2320,8 @@ void GrVkGpu::copySurfaceAsBlit(GrSurface* dst,
                                 GrVkImage* dstImage,
                                 GrVkImage* srcImage,
                                 const SkIRect& srcRect,
-                                const SkIPoint& dstPoint) {
+                                const SkIRect& dstRect,
+                                GrSamplerState::Filter filter) {
     if (!this->currentCommandBuffer()) {
         return;
     }
@@ -2360,10 +2361,6 @@ void GrVkGpu::copySurfaceAsBlit(GrSurface* dst,
                              VK_PIPELINE_STAGE_TRANSFER_BIT,
                              false);
 
-    // Flip rect if necessary
-    SkIRect dstRect = SkIRect::MakeXYWH(dstPoint.fX, dstPoint.fY, srcRect.width(),
-                                        srcRect.height());
-
     VkImageBlit blitRegion;
     memset(&blitRegion, 0, sizeof(VkImageBlit));
     blitRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
@@ -2380,7 +2377,8 @@ void GrVkGpu::copySurfaceAsBlit(GrSurface* dst,
                                             *dstImage,
                                             1,
                                             &blitRegion,
-                                            VK_FILTER_NEAREST); // We never scale so any filter works here
+                                            filter == GrSamplerState::Filter::kNearest ?
+                                                    VK_FILTER_NEAREST : VK_FILTER_LINEAR);
 
     // The rect is already in device space so we pass in kTopLeft so no flip is done.
     this->didWriteToSurface(dst, kTopLeft_GrSurfaceOrigin, &dstRect);
@@ -2400,8 +2398,9 @@ void GrVkGpu::copySurfaceAsResolve(GrSurface* dst, GrSurface* src, const SkIRect
     this->didWriteToSurface(dst, kTopLeft_GrSurfaceOrigin, &dstRect);
 }
 
-bool GrVkGpu::onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
-                            const SkIPoint& dstPoint) {
+bool GrVkGpu::onCopySurface(GrSurface* dst, const SkIRect& dstRect,
+                            GrSurface* src, const SkIRect& srcRect,
+                            GrSamplerState::Filter filter) {
 #ifdef SK_DEBUG
     if (GrVkRenderTarget* srcRT = static_cast<GrVkRenderTarget*>(src->asRenderTarget())) {
         SkASSERT(!srcRT->wrapsSecondaryCommandBuffer());
@@ -2465,16 +2464,20 @@ bool GrVkGpu::onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRe
     bool dstHasYcbcr = dstImage->ycbcrConversionInfo().isValid();
     bool srcHasYcbcr = srcImage->ycbcrConversionInfo().isValid();
 
-    if (this->vkCaps().canCopyAsResolve(dstFormat, dstSampleCnt, dstHasYcbcr,
-                                        srcFormat, srcSampleCnt, srcHasYcbcr)) {
-        this->copySurfaceAsResolve(dst, src, srcRect, dstPoint);
-        return true;
-    }
+    if (srcRect.size() == dstRect.size()) {
+        // Prefer resolves or copy-image commands when there is no scaling
+        const SkIPoint dstPoint = dstRect.topLeft();
+        if (this->vkCaps().canCopyAsResolve(dstFormat, dstSampleCnt, dstHasYcbcr,
+                                            srcFormat, srcSampleCnt, srcHasYcbcr)) {
+            this->copySurfaceAsResolve(dst, src, srcRect, dstPoint);
+            return true;
+        }
 
-    if (this->vkCaps().canCopyImage(dstFormat, dstSampleCnt, dstHasYcbcr,
-                                    srcFormat, srcSampleCnt, srcHasYcbcr)) {
-        this->copySurfaceAsCopyImage(dst, src, dstImage, srcImage, srcRect, dstPoint);
-        return true;
+        if (this->vkCaps().canCopyImage(dstFormat, dstSampleCnt, dstHasYcbcr,
+                                        srcFormat, srcSampleCnt, srcHasYcbcr)) {
+            this->copySurfaceAsCopyImage(dst, src, dstImage, srcImage, srcRect, dstPoint);
+            return true;
+        }
     }
 
     if (this->vkCaps().canCopyAsBlit(dstFormat,
@@ -2485,7 +2488,7 @@ bool GrVkGpu::onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRe
                                      srcSampleCnt,
                                      srcImage->isLinearTiled(),
                                      srcHasYcbcr)) {
-        this->copySurfaceAsBlit(dst, src, dstImage, srcImage, srcRect, dstPoint);
+        this->copySurfaceAsBlit(dst, src, dstImage, srcImage, srcRect, dstRect, filter);
         return true;
     }
 

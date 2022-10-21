@@ -93,7 +93,7 @@ void random_test(skiatest::Reporter* reporter) {
             mock->fValue = random.nextS();
             mock->fIndex = -1;
             if (*mock == kSentinel) {
-                array.pop();
+                array.pop_back();
                 --j;
             }
         }
@@ -103,7 +103,7 @@ void random_test(skiatest::Reporter* reporter) {
         for (int j = 0; j < count; ++j) {
             pq.insert(&array[j]);
         }
-        REPORTER_ASSERT(reporter, pq.count() == array.count());
+        REPORTER_ASSERT(reporter, pq.count() == array.size());
         for (int j = 0; j < count; ++j) {
             // every item should have an entry in the queue.
             REPORTER_ASSERT(reporter, -1 != array[j].fIndex);
