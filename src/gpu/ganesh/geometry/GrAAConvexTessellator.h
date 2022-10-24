@@ -48,8 +48,8 @@ public:
     bool tessellate(const SkMatrix& m, const SkPath& path);
 
     // The next five should only be called after tessellate to extract the result
-    int numPts() const { return fPts.count(); }
-    int numIndices() const { return fIndices.count(); }
+    int numPts() const { return fPts.size(); }
+    int numIndices() const { return fIndices.size(); }
 
     const SkPoint& lastPoint() const { return fPts.back(); }
     const SkPoint& point(int index) const { return fPts[index]; }
@@ -60,7 +60,7 @@ public:
     void draw(SkCanvas* canvas) const;
 #endif
 
-    // The tessellator can be reused for multiple paths by rewinding in between
+    // The tessellator can be reused for multiple paths by clearing in between
     void rewind();
 
 private:
@@ -69,9 +69,9 @@ private:
     class CandidateVerts {
     public:
         void setReserve(int numPts) { fPts.reserve(numPts); }
-        void rewind() { fPts.rewind(); }
+        void rewind() { fPts.clear(); }
 
-        int numPts() const { return fPts.count(); }
+        int numPts() const { return fPts.size(); }
 
         const SkPoint& lastPoint() const { return fPts.back().fPt; }
         const SkPoint& firstPoint() const { return fPts[0].fPt; }
@@ -87,14 +87,14 @@ private:
             pt->fOrigEdgeId = origEdge;
             pt->fOriginatingIdx = originatingIdx;
             pt->fNeedsToBeNew = needsToBeNew;
-            return fPts.count() - 1;
+            return fPts.size() - 1;
         }
 
         int fuseWithPrior(int origEdgeId) {
             fPts.back().fOrigEdgeId = origEdgeId;
             fPts.back().fOriginatingIdx = -1;
             fPts.back().fNeedsToBeNew = true;
-            return fPts.count() - 1;
+            return fPts.size() - 1;
         }
 
         int fuseWithNext() {
@@ -104,8 +104,8 @@ private:
         }
 
         int fuseWithBoth() {
-            if (fPts.count() > 1) {
-                fPts.pop();
+            if (fPts.size() > 1) {
+                fPts.pop_back();
             }
 
             fPts[0].fOriginatingIdx = -1;
@@ -129,9 +129,9 @@ private:
     class Ring {
     public:
         void setReserve(int numPts) { fPts.reserve(numPts); }
-        void rewind() { fPts.rewind(); }
+        void rewind() { fPts.clear(); }
 
-        int numPts() const { return fPts.count(); }
+        int numPts() const { return fPts.size(); }
 
         void addIdx(int index, int origEdgeId) {
             struct PointData* pt = fPts.append();
@@ -141,7 +141,7 @@ private:
 
         // Upgrade this ring so that it can behave like an originating ring
         void makeOriginalRing() {
-            for (int i = 0; i < fPts.count(); ++i) {
+            for (int i = 0; i < fPts.size(); ++i) {
                 fPts[i].fOrigEdgeId = fPts[i].fIndex;
             }
         }

@@ -515,6 +515,8 @@ private:
             return this->isFromVertices() ? fVertices->priv().indexCount() : fMeshData.icount;
         }
 
+        using sk_is_trivially_relocatable = std::true_type;
+
     private:
         struct MeshData {
             sk_sp<const SkMeshPriv::VB> vb;
@@ -525,6 +527,11 @@ private:
 
             size_t voffset = 0;
             size_t ioffset = 0;
+
+            static_assert(::sk_is_trivially_relocatable<decltype(vb)>::value);
+            static_assert(::sk_is_trivially_relocatable<decltype(ib)>::value);
+
+            using sk_is_trivially_relocatable = std::true_type;
         };
 
         sk_sp<SkVertices> fVertices;
@@ -533,6 +540,9 @@ private:
             SkMatrix fViewMatrix;
             MeshData fMeshData;
         };
+
+        static_assert(::sk_is_trivially_relocatable<decltype(fVertices)>::value);
+        static_assert(::sk_is_trivially_relocatable<decltype(fViewMatrix)>::value);
     };
 
     Helper                     fHelper;
@@ -554,9 +564,9 @@ private:
 
 MeshOp::Mesh::Mesh(const SkMesh& mesh) {
     new (&fMeshData) MeshData();
-    fMeshData.vb = sk_ref_sp(static_cast<SkMeshPriv::VB*>(mesh.vertexBuffer().get()));
+    fMeshData.vb = sk_ref_sp(static_cast<SkMeshPriv::VB*>(mesh.vertexBuffer()));
     if (mesh.indexBuffer()) {
-        fMeshData.ib = sk_ref_sp(static_cast<SkMeshPriv::IB*>(mesh.indexBuffer().get()));
+        fMeshData.ib = sk_ref_sp(static_cast<SkMeshPriv::IB*>(mesh.indexBuffer()));
     }
     fMeshData.vcount  = mesh.vertexCount();
     fMeshData.voffset = mesh.vertexOffset();
@@ -646,13 +656,13 @@ MeshOp::MeshOp(GrProcessorSet*          processorSet,
         , fViewMatrix(matrixProvider.localToDevice()) {
     fMeshes.emplace_back(mesh);
 
-    fSpecification = mesh.spec();
+    fSpecification = mesh.refSpec();
     if (fColorSpaceXform) {
         fUniforms = SkRuntimeEffectPriv::TransformUniforms(mesh.spec()->uniforms(),
-                                                           mesh.uniforms(),
+                                                           mesh.refUniforms(),
                                                            fColorSpaceXform->steps());
     } else {
-        fUniforms = mesh.uniforms();
+        fUniforms = mesh.refUniforms();
     }
 
     fVertexCount = fMeshes.back().vertexCount();

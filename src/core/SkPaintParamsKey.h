@@ -207,7 +207,7 @@ public:
 
     SkPaintParamsKey lockAsKey();
 
-    int sizeInBytes() const { return fData.count(); }
+    int sizeInBytes() const { return fData.size(); }
 
     bool isValid() const { return fIsValid; }
 
@@ -218,7 +218,7 @@ public:
 
     void unlock() {
         SkASSERT(fLocked);
-        fData.rewind();
+        fData.clear();
 #ifdef SK_GRAPHITE_ENABLED
         fBlendInfo = {};
 #endif

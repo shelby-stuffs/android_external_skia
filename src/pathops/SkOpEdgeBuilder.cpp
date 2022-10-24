@@ -50,8 +50,8 @@ static bool can_add_curve(SkPath::Verb verb, SkPoint* curve) {
 }
 
 void SkOpEdgeBuilder::addOperand(const SkPath& path) {
-    SkASSERT(fPathVerbs.count() > 0 && fPathVerbs.end()[-1] == SkPath::kDone_Verb);
-    fPathVerbs.pop();
+    SkASSERT(!fPathVerbs.empty() && fPathVerbs.back() == SkPath::kDone_Verb);
+    fPathVerbs.pop_back();
     fPath = &path;
     fXorMask[1] = ((int)fPath->getFillType() & 1) ? kEvenOdd_PathOpsMask
             : kWinding_PathOpsMask;
@@ -76,12 +76,12 @@ void SkOpEdgeBuilder::closeContour(const SkPoint& curveEnd, const SkPoint& curve
         *fPathVerbs.append() = SkPath::kLine_Verb;
         *fPathPts.append() = curveStart;
     } else {
-        int verbCount = fPathVerbs.count();
-        int ptsCount = fPathPts.count();
+        int verbCount = fPathVerbs.size();
+        int ptsCount = fPathPts.size();
         if (SkPath::kLine_Verb == fPathVerbs[verbCount - 1]
                 && fPathPts[ptsCount - 2] == curveStart) {
-            fPathVerbs.pop();
-            fPathPts.pop();
+            fPathVerbs.pop_back();
+            fPathPts.pop_back();
         } else {
             fPathPts[ptsCount - 1] = curveStart;
         }
@@ -167,7 +167,7 @@ int SkOpEdgeBuilder::preFetch() {
         closeContour(curve[0], curveStart);
     }
     *fPathVerbs.append() = SkPath::kDone_Verb;
-    return fPathVerbs.count() - 1;
+    return fPathVerbs.size() - 1;
 }
 
 bool SkOpEdgeBuilder::close() {

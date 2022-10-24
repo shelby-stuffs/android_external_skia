@@ -473,10 +473,10 @@ bool SkInsetConvexPolygon(const SkPoint* inputPolygonVerts, int inputPolygonSize
     if (currIndex >= 1 &&
         SkPointPriv::EqualsWithinTolerance((*insetPolygon)[0], (*insetPolygon)[currIndex],
                                             kCleanupTolerance)) {
-        insetPolygon->pop();
+        insetPolygon->pop_back();
     }
 
-    return SkIsConvexPolygon(insetPolygon->begin(), insetPolygon->count());
+    return SkIsConvexPolygon(insetPolygon->begin(), insetPolygon->size());
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -1449,17 +1449,17 @@ bool SkOffsetSimplePolygon(const SkPoint* inputPolygonVerts, int inputPolygonSiz
     if (currIndex >= 1 &&
         SkPointPriv::EqualsWithinTolerance((*offsetPolygon)[0], (*offsetPolygon)[currIndex],
                                             kCleanupTolerance)) {
-        offsetPolygon->pop();
+        offsetPolygon->pop_back();
         if (polygonIndices) {
-            polygonIndices->pop();
+            polygonIndices->pop_back();
         }
     }
 
     // check winding of offset polygon (it should be same as the original polygon)
-    SkScalar offsetWinding = SkGetPolygonWinding(offsetPolygon->begin(), offsetPolygon->count());
+    SkScalar offsetWinding = SkGetPolygonWinding(offsetPolygon->begin(), offsetPolygon->size());
 
     return (winding*offsetWinding > 0 &&
-            SkIsSimplePolygon(offsetPolygon->begin(), offsetPolygon->count()));
+            SkIsSimplePolygon(offsetPolygon->begin(), offsetPolygon->size()));
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -1539,8 +1539,8 @@ public:
             return false;
         }
 
-        fGrid.setCount(fHCount*fVCount);
-        for (int i = 0; i < fGrid.count(); ++i) {
+        fGrid.resize(fHCount*fVCount);
+        for (int i = 0; i < fGrid.size(); ++i) {
             fGrid[i].reset();
         }
 
@@ -1705,7 +1705,7 @@ bool SkTriangulateSimplePolygon(const SkPoint* polygonVerts, uint16_t* indexMap,
     // In the worst case this is an n^2 algorithm. We can cut down the search space somewhat by
     // noting that only convex vertices can be potential ears, and we only need to check whether
     // any reflex vertices lie inside the ear.
-    triangleIndices->reserve(triangleIndices->count() + 3 * (polygonSize - 2));
+    triangleIndices->reserve(triangleIndices->size() + 3 * (polygonSize - 2));
     int vertexCount = polygonSize;
     while (vertexCount > 3) {
         bool success = false;

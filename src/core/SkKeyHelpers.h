@@ -76,7 +76,6 @@ struct GradientShaderBlocks {
         // This ctor is used when extracting information from PaintParams. It must provide
         // enough data to generate the uniform data the selected code snippet will require.
         GradientData(SkShaderBase::GradientType,
-                     const SkM44& localMatrix,
                      SkPoint point0, SkPoint point1,
                      float radius0, float radius1,
                      float bias, float scale,
@@ -87,7 +86,6 @@ struct GradientShaderBlocks {
 
         bool operator==(const GradientData& rhs) const {
             return fType == rhs.fType &&
-                   fLocalMatrix == rhs.fLocalMatrix &&
                    fPoints[0] == rhs.fPoints[0] &&
                    fPoints[1] == rhs.fPoints[1] &&
                    fRadii[0] == rhs.fRadii[0] &&
@@ -103,7 +101,6 @@ struct GradientShaderBlocks {
 
         // Layout options.
         SkShaderBase::GradientType fType;
-        SkM44                      fLocalMatrix;
         SkPoint                    fPoints[2];
         float                      fRadii[2];
 
@@ -147,13 +144,11 @@ struct ImageShaderBlock {
         ImageData(const SkSamplingOptions& sampling,
                   SkTileMode tileModeX,
                   SkTileMode tileModeY,
-                  SkRect subset,
-                  const SkMatrix& localMatrix);
+                  SkRect subset);
 
         SkSamplingOptions fSampling;
         SkTileMode fTileModes[2];
         SkRect fSubset;
-        const SkMatrix& fLocalMatrix;
 
 #ifdef SK_GRAPHITE_ENABLED
         // TODO: Currently this is only filled in when we're generating the key from an actual
@@ -273,7 +268,7 @@ struct PrimitiveBlendModeBlock {
                            SkBlendMode);
 };
 
-struct RuntimeShaderBlock {
+struct RuntimeEffectBlock {
     struct ShaderData {
         // This ctor is used during pre-compilation when we don't have enough information to
         // extract uniform data.
@@ -281,7 +276,6 @@ struct RuntimeShaderBlock {
 
         // This ctor is used when extracting information from PaintParams.
         ShaderData(sk_sp<const SkRuntimeEffect> effect,
-                   const SkMatrix& localMatrix,
                    sk_sp<const SkData> uniforms);
 
         bool operator==(const ShaderData& rhs) const;
@@ -289,7 +283,6 @@ struct RuntimeShaderBlock {
 
         // Runtime shader data.
         sk_sp<const SkRuntimeEffect> fEffect;
-        SkMatrix                     fLocalMatrix;
         sk_sp<const SkData>          fUniforms;
     };
 
@@ -297,34 +290,6 @@ struct RuntimeShaderBlock {
                            SkPaintParamsKeyBuilder*,
                            SkPipelineDataGatherer*,
                            const ShaderData&);
-};
-
-struct RuntimeColorFilterBlock {
-    struct ColorFilterData {
-        // This ctor is used during pre-compilation when we don't have enough information to
-        // extract uniform data.
-        ColorFilterData(sk_sp<const SkRuntimeEffect> effect);
-
-        // This ctor is used when extracting information from PaintParams.
-        ColorFilterData(sk_sp<const SkRuntimeEffect> effect, sk_sp<const SkData> uniforms);
-
-        bool operator==(const ColorFilterData& rhs) const;
-        bool operator!=(const ColorFilterData& rhs) const { return !(*this == rhs); }
-
-        // Runtime shader data.
-        sk_sp<const SkRuntimeEffect> fEffect;
-        sk_sp<const SkData>          fUniforms;
-    };
-
-    static void BeginBlock(const SkKeyContext&,
-                           SkPaintParamsKeyBuilder*,
-                           SkPipelineDataGatherer*,
-                           const ColorFilterData&);
-};
-
-struct RuntimeBlenderBlock : public RuntimeColorFilterBlock {
-    // Runtime Blenders use the same key builder as runtime color filters.
-    using BlenderData = ColorFilterData;
 };
 
 #endif // SkKeyHelpers_DEFINED

@@ -359,8 +359,8 @@ private:
 
     Bounds popSaveBlock() {
         // We're done the Save block.  Apply the block's bounds to all control ops inside it.
-        SaveBounds sb;
-        fSaveStack.pop(&sb);
+        SaveBounds sb = fSaveStack.back();
+        fSaveStack.pop_back();
 
         while (sb.controlOps --> 0) {
             this->popControl(sb.bounds);
@@ -383,7 +383,7 @@ private:
     void popControl(const Bounds& bounds) {
         fBounds[fControlIndices.back()] = bounds;
         fMeta  [fControlIndices.back()].isDraw = false;
-        fControlIndices.pop();
+        fControlIndices.pop_back();
     }
 
     void updateSaveBounds(const Bounds& bounds) {
@@ -532,7 +532,7 @@ private:
     }
 
     bool adjustForSaveLayerPaints(SkRect* rect, int savesToIgnore = 0) const {
-        for (int i = fSaveStack.count() - 1 - savesToIgnore; i >= 0; i--) {
+        for (int i = fSaveStack.size() - 1 - savesToIgnore; i >= 0; i--) {
             SkMatrix inverse;
             if (!fSaveStack[i].ctm.invert(&inverse)) {
                 return false;

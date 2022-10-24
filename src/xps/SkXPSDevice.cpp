@@ -1046,19 +1046,13 @@ HRESULT SkXPSDevice::createXpsBrush(const SkPaint& skPaint,
     SkMatrix outMatrix;
     SkTileMode xy[2];
     SkImage* image = shader->isAImage(&outMatrix, xy);
-    if (image && image->asLegacyBitmap(&outTexture)) {
-        //TODO: outMatrix??
-        SkMatrix localMatrix = as_SB(shader)->getLocalMatrix();
+    if (image->asLegacyBitmap(&outTexture)) {
         if (parentTransform) {
-            localMatrix.postConcat(*parentTransform);
+            outMatrix.postConcat(*parentTransform);
         }
 
         SkTScopedComPtr<IXpsOMTileBrush> tileBrush;
-        HR(this->createXpsImageBrush(outTexture,
-                                     localMatrix,
-                                     xy,
-                                     skPaint.getAlpha(),
-                                     &tileBrush));
+        HR(this->createXpsImageBrush(outTexture, outMatrix, xy, skPaint.getAlpha(), &tileBrush));
 
         HRM(tileBrush->QueryInterface<IXpsOMBrush>(brush), "QI failed.");
     } else {
@@ -1274,7 +1268,7 @@ static HRESULT close_figure(const SkTDArray<XPS_SEGMENT_TYPE>& segmentTypes,
     // even if the counts are all 0.
     if (!segmentTypes.empty() && !segmentData.empty() && !segmentStrokes.empty()) {
         // Add the segment data to the figure.
-        HRM(figure->SetSegments(segmentTypes.count(), segmentData.count(),
+        HRM(figure->SetSegments(segmentTypes.size(), segmentData.size(),
                                 segmentTypes.begin(), segmentData.begin(), segmentStrokes.begin()),
             "Could not set path segments.");
     }
@@ -1306,9 +1300,9 @@ HRESULT SkXPSDevice::addXpsPathGeometry(
                     HR(close_figure(segmentTypes, segmentData, segmentStrokes,
                                     stroke, fill,
                                     xpsFigure.get() , xpsFigures));
-                    segmentTypes.rewind();
-                    segmentData.rewind();
-                    segmentStrokes.rewind();
+                    segmentTypes.clear();
+                    segmentData.clear();
+                    segmentStrokes.clear();
                     xpsFigure.reset();
                 }
                 // Define the start point.

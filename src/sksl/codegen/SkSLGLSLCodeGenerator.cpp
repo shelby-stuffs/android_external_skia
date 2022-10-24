@@ -64,6 +64,7 @@
 #include "src/sksl/ir/SkSLVariableReference.h"
 #include "src/sksl/spirv.h"
 
+#include <cstddef>
 #include <memory>
 #include <vector>
 
@@ -720,6 +721,18 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
             nameWritten = true;
             break;
         }
+        case k_sampleGrad_IntrinsicKind: {
+            SkASSERT(arguments.size() == 4);
+            this->write("textureGrad");
+            nameWritten = true;
+            break;
+        }
+        case k_sampleLod_IntrinsicKind: {
+            SkASSERT(arguments.size() == 3);
+            this->write("textureLod");
+            nameWritten = true;
+            break;
+        }
         case k_transpose_IntrinsicKind:
             if (this->caps().fGLSLGeneration < SkSL::GLSLGeneration::k130) {
                 SkASSERT(arguments.size() == 1);
@@ -1088,10 +1101,6 @@ void GLSLCodeGenerator::writePostfixExpression(const PostfixExpression& p,
 
 void GLSLCodeGenerator::writeLiteral(const Literal& l) {
     const Type& type = l.type();
-    if (type.isFloat()) {
-        this->write(skstd::to_string(l.floatValue()));
-        return;
-    }
     if (type.isInteger()) {
         if (type.matches(*fContext.fTypes.fUInt)) {
             this->write(std::to_string(l.intValue() & 0xffffffff) + "u");
@@ -1102,8 +1111,7 @@ void GLSLCodeGenerator::writeLiteral(const Literal& l) {
         }
         return;
     }
-    SkASSERT(type.isBoolean());
-    this->write(l.boolValue() ? "true" : "false");
+    this->write(l.description(OperatorPrecedence::kTopLevel));
 }
 
 void GLSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) {
@@ -1113,7 +1121,9 @@ void GLSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) {
     this->writeIdentifier(f.mangledName());
     this->write("(");
     const char* separator = "";
-    for (const auto& param : f.parameters()) {
+    for (size_t index = 0; index < f.parameters().size(); ++index) {
+        const Variable* param = f.parameters()[index];
+
         // This is a workaround for our test files. They use the runtime effect signature, so main
         // takes a coords parameter. The IR generator tags those with a builtin ID (sk_FragCoord),
         // and we omit them from the declaration here, so the function is valid GLSL.
@@ -1132,7 +1142,15 @@ void GLSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) {
         this->writeTypePrecision(*type);
         this->writeType(*type);
         this->write(" ");
-        this->writeIdentifier(param->mangledName());
+        if (!param->name().empty()) {
+            this->writeIdentifier(param->mangledName());
+        } else {
+            // By the spec, GLSL does not require function parameters to be named (see
+            // `single_declaration` in the Shading Language Grammar), but some older versions of
+            // GLSL report "formal parameter lacks a name" if a parameter is not named.
+            this->write("_skAnonymousParam");
+            this->write(std::to_string(index));
+        }
         for (int s : sizes) {
             this->write("[" + std::to_string(s) + "]");
         }

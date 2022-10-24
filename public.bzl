@@ -170,6 +170,7 @@ SKIA_PUBLIC_HDRS = [
     "include/gpu/GrSurfaceInfo.h",
     "include/gpu/GrTypes.h",
     "include/gpu/GrYUVABackendTextures.h",
+    "include/gpu/MutableTextureState.h",
     "include/gpu/mock/GrMockTypes.h",
     "include/gpu/mtl/GrMtlBackendContext.h",
     "include/gpu/mtl/GrMtlTypes.h",
@@ -299,6 +300,7 @@ BASE_SRCS_ALL = [
     "include/private/gpu/ganesh/GrMockTypesPriv.h",
     "include/private/gpu/ganesh/GrMtlTypesPriv.h",
     "include/private/gpu/ganesh/GrTypesPriv.h",
+    "include/private/gpu/vk/VulkanTypesPriv.h",
     "src/android/SkAndroidFrameworkUtils.cpp",
     "src/android/SkAnimatedImage.cpp",
     "src/core/Sk4px.h",
@@ -750,9 +752,11 @@ BASE_SRCS_ALL = [
     "src/gpu/Blend.cpp",
     "src/gpu/Blend.h",
     "src/gpu/BufferWriter.h",
+    "src/gpu/ClientMappedBufferManager.h",
     "src/gpu/GrAHardwareBufferUtils.h",
     "src/gpu/GrRectanizer.h",
     "src/gpu/KeyBuilder.h",
+    "src/gpu/MutableTextureStateRef.h",
     "src/gpu/Rectanizer.h",
     "src/gpu/RectanizerPow2.cpp",
     "src/gpu/RectanizerPow2.h",
@@ -783,8 +787,6 @@ BASE_SRCS_ALL = [
     "src/gpu/ganesh/GrAutoLocaleSetter.h",
     "src/gpu/ganesh/GrBackendSemaphore.cpp",
     "src/gpu/ganesh/GrBackendSurface.cpp",
-    "src/gpu/ganesh/GrBackendSurfaceMutableState.cpp",
-    "src/gpu/ganesh/GrBackendSurfaceMutableStateImpl.h",
     "src/gpu/ganesh/GrBackendTextureImageGenerator.cpp",
     "src/gpu/ganesh/GrBackendTextureImageGenerator.h",
     "src/gpu/ganesh/GrBackendUtils.cpp",
@@ -1230,8 +1232,6 @@ BASE_SRCS_ALL = [
     "src/images/SkJpegEncoder.cpp",
     "src/images/SkPngEncoder.cpp",
     "src/images/SkWebpEncoder.cpp",
-    "src/lazy/SkDiscardableMemoryPool.cpp",
-    "src/lazy/SkDiscardableMemoryPool.h",
     "src/opts/SkBitmapProcState_opts.h",
     "src/opts/SkBlitMask_opts.h",
     "src/opts/SkBlitRow_opts.h",
@@ -1438,7 +1438,6 @@ BASE_SRCS_ALL = [
     "src/sksl/SkSLOperator.cpp",
     "src/sksl/SkSLOutputStream.cpp",
     "src/sksl/SkSLOutputStream.h",
-    "src/sksl/SkSLParsedModule.h",
     "src/sksl/SkSLParser.cpp",
     "src/sksl/SkSLParser.h",
     "src/sksl/SkSLPool.cpp",
@@ -1465,6 +1464,7 @@ BASE_SRCS_ALL = [
     "src/sksl/analysis/SkSLProgramUsage.h",
     "src/sksl/analysis/SkSLProgramVisitor.h",
     "src/sksl/analysis/SkSLSwitchCaseContainsExit.cpp",
+    "src/sksl/analysis/SkSLSymbolTableStackBuilder.cpp",
     "src/sksl/codegen/SkSLCodeGenerator.h",
     "src/sksl/codegen/SkSLGLSLCodeGenerator.cpp",
     "src/sksl/codegen/SkSLGLSLCodeGenerator.h",
@@ -1550,6 +1550,7 @@ BASE_SRCS_ALL = [
     "src/sksl/ir/SkSLIndexExpression.cpp",
     "src/sksl/ir/SkSLIndexExpression.h",
     "src/sksl/ir/SkSLInterfaceBlock.h",
+    "src/sksl/ir/SkSLLiteral.cpp",
     "src/sksl/ir/SkSLLiteral.h",
     "src/sksl/ir/SkSLMethodReference.h",
     "src/sksl/ir/SkSLModifiers.cpp",
@@ -1594,10 +1595,13 @@ BASE_SRCS_ALL = [
     "src/sksl/transform/SkSLEliminateDeadFunctions.cpp",
     "src/sksl/transform/SkSLEliminateDeadGlobalVariables.cpp",
     "src/sksl/transform/SkSLEliminateDeadLocalVariables.cpp",
+    "src/sksl/transform/SkSLEliminateEmptyStatements.cpp",
     "src/sksl/transform/SkSLEliminateUnreachableCode.cpp",
     "src/sksl/transform/SkSLFindAndDeclareBuiltinFunctions.cpp",
     "src/sksl/transform/SkSLFindAndDeclareBuiltinVariables.cpp",
     "src/sksl/transform/SkSLProgramWriter.h",
+    "src/sksl/transform/SkSLRenamePrivateSymbols.cpp",
+    "src/sksl/transform/SkSLReplaceConstVarsWithLiterals.cpp",
     "src/sksl/transform/SkSLTransform.h",
     "src/text/GlyphRun.cpp",
     "src/text/GlyphRun.h",
@@ -1685,14 +1689,23 @@ BASE_SRCS_ALL = [
 
 TEXTUAL_HDRS = [
     "src/sksl/generated/sksl_compute.minified.sksl",
+    "src/sksl/generated/sksl_compute.unoptimized.sksl",
     "src/sksl/generated/sksl_frag.minified.sksl",
+    "src/sksl/generated/sksl_frag.unoptimized.sksl",
     "src/sksl/generated/sksl_gpu.minified.sksl",
+    "src/sksl/generated/sksl_gpu.unoptimized.sksl",
     "src/sksl/generated/sksl_graphite_frag.minified.sksl",
+    "src/sksl/generated/sksl_graphite_frag.unoptimized.sksl",
     "src/sksl/generated/sksl_graphite_vert.minified.sksl",
+    "src/sksl/generated/sksl_graphite_vert.unoptimized.sksl",
     "src/sksl/generated/sksl_public.minified.sksl",
+    "src/sksl/generated/sksl_public.unoptimized.sksl",
     "src/sksl/generated/sksl_rt_shader.minified.sksl",
+    "src/sksl/generated/sksl_rt_shader.unoptimized.sksl",
     "src/sksl/generated/sksl_shared.minified.sksl",
+    "src/sksl/generated/sksl_shared.unoptimized.sksl",
     "src/sksl/generated/sksl_vert.minified.sksl",
+    "src/sksl/generated/sksl_vert.unoptimized.sksl",
     # Included by GrGLMakeNativeInterface_android.cpp
     "src/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.cpp",
     "src/gpu/ganesh/gl/egl/GrGLMakeNativeInterface_egl.cpp",
@@ -1759,7 +1772,6 @@ GL_SRCS_UNIX_EGL = base_gl_srcs + [
 
 PORTS_SRCS_UNIX = [
     "src/ports/SkDebug_stdio.cpp",
-    "src/ports/SkDiscardableMemory_none.cpp",
     "src/ports/SkFontConfigInterface.cpp",
     "src/ports/SkFontConfigInterface_direct.cpp",
     "src/ports/SkFontConfigInterface_direct_factory.cpp",
@@ -1791,7 +1803,6 @@ GL_SRCS_ANDROID = base_gl_srcs + [
 
 PORTS_SRCS_ANDROID = [
     "src/ports/SkDebug_android.cpp",
-    "src/ports/SkDiscardableMemory_none.cpp",
     "src/ports/SkFontHost_FreeType_common.cpp",
     "src/ports/SkFontHost_FreeType_common.h",
     "src/ports/SkFontHost_FreeType.cpp",
@@ -1815,7 +1826,6 @@ PORTS_SRCS_ANDROID = [
 
 PORTS_SRCS_ANDROID_NO_FONT = [
     "src/ports/SkDebug_android.cpp",
-    "src/ports/SkDiscardableMemory_none.cpp",
     "src/ports/SkFontMgr_empty_factory.cpp",
     "src/ports/SkGlobalInitialization_default.cpp",
     "src/ports/SkImageGenerator_skia.cpp",
@@ -1832,7 +1842,6 @@ GL_SRCS_IOS = base_gl_srcs + [
 
 PORTS_SRCS_IOS = [
     "src/ports/SkDebug_stdio.cpp",
-    "src/ports/SkDiscardableMemory_none.cpp",
     "src/ports/SkFontMgr_custom.h",
     "src/ports/SkFontMgr_mac_ct.cpp",
     "src/ports/SkFontMgr_mac_ct_factory.cpp",
@@ -1860,7 +1869,6 @@ PORTS_SRCS_IOS = [
 
 PORTS_SRCS_FUCHSIA = [
     "src/ports/SkDebug_stdio.cpp",
-    "src/ports/SkDiscardableMemory_none.cpp",
     "src/ports/SkFontHost_FreeType_common.cpp",
     "src/ports/SkFontHost_FreeType_common.h",
     "src/ports/SkFontHost_FreeType.cpp",
@@ -1885,7 +1893,6 @@ PORTS_SRCS_MACOS = PORTS_SRCS_IOS
 
 PORTS_SRCS_WASM = [
     "src/ports/SkDebug_stdio.cpp",
-    "src/ports/SkDiscardableMemory_none.cpp",
     "src/ports/SkFontHost_FreeType_common.cpp",
     "src/ports/SkFontHost_FreeType_common.h",
     "src/ports/SkFontHost_FreeType.cpp",

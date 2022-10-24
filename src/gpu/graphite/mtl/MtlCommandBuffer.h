@@ -10,7 +10,6 @@
 
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/DrawPass.h"
-#include "src/gpu/graphite/GpuWorkSubmission.h"
 #include "src/gpu/graphite/Log.h"
 
 #include <memory>
@@ -33,17 +32,19 @@ class MtlSharedContext;
 
 class MtlCommandBuffer final : public CommandBuffer {
 public:
-    static sk_sp<MtlCommandBuffer> Make(id<MTLCommandQueue>,
-                                        const MtlSharedContext*,
-                                        MtlResourceProvider*);
+    static std::unique_ptr<MtlCommandBuffer> Make(id<MTLCommandQueue>,
+                                                  const MtlSharedContext*,
+                                                  MtlResourceProvider*);
     ~MtlCommandBuffer() override;
+
+    bool setNewCommandBufferResources() override;
 
     bool isFinished() {
         return (*fCommandBuffer).status == MTLCommandBufferStatusCompleted ||
                (*fCommandBuffer).status == MTLCommandBufferStatusError;
 
     }
-    void waitUntilFinished(const SharedContext*) {
+    void waitUntilFinished() {
         // TODO: it's not clear what do to if status is Enqueued. Commit and then wait?
         if ((*fCommandBuffer).status == MTLCommandBufferStatusScheduled ||
             (*fCommandBuffer).status == MTLCommandBufferStatusCommitted) {
@@ -62,9 +63,13 @@ public:
 #endif
 
 private:
-    MtlCommandBuffer(sk_cfp<id<MTLCommandBuffer>> cmdBuffer,
+    MtlCommandBuffer(id<MTLCommandQueue>,
                      const MtlSharedContext* sharedContext,
                      MtlResourceProvider* resourceProvider);
+
+    bool createNewMTLCommandBuffer();
+
+    void onResetCommandBuffer() override;
 
     bool onAddRenderPass(const RenderPassDesc&,
                          const Texture* colorTexture,
@@ -129,6 +134,10 @@ private:
                                const Texture*,
                                const BufferTextureCopyData* copyData,
                                int count) override;
+    bool onCopyTextureToTexture(const Texture* src,
+                                SkIRect srcRect,
+                                const Texture* dst,
+                                SkIPoint dstPoint) override;
     bool onSynchronizeBufferToCpu(const Buffer*, bool* outDidResultInWork) override;
 
 #ifdef SK_ENABLE_PIET_GPU
@@ -146,6 +155,8 @@ private:
     id<MTLBuffer> fCurrentIndexBuffer;
     size_t fCurrentIndexBufferOffset = 0;
 
+    // The command buffer will outlive the MtlQueueManager which owns the MTLCommandQueue.
+    id<MTLCommandQueue> fQueue;
     const MtlSharedContext* fSharedContext;
     MtlResourceProvider* fResourceProvider;
 

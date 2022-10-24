@@ -406,7 +406,7 @@ void MetalCodeGenerator::writeFunctionCall(const FunctionCall& c) {
     // variable at the end of the function call; also, swizzles are supported, whereas Metal doesn't
     // allow a swizzle to be passed to a `floatN&`.)
     const ExpressionArray& arguments = c.arguments();
-    const std::vector<const Variable*>& parameters = function.parameters();
+    const std::vector<Variable*>& parameters = function.parameters();
     SkASSERT(arguments.size() == parameters.size());
 
     bool foundOutParam = false;
@@ -1871,7 +1871,7 @@ void MetalCodeGenerator::writePostfixExpression(const PostfixExpression& p,
 void MetalCodeGenerator::writeLiteral(const Literal& l) {
     const Type& type = l.type();
     if (type.isFloat()) {
-        this->write(skstd::to_string(l.floatValue()));
+        this->write(l.description(OperatorPrecedence::kTopLevel));
         if (!l.type().highPrecision()) {
             this->write("h");
         }
@@ -1890,7 +1890,7 @@ void MetalCodeGenerator::writeLiteral(const Literal& l) {
         return;
     }
     SkASSERT(type.isBoolean());
-    this->write(l.boolValue() ? "true" : "false");
+    this->write(l.description(OperatorPrecedence::kTopLevel));
 }
 
 void MetalCodeGenerator::writeFunctionRequirementArgs(const FunctionDeclaration& f,
@@ -2540,6 +2540,13 @@ struct sampler2D {
 };
 half4 sample(sampler2D i, float2 p, float b=%g) { return i.tex.sample(i.smp, p, bias(b)); }
 half4 sample(sampler2D i, float3 p, float b=%g) { return i.tex.sample(i.smp, p.xy / p.z, bias(b)); }
+half4 sampleLod(sampler2D i, float2 p, float lod) { return i.tex.sample(i.smp, p, level(lod)); }
+half4 sampleLod(sampler2D i, float3 p, float lod) {
+    return i.tex.sample(i.smp, p.xy / p.z, level(lod));
+}
+half4 sampleGrad(sampler2D i, float2 p, float2 dPdx, float2 dPdy) {
+    return i.tex.sample(i.smp, p, gradient2d(dPdx, dPdy));
+}
 
 )",
                                                         fTextureBias,

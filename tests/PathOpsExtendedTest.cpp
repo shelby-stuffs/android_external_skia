@@ -641,8 +641,8 @@ void initializeTests(skiatest::Reporter* reporter, const char* test) {
         SkFILEStream inFile("../../experimental/Intersection/op.htm");
         if (inFile.isValid()) {
             SkTDArray<char> inData;
-            inData.setCount((int) inFile.getLength());
-            size_t inLen = inData.count();
+            inData.resize((int) inFile.getLength());
+            size_t inLen = inData.size();
             inFile.read(inData.begin(), inLen);
             inFile.close();
             char* insert = strstr(inData.begin(), marker);

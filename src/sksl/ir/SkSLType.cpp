@@ -27,6 +27,7 @@
 #include <limits>
 #include <optional>
 #include <string_view>
+#include <utility>
 
 namespace SkSL {
 
@@ -956,7 +957,7 @@ const Type* Type::clone(SymbolTable* symbolTable) const {
         return this;
     }
     // Even if the type isn't a built-in, it might already exist in the SymbolTable.
-    const Symbol* clonedSymbol = (*symbolTable)[this->name()];
+    const Symbol* clonedSymbol = symbolTable->find(this->name());
     if (clonedSymbol != nullptr) {
         const Type& clonedType = clonedSymbol->as<Type>();
         SkASSERT(clonedType.typeKind() == this->typeKind());
@@ -1142,6 +1143,10 @@ SKSL_INT Type::convertArraySize(const Context& context, Position arrayPos,
         return 0;
     }
     return static_cast<int>(count);
+}
+
+std::string Type::Field::description() const {
+    return fModifiers.description() + fType->displayName() + " " + std::string(fName) + ";";
 }
 
 }  // namespace SkSL
