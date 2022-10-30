@@ -9,9 +9,8 @@
 #include "include/private/SkSLLayout.h"
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramElement.h"
-#include "include/private/SkSLStatement.h"
+#include "include/private/SkSLSymbol.h"
 #include "include/private/SkTHash.h"
-#include "src/sksl/SkSLBuiltinMap.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
@@ -35,9 +34,6 @@
 #include <vector>
 
 namespace SkSL {
-
-class Symbol;
-
 namespace Transform {
 namespace {
 
@@ -47,14 +43,29 @@ public:
             : fContext(context)
             , fSymbols(symbols) {}
 
-    void addDeclaringElement(const Symbol* var) {
-        if (const ProgramElement* decl = fContext.fBuiltins->find(var)) {
-            // Make sure we only add a built-in variable once. We only have a small handful of
-            // built-in variables, so linear search here is good enough.
-            SkASSERT(decl->is<GlobalVarDeclaration>() || decl->is<InterfaceBlock>());
-            if (std::find(fNewElements.begin(), fNewElements.end(), decl) == fNewElements.end()) {
-                fNewElements.push_back(decl);
-            }
+    void addDeclaringElement(const ProgramElement* decl) {
+        // Make sure we only add a built-in variable once. We only have a small handful of built-in
+        // variables to declare, so linear search here is good enough.
+        if (std::find(fNewElements.begin(), fNewElements.end(), decl) == fNewElements.end()) {
+            fNewElements.push_back(decl);
+        }
+    }
+
+    void addDeclaringElement(const Symbol* symbol) {
+        if (!symbol || !symbol->is<Variable>()) {
+            return;
+        }
+        const Variable& var = symbol->as<Variable>();
+        if (const GlobalVarDeclaration* decl = var.globalVarDeclaration()) {
+            this->addDeclaringElement(decl);
+        } else if (const InterfaceBlock* block = var.interfaceBlock()) {
+            this->addDeclaringElement(block);
+        } else {
+            // Double-check that this variable isn't associated with a global or an interface block.
+            // (Locals and parameters will come along naturally as part of the associated function.)
+            SkASSERTF(var.storage() != VariableStorage::kGlobal &&
+                      var.storage() != VariableStorage::kInterfaceBlock,
+                      "%.*s", (int)var.name().size(), var.name().data());
         }
     }
 
@@ -65,7 +76,7 @@ public:
             // otherwise unreferenced. Check main's return type to see if it's half4.
             if (funcDef.declaration().isMain()) {
                 if (funcDef.declaration().returnType().matches(*fContext.fTypes.fHalf4)) {
-                    // main() returns a half4, so make sure we don't dead-strip sk_FragColor.
+                    // main() returns a half4, so make sure we include sk_FragColor in the output.
                     this->addDeclaringElement(fSymbols.find(Compiler::FRAGCOLOR_NAME));
                 }
                 // Once we find main(), we can stop scanning.
@@ -76,7 +87,7 @@ public:
     }
 
     static std::string_view GlobalVarBuiltinName(const ProgramElement& elem) {
-        return elem.as<GlobalVarDeclaration>().declaration()->as<VarDeclaration>().var().name();
+        return elem.as<GlobalVarDeclaration>().varDeclaration().var()->name();
     }
 
     static std::string_view InterfaceBlockName(const ProgramElement& elem) {

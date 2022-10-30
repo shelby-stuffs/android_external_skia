@@ -21,7 +21,6 @@
 #include "include/sksl/SkSLErrorReporter.h"
 #include "include/sksl/SkSLOperator.h"
 #include "include/sksl/SkSLPosition.h"
-#include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLLexer.h"
 #include "src/sksl/SkSLProgramSettings.h"
 
@@ -33,14 +32,17 @@
 
 namespace SkSL {
 
-class BuiltinMap;
+class Compiler;
+struct Module;
 struct Program;
+class SymbolTable;
 
 namespace dsl {
 class DSLBlock;
 class DSLCase;
 class DSLGlobalVar;
 class DSLParameter;
+class DSLVarBase;
 }
 
 /**
@@ -52,7 +54,7 @@ public:
 
     std::unique_ptr<Program> program();
 
-    SkSL::LoadedModule moduleInheritingFrom(const SkSL::BuiltinMap* baseModule);
+    std::unique_ptr<Module> moduleInheritingFrom(const Module* parent);
 
     std::string_view text(Token token);
 
@@ -60,6 +62,7 @@ public:
 
 private:
     class AutoDepth;
+    class AutoSymbolTable;
 
     /**
      * Return the next token, including whitespace tokens, from the parse stream.
@@ -275,6 +278,10 @@ private:
     bool boolLiteral(bool* dest);
 
     bool identifier(std::string_view* dest);
+
+    std::shared_ptr<SymbolTable>& symbolTable();
+
+    void addToSymbolTable(dsl::DSLVarBase& var, Position pos = {});
 
     class Checkpoint {
     public:

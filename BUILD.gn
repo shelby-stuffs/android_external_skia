@@ -909,6 +909,7 @@ optional("gpu_shared") {
   }
 
   if (skia_use_metal) {
+    public_defines += [ "SK_METAL" ]
     sources += skia_shared_mtl_sources
   }
 }
@@ -1016,7 +1017,6 @@ optional("gpu") {
 
   cflags_objcc = []
   if (skia_use_metal) {
-    public_defines += [ "SK_METAL" ]
     sources += skia_metal_sources
     if (skia_enable_metal_debug_info) {
       public_defines += [ "SK_ENABLE_MTL_DEBUG_INFO" ]
@@ -1129,7 +1129,6 @@ optional("graphite") {
     sources += skia_graphite_dawn_sources
   }
   if (skia_use_metal) {
-    public_defines += [ "SK_METAL" ]
     sources += skia_graphite_mtl_sources
     if (skia_enable_metal_debug_info) {
       public_defines += [ "SK_ENABLE_MTL_DEBUG_INFO" ]
@@ -2129,6 +2128,7 @@ if (skia_enable_tools) {
       "modules/skparagraph:tests",
       "modules/sksg:tests",
       "modules/skshaper",
+      "modules/skshaper:tests",
       "modules/svg:tests",
       "//third_party/libpng",
       "//third_party/libwebp",
@@ -2768,6 +2768,12 @@ if (skia_enable_tools) {
       } else if (is_mac) {
         if (dawn_enable_metal) {
           sources += [ "tools/sk_app/mac/DawnMTLWindowContext_mac.mm" ]
+        }
+        if (skia_enable_graphite) {
+          sources +=
+              [ "tools/sk_app/mac/GraphiteDawnMetalWindowContext_mac.mm" ]
+          sources += [ "tools/sk_app/GraphiteDawnWindowContext.cpp" ]
+          sources += [ "tools/sk_app/GraphiteDawnWindowContext.h" ]
         }
       }
     }

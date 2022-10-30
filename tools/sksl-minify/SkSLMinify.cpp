@@ -12,7 +12,6 @@
 #include "src/core/SkOpts.h"
 #include "src/opts/SkChecksum_opts.h"
 #include "src/opts/SkVM_opts.h"
-#include "src/sksl/SkSLBuiltinMap.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLFileOutputStream.h"
 #include "src/sksl/SkSLLexer.h"
@@ -30,6 +29,7 @@
 #include <stdio.h>
 
 static bool gUnoptimized = false;
+static bool gStringify = false;
 
 void SkDebugf(const char format[], ...) {
     va_list args;
@@ -75,50 +75,45 @@ static bool maybe_identifier(char c) {
     return std::isalnum(c) || c == '$' || c == '_';
 }
 
-static std::optional<SkSL::LoadedModule> compile_module_list(SkSpan<const std::string> paths) {
+static std::forward_list<std::unique_ptr<const SkSL::Module>> compile_module_list(
+        SkSpan<const std::string> paths) {
     // Load in each input as a module, from right to left.
     // Each module inherits the symbols from its parent module.
     SkSL::Compiler compiler(SkSL::ShaderCapsFactory::Standalone());
-    SkSL::LoadedModule loadedModule;
-    std::forward_list<std::unique_ptr<const SkSL::BuiltinMap>> modules;
+    std::forward_list<std::unique_ptr<const SkSL::Module>> modules;
     for (auto modulePath = paths.rbegin(); modulePath != paths.rend(); ++modulePath) {
         std::ifstream in(*modulePath);
         std::string moduleSource{std::istreambuf_iterator<char>(in),
                                  std::istreambuf_iterator<char>()};
         if (in.rdstate()) {
             printf("error reading '%s'\n", modulePath->c_str());
-            return std::nullopt;
-        }
-
-        // If we have a loaded module, parse it and put it on the list.
-        const SkSL::BuiltinMap* base = modules.empty() ? SkSL::ModuleLoader::Get().rootModule()
-                                                       : modules.front().get();
-        if (loadedModule.fSymbols) {
-            modules.push_front(loadedModule.convertToBuiltinMap(base));
-            base = modules.front().get();
+            return {};
         }
 
         // TODO(skia:13778): We don't know the module's ProgramKind here, so we always pass
         // kFragment. For minification purposes, the ProgramKind doesn't really make a difference
         // as long as it doesn't limit what we can do.
-        loadedModule = compiler.compileModule(SkSL::ProgramKind::kFragment,
-                                              modulePath->c_str(),
-                                              std::move(moduleSource),
-                                              base,
-                                              SkSL::ModuleLoader::Get().coreModifiers(),
-                                              /*shouldInline=*/false);
+        const SkSL::Module* parent = modules.empty() ? SkSL::ModuleLoader::Get().rootModule()
+                                                     : modules.front().get();
+        std::unique_ptr<SkSL::Module> m =
+                compiler.compileModule(SkSL::ProgramKind::kFragment,
+                                       modulePath->c_str(),
+                                       std::move(moduleSource),
+                                       parent,
+                                       SkSL::ModuleLoader::Get().coreModifiers(),
+                                       /*shouldInline=*/false);
         if (!gUnoptimized) {
             // We need to optimize every module in the chain. We rename private functions at global
             // scope, and we need to make sure there are no name collisions between nested modules.
             // (i.e., if module A claims names `$a` and `$b` at global scope, module B will need to
             // start at `$c`. The most straightforward way to handle this is to actually perform the
             // renames.)
-            compiler.optimizeModuleBeforeMinifying(SkSL::ProgramKind::kFragment,
-                                                   loadedModule,
-                                                   base);
+            compiler.optimizeModuleBeforeMinifying(SkSL::ProgramKind::kFragment, *m);
         }
+        modules.push_front(std::move(m));
     }
-    return std::move(loadedModule);
+    // Return all of the modules to transfer their ownership to the caller.
+    return modules;
 }
 
 static bool generate_minified_text(std::string_view inputPath,
@@ -166,8 +161,8 @@ static bool generate_minified_text(std::string_view inputPath,
             }
         }
         SkASSERT(!lastTokenText.empty());
-        if (lineWidth > 75) {
-            // We're getting full-ish; wrap to a new line
+        if (gStringify && lineWidth > 75) {
+            // We're getting full-ish; wrap to a new line.
             out.writeText("\"\n\"");
             lineWidth = 1;
         }
@@ -194,10 +189,12 @@ ResultCode processCommand(const std::vector<std::string>& args) {
     // Compile the original SkSL from the input path.
     SkSpan inputPaths(args);
     inputPaths = inputPaths.subspan(1);
-    std::optional<SkSL::LoadedModule> module = compile_module_list(inputPaths);
-    if (!module.has_value()) {
+    std::forward_list<std::unique_ptr<const SkSL::Module>> modules =
+            compile_module_list(inputPaths);
+    if (modules.empty()) {
         return ResultCode::kInputError;
     }
+    const SkSL::Module* module = modules.front().get();
 
     // Emit the minified SkSL into our output path.
     const std::string& outputPath = args[0];
@@ -208,7 +205,9 @@ ResultCode processCommand(const std::vector<std::string>& args) {
     }
 
     std::string baseName = remove_extension(base_name(inputPaths.front()));
-    out.printf("static constexpr char SKSL_MINIFIED_%s[] =\n\"", baseName.c_str());
+    if (gStringify) {
+        out.printf("static constexpr char SKSL_MINIFIED_%s[] =\n\"", baseName.c_str());
+    }
 
     // Generate the program text by getting the program's description.
     std::string text;
@@ -221,7 +220,9 @@ ResultCode processCommand(const std::vector<std::string>& args) {
         return ResultCode::kInputError;
     }
 
-    out.writeText("\";\n");
+    if (gStringify) {
+        out.writeText("\";\n");
+    }
 
     if (!out.close()) {
         printf("error writing '%s'\n", outputPath.c_str());
@@ -246,6 +247,7 @@ int main(int argc, const char** argv) {
     }
 
     gUnoptimized = find_boolean_flag(args, "--unoptimized");
+    gStringify = find_boolean_flag(args, "--stringify");
 
     return (int)processCommand(args);
 }

@@ -5,13 +5,20 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkPath.h"
 #include "include/core/SkPathBuilder.h"
 #include "include/core/SkPathTypes.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRRect.h"
+#include "include/core/SkRect.h"
+#include "include/private/SkPathRef.h"
+#include "include/utils/SkRandom.h"
 #include "src/core/SkPathPriv.h"
 #include "tests/Test.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <initializer_list>
 #include <vector>
 
 static void is_empty(skiatest::Reporter* reporter, const SkPath& p) {
@@ -232,8 +239,6 @@ DEF_TEST(pathbuilder_addRRect, reporter) {
     }
 }
 
-#include "include/utils/SkRandom.h"
-
 DEF_TEST(pathbuilder_make, reporter) {
     constexpr int N = 100;
     uint8_t vbs[N];
@@ -290,26 +295,6 @@ DEF_TEST(pathbuilder_addPolygon, reporter) {
             REPORTER_ASSERT(reporter, path0 == path1);
         }
     }
-}
-
-DEF_TEST(pathbuilder_shrinkToFit, reporter) {
-    // SkPathBuilder::snapshot() creates copies of its arrays for perfectly sized paths,
-    // where SkPathBuilder::detach() moves its larger scratch arrays for speed.
-    bool any_smaller = false;
-    for (int pts = 0; pts < 10; pts++) {
-
-        SkPathBuilder b;
-        for (int i = 0; i < pts; i++) {
-            b.lineTo(i,i);
-        }
-        b.close();
-
-        SkPath s = b.snapshot(),
-               d = b.detach();
-        REPORTER_ASSERT(reporter, s.approximateBytesUsed() <= d.approximateBytesUsed());
-        any_smaller |=            s.approximateBytesUsed() <  d.approximateBytesUsed();
-    }
-    REPORTER_ASSERT(reporter, any_smaller);
 }
 
 DEF_TEST(pathbuilder_addPath, reporter) {
