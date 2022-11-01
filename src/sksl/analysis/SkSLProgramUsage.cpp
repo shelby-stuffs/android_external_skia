@@ -11,7 +11,6 @@
 #include "include/private/SkSLStatement.h"
 #include "include/private/SkTHash.h"
 #include "src/sksl/SkSLAnalysis.h"
-#include "src/sksl/SkSLBuiltinMap.h"  // IWYU pragma: keep
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/analysis/SkSLProgramVisitor.h"
@@ -24,13 +23,11 @@
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
 
-#include <functional>
 #include <memory>
 #include <vector>
 
 namespace SkSL {
 
-class Symbol;
 struct Program;
 
 namespace {
@@ -49,7 +46,7 @@ public:
             }
         } else if (pe.is<InterfaceBlock>()) {
             // Ensure interface-block variables exist in the variable usage map.
-            fUsage->fVariableCounts[&pe.as<InterfaceBlock>().variable()];
+            fUsage->fVariableCounts[pe.as<InterfaceBlock>().var()];
         }
         return INHERITED::visitProgramElement(pe);
     }
@@ -58,7 +55,7 @@ public:
         if (s.is<VarDeclaration>()) {
             // Add all declared variables to the usage map (even if never otherwise accessed).
             const VarDeclaration& vd = s.as<VarDeclaration>();
-            ProgramUsage::VariableCounts& counts = fUsage->fVariableCounts[&vd.var()];
+            ProgramUsage::VariableCounts& counts = fUsage->fVariableCounts[vd.var()];
             counts.fVarExists += fDelta;
             SkASSERT(counts.fVarExists >= 0 && counts.fVarExists <= 1);
             if (vd.value()) {
@@ -112,17 +109,14 @@ std::unique_ptr<ProgramUsage> Analysis::GetUsage(const Program& program) {
     return usage;
 }
 
-std::unique_ptr<ProgramUsage> Analysis::GetUsage(const LoadedModule& module,
-                                                 const BuiltinMap* base) {
+std::unique_ptr<ProgramUsage> Analysis::GetUsage(const Module& module) {
     auto usage = std::make_unique<ProgramUsage>();
     ProgramUsageVisitor addRefs(usage.get(), /*delta=*/+1);
-    for (const std::unique_ptr<ProgramElement>& element : module.fElements) {
-        addRefs.visitProgramElement(*element);
-    }
-    if (base) {
-        base->foreach([&](const Symbol*, const ProgramElement& element) {
-            addRefs.visitProgramElement(element);
-        });
+
+    for (const Module* m = &module; m != nullptr; m = m->fParent) {
+        for (const std::unique_ptr<ProgramElement>& element : m->fElements) {
+            addRefs.visitProgramElement(*element);
+        }
     }
     return usage;
 }

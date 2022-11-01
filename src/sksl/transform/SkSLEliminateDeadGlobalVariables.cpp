@@ -6,7 +6,6 @@
  */
 
 #include "include/private/SkSLProgramElement.h"
-#include "include/private/SkSLStatement.h"
 #include "include/private/SkStringView.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
@@ -31,18 +30,18 @@ static bool is_dead_variable(const ProgramElement& element,
         return false;
     }
     const GlobalVarDeclaration& global = element.as<GlobalVarDeclaration>();
-    const VarDeclaration& varDecl = global.declaration()->as<VarDeclaration>();
-    if (onlyPrivateGlobals && !skstd::starts_with(varDecl.var().name(), '$')) {
+    const VarDeclaration& varDecl = global.varDeclaration();
+    if (onlyPrivateGlobals && !skstd::starts_with(varDecl.var()->name(), '$')) {
         return false;
     }
-    if (!usage->isDead(varDecl.var())) {
+    if (!usage->isDead(*varDecl.var())) {
         return false;
     }
     return true;
 }
 
 bool Transform::EliminateDeadGlobalVariables(const Context& context,
-                                             LoadedModule& module,
+                                             Module& module,
                                              ProgramUsage* usage,
                                              bool onlyPrivateGlobals) {
     auto isDeadVariable = [&](const ProgramElement& element) {

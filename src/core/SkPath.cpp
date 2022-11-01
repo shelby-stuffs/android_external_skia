@@ -359,7 +359,11 @@ uint32_t SkPath::getGenerationID() const {
 SkPath& SkPath::reset() {
     SkDEBUGCODE(this->validate();)
 
-    fPathRef.reset(SkPathRef::CreateEmpty());
+    if (fPathRef->unique()) {
+        fPathRef->reset();
+    } else {
+        fPathRef.reset(SkPathRef::CreateEmpty());
+    }
     this->resetFields();
     return *this;
 }
@@ -3458,9 +3462,10 @@ SkPath SkPath::Make(const SkPoint pts[], int pointCount,
         return SkPath();
     }
 
-    return SkPath(sk_sp<SkPathRef>(new SkPathRef(SkTDArray<SkPoint>(pts, info.points),
-                                                 SkTDArray<uint8_t>(vbs, verbCount),
-                                                 SkTDArray<SkScalar>(ws, info.weights),
+    return SkPath(sk_sp<SkPathRef>(new SkPathRef(
+                                       SkPathRef::PointsArray(pts, info.points),
+                                       SkPathRef::VerbsArray(vbs, verbCount),
+                                       SkPathRef::ConicWeightsArray(ws, info.weights),
                                                  info.segmentMask)),
                   ft, isVolatile, SkPathConvexity::kUnknown, SkPathFirstDirection::kUnknown);
 }

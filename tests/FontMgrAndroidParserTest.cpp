@@ -5,22 +5,40 @@
  * found in the LICENSE file.
  */
 
-#include "tests/Test.h"
-
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkFontArguments.h"
+#include "include/core/SkFontMgr.h"
+#include "include/core/SkFontStyle.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkStream.h"
+#include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
+#include "include/core/SkTypes.h"
 #include "include/ports/SkFontMgr_android.h"
 #include "include/private/SkFixed.h"
+#include "include/private/SkTArray.h"
+#include "include/private/SkTDArray.h"
+#include "include/private/SkTHash.h"
 #include "src/core/SkOSFile.h"
 #include "src/ports/SkFontMgr_android_parser.h"
+#include "tests/Test.h"
 #include "tools/Resources.h"
 #include "tools/flags/CommandLineFlags.h"
 
+#include <algorithm>
+#include <climits>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <memory>
+#include <string>
+#include <tuple>
 
 DECLARE_bool(verboseFontMgr);
 
@@ -193,7 +211,10 @@ DEF_TEST(FontMgrAndroidParser, reporter) {
     } else {
         resourcesMissing = true;
     }
-    preV17FontFamilies.deleteAll();
+    for (FontFamily* p : preV17FontFamilies) {
+        delete p;
+    }
+    preV17FontFamilies.reset();
 
 
     SkTDArray<FontFamily*> v17FontFamilies;
@@ -212,7 +233,10 @@ DEF_TEST(FontMgrAndroidParser, reporter) {
     } else {
         resourcesMissing = true;
     }
-    v17FontFamilies.deleteAll();
+    for (FontFamily* p : v17FontFamilies) {
+        delete p;
+    }
+    v17FontFamilies.reset();
 
 
     SkTDArray<FontFamily*> v22FontFamilies;
@@ -230,7 +254,10 @@ DEF_TEST(FontMgrAndroidParser, reporter) {
     } else {
         resourcesMissing = true;
     }
-    v22FontFamilies.deleteAll();
+    for (FontFamily* p : v22FontFamilies) {
+        delete p;
+    }
+    v22FontFamilies.reset();
 
     if (resourcesMissing) {
         SkDebugf("---- Resource files missing for FontConfigParser test\n");
