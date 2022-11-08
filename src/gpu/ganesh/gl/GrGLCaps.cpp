@@ -1390,6 +1390,10 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
         texStorageSupported = false;
     }
 
+    if (formatWorkarounds.fDisableTexStorage) {
+        texStorageSupported = false;
+    }
+
     // ES 2.0 requires that the internal/external formats match so we can't use sized internal
     // formats for glTexImage until ES 3.0. TODO: Support sized internal formats in WebGL2.
     bool texImageSupportsSizedInternalFormat =
@@ -4284,6 +4288,16 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fTransferFromBufferToBufferSupport = false;
     }
 
+    // The Wembley device fails shader compilations with no error message when there is a const
+    // parameter. Given that we've already passed through SkSL compilation and enforced that the
+    // parameter is never written, it is harmless to strip the const off when writing GLSL.
+    // Android API: 31
+    // GL_VERSION : OpenGL ES 3.2 build 1.13@5720833
+    // GL_RENDERER: PowerVR Rogue GE8300
+    // GL_VENDOR  : Imagination Technologies
+    if (ctxInfo.renderer() == GrGLRenderer::kPowerVRRogue) {
+        fShaderCaps->fRemoveConstFromFunctionParameters = true;
+    }
 #ifdef SK_BUILD_FOR_WIN
     // glDrawElementsIndirect fails GrMeshTest on every Win10 Intel bot.
     if (ctxInfo.driver() == GrGLDriver::kIntel ||
@@ -4356,16 +4370,17 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
 #endif
 
 #ifdef SK_BUILD_FOR_ANDROID
-    // We don't usually use glTexStorage() on Android for performance reasons. (crbug.com/945506).
-    // On a NVIDIA Shield TV running Android 7.0 creating a texture with glTexImage2D() with
-    // internal format GL_LUMINANCE8 fails. However, it succeeds with glTexStorage2D().
+    // crbug.com/945506. Telemetry reported a memory usage regression for Android Go Chrome/WebView
+    // when using glTexStorage2D. This appears to affect OOP-R (so not just over command buffer).
+    // Update 10/2023, it looks like this may just effect chrome Android GO devices which are
+    // running on Mali-T720. It does not seem to impact Qualcomm devices. We have no tests to verify
+    // if newer ARM devices are impacted, so for now we keep this disabled on all ARM by default.
     //
-    // Additionally, on the Nexus 9 running Android 6.0.1 formats added by GL_EXT_texture_rg and
-    // GL_EXT_texture_norm16 cause errors if they are created with glTexImage2D() with
-    // an unsized internal format. We wouldn't normally do that but Chrome can limit us
-    // artificially to ES2. (crbug.com/1003481)
-    if (ctxInfo.vendor() == GrGLVendor::kNVIDIA) {
-        formatWorkarounds->fDontDisableTexStorageOnAndroid = true;
+    // We allow the client to pass in a GrContextOption flag to say they prefer having tex storage
+    // support regadless of memory usage impacts. This is important for supporting Protected
+    // textures as they require tex storage support.
+    if (ctxInfo.vendor() == GrGLVendor::kARM && !contextOptions.fAlwaysUseTexStorageWhenAvailable) {
+        formatWorkarounds->fDisableTexStorage = true;
     }
 #endif
 

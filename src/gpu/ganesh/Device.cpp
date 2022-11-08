@@ -822,6 +822,38 @@ sk_sp<SkSpecialImage> Device::snapSpecial(const SkIRect& subset, bool forceCopy)
                                                this->surfaceProps());
 }
 
+sk_sp<SkSpecialImage> Device::snapSpecialScaled(const SkIRect& subset, const SkISize& dstDims) {
+     ASSERT_SINGLE_OWNER
+
+    auto sdc = fSurfaceDrawContext.get();
+
+    // If we are wrapping a vulkan secondary command buffer, then we can't snap off a special image
+    // since it would require us to make a copy of the underlying VkImage which we don't have access
+    // to. Additionaly we can't stop and start the render pass that is used with the secondary
+    // command buffer.
+    if (sdc->wrapsVkSecondaryCB()) {
+        return nullptr;
+    }
+
+    SkASSERT(sdc->asSurfaceProxy());
+
+    auto scaledContext = sdc->rescale(sdc->imageInfo().makeDimensions(dstDims),
+                                      sdc->origin(),
+                                      subset,
+                                      RescaleGamma::kSrc,
+                                      RescaleMode::kLinear);
+    if (!scaledContext) {
+        return nullptr;
+    }
+
+    return SkSpecialImage::MakeDeferredFromGpu(fContext.get(),
+                                               SkIRect::MakeSize(dstDims),
+                                               kNeedNewImageUniqueID_SpecialImage,
+                                               scaledContext->readSurfaceView(),
+                                               GrColorInfo(this->imageInfo().colorInfo()),
+                                               this->surfaceProps());
+}
+
 void Device::drawDevice(SkBaseDevice* device,
                         const SkSamplingOptions& sampling,
                         const SkPaint& paint) {
@@ -955,6 +987,7 @@ void Device::drawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPain
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 void Device::drawShadow(const SkPath& path, const SkDrawShadowRec& rec) {
 #if GR_TEST_UTILS
     if (fContext->priv().options().fAllPathsVolatile && !path.isVolatile()) {
@@ -970,6 +1003,7 @@ void Device::drawShadow(const SkPath& path, const SkDrawShadowRec& rec) {
         this->SkBaseDevice::drawShadow(path, rec);
     }
 }
+#endif  // SK_ENABLE_OPTIMIZE_SIZE
 
 ///////////////////////////////////////////////////////////////////////////////
 

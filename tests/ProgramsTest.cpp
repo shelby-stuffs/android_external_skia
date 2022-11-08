@@ -30,7 +30,6 @@
 #include "src/gpu/ganesh/GrDrawingManager.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrPaint.h"
-#include "src/gpu/ganesh/GrProcessor.h"
 #include "src/gpu/ganesh/GrProcessorUnitTest.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
@@ -424,7 +423,7 @@ static void test_programs(skiatest::Reporter* reporter, const sk_gpu_test::Conte
                                                                 maxLevels));
 }
 
-DEF_GANESH_TEST(Programs, reporter, options, CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST(Programs, reporter, options, CtsEnforcement::kNever) {
     // Set a locale that would cause shader compilation to fail because of , as decimal separator.
     // skbug 3330
 #ifdef SK_BUILD_FOR_WIN

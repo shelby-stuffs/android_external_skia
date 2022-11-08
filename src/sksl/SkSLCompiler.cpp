@@ -8,6 +8,8 @@
 #include "src/sksl/SkSLCompiler.h"
 
 #include "include/private/SkSLDefines.h"
+#include "include/private/SkSLIRNode.h"
+#include "include/private/SkSLProgramKind.h"
 #include "include/private/SkSLSymbol.h"
 #include "include/sksl/DSLCore.h"
 #include "include/sksl/DSLModifiers.h"
@@ -163,6 +165,52 @@ const Module* Compiler::moduleForProgramKind(ProgramKind kind) {
     SkUNREACHABLE;
 }
 
+void Compiler::FinalizeSettings(ProgramSettings* settings, ProgramKind kind) {
+    // Honor our optimization-override flags.
+    switch (sOptimizer) {
+        case OverrideFlag::kDefault:
+            break;
+        case OverrideFlag::kOff:
+            settings->fOptimize = false;
+            break;
+        case OverrideFlag::kOn:
+            settings->fOptimize = true;
+            break;
+    }
+
+    switch (sInliner) {
+        case OverrideFlag::kDefault:
+            break;
+        case OverrideFlag::kOff:
+            settings->fInlineThreshold = 0;
+            break;
+        case OverrideFlag::kOn:
+            if (settings->fInlineThreshold == 0) {
+                settings->fInlineThreshold = kDefaultInlineThreshold;
+            }
+            break;
+    }
+
+    // Disable optimization settings that depend on a parent setting which has been disabled.
+    settings->fInlineThreshold *= (int)settings->fOptimize;
+    settings->fRemoveDeadFunctions &= settings->fOptimize;
+    settings->fRemoveDeadVariables &= settings->fOptimize;
+
+    if (kind == ProgramKind::kGeneric) {
+        // For "generic" interpreter programs, leave all functions intact. (The SkVM API supports
+        // calling any function, not just 'main').
+        settings->fRemoveDeadFunctions = false;
+    } else {
+        // Only generic programs (limited to CPU) are able to use external functions.
+        SkASSERT(!settings->fExternalFunctions);
+    }
+
+    // Runtime effects always allow narrowing conversions.
+    if (ProgramConfig::IsRuntimeEffect(kind)) {
+        settings->fAllowNarrowingConversions = true;
+    }
+}
+
 std::unique_ptr<Module> Compiler::compileModule(ProgramKind kind,
                                                 const char* moduleName,
                                                 std::string moduleSource,
@@ -179,10 +227,12 @@ std::unique_ptr<Module> Compiler::compileModule(ProgramKind kind,
 
     // Compile the module from source, using default program settings.
     ProgramSettings settings;
+    FinalizeSettings(&settings, kind);
     SkSL::Parser parser{this, settings, kind, std::move(moduleSource)};
     std::unique_ptr<Module> module = parser.moduleInheritingFrom(parent);
     if (this->errorCount() != 0) {
-        SK_ABORT("Unexpected errors compiling %s:\n\n%s\n", moduleName, this->errorText().c_str());
+        SkDebugf("Unexpected errors compiling %s:\n\n%s\n", moduleName, this->errorText().c_str());
+        return nullptr;
     }
     if (shouldInline) {
         this->optimizeModuleAfterLoading(kind, *module);
@@ -195,48 +245,8 @@ std::unique_ptr<Program> Compiler::convertProgram(ProgramKind kind,
                                                   ProgramSettings settings) {
     TRACE_EVENT0("skia.shaders", "SkSL::Compiler::convertProgram");
 
-    SkASSERT(!settings.fExternalFunctions || (kind == ProgramKind::kGeneric));
-
-    // Honor our optimization-override flags.
-    switch (sOptimizer) {
-        case OverrideFlag::kDefault:
-            break;
-        case OverrideFlag::kOff:
-            settings.fOptimize = false;
-            break;
-        case OverrideFlag::kOn:
-            settings.fOptimize = true;
-            break;
-    }
-
-    switch (sInliner) {
-        case OverrideFlag::kDefault:
-            break;
-        case OverrideFlag::kOff:
-            settings.fInlineThreshold = 0;
-            break;
-        case OverrideFlag::kOn:
-            if (settings.fInlineThreshold == 0) {
-                settings.fInlineThreshold = kDefaultInlineThreshold;
-            }
-            break;
-    }
-
-    // Disable optimization settings that depend on a parent setting which has been disabled.
-    settings.fInlineThreshold *= (int)settings.fOptimize;
-    settings.fRemoveDeadFunctions &= settings.fOptimize;
-    settings.fRemoveDeadVariables &= settings.fOptimize;
-
-    // For "generic" interpreter programs, leave all functions intact. (The API supports calling
-    // any function, not just 'main').
-    if (kind == ProgramKind::kGeneric) {
-        settings.fRemoveDeadFunctions = false;
-    }
-
-    // Runtime effects always allow narrowing conversions.
-    if (ProgramConfig::IsRuntimeEffect(kind)) {
-        settings.fAllowNarrowingConversions = true;
-    }
+    // Make sure the passed-in settings are valid.
+    FinalizeSettings(&settings, kind);
 
     // Put the ShaderCaps into the context while compiling a program.
     AutoShaderCaps autoCaps(fContext, fCaps);
@@ -298,8 +308,8 @@ bool Compiler::optimizeModuleBeforeMinifying(ProgramKind kind, Module& module) {
 
     std::unique_ptr<ProgramUsage> usage = Analysis::GetUsage(module);
 
-    // Look for local variables in functions and give them shorter names.
-    Transform::RenamePrivateSymbols(this->context(), module, usage.get());
+    // Assign shorter names to symbols as long as it won't change the external meaning of the code.
+    Transform::RenamePrivateSymbols(this->context(), module, usage.get(), kind);
 
     // Replace constant variables with their literal values to save space.
     Transform::ReplaceConstVarsWithLiterals(module, usage.get());
@@ -307,14 +317,25 @@ bool Compiler::optimizeModuleBeforeMinifying(ProgramKind kind, Module& module) {
     // Remove any unreachable code.
     Transform::EliminateUnreachableCode(module, usage.get());
 
+    // We can only remove dead functions from runtime shaders, since runtime-effect helper functions
+    // are isolated from other parts of the program. In a module, an unreferenced function is
+    // intended to be called by the code that includes the module.
+    if (kind == ProgramKind::kRuntimeShader) {
+        while (Transform::EliminateDeadFunctions(this->context(), module, usage.get())) {
+            // Removing dead functions may cause more functions to become unreferenced. Try again.
+        }
+    }
+
     while (Transform::EliminateDeadLocalVariables(this->context(), module, usage.get())) {
         // Removing dead variables may cause more variables to become unreferenced. Try again.
     }
 
-    // We only eliminate private globals (prefixed with `$`) to avoid changing the meaning of the
-    // module code.
+    // Runtime shaders are isolated from other parts of the program via name mangling, so we can
+    // eliminate public globals if they aren't referenced. Otherwise, we only eliminate private
+    // globals (prefixed with `$`) to avoid changing the meaning of the module code.
+    bool onlyPrivateGlobals = !ProgramConfig::IsRuntimeEffect(kind);
     while (Transform::EliminateDeadGlobalVariables(this->context(), module, usage.get(),
-                                                   /*onlyPrivateGlobals=*/true)) {
+                                                   onlyPrivateGlobals)) {
         // Repeat until no changes occur.
     }
 
@@ -618,7 +639,9 @@ void Compiler::handleError(std::string_view msg, Position pos) {
     }
     fErrorText += std::string(msg) + "\n";
     if (printLocation) {
-        // Find the beginning of the line
+        const int kMaxSurroundingChars = 100;
+
+        // Find the beginning of the line.
         int lineStart = pos.startOffset();
         while (lineStart > 0) {
             if (src[lineStart - 1] == '\n') {
@@ -627,16 +650,37 @@ void Compiler::handleError(std::string_view msg, Position pos) {
             --lineStart;
         }
 
-        // echo the line
-        for (int i = lineStart; i < (int)src.length(); i++) {
-            switch (src[i]) {
-                case '\t': fErrorText += "    "; break;
-                case '\0': fErrorText += " ";    break;
-                case '\n': i = src.length();     break;
-                default:   fErrorText += src[i]; break;
+        // We don't want to show more than 100 characters surrounding the error, so push the line
+        // start forward and add a leading ellipsis if there would be more than this.
+        std::string lineText;
+        std::string caretText;
+        if ((pos.startOffset() - lineStart) > kMaxSurroundingChars) {
+            lineStart = pos.startOffset() - kMaxSurroundingChars;
+            lineText = "...";
+            caretText = "   ";
+        }
+
+        // Echo the line. Again, we don't want to show more than 100 characters after the end of the
+        // error, so truncate with a trailing ellipsis if needed.
+        const char* lineSuffix = "...\n";
+        int lineStop = pos.endOffset() + kMaxSurroundingChars;
+        if (lineStop >= (int)src.length()) {
+            lineStop = src.length() - 1;
+            lineSuffix = "\n";  // no ellipsis if we reach end-of-file
+        }
+        for (int i = lineStart; i < lineStop; ++i) {
+            char c = src[i];
+            if (c == '\n') {
+                lineSuffix = "\n";  // no ellipsis if we reach end-of-line
+                break;
+            }
+            switch (c) {
+                case '\t': lineText += "    "; break;
+                case '\0': lineText += " ";    break;
+                default:   lineText += src[i]; break;
             }
         }
-        fErrorText += '\n';
+        fErrorText += lineText + lineSuffix;
 
         // print the carets underneath it, pointing to the range in question
         for (int i = lineStart; i < (int)src.length(); i++) {
@@ -645,20 +689,20 @@ void Compiler::handleError(std::string_view msg, Position pos) {
             }
             switch (src[i]) {
                 case '\t':
-                   fErrorText += (i >= pos.startOffset()) ? "^^^^" : "    ";
+                   caretText += (i >= pos.startOffset()) ? "^^^^" : "    ";
                    break;
                 case '\n':
                     SkASSERT(i >= pos.startOffset());
                     // use an ellipsis if the error continues past the end of the line
-                    fErrorText += (pos.endOffset() > i + 1) ? "..." : "^";
+                    caretText += (pos.endOffset() > i + 1) ? "..." : "^";
                     i = src.length();
                     break;
                 default:
-                    fErrorText += (i >= pos.startOffset()) ? '^' : ' ';
+                    caretText += (i >= pos.startOffset()) ? '^' : ' ';
                     break;
             }
         }
-        fErrorText += '\n';
+        fErrorText += caretText + '\n';
     }
 }
 

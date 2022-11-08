@@ -462,7 +462,6 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
         if (draw.fPaintParams.has_value()) {
             std::tie(shaderID, shadingUniforms, paintTextures) =
                     ExtractPaintData(recorder, &gatherer, &builder,
-                                     draw.fDrawParams.transform().inverse(),
                                      draw.fPaintParams.value());
         } // else depth-only
 
@@ -606,7 +605,7 @@ bool DrawPass::prepareResources(ResourceProvider* resourceProvider,
             SKGPU_LOG_W("Failed to validate sampled texture. Will not create renderpass!");
             return false;
         }
-        if (!fSampledTextures[i]->instantiate(resourceProvider)) {
+        if (!TextureProxy::InstantiateIfNonVolatile(resourceProvider, fSampledTextures[i].get())) {
             SKGPU_LOG_W("Failed to instantiate sampled texture. Will not create renderpass!");
             return false;
         }
