@@ -5,7 +5,8 @@ generate:
 	echo "You do not need to run this any more for C++ code, only if you modify go code"
 
 generate_go:
-	cd .. && bazelisk run //:gazelle -- update infra/bots/task_drivers modules/canvaskit/go bazel/exporter
+	cd .. && bazelisk run //:gazelle -- update infra/bots/task_drivers modules/canvaskit/go \
+       bazel/exporter  bazel/deps_parser
 
 .PHONY: generate_cmake
 generate_cmake:
@@ -65,6 +66,10 @@ rbe_known_good_builds:
 	## https://github.com/emscripten-core/emscripten/pull/16640 to land
 	bazelisk build //modules/canvaskit:canvaskit --config=linux_rbe \
 		--config=ck_full_webgl2_debug --remote_download_minimal
+
+rbe_known_good_tests:
+	bazel test //tests/... --config=cpu_only_debug --config=linux_rbe \
+		--remote_download_minimal --test_output=errors
 
 iwyu_rbe:
 	bazelisk build //:skia_public --config=for_linux_x64_with_rbe \

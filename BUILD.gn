@@ -636,8 +636,19 @@ if (skia_compile_modules) {
       "SK_DISABLE_TRACING",
     ]
     sources = skslc_deps
-    sources += [ "tools/sksl-minify/SkSLMinify.cpp" ]
+    sources += [
+      "tools/sksl-minify/SkSLMinify.cpp",
+      "tools/skslc/ProcessWorklist.cpp",
+      "tools/skslc/ProcessWorklist.h",
+    ]
     libs = []
+    if (is_win) {
+      sources += [ "tools/SkGetExecutablePath_win.cpp" ]
+    } else if (is_mac || is_ios) {
+      sources += [ "tools/SkGetExecutablePath_mac.cpp" ]
+    } else if (is_linux || is_android) {
+      sources += [ "tools/SkGetExecutablePath_linux.cpp" ]
+    }
     if (is_win) {
       sources += [ "src/ports/SkOSFile_win.cpp" ]
     } else {
@@ -690,8 +701,53 @@ if (skia_compile_modules) {
     ]
     args += rebase_path(minify_sksl_sources)
   }
+
+  if (skia_compile_sksl_tests) {
+    # Minify our existing .rts files into golden minified outputs.
+    import("gn/sksl_tests.gni")
+    action("minify_sksl_tests") {
+      script = "gn/minify_sksl_tests.py"
+      deps = [
+        ":sksl-minify(//gn/toolchain:$host_toolchain)",
+        ":sksl_modules",
+      ]
+      sources = []
+      outputs = []
+      response_file_contents = []
+      args = [
+        rebase_path(sksl_minify_path),
+        rebase_path("src/sksl/sksl_shared.sksl"),
+        rebase_path("src/sksl/sksl_public.sksl"),
+        "{{response_file_name}}",
+      ]
+
+      testsDir = get_path_info("tests", "abspath")
+      resourcesDir = get_path_info("resources", "abspath")
+
+      foreach(partialPath, sksl_minify_tests_sources) {
+        dst = testsDir + partialPath
+        src = resourcesDir + partialPath
+
+        dir = get_path_info(dst, "dir")
+        name = get_path_info(dst, "name")
+        ext = get_path_info(dst, "extension")
+        if (ext == "rts") {
+          response_file_contents += rebase_path([
+                                                  src,
+                                                  dir,
+                                                ])
+          sources += [ src ]
+          outputs += [ target_out_dir + "/" +
+                       rebase_path(dir + "/" + name + ".minified.sksl",
+                                   target_out_dir) ]
+        }
+      }
+    }
+  }
 } else {
   group("minify_sksl") {
+  }
+  group("minify_sksl_tests") {
   }
 }
 
@@ -708,7 +764,11 @@ if (skia_compile_sksl_tests) {
       "SK_ENABLE_WGSL_VALIDATION",
     ]
     sources = skslc_deps
-    sources += [ "tools/skslc/Main.cpp" ]
+    sources += [
+      "tools/skslc/Main.cpp",
+      "tools/skslc/ProcessWorklist.cpp",
+      "tools/skslc/ProcessWorklist.h",
+    ]
     libs = []
     if (is_win) {
       sources += [ "src/ports/SkOSFile_win.cpp" ]
@@ -1017,6 +1077,7 @@ optional("gpu") {
 
   cflags_objcc = []
   if (skia_use_metal) {
+    public_defines += [ "SK_METAL" ]
     sources += skia_metal_sources
     if (skia_enable_metal_debug_info) {
       public_defines += [ "SK_ENABLE_MTL_DEBUG_INFO" ]
@@ -1129,6 +1190,7 @@ optional("graphite") {
     sources += skia_graphite_dawn_sources
   }
   if (skia_use_metal) {
+    public_defines += [ "SK_METAL" ]
     sources += skia_graphite_mtl_sources
     if (skia_enable_metal_debug_info) {
       public_defines += [ "SK_ENABLE_MTL_DEBUG_INFO" ]
@@ -1158,7 +1220,7 @@ optional("pdf") {
   public = skia_pdf_public
   sources = skia_pdf_sources
   sources_when_disabled = [ "src/pdf/SkDocument_PDF_None.cpp" ]
-  if (skia_use_icu && skia_use_harfbuzz && skia_pdf_subset_harfbuzz) {
+  if (skia_use_harfbuzz && skia_pdf_subset_harfbuzz) {
     deps += [ "//third_party/harfbuzz" ]
     defines = [ "SK_PDF_USE_HARFBUZZ_SUBSET" ]
   } else if (skia_use_icu && skia_use_sfntly) {
@@ -2282,13 +2344,15 @@ if (skia_enable_tools) {
       ]
     }
 
-    # optional separate library to dlopen when running CanvasStateTests.
-    skia_shared_library("canvas_state_lib") {
-      sources = [
-        "tests/CanvasStateHelpers.cpp",
-        "tests/CanvasStateHelpers.h",
-      ]
-      deps = [ ":skia" ]
+    if (!skia_enable_optimize_size) {
+      # optional separate library to dlopen when running CanvasStateTests.
+      skia_shared_library("canvas_state_lib") {
+        sources = [
+          "tests/CanvasStateHelpers.cpp",
+          "tests/CanvasStateHelpers.h",
+        ]
+        deps = [ ":skia" ]
+      }
     }
   }
 
@@ -2640,6 +2704,7 @@ if (skia_enable_tools) {
 
     if (is_android) {
       sources += [
+        "tools/SkGetExecutablePath_linux.cpp",
         "tools/sk_app/android/RasterWindowContext_android.cpp",
         "tools/sk_app/android/WindowContextFactory_android.h",
         "tools/sk_app/android/Window_android.cpp",
@@ -2651,6 +2716,7 @@ if (skia_enable_tools) {
       libs += [ "android" ]
     } else if (is_linux) {
       sources += [
+        "tools/SkGetExecutablePath_linux.cpp",
         "tools/sk_app/unix/RasterWindowContext_unix.cpp",
         "tools/sk_app/unix/WindowContextFactory_unix.h",
         "tools/sk_app/unix/Window_unix.cpp",
@@ -2665,6 +2731,7 @@ if (skia_enable_tools) {
       ]
     } else if (is_win) {
       sources += [
+        "tools/SkGetExecutablePath_win.cpp",
         "tools/sk_app/win/RasterWindowContext_win.cpp",
         "tools/sk_app/win/WindowContextFactory_win.h",
         "tools/sk_app/win/Window_win.cpp",
@@ -2673,6 +2740,7 @@ if (skia_enable_tools) {
       ]
     } else if (is_mac) {
       sources += [
+        "tools/SkGetExecutablePath_mac.cpp",
         "tools/sk_app/mac/WindowContextFactory_mac.h",
         "tools/sk_app/mac/Window_mac.h",
         "tools/sk_app/mac/Window_mac.mm",
@@ -2685,6 +2753,7 @@ if (skia_enable_tools) {
       ]
     } else if (is_ios) {
       sources += [
+        "tools/SkGetExecutablePath_mac.cpp",
         "tools/sk_app/ios/WindowContextFactory_ios.h",
         "tools/sk_app/ios/Window_ios.h",
         "tools/sk_app/ios/Window_ios.mm",
@@ -2931,15 +3000,14 @@ if (skia_enable_tools) {
     ]
   }
 
-  if (skia_use_icu && skia_use_harfbuzz) {
-    test_app("editor") {
-      is_shared_library = is_android
-      deps = [ "modules/skplaintexteditor:editor_app" ]
-    }
-    test_app("text_editor") {
-      is_shared_library = is_android
-      deps = [ "experimental/sktext:text_editor" ]
-    }
+  test_app("editor") {
+    is_shared_library = is_android
+    deps = [ "modules/skplaintexteditor:editor_app" ]
+  }
+
+  test_app("text_editor") {
+    is_shared_library = is_android
+    deps = [ "experimental/sktext:text_editor" ]
   }
 
   skia_executable("image_diff_metric") {

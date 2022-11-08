@@ -21,12 +21,17 @@
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLUtil.h"
+#include "src/sksl/analysis/SkSLProgramVisitor.h"
+#include "src/sksl/ir/SkSLFieldAccess.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLStructDefinition.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
+#include "src/sksl/ir/SkSLVariableReference.h"
 
 #if SK_SUPPORT_GPU
 #include "src/gpu/ganesh/GrGpu.h"
@@ -111,33 +116,21 @@ gather_uniforms_and_check_for_main(const SkSL::Program& program,
 
 using ColorType = SkMeshSpecificationPriv::ColorType;
 
-static std::tuple<ColorType, bool>
-get_fs_color_type_and_local_coords(const SkSL::Program& fsProgram) {
+ColorType get_fs_color_type(const SkSL::Program& fsProgram) {
     for (const SkSL::ProgramElement* elem : fsProgram.elements()) {
         if (elem->is<SkSL::FunctionDefinition>()) {
             const SkSL::FunctionDefinition& defn = elem->as<SkSL::FunctionDefinition>();
             const SkSL::FunctionDeclaration& decl = defn.declaration();
             if (decl.isMain()) {
-
-                SkMeshSpecificationPriv::ColorType ct;
                 SkASSERT(decl.parameters().size() == 1 || decl.parameters().size() == 2);
                 if (decl.parameters().size() == 1) {
-                    ct = ColorType::kNone;
-                } else {
-                    const SkSL::Type& paramType = decl.parameters()[1]->type();
-                    SkASSERT(paramType.matches(*fsProgram.fContext->fTypes.fHalf4) ||
-                             paramType.matches(*fsProgram.fContext->fTypes.fFloat4));
-                    ct = paramType.matches(*fsProgram.fContext->fTypes.fHalf4)
-                                 ? ColorType::kHalf4
-                                 : ColorType::kFloat4;
+                    return ColorType::kNone;
                 }
-
-                const SkSL::Type& returnType = decl.returnType();
-                SkASSERT(returnType.matches(*fsProgram.fContext->fTypes.fVoid) ||
-                         returnType.matches(*fsProgram.fContext->fTypes.fFloat2));
-                bool hasLocalCoords = returnType.matches(*fsProgram.fContext->fTypes.fFloat2);
-
-                return std::make_tuple(ct, hasLocalCoords);
+                const SkSL::Type& paramType = decl.parameters()[1]->type();
+                SkASSERT(paramType.matches(*fsProgram.fContext->fTypes.fHalf4) ||
+                         paramType.matches(*fsProgram.fContext->fTypes.fFloat4));
+                return paramType.matches(*fsProgram.fContext->fTypes.fHalf4) ? ColorType::kHalf4
+                                                                             : ColorType::kFloat4;
             }
         }
     }
@@ -238,6 +231,141 @@ check_vertex_offsets_and_stride(SkSpan<const Attribute> attributes,
     RETURN_SUCCESS;
 }
 
+int check_for_passthrough_local_coords_and_dead_varyings(const SkSL::Program& fsProgram,
+                                                         uint32_t* deadVaryingMask) {
+    SkASSERT(deadVaryingMask);
+
+    using namespace SkSL;
+    static constexpr int kFailed = -2;
+
+    class Visitor final : public SkSL::ProgramVisitor {
+    public:
+        Visitor(const Context& context) : fContext(context) {}
+
+        void visit(const Program& program) { ProgramVisitor::visit(program); }
+
+        int passthroughFieldIndex() const { return fPassthroughFieldIndex; }
+
+        uint32_t fieldUseMask() const { return fFieldUseMask; }
+
+    protected:
+        bool visitProgramElement(const ProgramElement& p) override {
+            if (p.is<StructDefinition>()) {
+                const auto& def = p.as<StructDefinition>();
+                if (def.type().name() == "Varyings") {
+                    fVaryingsType = &def.type();
+                }
+                // No reason to keep looking at this type definition.
+                return false;
+            }
+            if (p.is<FunctionDefinition>() && p.as<FunctionDefinition>().declaration().isMain()) {
+                SkASSERT(!fVaryings);
+                fVaryings = p.as<FunctionDefinition>().declaration().parameters()[0];
+
+                SkASSERT(fVaryingsType && fVaryingsType->matches(fVaryings->type()));
+
+                fInMain = true;
+                bool result = ProgramVisitor::visitProgramElement(p);
+                fInMain = false;
+                return result;
+            }
+            return ProgramVisitor::visitProgramElement(p);
+        }
+
+        bool visitStatement(const Statement& s) override {
+            if (!fInMain) {
+                return ProgramVisitor::visitStatement(s);
+            }
+            // We should only get here if are in main and therefore found the varyings parameter.
+            SkASSERT(fVaryings);
+            SkASSERT(fVaryingsType);
+
+            if (fPassthroughFieldIndex == kFailed) {
+                // We've already determined there are return statements that aren't passthrough
+                // or return different fields.
+                return ProgramVisitor::visitStatement(s);
+            }
+            if (!s.is<ReturnStatement>()) {
+                return ProgramVisitor::visitStatement(s);
+            }
+
+            // We just detect simple cases like "return varyings.foo;"
+            const auto& rs = s.as<ReturnStatement>();
+            SkASSERT(rs.expression());
+            if (!rs.expression()->is<FieldAccess>()) {
+                this->passthroughFailed();
+                return ProgramVisitor::visitStatement(s);
+            }
+            const auto& fa = rs.expression()->as<FieldAccess>();
+            if (!fa.base()->is<VariableReference>()) {
+                this->passthroughFailed();
+                return ProgramVisitor::visitStatement(s);
+            }
+            const auto& baseRef = fa.base()->as<VariableReference>();
+            if (baseRef.variable() != fVaryings) {
+                this->passthroughFailed();
+                return ProgramVisitor::visitStatement(s);
+            }
+            if (fPassthroughFieldIndex >= 0) {
+                // We already found an OK return statement. Check if this one returns the same
+                // field.
+                if (fa.fieldIndex() != fPassthroughFieldIndex) {
+                    this->passthroughFailed();
+                    return ProgramVisitor::visitStatement(s);
+                }
+                // We don't call our base class here because we don't want to hit visitExpression
+                // and mark the returned field as used.
+                return false;
+            }
+            const Type::Field& field = fVaryings->type().fields()[fa.fieldIndex()];
+            if (!field.fType->matches(*fContext.fTypes.fFloat2)) {
+                this->passthroughFailed();
+                return ProgramVisitor::visitStatement(s);
+            }
+            fPassthroughFieldIndex = fa.fieldIndex();
+            // We don't call our base class here because we don't want to hit visitExpression and
+            // mark the returned field as used.
+            return false;
+        }
+
+        bool visitExpression(const Expression& e) override {
+            // Anything before the Varyings struct is defined doesn't matter.
+            if (!fVaryingsType) {
+                return false;
+            }
+            if (!e.is<FieldAccess>()) {
+                return ProgramVisitor::visitExpression(e);
+            }
+            const auto& fa = e.as<FieldAccess>();
+            if (!fa.base()->type().matches(*fVaryingsType)) {
+                return ProgramVisitor::visitExpression(e);
+            }
+            fFieldUseMask |= 1 << fa.fieldIndex();
+            return false;
+        }
+
+    private:
+        void passthroughFailed() {
+            if (fPassthroughFieldIndex >= 0) {
+                fFieldUseMask |= 1 << fPassthroughFieldIndex;
+            }
+            fPassthroughFieldIndex = kFailed;
+        }
+
+        const Context&  fContext;
+        const Type*     fVaryingsType          = nullptr;
+        const Variable* fVaryings              = nullptr;
+        int             fPassthroughFieldIndex = -1;
+        bool            fInMain                = false;
+        uint32_t        fFieldUseMask          = 0;
+    };
+
+    Visitor v(*fsProgram.fContext);
+    v.visit(fsProgram);
+    *deadVaryingMask = ~v.fieldUseMask();
+    return v.passthroughFieldIndex();
+}
+
 SkMeshSpecification::Result SkMeshSpecification::Make(SkSpan<const Attribute> attributes,
                                                       size_t vertexStride,
                                                       SkSpan<const Varying> varyings,
@@ -274,13 +402,33 @@ SkMeshSpecification::Result SkMeshSpecification::Make(SkSpan<const Attribute> at
     }
     attributesStruct.append("};\n");
 
+    bool userProvidedPositionVarying = false;
+    for (const auto& v : varyings) {
+        if (v.name.equals("position")) {
+            if (v.type != Varying::Type::kFloat2) {
+                return {nullptr, SkString("Varying \"position\" must have type float2.")};
+            }
+            userProvidedPositionVarying = true;
+        }
+    }
+
+    SkSTArray<kMaxVaryings, Varying> tempVaryings;
+    if (!userProvidedPositionVarying) {
+        // Even though we check the # of varyings in MakeFromSourceWithStructs we check here, too,
+        // to avoid overflow with + 1.
+        if (varyings.size() > kMaxVaryings - 1) {
+            RETURN_FAILURE("A maximum of %zu varyings is allowed.", kMaxVaryings);
+        }
+        for (const auto& v : varyings) {
+            tempVaryings.push_back(v);
+        }
+        tempVaryings.push_back(Varying{Varying::Type::kFloat2, SkString("position")});
+        varyings = tempVaryings;
+    }
+
     SkString varyingStruct("struct Varyings {\n");
     for (const auto& v : varyings) {
         varyingStruct.appendf("  %s %s;\n", varying_type_string(v.type), v.name.c_str());
-    }
-    // Throw in an unused variable to avoid an empty struct, which is illegal.
-    if (varyings.empty()) {
-        varyingStruct.append("  bool _empty_;\n");
     }
     varyingStruct.append("};\n");
 
@@ -384,7 +532,7 @@ SkMeshSpecification::Result SkMeshSpecification::MakeFromSourceWithStructs(
         RETURN_FAILURE("Color transform intrinsics are not permitted in custom mesh shaders");
     }
 
-    auto [ct, hasLocalCoords] = get_fs_color_type_and_local_coords(*fsProgram);
+    ColorType ct = get_fs_color_type(*fsProgram);
 
     if (ct == ColorType::kNone) {
         cs = nullptr;
@@ -398,14 +546,23 @@ SkMeshSpecification::Result SkMeshSpecification::MakeFromSourceWithStructs(
         }
     }
 
+    uint32_t deadVaryingMask;
+    int passthroughLocalCoordsVaryingIndex =
+            check_for_passthrough_local_coords_and_dead_varyings(*fsProgram, &deadVaryingMask);
+
+    if (passthroughLocalCoordsVaryingIndex >= 0) {
+        SkASSERT(varyings[passthroughLocalCoordsVaryingIndex].type == Varying::Type::kFloat2);
+    }
+
     return {sk_sp<SkMeshSpecification>(new SkMeshSpecification(attributes,
                                                                stride,
                                                                varyings,
+                                                               passthroughLocalCoordsVaryingIndex,
+                                                               deadVaryingMask,
                                                                std::move(uniforms),
                                                                std::move(vsProgram),
                                                                std::move(fsProgram),
                                                                ct,
-                                                               hasLocalCoords,
                                                                std::move(cs),
                                                                at)),
             /*error=*/{}};
@@ -413,24 +570,27 @@ SkMeshSpecification::Result SkMeshSpecification::MakeFromSourceWithStructs(
 
 SkMeshSpecification::~SkMeshSpecification() = default;
 
-SkMeshSpecification::SkMeshSpecification(SkSpan<const Attribute>              attributes,
-                                         size_t                               stride,
-                                         SkSpan<const Varying>                varyings,
-                                         std::vector<Uniform>                 uniforms,
-                                         std::unique_ptr<const SkSL::Program> vs,
-                                         std::unique_ptr<const SkSL::Program> fs,
-                                         ColorType                            ct,
-                                         bool                                 hasLocalCoords,
-                                         sk_sp<SkColorSpace>                  cs,
-                                         SkAlphaType                          at)
+SkMeshSpecification::SkMeshSpecification(
+        SkSpan<const Attribute>              attributes,
+        size_t                               stride,
+        SkSpan<const Varying>                varyings,
+        int                                  passthroughLocalCoordsVaryingIndex,
+        uint32_t                             deadVaryingMask,
+        std::vector<Uniform>                 uniforms,
+        std::unique_ptr<const SkSL::Program> vs,
+        std::unique_ptr<const SkSL::Program> fs,
+        ColorType                            ct,
+        sk_sp<SkColorSpace>                  cs,
+        SkAlphaType                          at)
         : fAttributes(attributes.begin(), attributes.end())
         , fVaryings(varyings.begin(), varyings.end())
         , fUniforms(std::move(uniforms))
         , fVS(std::move(vs))
         , fFS(std::move(fs))
         , fStride(stride)
+        , fPassthroughLocalCoordsVaryingIndex(passthroughLocalCoordsVaryingIndex)
+        , fDeadVaryingMask(deadVaryingMask)
         , fColorType(ct)
-        , fHasLocalCoords(hasLocalCoords)
         , fColorSpace(std::move(cs))
         , fAlphaType(at) {
     fHash = SkOpts::hash_fn(fVS->fSource->c_str(), fVS->fSource->size(), 0);
@@ -500,11 +660,16 @@ sk_sp<IndexBuffer> SkMesh::MakeIndexBuffer(GrDirectContext* dc, const void* data
     return nullptr;
 }
 
-sk_sp<IndexBuffer> SkMesh::MakeIndexBuffer(GrDirectContext* dc, sk_sp<const SkData> data) {
+sk_sp<IndexBuffer> SkMesh::CopyIndexBuffer(GrDirectContext* dc, sk_sp<IndexBuffer> src) {
+    if (!src) {
+        return nullptr;
+    }
+    auto* ib = static_cast<SkMeshPriv::IB*>(src.get());
+    const void* data = ib->peek();
     if (!data) {
         return nullptr;
     }
-    return MakeIndexBuffer(dc, data->data(), data->size());
+    return MakeIndexBuffer(dc, data, ib->size());
 }
 
 sk_sp<VertexBuffer> SkMesh::MakeVertexBuffer(GrDirectContext* dc, const void* data, size_t size) {
@@ -517,11 +682,16 @@ sk_sp<VertexBuffer> SkMesh::MakeVertexBuffer(GrDirectContext* dc, const void* da
     return nullptr;
 }
 
-sk_sp<VertexBuffer> SkMesh::MakeVertexBuffer(GrDirectContext* dc, sk_sp<const SkData> data) {
+sk_sp<VertexBuffer> SkMesh::CopyVertexBuffer(GrDirectContext* dc, sk_sp<VertexBuffer> src) {
+    if (!src) {
+        return nullptr;
+    }
+    auto* vb = static_cast<SkMeshPriv::VB*>(src.get());
+    const void* data = vb->peek();
     if (!data) {
         return nullptr;
     }
-    return MakeVertexBuffer(dc, data->data(), data->size());
+    return MakeVertexBuffer(dc, data, vb->size());
 }
 
 SkMesh SkMesh::Make(sk_sp<SkMeshSpecification> spec,

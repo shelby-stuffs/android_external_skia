@@ -39,9 +39,12 @@ public:
                  (GrMipmapStatus::kNotAllocated == fMipmapStatus));
         return GrMipmapped::kYes == fMipmapped && GrMipmapStatus::kValid != fMipmapStatus;
     }
-    void markMipmapsDirty() {
+    void markMipmapsDirty(const char* reason, int flushNum = -1, bool isFlushing = false) {
         SkASSERT(GrMipmapped::kYes == fMipmapped);
         fMipmapStatus = GrMipmapStatus::kDirty;
+        SkDEBUGCODE(fMipmapDirtyReason = reason;)
+        SkDEBUGCODE(fMipmapDirtyFlushNum = flushNum;)
+        SkDEBUGCODE(fMipmapDirtyWasFlushing = isFlushing;)
     }
     void markMipmapsClean() {
         SkASSERT(GrMipmapped::kYes == fMipmapped);
@@ -55,9 +58,19 @@ public:
 #ifdef SK_DEBUG
     // TODO: Added to verify that task order for mipmaps and rendering is correct
     // Could be removed once verified.
-    bool slatedForMipmapRegen() { return fSlatedForMipmapRegen; }
+    bool slatedForMipmapRegen() const { return fSlatedForMipmapRegen; }
     void needsMipmapRegen() { fSlatedForMipmapRegen = true; }
     void mipmapsRegenerated() { fSlatedForMipmapRegen = false; }
+    SkString mipmapDirtyReport() const {
+        SkString report;
+        report.printf("Proxy dirtied by \"%s\"", fMipmapDirtyReason);
+        if (fMipmapDirtyFlushNum >= 0) {
+            report.appendf(" during flush %d, was flushing: %d",
+                           fMipmapDirtyFlushNum,
+                           fMipmapDirtyWasFlushing);
+        }
+        return report;
+    }
 #endif
 
     GrTextureType textureType() const { return this->backendFormat().textureType(); }
@@ -191,7 +204,9 @@ private:
     // TODO: Tracking to see if mipmap regen occurs in the correct task order
     // Could be removed once verified.
     SkDEBUGCODE(bool fSlatedForMipmapRegen = false;)
-
+    SkDEBUGCODE(const char* fMipmapDirtyReason = "";)
+    SkDEBUGCODE(int fMipmapDirtyFlushNum = -1;)
+    SkDEBUGCODE(bool fMipmapDirtyWasFlushing = false;)
     bool             fSyncTargetKey = true;  // Should target's unique key be sync'ed with ours.
 
     // For GrTextureProxies created in a DDL recording thread it is possible for the uniqueKey

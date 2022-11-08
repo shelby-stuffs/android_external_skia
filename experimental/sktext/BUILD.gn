@@ -10,8 +10,7 @@ declare_args() {
   text_bench_enabled = false
 }
 
-if (skia_enable_sktext && skia_enable_skshaper && skia_use_icu &&
-    skia_use_harfbuzz) {
+if (skia_enable_sktext && skia_enable_skshaper && skia_use_harfbuzz) {
   config("public_config") {
     include_dirs = [ "include" ]
   }
@@ -120,5 +119,7 @@ if (skia_enable_sktext && skia_enable_skshaper && skia_use_icu &&
   group("bench") {
   }
   group("samples") {
+  }
+  group("text_editor") {
   }
 }

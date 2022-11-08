@@ -40,26 +40,19 @@ def executeWorklist(input, worklist):
     # Delete the worklist file now that execution is complete.
     os.remove(worklist.name)
 
-def makeEmptyFile(path):
-    try:
-        open(path, 'wb').close()
-    except OSError:
-        pass
-
 def extensionForSpirvAsm(ext):
     return ext if (ext == '.frag' or ext == '.vert') else '.frag'
 
 if settings != "--settings" and settings != "--nosettings":
     sys.exit("### Expected --settings or --nosettings, got " + settings)
 
-targets = []
 worklist = tempfile.NamedTemporaryFile(suffix='.worklist', delete=False, mode='w')
 
 # The `inputs` array pairs off input files with their matching output directory, e.g.:
-#     //skia/tests/sksl/shared/test.sksl
-#     //skia/tests/sksl/shared/golden/
-#     //skia/tests/sksl/intrinsics/abs.sksl
-#     //skia/tests/sksl/intrinsics/golden/
+#     //skia/resources/sksl/shared/HelloWorld.sksl
+#     //skia/tests/sksl/shared/
+#     //skia/resources/sksl/intrinsics/Abs.sksl
+#     //skia/tests/sksl/intrinsics/
 #     ... (etc) ...
 # Here we loop over these inputs and convert them into a worklist file for skslc.
 for input, targetDir in pairwise(inputs):
@@ -71,8 +64,6 @@ for input, targetDir in pairwise(inputs):
     target = os.path.join(targetDir, tail)
     if settings == "--nosettings":
         target += "StandaloneSettings"
-
-    targets.append(target)
 
     if lang == "--glsl":
         worklist.write(input + "\n")

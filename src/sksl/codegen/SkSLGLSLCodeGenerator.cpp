@@ -10,6 +10,7 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
+#include "include/private/SkSLIRNode.h"
 #include "include/private/SkSLLayout.h"
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramElement.h"
@@ -18,6 +19,7 @@
 #include "include/private/SkStringView.h"
 #include "include/private/SkTArray.h"
 #include "include/sksl/SkSLErrorReporter.h"
+#include "include/sksl/SkSLOperator.h"
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
@@ -1132,7 +1134,11 @@ void GLSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) {
         }
         this->write(separator);
         separator = ", ";
-        this->writeModifiers(param->modifiers(), false);
+        Modifiers modifiers = param->modifiers();
+        if (this->caps().fRemoveConstFromFunctionParameters) {
+            modifiers.fFlags &= ~Modifiers::kConst_Flag;
+        }
+        this->writeModifiers(modifiers, false);
         std::vector<int> sizes;
         const Type* type = &param->type();
         if (type->isArray()) {
@@ -1245,14 +1251,11 @@ void GLSLCodeGenerator::writeInterfaceBlock(const InterfaceBlock& intf) {
     if (intf.typeName() == "sk_PerVertex") {
         return;
     }
+    const Type* structType = &intf.var()->type().componentType();
     this->writeModifiers(intf.var()->modifiers(), true);
-    this->writeIdentifier(intf.typeName());
+    this->writeType(*structType);
     this->writeLine(" {");
     fIndentation++;
-    const Type* structType = &intf.var()->type();
-    if (structType->isArray()) {
-        structType = &structType->componentType();
-    }
     for (const auto& f : structType->fields()) {
         this->writeModifiers(f.fModifiers, false);
         this->writeTypePrecision(*f.fType);

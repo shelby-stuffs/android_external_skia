@@ -1618,7 +1618,7 @@ protected:
             if (this->isVerbose()) {
                 SkDebugf("Text:>%s<\n", impl->text().data());
             }
-            impl->setState(InternalState::kUnknown);
+            impl->markDirty();
             fParagraph->layout(1000);
             fParagraph->paint(canvas, 300, 200);
 
@@ -3744,7 +3744,7 @@ protected:
         fIcu->getWords(text.c_str(), text.size(), &words1);
 
         SkTArray<SkUnicode::CodeUnitFlags, true> codeUnitFlags;
-        fIcu->computeCodeUnitFlags(text.writable_str(), text.size(), false, &codeUnitFlags);
+        fIcu->computeCodeUnitFlags(text.data(), text.size(), false, &codeUnitFlags);
 
         std::vector<SkUnicode::Position> graphemeBreaks;
         std::vector<SkUnicode::LineBreakBefore> lineBreaks;
@@ -3912,9 +3912,9 @@ private:
     using INHERITED = Sample;
 };
 
-class ParagraphViewLast : public ParagraphView_Base {
+class ParagraphView68 : public ParagraphView_Base {
 protected:
-    SkString name() override { return SkString("ParagraphViewLast"); }
+    SkString name() override { return SkString("ParagraphView68"); }
     void onDrawContent(SkCanvas* canvas) override {
         canvas->drawColor(SK_ColorWHITE);
         auto fontCollection = getFontCollection();
@@ -3965,6 +3965,35 @@ private:
     using INHERITED = Sample;
 };
 
+class ParagraphViewLast : public ParagraphView_Base {
+protected:
+    SkString name() override { return SkString("ParagraphViewLast"); }
+    void onDrawContent(SkCanvas* canvas) override {
+        canvas->drawColor(SK_ColorWHITE);
+        auto fontCollection = getFontCollection();
+        fontCollection->setDefaultFontManager(SkFontMgr::RefDefault());
+        fontCollection->enableFontFallback();
+        TextStyle text_style;
+        text_style.setFontFamilies({SkString("Noto Naskh Arabic")});
+        text_style.setFontSize(50);
+        text_style.setColor(SK_ColorBLACK);
+        ParagraphStyle paragraph_style;
+        paragraph_style.setTextStyle(text_style);
+        paragraph_style.setTextDirection(TextDirection::kRtl);
+        ParagraphBuilderImpl builder(paragraph_style, fontCollection);
+        text_style.setColor(SK_ColorRED);
+        builder.pushStyle(text_style);
+        builder.addText(u"\u062c\u064e\u0627\u0653");
+        text_style.setColor(SK_ColorBLUE);
+        builder.pushStyle(text_style);
+        builder.addText(u"\u064e\u0647\u064f");
+        auto paragraph = builder.Build();
+        paragraph->layout(this->width());
+        paragraph->paint(canvas, 0, 0);
+    }
+private:
+    using INHERITED = Sample;
+};
 }  // namespace
 
 //////////////////////////////////////////////////////////////////////////////
@@ -4033,4 +4062,5 @@ DEF_SAMPLE(return new ParagraphView64();)
 DEF_SAMPLE(return new ParagraphView65();)
 DEF_SAMPLE(return new ParagraphView66();)
 DEF_SAMPLE(return new ParagraphView67();)
+DEF_SAMPLE(return new ParagraphView68();)
 DEF_SAMPLE(return new ParagraphViewLast();)

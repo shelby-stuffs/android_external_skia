@@ -4,9 +4,11 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "src/sksl/SkSLModuleLoader.h"
 
 #include "include/core/SkTypes.h"
 #include "include/private/SkMutex.h"
+#include "include/private/SkSLIRNode.h"
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLProgramKind.h"
@@ -14,7 +16,6 @@
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLModifiersPool.h"
-#include "src/sksl/SkSLModuleLoader.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVariable.h"
@@ -187,41 +188,6 @@ ModuleLoader::Impl::Impl() {
     this->makeRootSymbolTable();
 }
 
-static void add_public_type_aliases(SkSL::SymbolTable* symbols, const SkSL::BuiltinTypes& types) {
-    // Add some aliases to the runtime effect modules so that it's friendlier, and more like GLSL.
-    symbols->addWithoutOwnership(types.fVec2.get());
-    symbols->addWithoutOwnership(types.fVec3.get());
-    symbols->addWithoutOwnership(types.fVec4.get());
-
-    symbols->addWithoutOwnership(types.fIVec2.get());
-    symbols->addWithoutOwnership(types.fIVec3.get());
-    symbols->addWithoutOwnership(types.fIVec4.get());
-
-    symbols->addWithoutOwnership(types.fBVec2.get());
-    symbols->addWithoutOwnership(types.fBVec3.get());
-    symbols->addWithoutOwnership(types.fBVec4.get());
-
-    symbols->addWithoutOwnership(types.fMat2.get());
-    symbols->addWithoutOwnership(types.fMat3.get());
-    symbols->addWithoutOwnership(types.fMat4.get());
-
-    symbols->addWithoutOwnership(types.fMat2x2.get());
-    symbols->addWithoutOwnership(types.fMat2x3.get());
-    symbols->addWithoutOwnership(types.fMat2x4.get());
-    symbols->addWithoutOwnership(types.fMat3x2.get());
-    symbols->addWithoutOwnership(types.fMat3x3.get());
-    symbols->addWithoutOwnership(types.fMat3x4.get());
-    symbols->addWithoutOwnership(types.fMat4x2.get());
-    symbols->addWithoutOwnership(types.fMat4x3.get());
-    symbols->addWithoutOwnership(types.fMat4x4.get());
-
-    // Hide all the private symbols by aliasing them all to "invalid". This will prevent code from
-    // using built-in names like `sampler2D` as variable names.
-    for (BuiltinTypePtr privateType : kPrivateTypes) {
-        symbols->inject(Type::MakeAliasType((types.*privateType)->name(), *types.fInvalid));
-    }
-}
-
 static void add_compute_type_aliases(SkSL::SymbolTable* symbols, const SkSL::BuiltinTypes& types) {
     // A `texture2D` in a compute shader should generally mean "read-write" texture access, not
     // "sample" texture access. Remap the name `texture2D` to point to `readWriteTexture2D`.
@@ -240,6 +206,9 @@ static std::unique_ptr<Module> compile_and_shrink(SkSL::Compiler* compiler,
                                                         parent,
                                                         modifiersPool,
                                                         /*shouldInline=*/true);
+    if (!m) {
+        SK_ABORT("Unable to load module %s", moduleName);
+    }
 
     // We can eliminate FunctionPrototypes without changing the meaning of the module; the function
     // declaration is still safely in the symbol table. This only impacts our ability to recreate
@@ -282,6 +251,44 @@ const Module* ModuleLoader::rootModule() {
     return fModuleLoader.fRootModule.get();
 }
 
+void ModuleLoader::addPublicTypeAliases(const SkSL::Module* module) {
+    const SkSL::BuiltinTypes& types = this->builtinTypes();
+    SymbolTable* symbols = module->fSymbols.get();
+
+    // Add some aliases to the runtime effect modules so that it's friendlier, and more like GLSL.
+    symbols->addWithoutOwnership(types.fVec2.get());
+    symbols->addWithoutOwnership(types.fVec3.get());
+    symbols->addWithoutOwnership(types.fVec4.get());
+
+    symbols->addWithoutOwnership(types.fIVec2.get());
+    symbols->addWithoutOwnership(types.fIVec3.get());
+    symbols->addWithoutOwnership(types.fIVec4.get());
+
+    symbols->addWithoutOwnership(types.fBVec2.get());
+    symbols->addWithoutOwnership(types.fBVec3.get());
+    symbols->addWithoutOwnership(types.fBVec4.get());
+
+    symbols->addWithoutOwnership(types.fMat2.get());
+    symbols->addWithoutOwnership(types.fMat3.get());
+    symbols->addWithoutOwnership(types.fMat4.get());
+
+    symbols->addWithoutOwnership(types.fMat2x2.get());
+    symbols->addWithoutOwnership(types.fMat2x3.get());
+    symbols->addWithoutOwnership(types.fMat2x4.get());
+    symbols->addWithoutOwnership(types.fMat3x2.get());
+    symbols->addWithoutOwnership(types.fMat3x3.get());
+    symbols->addWithoutOwnership(types.fMat3x4.get());
+    symbols->addWithoutOwnership(types.fMat4x2.get());
+    symbols->addWithoutOwnership(types.fMat4x3.get());
+    symbols->addWithoutOwnership(types.fMat4x4.get());
+
+    // Hide all the private symbols by aliasing them all to "invalid". This will prevent code from
+    // using built-in names like `sampler2D` as variable names.
+    for (BuiltinTypePtr privateType : kPrivateTypes) {
+        symbols->inject(Type::MakeAliasType((types.*privateType)->name(), *types.fInvalid));
+    }
+}
+
 const Module* ModuleLoader::loadPublicModule(SkSL::Compiler* compiler) {
     if (!fModuleLoader.fPublicModule) {
         const Module* sharedModule = this->loadSharedModule(compiler);
@@ -290,7 +297,7 @@ const Module* ModuleLoader::loadPublicModule(SkSL::Compiler* compiler) {
                                                          MODULE_DATA(sksl_public),
                                                          sharedModule,
                                                          this->coreModifiers());
-        add_public_type_aliases(fModuleLoader.fPublicModule->fSymbols.get(), this->builtinTypes());
+        this->addPublicTypeAliases(fModuleLoader.fPublicModule.get());
     }
     return fModuleLoader.fPublicModule.get();
 }

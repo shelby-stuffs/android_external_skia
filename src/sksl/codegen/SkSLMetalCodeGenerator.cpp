@@ -9,12 +9,14 @@
 
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
+#include "include/private/SkSLIRNode.h"
 #include "include/private/SkSLLayout.h"
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLStatement.h"
 #include "include/private/SkSLString.h"
 #include "include/sksl/SkSLErrorReporter.h"
+#include "include/sksl/SkSLOperator.h"
 #include "include/sksl/SkSLPosition.h"
 #include "src/core/SkScopeExit.h"
 #include "src/sksl/SkSLAnalysis.h"
@@ -69,7 +71,6 @@
 #include <functional>
 #include <limits>
 #include <memory>
-#include <type_traits>
 
 namespace SkSL {
 
@@ -2215,16 +2216,14 @@ void MetalCodeGenerator::writeModifiers(const Modifiers& modifiers) {
 }
 
 void MetalCodeGenerator::writeInterfaceBlock(const InterfaceBlock& intf) {
-    if ("sk_PerVertex" == intf.typeName()) {
+    if (intf.typeName() == "sk_PerVertex") {
         return;
     }
+    const Type* structType = &intf.var()->type().componentType();
     this->writeModifiers(intf.var()->modifiers());
     this->write("struct ");
-    this->writeLine(std::string(intf.typeName()) + " {");
-    const Type* structType = &intf.var()->type();
-    if (structType->isArray()) {
-        structType = &structType->componentType();
-    }
+    this->writeType(*structType);
+    this->writeLine(" {");
     fIndentation++;
     this->writeFields(structType->fields(), structType->fPosition, &intf);
     if (fProgram.fInputs.fUseFlipRTUniform) {

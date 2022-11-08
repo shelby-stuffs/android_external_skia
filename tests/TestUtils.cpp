@@ -21,6 +21,7 @@
 #include "include/gpu/GrRecordingContext.h"
 #include "include/private/SkTemplates.h"
 #include "include/private/SkTo.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "include/utils/SkBase64.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -153,7 +154,7 @@ bool BipmapToBase64DataURI(const SkBitmap& bitmap, SkString* dst) {
     }
 
     dst->resize(len);
-    SkBase64::Encode(pngData->data(), pngData->size(), dst->writable_str());
+    SkBase64::Encode(pngData->data(), pngData->size(), dst->data());
     dst->prepend("data:image/png;base64,");
     return true;
 }

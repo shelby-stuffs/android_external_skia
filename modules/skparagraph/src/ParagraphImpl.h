@@ -68,6 +68,16 @@ struct ResolvedFontDescriptor {
     SkFont fFont;
     TextIndex fTextStart;
 };
+
+enum InternalState {
+  kUnknown = 0,
+  kIndexed = 1,     // Text is indexed
+  kShaped = 2,      // Text is shaped
+  kLineBroken = 5,
+  kFormatted = 6,
+  kDrawn = 7
+};
+
 /*
 struct BidiRegion {
     BidiRegion(size_t start, size_t end, uint8_t dir)
@@ -98,6 +108,7 @@ public:
 
     void layout(SkScalar width) override;
     void paint(SkCanvas* canvas, SkScalar x, SkScalar y) override;
+    void paint(ParagraphPainter* canvas, SkScalar x, SkScalar y) override;
     std::vector<TextBox> getRectsForRange(unsigned start,
                                           unsigned end,
                                           RectHeightStyle rectHeightStyle,
@@ -164,7 +175,11 @@ public:
     Block& block(BlockIndex blockIndex);
     SkTArray<ResolvedFontDescriptor> resolvedFonts() const { return fFontSwitches; }
 
-    void markDirty() override { fState = kUnknown; }
+    void markDirty() override {
+        if (fState > kIndexed) {
+            fState = kIndexed;
+        }
+    }
 
     int32_t unresolvedGlyphs() override;
 
@@ -183,7 +198,6 @@ public:
     void breakShapedTextIntoLines(SkScalar maxWidth);
 
     void updateTextAlign(TextAlign textAlign) override;
-    void updateText(size_t from, SkString text) override;
     void updateFontSize(size_t from, size_t to, SkScalar fontSize) override;
     void updateForegroundPaint(size_t from, size_t to, SkPaint paint) override;
     void updateBackgroundPaint(size_t from, size_t to, SkPaint paint) override;
@@ -241,7 +255,7 @@ private:
     // They are filled lazily whenever they need and cached
     SkTArray<TextIndex, true> fUTF8IndexForUTF16Index;
     SkTArray<size_t, true> fUTF16IndexForUTF8Index;
-    std::optional<SkOnce> fillUTF16MappingOnce;  // optional SkOnce so that it can be reset when needed.
+    SkOnce fillUTF16MappingOnce;
     size_t fUnresolvedGlyphs;
 
     SkTArray<TextLine, false> fLines;   // kFormatted   (cached: width, max lines, ellipsis, text align)
