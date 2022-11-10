@@ -869,6 +869,8 @@ DSLLayout Parser::layout() {
         LOCATION,
         OFFSET,
         BINDING,
+        TEXTURE,
+        SAMPLER,
         INDEX,
         SET,
         BUILTIN,
@@ -877,6 +879,9 @@ DSLLayout Parser::layout() {
         BLEND_SUPPORT_ALL_EQUATIONS,
         PUSH_CONSTANT,
         COLOR,
+        SPIRV,
+        METAL,
+        GL
     };
 
     using LayoutMap = SkTHashMap<std::string_view, LayoutToken>;
@@ -884,6 +889,8 @@ DSLLayout Parser::layout() {
             {"location",                    LayoutToken::LOCATION},
             {"offset",                      LayoutToken::OFFSET},
             {"binding",                     LayoutToken::BINDING},
+            {"texture",                     LayoutToken::TEXTURE},
+            {"sampler",                     LayoutToken::SAMPLER},
             {"index",                       LayoutToken::INDEX},
             {"set",                         LayoutToken::SET},
             {"builtin",                     LayoutToken::BUILTIN},
@@ -892,6 +899,9 @@ DSLLayout Parser::layout() {
             {"blend_support_all_equations", LayoutToken::BLEND_SUPPORT_ALL_EQUATIONS},
             {"push_constant",               LayoutToken::PUSH_CONSTANT},
             {"color",                       LayoutToken::COLOR},
+            {"spirv",                       LayoutToken::SPIRV},
+            {"metal",                       LayoutToken::METAL},
+            {"gl",                          LayoutToken::GL},
     };
 
     DSLLayout result;
@@ -905,6 +915,15 @@ DSLLayout Parser::layout() {
             LayoutToken* found = sLayoutTokens->find(text);
             if (found != nullptr) {
                 switch (*found) {
+                    case LayoutToken::SPIRV:
+                        result.spirv(this->position(t));
+                        break;
+                    case LayoutToken::METAL:
+                        result.metal(this->position(t));
+                        break;
+                    case LayoutToken::GL:
+                        result.gl(this->position(t));
+                        break;
                     case LayoutToken::ORIGIN_UPPER_LEFT:
                         result.originUpperLeft(this->position(t));
                         break;
@@ -932,14 +951,17 @@ DSLLayout Parser::layout() {
                     case LayoutToken::SET:
                         result.set(this->layoutInt(), this->position(t));
                         break;
+                    case LayoutToken::TEXTURE:
+                        result.texture(this->layoutInt(), this->position(t));
+                        break;
+                    case LayoutToken::SAMPLER:
+                        result.sampler(this->layoutInt(), this->position(t));
+                        break;
                     case LayoutToken::BUILTIN:
                         result.builtin(this->layoutInt(), this->position(t));
                         break;
                     case LayoutToken::INPUT_ATTACHMENT_INDEX:
                         result.inputAttachmentIndex(this->layoutInt(), this->position(t));
-                        break;
-                    default:
-                        this->error(t, "'" + text + "' is not a valid layout qualifier");
                         break;
                 }
             } else {
@@ -1038,7 +1060,7 @@ DSLType Parser::type(DSLModifiers* modifiers) {
     }
     if (!this->symbolTable()->isType(this->text(type))) {
         this->error(type, "no type named '" + std::string(this->text(type)) + "'");
-        return DSLType(nullptr);
+        return DSLType::Invalid();
     }
     DSLType result(this->text(type), modifiers, this->position(type));
     Token bracket;
