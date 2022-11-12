@@ -22,6 +22,7 @@ namespace SkSL {
 class AnyConstructor;
 class BinaryExpression;
 class Block;
+class ConstructorCompound;
 class ConstructorDiagonalMatrix;
 class DoStatement;
 class Expression;
@@ -40,7 +41,6 @@ class PostfixExpression;
 class PrefixExpression;
 class ProgramElement;
 class ReturnStatement;
-class Setting;
 class Statement;
 class StructDefinition;
 class SwitchStatement;
@@ -131,6 +131,8 @@ protected:
 
     virtual void writeFunctionCall(const FunctionCall& c);
 
+    void writeConstructorCompound(const ConstructorCompound& c, Precedence parentPrecedence);
+
     void writeConstructorDiagonalMatrix(const ConstructorDiagonalMatrix& c,
                                         Precedence parentPrecedence);
 
@@ -157,8 +159,6 @@ protected:
 
     virtual void writeLiteral(const Literal& l);
 
-    virtual void writeSetting(const Setting& s);
-
     void writeStatement(const Statement& s);
 
     void writeBlock(const Block& b);
@@ -177,7 +177,7 @@ protected:
 
     virtual void writeProgramElement(const ProgramElement& e);
 
-    const ShaderCaps& caps() const { return fContext.fCaps; }
+    const ShaderCaps& caps() const { return *fContext.fCaps; }
 
     StringStream fExtensions;
     StringStream fGlobals;

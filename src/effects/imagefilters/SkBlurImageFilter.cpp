@@ -27,7 +27,7 @@
 #include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/SkGr.h"
 #if SK_GPU_V1
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #endif // SK_GPU_V1
 #endif // SK_SUPPORT_GPU
 
@@ -1011,8 +1011,7 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::gpuFilter(
                                                SkIRect::MakeSize(dstBounds.size()),
                                                kNeedNewImageUniqueID_SpecialImage,
                                                sdc->readSurfaceView(),
-                                               sdc->colorInfo().colorType(),
-                                               sk_ref_sp(input->getColorSpace()),
+                                               sdc->colorInfo(),
                                                ctx.surfaceProps());
 #else // SK_GPU_V1
     return nullptr;

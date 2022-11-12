@@ -12,6 +12,7 @@
 #include "include/core/SkShader.h"
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/GraphiteTypes.h"
+#include "include/gpu/graphite/Recorder.h"
 #include "include/private/SingleOwner.h"
 
 #include <memory>
@@ -26,15 +27,13 @@ class BackendTexture;
 class Context;
 class ContextPriv;
 class GlobalCache;
-class Gpu;
 struct MtlBackendContext;
 class QueueManager;
-class Recorder;
 class Recording;
 class ResourceProvider;
-class TextureInfo;
+class SharedContext;
 
-class Context final {
+class SK_API Context final {
 public:
     Context(const Context&) = delete;
     Context(Context&&) = delete;
@@ -47,9 +46,9 @@ public:
     static std::unique_ptr<Context> MakeMetal(const MtlBackendContext&, const ContextOptions&);
 #endif
 
-    BackendApi backend() const { return fBackend; }
+    BackendApi backend() const;
 
-    std::unique_ptr<Recorder> makeRecorder();
+    std::unique_ptr<Recorder> makeRecorder(const RecorderOptions& = {});
 
     void insertRecording(const InsertRecordingInfo&);
     void submit(SyncToCpu = SyncToCpu::kNo);
@@ -68,20 +67,10 @@ public:
 #endif
 
     /**
-     * Creates a new backend gpu texture matching the dimensinos and TextureInfo. If an invalid
-     * TextureInfo or a TextureInfo Skia can't support is passed in, this will return an invalid
-     * BackendTexture. Thus the client should check isValid on the returned BackendTexture to know
-     * if it succeeded or not.
-     *
-     * If this does return a valid BackendTexture, the caller is required to use
-     * Context::deleteBackendTexture to delete that texture.
-     */
-    BackendTexture createBackendTexture(SkISize dimensions, const TextureInfo&);
-
-    /**
      * Called to delete the passed in BackendTexture. This should only be called if the
-     * BackendTexture was created by calling Context::createBackendTexture. If the BackendTexture is
-     * not valid or does not match the BackendApi of the Context then nothing happens.
+     * BackendTexture was created by calling Recorder::createBackendTexture on a Recorder created
+     * from this Context. If the BackendTexture is not valid or does not match the BackendApi of the
+     * Context then nothing happens.
      *
      * Otherwise this will delete/release the backend object that is wrapped in the BackendTexture.
      * The BackendTexture will be reset to an invalid state and should not be used again.
@@ -93,18 +82,16 @@ public:
     const ContextPriv priv() const;  // NOLINT(readability-const-return-type)
 
 protected:
-    Context(sk_sp<Gpu>, std::unique_ptr<QueueManager>, BackendApi);
+    Context(sk_sp<SharedContext>, std::unique_ptr<QueueManager>);
 
 private:
     friend class ContextPriv;
 
     SingleOwner* singleOwner() const { return &fSingleOwner; }
 
-    sk_sp<Gpu> fGpu;
+    sk_sp<SharedContext> fSharedContext;
     std::unique_ptr<ResourceProvider> fResourceProvider;
     std::unique_ptr<QueueManager> fQueueManager;
-    sk_sp<GlobalCache> fGlobalCache;
-    BackendApi fBackend;
 
     // In debug builds we guard against improper thread handling. This guard is passed to the
     // ResourceCache for the Context.

@@ -22,6 +22,7 @@
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
 
+#include <cstddef>
 #include <string_view>
 #include <type_traits>
 #include <vector>
@@ -162,19 +163,26 @@ void VarDeclaration::ErrorCheck(const Context& context,
     if ((modifiers.fFlags & Modifiers::kIn_Flag) && baseType->isMatrix()) {
         context.fErrors->error(pos, "'in' variables may not have matrix type");
     }
+    if ((modifiers.fFlags & Modifiers::kIn_Flag) && type->isUnsizedArray()) {
+        context.fErrors->error(pos, "'in' variables may not have unsized array type");
+    }
+    if ((modifiers.fFlags & Modifiers::kOut_Flag) && type->isUnsizedArray()) {
+        context.fErrors->error(pos, "'out' variables may not have unsized array type");
+    }
     if ((modifiers.fFlags & Modifiers::kIn_Flag) && (modifiers.fFlags & Modifiers::kUniform_Flag)) {
         context.fErrors->error(pos, "'in uniform' variables not permitted");
     }
-    if (ProgramConfig::IsCompute(context.fConfig->fKind) &&
-        (modifiers.fFlags & (Modifiers::kIn_Flag | Modifiers::kOut_Flag)) &&
-        type->isArray() && !type->isUnsizedArray()) {
-        // TODO(skia:13471): remove this restriction
-        context.fErrors->error(pos, "compute shader in / out arrays must be unsized");
+    if ((modifiers.fFlags & Modifiers::kReadOnly_Flag) &&
+        (modifiers.fFlags & Modifiers::kWriteOnly_Flag)) {
+        context.fErrors->error(pos, "'readonly writeonly' variables not permitted");
+    }
+    if ((modifiers.fFlags & Modifiers::kUniform_Flag) &&
+        (modifiers.fFlags & Modifiers::kBuffer_Flag)) {
+        context.fErrors->error(pos, "'uniform buffer' variables not permitted");
     }
     if ((modifiers.fFlags & Modifiers::kThreadgroup_Flag) &&
         (modifiers.fFlags & (Modifiers::kIn_Flag | Modifiers::kOut_Flag))) {
-            context.fErrors->error(pos,
-                                   "in / out variables may not be declared threadgroup");
+        context.fErrors->error(pos, "in / out variables may not be declared threadgroup");
     }
     if ((modifiers.fFlags & Modifiers::kUniform_Flag)) {
         check_valid_uniform_type(pos, baseType, context);
@@ -208,17 +216,44 @@ void VarDeclaration::ErrorCheck(const Context& context,
     int permitted = Modifiers::kConst_Flag | Modifiers::kHighp_Flag | Modifiers::kMediump_Flag |
                     Modifiers::kLowp_Flag;
     if (storage == Variable::Storage::kGlobal) {
-        if (!ProgramConfig::IsCompute(context.fConfig->fKind)) {
-            permitted |= Modifiers::kUniform_Flag;
-        }
+        // Uniforms are allowed in all programs
+        permitted |= Modifiers::kUniform_Flag;
 
+        if (baseType->isInterfaceBlock()) {
+            permitted |= Modifiers::kBuffer_Flag;
+
+            // It is an error for an unsized array to appear anywhere but the last member of a
+            // "buffer" block.
+            const auto& fields = baseType->fields();
+            const size_t illegalRangeEnd =
+                    fields.size() - ((modifiers.fFlags & Modifiers::kBuffer_Flag) ? 1 : 0);
+            for (size_t i = 0; i < illegalRangeEnd; ++i) {
+                if (fields[i].fType->isUnsizedArray()) {
+                    context.fErrors->error(
+                            fields[i].fPosition,
+                            "unsized array must be the last member of a storage block");
+                }
+            }
+        }
         // No other modifiers are allowed in runtime effects
         if (!ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
-            permitted |= Modifiers::kIn_Flag | Modifiers::kOut_Flag;
-            if (!ProgramConfig::IsCompute(context.fConfig->fKind)) {
+            if (baseType->typeKind() == Type::TypeKind::kTexture ||
+                (baseType->isInterfaceBlock() && (modifiers.fFlags & Modifiers::kBuffer_Flag))) {
+                // Only texture types and storage blocks allow `readonly` and `writeonly`.
+                permitted |= Modifiers::kReadOnly_Flag | Modifiers::kWriteOnly_Flag;
+            }
+            if (!baseType->isOpaque()) {
+                // Only non-opaque types allow `in` and `out`.
+                permitted |= Modifiers::kIn_Flag | Modifiers::kOut_Flag;
+            }
+            if (ProgramConfig::IsCompute(context.fConfig->fKind)) {
+                // Only compute shaders allow `threadgroup`.
+                if (!baseType->isOpaque()) {
+                    permitted |= Modifiers::kThreadgroup_Flag;
+                }
+            } else {
+                // Only vertex/fragment shaders allow `flat` and `noperspective`.
                 permitted |= Modifiers::kFlat_Flag | Modifiers::kNoPerspective_Flag;
-            } else if (!baseType->isOpaque()) {
-                permitted |= Modifiers::kThreadgroup_Flag;
             }
         }
     }

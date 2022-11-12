@@ -396,7 +396,7 @@ CanvasKit.onRuntimeInitialized = function() {
     return this._makeShaderOptions(xTileMode, yTileMode, filterMode, mipmapMode, localMatrixPtr);
   };
 
-  function readPixels(source, srcX, srcY, imageInfo, destMallocObj, bytesPerRow) {
+  function readPixels(source, srcX, srcY, imageInfo, destMallocObj, bytesPerRow, grCtx) {
     if (!bytesPerRow) {
       bytesPerRow = 4 * imageInfo['width'];
       if (imageInfo['colorType'] === CanvasKit.ColorType.RGBA_F16) {
@@ -414,7 +414,13 @@ CanvasKit.onRuntimeInitialized = function() {
       pPtr = CanvasKit._malloc(pBytes);
     }
 
-    if (!source._readPixels(imageInfo, pPtr, bytesPerRow, srcX, srcY)) {
+    var rv;
+    if (grCtx) {
+      rv = source._readPixels(imageInfo, pPtr, bytesPerRow, srcX, srcY, grCtx);
+    } else {
+      rv = source._readPixels(imageInfo, pPtr, bytesPerRow, srcX, srcY);
+    }
+    if (!rv) {
       Debug('Could not read pixels with the given inputs');
       if (!destMallocObj) {
         CanvasKit._free(pPtr);
@@ -450,7 +456,8 @@ CanvasKit.onRuntimeInitialized = function() {
 
   CanvasKit.Image.prototype.readPixels = function(srcX, srcY, imageInfo, destMallocObj,
                                                   bytesPerRow) {
-    return readPixels(this, srcX, srcY, imageInfo, destMallocObj, bytesPerRow);
+    var grCtx = CanvasKit.getCurrentGrDirectContext();
+    return readPixels(this, srcX, srcY, imageInfo, destMallocObj, bytesPerRow, grCtx);
   };
 
   // Accepts an array of four numbers in the range of 0-1 representing a 4f color
@@ -827,9 +834,10 @@ CanvasKit.onRuntimeInitialized = function() {
     return ok;
   };
 
-  CanvasKit.ColorFilter.MakeBlend = function(color4f, mode) {
+  CanvasKit.ColorFilter.MakeBlend = function(color4f, mode, colorSpace) {
     var cPtr = copyColorToWasm(color4f);
-    return CanvasKit.ColorFilter._MakeBlend(cPtr, mode);
+    colorSpace = colorSpace || CanvasKit.ColorSpace.SRGB;
+    return CanvasKit.ColorFilter._MakeBlend(cPtr, mode, colorSpace);
   };
 
   // colorMatrix is an ColorMatrix (e.g. Float32Array of length 20)
@@ -869,7 +877,7 @@ CanvasKit.onRuntimeInitialized = function() {
     var dstPtr = copyRectToWasm(dstRect, _scratchFourFloatsBPtr);
 
     if ('B' in sampling && 'C' in sampling) {
-        return CanvasKit.ImageFilter._MakeImageCubic(img, sampling.B, sampling.C, srcPtr, dstPtr);
+        return CanvasKit.ImageFilter._MakeImageCubic(img, sampling['B'], sampling['C'], srcPtr, dstPtr);
     } else {
         const filter = sampling['filter'];  // 'filter' is a required field
         let mipmap = CanvasKit.MipmapMode.None;
@@ -885,7 +893,7 @@ CanvasKit.onRuntimeInitialized = function() {
 
     if ('B' in sampling && 'C' in sampling) {
         return CanvasKit.ImageFilter._MakeMatrixTransformCubic(matrPtr,
-                                                               sampling.B, sampling.C,
+                                                               sampling['B'], sampling['C'],
                                                                input);
     } else {
         const filter = sampling['filter'];  // 'filter' is a required field

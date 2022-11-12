@@ -12,7 +12,6 @@
 #include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLString.h"
 #include "include/private/SkTHash.h"
-#include "include/sksl/DSL.h"
 #include "include/sksl/DSLBlock.h"
 #include "include/sksl/DSLCase.h"
 #include "include/sksl/DSLFunction.h"
@@ -34,8 +33,6 @@
 #include <initializer_list>
 #include <memory>
 #include <type_traits>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -62,6 +59,9 @@ static int parse_modifier_token(Token::Kind token) {
         case Token::Kind::TK_LOWP:           return Modifiers::kLowp_Flag;
         case Token::Kind::TK_ES3:            return Modifiers::kES3_Flag;
         case Token::Kind::TK_THREADGROUP:    return Modifiers::kThreadgroup_Flag;
+        case Token::Kind::TK_READONLY:       return Modifiers::kReadOnly_Flag;
+        case Token::Kind::TK_WRITEONLY:      return Modifiers::kWriteOnly_Flag;
+        case Token::Kind::TK_BUFFER:         return Modifiers::kBuffer_Flag;
         default:                             return 0;
     }
 }
@@ -226,7 +226,7 @@ bool DSLParser::expectIdentifier(Token* result) {
     if (!this->expect(Token::Kind::TK_IDENTIFIER, "an identifier", result)) {
         return false;
     }
-    if (IsBuiltinType(this->text(*result))) {
+    if (CurrentSymbolTable()->isBuiltinType(this->text(*result))) {
         this->error(*result, "expected an identifier, but found type '" +
                              std::string(this->text(*result)) + "'");
         this->fEncounteredFatalError = true;
@@ -239,7 +239,7 @@ bool DSLParser::checkIdentifier(Token* result) {
     if (!this->checkNext(Token::Kind::TK_IDENTIFIER, result)) {
         return false;
     }
-    if (IsBuiltinType(this->text(*result))) {
+    if (CurrentSymbolTable()->isBuiltinType(this->text(*result))) {
         this->pushback(std::move(*result));
         return false;
     }
@@ -409,7 +409,8 @@ bool DSLParser::declaration() {
     }
     DSLModifiers modifiers = this->modifiers();
     Token lookahead = this->peek();
-    if (lookahead.fKind == Token::Kind::TK_IDENTIFIER && !IsType(this->text(lookahead))) {
+    if (lookahead.fKind == Token::Kind::TK_IDENTIFIER &&
+        !CurrentSymbolTable()->isType(this->text(lookahead))) {
         // we have an identifier that's not a type, could be the start of an interface block
         return this->interfaceBlock(modifiers);
     }
@@ -647,7 +648,7 @@ DSLStatement DSLParser::varDeclarationsOrExpressionStatement() {
     if (nextToken.fKind == Token::Kind::TK_HIGHP ||
         nextToken.fKind == Token::Kind::TK_MEDIUMP ||
         nextToken.fKind == Token::Kind::TK_LOWP ||
-        IsType(this->text(nextToken))) {
+        CurrentSymbolTable()->isType(this->text(nextToken))) {
         // Statements that begin with a typename are most often variable declarations, but
         // occasionally the type is part of a constructor, and these are actually expression-
         // statements in disguise. First, attempt the common case: parse it as a vardecl.
@@ -706,7 +707,7 @@ DSLType DSLParser::structDeclaration() {
         return DSLType(nullptr);
     }
     SkTArray<DSLField> fields;
-    std::unordered_set<std::string> field_names;
+    SkTHashSet<std::string_view> fieldNames;
     while (!this->checkNext(Token::Kind::TK_RBRACE)) {
         Token fieldStart = this->peek();
         DSLModifiers modifiers = this->modifiers();
@@ -734,18 +735,17 @@ DSLType DSLParser::structDeclaration() {
                         this->rangeFrom(this->position(fieldStart)));
             }
 
-            std::string key(this->text(memberName));
-            auto found = field_names.find(key);
-            if (found == field_names.end()) {
+            std::string_view nameText = this->text(memberName);
+            if (!fieldNames.contains(nameText)) {
                 fields.push_back(DSLField(modifiers,
-                                    std::move(actualType),
-                                    this->text(memberName),
-                                    this->rangeFrom(fieldStart)));
-                field_names.emplace(key);
+                                          std::move(actualType),
+                                          nameText,
+                                          this->rangeFrom(fieldStart)));
+                fieldNames.add(nameText);
             } else {
-                this->error(memberName, "field '" + key +
-                    "' was already defined in the same struct ('" + std::string(this->text(name)) +
-                    "')");
+                this->error(memberName, "field '" + std::string(nameText) +
+                                        "' was already defined in the same struct ('" +
+                                        std::string(this->text(name)) + "')");
             }
         } while (this->checkNext(Token::Kind::TK_COMMA));
         if (!this->expect(Token::Kind::TK_SEMICOLON, "';'")) {
@@ -924,7 +924,7 @@ DSLLayout DSLParser::layout() {
 }
 
 /* layout? (UNIFORM | CONST | IN | OUT | INOUT | LOWP | MEDIUMP | HIGHP | FLAT | NOPERSPECTIVE |
-            VARYING | INLINE | THREADGROUP)* */
+            VARYING | INLINE | THREADGROUP | READONLY | WRITEONLY | BUFFER)* */
 DSLModifiers DSLParser::modifiers() {
     int start = this->peek().fOffset;
     DSLLayout layout = this->layout();
@@ -935,7 +935,7 @@ DSLModifiers DSLParser::modifiers() {
     }
     int flags = 0;
     for (;;) {
-        // TODO(ethannicholas): handle duplicate / incompatible flags
+        // TODO: handle duplicate flags
         int tokenFlag = parse_modifier_token(peek().fKind);
         if (!tokenFlag) {
             break;
@@ -987,7 +987,7 @@ DSLStatement DSLParser::statement() {
         }
         case Token::Kind::TK_SEMICOLON:
             this->nextToken();
-            return dsl::Block();
+            return DSLBlock();
         case Token::Kind::TK_HIGHP:
         case Token::Kind::TK_MEDIUMP:
         case Token::Kind::TK_LOWP:
@@ -1005,7 +1005,7 @@ DSLType DSLParser::type(DSLModifiers* modifiers) {
     if (!this->expect(Token::Kind::TK_IDENTIFIER, "a type", &type)) {
         return DSLType(nullptr);
     }
-    if (!IsType(this->text(type))) {
+    if (!CurrentSymbolTable()->isType(this->text(type))) {
         this->error(type, "no type named '" + std::string(this->text(type)) + "'");
         return DSLType(nullptr);
     }
@@ -1046,12 +1046,12 @@ bool DSLParser::interfaceBlock(const dsl::DSLModifiers& modifiers) {
         return false;
     }
     this->nextToken();
-    SkTArray<dsl::Field> fields;
-    std::unordered_set<std::string> field_names;
+    SkTArray<DSLField> fields;
+    SkTHashSet<std::string_view> fieldNames;
     while (!this->checkNext(Token::Kind::TK_RBRACE)) {
         Position fieldPos = this->position(this->peek());
         DSLModifiers fieldModifiers = this->modifiers();
-        dsl::DSLType type = this->type(&fieldModifiers);
+        DSLType type = this->type(&fieldModifiers);
         if (!type.hasValue()) {
             return false;
         }
@@ -1069,6 +1069,8 @@ bool DSLParser::interfaceBlock(const dsl::DSLModifiers& modifiers) {
                         return false;
                     }
                     actualType = Array(std::move(actualType), size, this->position(typeName));
+                } else if (this->allowUnsizedArrays()) {
+                    actualType = UnsizedArray(std::move(actualType), this->position(typeName));
                 } else {
                     this->error(sizeToken, "unsized arrays are not permitted here");
                 }
@@ -1078,21 +1080,19 @@ bool DSLParser::interfaceBlock(const dsl::DSLModifiers& modifiers) {
                 return false;
             }
 
-            std::string key(this->text(fieldName));
-            if (field_names.find(key) == field_names.end()) {
-                fields.push_back(dsl::Field(fieldModifiers,
-                                            std::move(actualType),
-                                            this->text(fieldName),
-                                            this->rangeFrom(fieldPos)));
-                field_names.emplace(key);
+            std::string_view nameText = this->text(fieldName);
+            if (!fieldNames.contains(nameText)) {
+                fields.push_back(DSLField(fieldModifiers,
+                                          std::move(actualType),
+                                          nameText,
+                                          this->rangeFrom(fieldPos)));
+                fieldNames.add(nameText);
             } else {
-                this->error(fieldName,
-                            "field '" + key +
-                            "' was already defined in the same interface block ('" +
-                            std::string(this->text(typeName)) +  "')");
+                this->error(fieldName, "field '" + std::string(nameText) +
+                                       "' was already defined in the same interface block ('" +
+                                       std::string(this->text(typeName)) +  "')");
             }
-        }
-        while (this->checkNext(Token::Kind::TK_COMMA));
+        } while (this->checkNext(Token::Kind::TK_COMMA));
     }
     if (fields.empty()) {
         this->error(this->rangeFrom(typeName), "interface block '" +

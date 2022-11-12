@@ -36,6 +36,18 @@ const Expression* Variable::initialValue() const {
     return fDeclaration ? fDeclaration->value().get() : nullptr;
 }
 
+std::string Variable::mangledName() const {
+    // Only private variables need to use name mangling.
+    std::string_view name = this->name();
+    if (!skstd::starts_with(name, '$')) {
+        return std::string(name);
+    }
+
+    // The $ prefix will fail to compile in GLSL, so replace it with `sk_Priv`.
+    name.remove_prefix(1);
+    return "sk_Priv" + std::string(name);
+}
+
 std::unique_ptr<Variable> Variable::Convert(const Context& context, Position pos,
         Position modifiersPos, const Modifiers& modifiers, const Type* baseType, Position namePos,
         std::string_view name, bool isArray, std::unique_ptr<Expression> arraySize,
@@ -49,27 +61,16 @@ std::unique_ptr<Variable> Variable::Convert(const Context& context, Position pos
     if (!context.fConfig->fIsBuiltinCode && skstd::starts_with(name, '$')) {
         context.fErrors->error(namePos, "name '" + std::string(name) + "' is reserved");
     }
-    if (baseType->isUnsizedArray()) {
-        if (!ProgramConfig::IsCompute(ThreadContext::Context().fConfig->fKind)) {
-            context.fErrors->error(pos, "unsized arrays are not permitted here");
-        } else if (storage != Variable::Storage::kGlobal) {
-            context.fErrors->error(pos, "unsized arrays must be global");
-        } else if (!(modifiers.fFlags & (Modifiers::kIn_Flag | Modifiers::kOut_Flag))) {
-            context.fErrors->error(pos, "unsized arrays must be declared 'in' and/or 'out'");
-        }
+    if (baseType->isUnsizedArray() && storage != Variable::Storage::kInterfaceBlock) {
+        context.fErrors->error(pos, "unsized arrays are not permitted here");
     }
     if (ProgramConfig::IsCompute(ThreadContext::Context().fConfig->fKind) &&
             modifiers.fLayout.fBuiltin == -1) {
-        if (storage == Variable::Storage::kGlobal &&
-                (modifiers.fFlags & (Modifiers::kIn_Flag | Modifiers::kOut_Flag))) {
-            if (baseType->typeKind() != Type::TypeKind::kTexture && !baseType->isArray() &&
-                    !isArray) {
-                context.fErrors->error(pos, "unsupported compute shader in / out type");
-            }
-            if (baseType->typeKind() != Type::TypeKind::kTexture &&
-                    (modifiers.fLayout.fBinding == -1 || modifiers.fLayout.fSet == -1)) {
-                context.fErrors->error(pos,
-                        "compute shader in / out variables must have a layout binding and set");
+        if (storage == Variable::Storage::kGlobal) {
+            if (modifiers.fFlags & Modifiers::kIn_Flag) {
+                context.fErrors->error(pos, "pipeline inputs not permitted in compute shaders");
+            } else if (modifiers.fFlags & Modifiers::kOut_Flag) {
+                context.fErrors->error(pos, "pipeline outputs not permitted in compute shaders");
             }
         }
     }
@@ -97,6 +98,7 @@ std::unique_ptr<Variable> Variable::Make(const Context& context, Position pos,
 }
 
 Variable::ScratchVariable Variable::MakeScratchVariable(const Context& context,
+                                                        Mangler& mangler,
                                                         std::string_view baseName,
                                                         const Type* type,
                                                         const Modifiers& modifiers,
@@ -115,7 +117,7 @@ Variable::ScratchVariable Variable::MakeScratchVariable(const Context& context,
 
     // Provide our new variable with a unique name, and add it to our symbol table.
     const std::string* name =
-            symbolTable->takeOwnershipOfString(context.fMangler->uniqueName(baseName, symbolTable));
+            symbolTable->takeOwnershipOfString(mangler.uniqueName(baseName, symbolTable));
 
     // Create our new variable and add it to the symbol table.
     ScratchVariable result;

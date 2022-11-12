@@ -13,6 +13,7 @@
 #include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/DrawWriter.h"
+#include "src/gpu/graphite/render/CommonDepthStencilSettings.h"
 #include "src/gpu/graphite/render/DynamicInstancesPatchAllocator.h"
 
 #include "src/gpu/tessellate/FixedCountBufferUtils.h"
@@ -26,18 +27,6 @@ namespace {
 
 using namespace skgpu::tess;
 
-// TODO: De-duplicate with the same settings that's currently used for convex path rendering
-// in StencilAndFillPathRenderer.cpp
-static constexpr DepthStencilSettings kDirectShadingPass = {
-        /*frontStencil=*/{},
-        /*backStencil=*/ {},
-        /*refValue=*/    0,
-        /*stencilTest=*/ false,
-        /*depthCompare=*/CompareOp::kGreater,
-        /*depthTest=*/   true,
-        /*depthWrite=*/  true
-};
-
 // Always use dynamic stroke params and join control points, track the join control point in
 // PatchWriter and replicate line end points (match Ganesh's shader behavior).
 //
@@ -46,11 +35,13 @@ static constexpr DepthStencilSettings kDirectShadingPass = {
 // or we'll add a color-only fast path to RenderStep later.
 static constexpr PatchAttribs kAttribs = PatchAttribs::kJoinControlPoint |
                                          PatchAttribs::kStrokeParams |
-                                         PatchAttribs::kPaintDepth;
+                                         PatchAttribs::kPaintDepth |
+                                         PatchAttribs::kSsboIndex;
 using Writer = PatchWriter<DynamicInstancesPatchAllocator<FixedCountStrokes>,
                            Required<PatchAttribs::kJoinControlPoint>,
                            Required<PatchAttribs::kStrokeParams>,
                            Required<PatchAttribs::kPaintDepth>,
+                           Required<PatchAttribs::kSsboIndex>,
                            ReplicateLineEndPoints,
                            TrackJoinControlPoints>;
 
@@ -64,13 +55,14 @@ TessellateStrokesRenderStep::TessellateStrokesRenderStep()
                                    {"translate", SkSLType::kFloat2},
                                    {"maxScale", SkSLType::kFloat}},
                      PrimitiveType::kTriangleStrip,
-                     kDirectShadingPass,
+                     kDirectDepthGreaterPass,
                      /*vertexAttrs=*/  {},
                      /*instanceAttrs=*/{{"p01", VertexAttribType::kFloat4, SkSLType::kFloat4},
                                         {"p23", VertexAttribType::kFloat4, SkSLType::kFloat4},
                                         {"prevPoint", VertexAttribType::kFloat2, SkSLType::kFloat2},
                                         {"stroke", VertexAttribType::kFloat2, SkSLType::kFloat2},
-                                        {"depth", VertexAttribType::kFloat, SkSLType::kFloat}}) {}
+                                        {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
+                                        {"ssboIndex", VertexAttribType::kInt, SkSLType::kInt}}) {}
 
 TessellateStrokesRenderStep::~TessellateStrokesRenderStep() {}
 
@@ -82,14 +74,16 @@ const char* TessellateStrokesRenderStep::vertexSkSL() const {
         if ((sk_VertexID & 1) != 0) {
             edgeID = -edgeID;
         }
-        float2x2 affine = float2x2(affineMatrix);
+        float2x2 affine = float2x2(affineMatrix.xy, affineMatrix.zw);
         float4 devPosition = float4(
                 tessellate_stroked_curve(edgeID, 16383, affine, translate,
                                          maxScale, p01, p23, prevPoint, stroke),
                 depth, 1.0);)";
 }
 
-void TessellateStrokesRenderStep::writeVertices(DrawWriter* dw, const DrawParams& params) const {
+void TessellateStrokesRenderStep::writeVertices(DrawWriter* dw,
+                                                const DrawParams& params,
+                                                int ssboIndex) const {
     SkPath path = params.geometry().shape().asPath(); // TODO: Iterate the Shape directly
 
     int patchReserveCount = FixedCountStrokes::PreallocCount(path.countVerbs());
@@ -100,12 +94,13 @@ void TessellateStrokesRenderStep::writeVertices(DrawWriter* dw, const DrawParams
     // has figured out how to support vertex IDs before then.
     Writer writer{kAttribs, *dw, kNullBinding, kNullBinding, patchReserveCount};
     writer.updatePaintDepthAttrib(params.order().depthAsFloat());
+    writer.updateSsboIndexAttrib(ssboIndex);
 
     // The vector xform approximates how the control points are transformed by the shader to
     // more accurately compute how many *parametric* segments are needed.
     // getMaxScale() returns -1 if it can't compute a scale factor (e.g. perspective), taking the
     // absolute value automatically converts that to an identity scale factor for our purposes.
-    writer.setShaderTransform(wangs_formula::VectorXform{params.transform()},
+    writer.setShaderTransform(wangs_formula::VectorXform{params.transform().matrix()},
                               params.transform().maxScaleFactor());
 
     SkASSERT(params.isStroke());
@@ -211,8 +206,8 @@ void TessellateStrokesRenderStep::writeVertices(DrawWriter* dw, const DrawParams
     }
 }
 
-void TessellateStrokesRenderStep::writeUniforms(const DrawParams& params,
-                                                SkPipelineDataGatherer* gatherer) const {
+void TessellateStrokesRenderStep::writeUniformsAndTextures(const DrawParams& params,
+                                                           SkPipelineDataGatherer* gatherer) const {
     SkASSERT(params.transform().type() < Transform::Type::kProjection); // TODO: Implement perspective
 
     SkDEBUGCODE(UniformExpectationsValidator uev(gatherer, this->uniforms());)

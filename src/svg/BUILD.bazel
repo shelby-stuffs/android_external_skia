@@ -1,8 +1,13 @@
-load("//bazel:macros.bzl", "exports_files_legacy")
+load("//bazel:macros.bzl", "bool_flag", "exports_files_legacy")
 
 licenses(["notice"])
 
 exports_files_legacy()
+
+bool_flag(
+    name = "enable_svg_canvas",
+    default = False,
+)
 
 filegroup(
     name = "srcs",

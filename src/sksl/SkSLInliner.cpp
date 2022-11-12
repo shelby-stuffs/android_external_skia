@@ -18,7 +18,7 @@
 #include "include/sksl/SkSLOperator.h"
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLAnalysis.h"
-#include "src/sksl/SkSLMangler.h"
+#include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/analysis/SkSLProgramVisitor.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLChildCall.h"
@@ -47,6 +47,7 @@
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLSetting.h"
 #include "src/sksl/ir/SkSLSwitchCase.h"
 #include "src/sksl/ir/SkSLSwitchStatement.h"
 #include "src/sksl/ir/SkSLSwizzle.h"
@@ -269,11 +270,6 @@ void Inliner::ensureScopedBlocks(Statement* inlinedBody, Statement* parentStmt) 
     }
 }
 
-void Inliner::reset() {
-    fContext->fMangler->reset();
-    fInlinedStatementCounter = 0;
-}
-
 std::unique_ptr<Expression> Inliner::inlineExpression(Position pos,
                                                       VariableRewriteMap* varMap,
                                                       SymbolTable* symbolTableForExpression,
@@ -401,8 +397,10 @@ std::unique_ptr<Expression> Inliner::inlineExpression(Position pos,
             const PostfixExpression& p = expression.as<PostfixExpression>();
             return PostfixExpression::Make(*fContext, pos, expr(p.operand()), p.getOperator());
         }
-        case Expression::Kind::kSetting:
-            return expression.clone();
+        case Expression::Kind::kSetting: {
+            const Setting& s = expression.as<Setting>();
+            return Setting::Convert(*fContext, pos, s.name());
+        }
         case Expression::Kind::kSwizzle: {
             const Swizzle& s = expression.as<Swizzle>();
             return Swizzle::Make(*fContext, pos, expr(s.base()), s.components());
@@ -567,7 +565,7 @@ std::unique_ptr<Statement> Inliner::inlineStatement(Position pos,
             // regard, but see `InlinerAvoidsVariableNameOverlap` for a counterexample where unique
             // names are important.
             const std::string* name = symbolTableForStatement->takeOwnershipOfString(
-                    fContext->fMangler->uniqueName(variable.name(), symbolTableForStatement));
+                    fMangler.uniqueName(variable.name(), symbolTableForStatement));
             auto clonedVar = std::make_unique<Variable>(
                     pos,
                     variable.modifiersPosition(),
@@ -630,6 +628,7 @@ Inliner::InlinedCall Inliner::inlineCall(FunctionCall* call,
         // for void-return functions, or in cases that are simple enough that we can just replace
         // the function-call node with the result expression.
         ScratchVariable var = Variable::MakeScratchVariable(*fContext,
+                                                            fMangler,
                                                             function.declaration().name(),
                                                             &function.declaration().returnType(),
                                                             Modifiers{},
@@ -658,6 +657,7 @@ Inliner::InlinedCall Inliner::inlineCall(FunctionCall* call,
             }
         }
         ScratchVariable var = Variable::MakeScratchVariable(*fContext,
+                                                            fMangler,
                                                             param->name(),
                                                             &arg->type(),
                                                             param->modifiers(),

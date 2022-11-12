@@ -40,7 +40,7 @@ static void test_basic_draw_as_src(skiatest::Reporter* reporter, GrDirectContext
 }
 
 static void test_clear(skiatest::Reporter* reporter, GrDirectContext* dContext,
-                       skgpu::SurfaceContext* rectContext) {
+                       skgpu::v1::SurfaceContext* rectContext) {
     if (auto sfc = rectContext->asFillContext()) {
         // Clear the whole thing.
         GrColor color0 = GrColorPackRGBA(0xA, 0xB, 0xC, 0xD);
@@ -86,7 +86,7 @@ static void test_clear(skiatest::Reporter* reporter, GrDirectContext* dContext,
 
 static void test_copy_to_surface(skiatest::Reporter* reporter,
                                  GrDirectContext* dContext,
-                                 skgpu::SurfaceContext* dstContext,
+                                 skgpu::v1::SurfaceContext* dstContext,
                                  const char* testName) {
 
     int pixelCnt = dstContext->width() * dstContext->height();
@@ -117,7 +117,10 @@ static void test_copy_to_surface(skiatest::Reporter* reporter,
 }
 
 #ifdef SK_GL
-DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(RectangleTexture, reporter, ctxInfo) {
+DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(RectangleTexture,
+                                      reporter,
+                                      ctxInfo,
+                                      CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
 
     GrProxyProvider* proxyProvider = dContext->priv().proxyProvider();
@@ -136,11 +139,8 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(RectangleTexture, reporter, ctxInfo) {
     for (auto origin : { kBottomLeft_GrSurfaceOrigin, kTopLeft_GrSurfaceOrigin }) {
 
         auto format = GrBackendFormat::MakeGL(GR_GL_RGBA8, GR_GL_TEXTURE_RECTANGLE);
-        GrBackendTexture rectangleTex = dContext->createBackendTexture(kWidth,
-                                                                       kHeight,
-                                                                       format,
-                                                                       GrMipmapped::kNo,
-                                                                       GrRenderable::kYes);
+        GrBackendTexture rectangleTex = dContext->createBackendTexture(
+                kWidth, kHeight, format, GrMipmapped::kNo, GrRenderable::kYes);
         if (!rectangleTex.isValid()) {
             continue;
         }

@@ -45,7 +45,6 @@ size_t compute_combined_buffer_size(int mipLevelCount,
 
         size_t trimmedSize = levelDimensions.area() * bytesPerPixel;
         combinedBufferSize = SkAlignTo(combinedBufferSize, minTransferBufferAlignment);
-        SkASSERT((0 == combinedBufferSize % 4) && (0 == combinedBufferSize % bytesPerPixel));
 
         individualMipOffsets->push_back(combinedBufferSize);
         combinedBufferSize += trimmedSize;
@@ -196,7 +195,8 @@ UploadTask::UploadTask(const UploadInstance& instance) {
 
 UploadTask::~UploadTask() {}
 
-bool UploadTask::prepareResources(ResourceProvider* resourceProvider) {
+bool UploadTask::prepareResources(ResourceProvider* resourceProvider,
+                                  const SkRuntimeEffectDictionary*) {
     for (unsigned int i = 0; i < fInstances.size(); ++i) {
         if (!fInstances[i].prepareResources(resourceProvider)) {
             return false;

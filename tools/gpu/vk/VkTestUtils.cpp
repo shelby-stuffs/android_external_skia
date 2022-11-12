@@ -25,11 +25,11 @@
 
 #include <algorithm>
 
-#if defined(SK_BUILD_FOR_UNIX)
+#if defined(__GLIBC__)
 #include <execinfo.h>
 #endif
 #include "include/gpu/vk/GrVkBackendContext.h"
-#include "include/gpu/vk/GrVkExtensions.h"
+#include "include/gpu/vk/VulkanExtensions.h"
 #include "src/core/SkAutoMalloc.h"
 #include "src/ports/SkOSLibrary.h"
 
@@ -103,7 +103,7 @@ static int should_include_debug_layer(const char* layerName,
 }
 
 static void print_backtrace() {
-#if defined(SK_BUILD_FOR_UNIX)
+#if defined(__GLIBC__)
     void* stack[64];
     int count = backtrace(stack, std::size(stack));
     backtrace_symbols_fd(stack, count, 2);
@@ -243,7 +243,7 @@ static bool init_instance_extensions_and_layers(PFN_vkGetInstanceProcAddr getIns
 
 #define GET_PROC_LOCAL(F, inst, device) PFN_vk ## F F = (PFN_vk ## F) getProc("vk" #F, inst, device)
 
-static bool init_device_extensions_and_layers(GrVkGetProc getProc, uint32_t specVersion,
+static bool init_device_extensions_and_layers(skgpu::VulkanGetProc getProc, uint32_t specVersion,
                                               VkInstance inst, VkPhysicalDevice physDev,
                                               SkTArray<VkExtensionProperties>* deviceExtensions,
                                               SkTArray<VkLayerProperties>* deviceLayers) {
@@ -387,8 +387,8 @@ static bool destroy_instance(PFN_vkGetInstanceProcAddr getInstProc, VkInstance i
     return true;
 }
 
-static bool setup_features(GrVkGetProc getProc, VkInstance inst, VkPhysicalDevice physDev,
-                           uint32_t physDeviceVersion, GrVkExtensions* extensions,
+static bool setup_features(skgpu::VulkanGetProc getProc, VkInstance inst, VkPhysicalDevice physDev,
+                           uint32_t physDeviceVersion, skgpu::VulkanExtensions* extensions,
                            VkPhysicalDeviceFeatures2* features, bool isProtected) {
     SkASSERT(physDeviceVersion >= VK_MAKE_VERSION(1, 1, 0) ||
              extensions->hasExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, 1));
@@ -453,7 +453,7 @@ static bool setup_features(GrVkGetProc getProc, VkInstance inst, VkPhysicalDevic
 
 bool CreateVkBackendContext(PFN_vkGetInstanceProcAddr getInstProc,
                             GrVkBackendContext* ctx,
-                            GrVkExtensions* extensions,
+                            skgpu::VulkanExtensions* extensions,
                             VkPhysicalDeviceFeatures2* features,
                             VkDebugReportCallbackEXT* debugCallback,
                             uint32_t* presentQueueIndexPtr,

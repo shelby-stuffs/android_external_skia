@@ -144,7 +144,7 @@ TextLine::TextLine(ParagraphImpl* owner,
     SkAutoSTArray<kPreallocCount, int32_t> logicalOrder(numRuns);
 
     // TODO: hide all these logic in SkUnicode?
-  fOwner->getUnicode()->reorderVisual(runLevels.data(), numRuns, logicalOrder.data());
+    fOwner->getUnicode()->reorderVisual(runLevels.data(), numRuns, logicalOrder.data());
     auto firstRunIndex = start.runIndex();
     for (auto index : logicalOrder) {
         fRunsInVisualOrder.push_back(firstRunIndex + index);
@@ -1042,7 +1042,7 @@ bool TextLine::isLastLine() {
 bool TextLine::endsWithHardLineBreak() const {
     // TODO: For some reason Flutter imagines a hard line break at the end of the last line.
     //  To be removed...
-    return fOwner->cluster(fGhostClusterRange.end - 1).isHardBreak() ||
+    return (fGhostClusterRange.width() > 0 && fOwner->cluster(fGhostClusterRange.end - 1).isHardBreak()) ||
            fEllipsis != nullptr ||
            fGhostClusterRange.end == fOwner->clusters().size() - 1;
 }

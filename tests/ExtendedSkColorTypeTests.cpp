@@ -207,10 +207,15 @@ static void gpu_tests(GrDirectContext* dContext,
                                                         GrRenderable::kNo, GrProtected::kNo,
                                                         markFinished, &finishedBECreate);
         } else {
-            backendTex = dContext->createBackendTexture(kSize, kSize, test.fColorType,
-                                                        SkColors::kWhite, GrMipmapped::kNo,
-                                                        GrRenderable::kNo, GrProtected::kNo,
-                                                        markFinished, &finishedBECreate);
+            backendTex = dContext->createBackendTexture(kSize,
+                                                        kSize,
+                                                        test.fColorType,
+                                                        SkColors::kWhite,
+                                                        GrMipmapped::kNo,
+                                                        GrRenderable::kNo,
+                                                        GrProtected::kNo,
+                                                        markFinished,
+                                                        &finishedBECreate);
         }
         REPORTER_ASSERT(reporter, backendTex.isValid());
         dContext->submit();
@@ -304,7 +309,10 @@ DEF_TEST(ExtendedSkColorTypeTests_raster, reporter) {
     }
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ExtendedSkColorTypeTests_gpu, reporter, ctxInfo) {
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ExtendedSkColorTypeTests_gpu,
+                                   reporter,
+                                   ctxInfo,
+                                   CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
 
     for (size_t i = 0; i < std::size(gTests); ++i) {

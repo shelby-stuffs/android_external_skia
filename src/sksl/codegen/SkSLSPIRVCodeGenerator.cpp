@@ -31,6 +31,7 @@
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/SkSLUtil.h"
+#include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLConstructor.h"
@@ -59,6 +60,7 @@
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLSetting.h"
 #include "src/sksl/ir/SkSLSwitchCase.h"
 #include "src/sksl/ir/SkSLSwitchStatement.h"
 #include "src/sksl/ir/SkSLSwizzle.h"
@@ -1211,6 +1213,8 @@ SpvId SPIRVCodeGenerator::writeExpression(const Expression& expr, OutputStream& 
             return this->writeTernaryExpression(expr.as<TernaryExpression>(), out);
         case Expression::Kind::kIndex:
             return this->writeIndexExpression(expr.as<IndexExpression>(), out);
+        case Expression::Kind::kSetting:
+            return this->writeExpression(*expr.as<Setting>().toLiteral(fContext), out);
         default:
             SkDEBUGFAILF("unsupported expression: %s", expr.description().c_str());
             break;
@@ -3826,8 +3830,8 @@ void SPIRVCodeGenerator::writeUniformBuffer(std::shared_ptr<SymbolTable> topLeve
 
     fUniformBuffer.fInnerVariable = std::make_unique<Variable>(
             /*pos=*/Position(), /*modifiersPosition=*/Position(),
-            fProgram.fModifiers->add(modifiers), kUniformBufferName, fUniformBuffer.fStruct.get(),
-            /*builtin=*/false, Variable::Storage::kGlobal);
+            fContext.fModifiersPool->add(modifiers), kUniformBufferName,
+            fUniformBuffer.fStruct.get(), /*builtin=*/false, Variable::Storage::kGlobal);
 
     // Create an interface block object for this global variable.
     fUniformBuffer.fInterfaceBlock = std::make_unique<InterfaceBlock>(
@@ -3891,7 +3895,7 @@ void SPIRVCodeGenerator::addRTFlipUniform(Position pos) {
                                    /*builtin=*/-1,
                                    /*inputAttachmentIndex=*/-1),
                             Modifiers::kUniform_Flag);
-        modsPtr = fProgram.fModifiers->add(modifiers);
+        modsPtr = fContext.fModifiersPool->add(modifiers);
     }
     const Variable* intfVar = fSynthetics.takeOwnershipOfSymbol(
             std::make_unique<Variable>(/*pos=*/Position(),
@@ -3911,7 +3915,7 @@ void SPIRVCodeGenerator::addRTFlipUniform(Position pos) {
                         name,
                         /*instanceName=*/"",
                         /*arraySize=*/0,
-                        std::make_shared<SymbolTable>(fContext, /*builtin=*/false));
+                        std::make_shared<SymbolTable>(/*builtin=*/false));
 
     this->writeInterfaceBlock(intf, false);
 }
