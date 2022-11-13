@@ -106,6 +106,8 @@ public:
                       SkString indent,
                       bool printDependencies,
                       bool close) const;
+#endif
+#if GR_TEST_UTILS || defined(SK_DEBUG)
     virtual const char* name() const = 0;
 #endif
 
@@ -142,6 +144,9 @@ public:
     // Used by GrRenderTaskCluster.
     SK_DECLARE_INTERNAL_LLIST_INTERFACE(GrRenderTask);
 
+#if GR_TEST_UTILS
+    const GrTextureResolveRenderTask* resolveTask() const { return fTextureResolveTask; }
+#endif
 protected:
     SkDEBUGCODE(bool deferredProxiesAreInstantiated() const;)
 

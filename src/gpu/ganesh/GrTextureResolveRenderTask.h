@@ -16,6 +16,9 @@ public:
 
     void addProxy(GrDrawingManager*, sk_sp<GrSurfaceProxy> proxy,
                   GrSurfaceProxy::ResolveFlags, const GrCaps&);
+#if GR_TEST_UTILS
+    GrSurfaceProxy::ResolveFlags flagsForProxy(sk_sp<GrSurfaceProxy>) const;
+#endif
 
 private:
     bool onIsUsed(GrSurfaceProxy* proxy) const override {
@@ -29,7 +32,7 @@ private:
 
     bool onExecute(GrOpFlushState*) override;
 
-#if GR_TEST_UTILS
+#if GR_TEST_UTILS || defined(SK_DEBUG)
     const char* name() const final { return "TextureResolve"; }
 #endif
 #ifdef SK_DEBUG

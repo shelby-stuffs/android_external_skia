@@ -26,7 +26,7 @@ void SkRasterPipeline::reset() {
     fNumStages = 0;
 }
 
-void SkRasterPipeline::append(StockStage stage, void* ctx) {
+void SkRasterPipeline::append(Stage stage, void* ctx) {
     SkASSERT(stage !=           uniform_color);  // Please use append_constant_color().
     SkASSERT(stage != unbounded_uniform_color);  // Please use append_constant_color().
     SkASSERT(stage !=                 set_rgb);  // Please use append_set_rgb().
@@ -40,11 +40,11 @@ void SkRasterPipeline::append(StockStage stage, void* ctx) {
     SkASSERT(stage !=            stack_rewind);  // Please use append_stack_rewind().
     this->unchecked_append(stage, ctx);
 }
-void SkRasterPipeline::unchecked_append(StockStage stage, void* ctx) {
+void SkRasterPipeline::unchecked_append(Stage stage, void* ctx) {
     fStages = fAlloc->make<StageList>( StageList{fStages, stage, ctx} );
     fNumStages += 1;
 }
-void SkRasterPipeline::append(StockStage stage, uintptr_t ctx) {
+void SkRasterPipeline::append(Stage stage, uintptr_t ctx) {
     void* ptrCtx;
     memcpy(&ptrCtx, &ctx, sizeof(ctx));
     this->append(stage, ptrCtx);
@@ -351,17 +351,22 @@ void SkRasterPipeline::append_transfer_function(const skcms_TransferFunction& tf
     }
 }
 
-// Clamp premul values to [0,alpha] (logical [0,1]) to avoid the confusing
-// scenario of being able to store a logical color channel > 1.0 when alpha < 1.0.
-// Most software that works with normalized premul values expect r,g,b channels all <= a.
-//
-// In addition, GL clamps all its color channels to limits of the format just
-// before the blend step (~here).  To match that auto-clamp, we clamp alpha to
-// [0,1] too, just in case someone gave us a crazy alpha.
-void SkRasterPipeline::append_gamut_clamp_if_normalized(const SkImageInfo& info) {
+// GPUs clamp all color channels to the limits of the format just before the blend step. To match
+// that auto-clamp, the RP blitter uses this helper immediately before appending blending stages.
+void SkRasterPipeline::append_clamp_if_normalized(const SkImageInfo& info) {
+#if defined(SK_USE_LEGACY_GAMUT_CLAMP)
+    // Temporarily support Skia's old behavior, until chromium is rebaselined:
+    // Clamp premul values to [0,alpha] (logical [0,1]) to avoid the confusing
+    // scenario of being able to store a logical color channel > 1.0 when alpha < 1.0.
+    // Most software that works with normalized premul values expect r,g,b channels all <= a.
     if (info.alphaType() == kPremul_SkAlphaType && SkColorTypeIsNormalized(info.colorType())) {
         this->unchecked_append(SkRasterPipeline::clamp_gamut, nullptr);
     }
+#else
+    if (SkColorTypeIsNormalized(info.colorType())) {
+        this->unchecked_append(SkRasterPipeline::clamp_01, nullptr);
+    }
+#endif
 }
 
 void SkRasterPipeline::append_stack_rewind() {

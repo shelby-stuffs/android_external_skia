@@ -26,8 +26,16 @@ Surface::Surface(sk_sp<Device> device)
 
 Surface::~Surface() {}
 
+SkImageInfo Surface::imageInfo() const {
+    return fDevice->imageInfo();
+}
+
 Recorder* Surface::onGetRecorder() {
     return fDevice->recorder();
+}
+
+TextureProxyView Surface::readSurfaceView() const {
+    return fDevice->readSurfaceView();
 }
 
 SkCanvas* Surface::onNewCanvas() { return new SkCanvas(fDevice); }
@@ -42,7 +50,20 @@ sk_sp<SkImage> Surface::onNewImageSnapshot(const SkIRect* subset) {
         return nullptr;
     }
 
-    srcView = fDevice->createCopy(subset, srcView.mipmapped());
+    return this->onMakeImageCopy(subset, srcView.mipmapped());
+}
+
+sk_sp<SkImage> Surface::onAsImage() {
+    TextureProxyView srcView = fDevice->readSurfaceView();
+    if (!srcView) {
+        return nullptr;
+    }
+
+    return sk_sp<Image>(new Image(std::move(srcView), this->imageInfo().colorInfo()));
+}
+
+sk_sp<SkImage> Surface::onMakeImageCopy(const SkIRect* subset, Mipmapped mipmapped) {
+    TextureProxyView srcView = fDevice->createCopy(subset, mipmapped);
     if (!srcView) {
         return nullptr;
     }
