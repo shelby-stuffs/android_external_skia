@@ -50,13 +50,6 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/pathops:pathops_hdrs",
 				"//src/pathops:pathops_srcs",
 			}},
-		{Var: "skia_precompile_public",
-			Rules: []string{"//include/gpu/graphite:precompile_public_hdrs"}},
-		{Var: "skia_precompile_sources",
-			Rules: []string{
-				"//src/gpu/graphite:precompile_hdrs",
-				"//src/gpu/graphite:precompile_srcs",
-			}},
 		{Var: "skia_skpicture_public",
 			Rules: []string{"//include/core:skpicture_public_hdrs"}},
 		{Var: "skia_skpicture_sources",
@@ -339,6 +332,8 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			Rules: []string{"//modules/skshaper/src:harfbuzz_srcs"}},
 		{Var: "skia_shaper_coretext_sources",
 			Rules: []string{"//modules/skshaper/src:coretext_srcs"}},
+		{Var: "skia_shaper_tests",
+			Rules: []string{"//modules/skshaper/tests:tests_srcs"}},
 	}},
 	{GNI: "modules/skunicode/skunicode.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skia_unicode_public",

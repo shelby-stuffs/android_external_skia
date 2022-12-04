@@ -6,7 +6,7 @@ generate:
 
 generate_go:
 	cd .. && bazelisk run //:gazelle -- update infra/bots/task_drivers modules/canvaskit/go \
-       bazel/exporter  bazel/deps_parser
+       bazel/exporter  bazel/deps_parser tools/gpu/gl/interface
 
 .PHONY: generate_cmake
 generate_cmake:
@@ -15,9 +15,20 @@ generate_cmake:
 
 .PHONY: generate_gni
 generate_gni:
-	cd .. && bazelisk build //bazel/exporter_tool && ${EXPORTER_TOOL} \
-		-output_format=gni -proj_name=Skia ${EXPORTER_RULES} \
-		&& bin/gn format gn/*.gni modules/*/*.gni
+	# It is tempting to try to put this into a blaze run command. However, that
+	# is currently infeasible due to the fact that the exporter tool *calls*
+	# Bazel, resulting in a deadlock because only one Bazel command can run
+	# at a time.
+	cd .. && bazelisk build //bazel/exporter_tool && \
+        ${EXPORTER_TOOL} -output_format=gni -proj_name=Skia ${EXPORTER_RULES} \
+		&& bazelisk run //bazel/external/gn -- format gn/*.gni modules/*/*.gni
+
+.PHONY: generate_gni_rbe
+generate_gni_rbe:
+	cd .. && bazelisk build //bazel/exporter_tool --config=linux_rbe --jobs=100 \
+ 			--remote_download_toplevel && \
+        ${EXPORTER_TOOL} -output_format=gni -proj_name=Skia ${EXPORTER_RULES} \
+		&& bazelisk run //bazel/external/gn -- format gn/*.gni modules/*/*.gni
 
 .PHONY: check_gni
 check_gni:

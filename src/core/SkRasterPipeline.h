@@ -83,7 +83,7 @@ struct skcms_TransferFunction;
     M(callback)                                                    \
     M(stack_checkpoint) M(stack_rewind)                            \
     M(unbounded_set_rgb) M(unbounded_uniform_color)                \
-    M(unpremul) M(dither)                                          \
+    M(unpremul) M(unpremul_polar) M(dither)                        \
     M(load_16161616) M(load_16161616_dst) M(store_16161616) M(gather_16161616) \
     M(load_a16)    M(load_a16_dst)  M(store_a16)   M(gather_a16)   \
     M(load_rg1616) M(load_rg1616_dst) M(store_rg1616) M(gather_rg1616) \
@@ -100,6 +100,9 @@ struct skcms_TransferFunction;
     M(matrix_3x3) M(matrix_3x4) M(matrix_4x5) M(matrix_4x3)        \
     M(parametric) M(gamma_) M(PQish) M(HLGish) M(HLGinvish)        \
     M(rgb_to_hsl) M(hsl_to_rgb)                                    \
+    M(css_lab_to_xyz) M(css_oklab_to_linear_srgb)                  \
+    M(css_hcl_to_lab)                                              \
+    M(css_hsl_to_srgb) M(css_hwb_to_srgb)                          \
     M(gauss_a_to_rgba)                                             \
     M(mirror_x)   M(repeat_x)                                      \
     M(mirror_y)   M(repeat_y)                                      \
@@ -118,7 +121,9 @@ struct skcms_TransferFunction;
     M(alter_2pt_conical_compensate_focal)                          \
     M(alter_2pt_conical_unswap)                                    \
     M(mask_2pt_conical_nan)                                        \
-    M(mask_2pt_conical_degenerates) M(apply_vector_mask)
+    M(mask_2pt_conical_degenerates) M(apply_vector_mask)           \
+    /* Dedicated SkSL stages begin here: */                        \
+    M(store_src_rg)
 
 // The combined list of all stages:
 #define SK_RASTER_PIPELINE_STAGES_ALL(M) \
@@ -144,8 +149,8 @@ struct SkRasterPipeline_GatherCtx {
     int         stride;
     float       width;
     float       height;
-
     float       weights[16];  // for bicubic and bicubic_clamp_8888
+    int         coordBiasInULPs = 0;
 };
 
 // State shared by save_xy, accumulate, and bilinear_* / bicubic_*.
@@ -225,6 +230,10 @@ struct SkRasterPipeline_EmbossCtx {
                                add;
 };
 
+struct SkRasterPipeline_TablesCtx {
+    const uint8_t *r, *g, *b, *a;
+};
+
 class SkRasterPipeline {
 public:
     explicit SkRasterPipeline(SkArenaAlloc*);
@@ -261,6 +270,7 @@ public:
     // Allocates a thunk which amortizes run() setup cost in alloc.
     std::function<void(size_t, size_t, size_t, size_t)> compile() const;
 
+    // Prints the entire StageList using SkDebugf.
     void dump() const;
 
     // Appends a stage for the specified matrix.
@@ -301,6 +311,9 @@ private:
         void*      ctx;
     };
 
+    bool build_lowp_pipeline(void** ip) const;
+    void build_highp_pipeline(void** ip) const;
+
     using StartPipelineFn = void(*)(size_t,size_t,size_t,size_t, void** program);
     StartPipelineFn build_pipeline(void**) const;
 
@@ -311,6 +324,8 @@ private:
     SkRasterPipeline_RewindCtx* fRewindCtx;
     StageList*                  fStages;
     int                         fNumStages;
+
+    friend struct TestingOnly_SkRasterPipelineInspector;
 };
 
 template <size_t bytes>

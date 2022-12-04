@@ -33,7 +33,6 @@
 #include "src/gpu/ganesh/vk/GrVkCommandPool.h"
 #include "src/gpu/ganesh/vk/GrVkFramebuffer.h"
 #include "src/gpu/ganesh/vk/GrVkImage.h"
-#include "src/gpu/ganesh/vk/GrVkMemory.h"
 #include "src/gpu/ganesh/vk/GrVkOpsRenderPass.h"
 #include "src/gpu/ganesh/vk/GrVkPipeline.h"
 #include "src/gpu/ganesh/vk/GrVkPipelineState.h"
@@ -44,6 +43,7 @@
 #include "src/gpu/ganesh/vk/GrVkTextureRenderTarget.h"
 #include "src/gpu/vk/VulkanAMDMemoryAllocator.h"
 #include "src/gpu/vk/VulkanInterface.h"
+#include "src/gpu/vk/VulkanMemory.h"
 #include "src/gpu/vk/VulkanUtils.h"
 #include "src/image/SkImage_Gpu.h"
 #include "src/image/SkSurface_Gpu.h"
@@ -529,7 +529,7 @@ bool GrVkGpu::onWritePixels(GrSurface* surface,
                                              texels,
                                              mipLevelCount);
         if (1 == mipLevelCount) {
-            texture->markMipmapsDirty("vk upload data");
+            texture->markMipmapsDirty();
         }
     }
 
@@ -691,7 +691,7 @@ bool GrVkGpu::onTransferPixelsTo(GrTexture* texture,
                                                     &region);
     this->currentCommandBuffer()->addGrBuffer(std::move(transferBuffer));
 
-    tex->markMipmapsDirty("vk transfer");
+    tex->markMipmapsDirty();
     return true;
 }
 
@@ -857,7 +857,11 @@ bool GrVkGpu::uploadTexDataLinear(GrVkImage* texImage,
     VkDeviceSize offset = rect.top()*layout.rowPitch + rect.left()*bpp;
     VkDeviceSize size = rect.height()*layout.rowPitch;
     SkASSERT(size + offset <= alloc.fSize);
-    void* mapPtr = GrVkMemory::MapAlloc(this, alloc);
+    auto checkResult = [this](VkResult result) {
+        return this->checkVkResult(result);
+    };
+    auto allocator = this->memoryAllocator();
+    void* mapPtr = skgpu::VulkanMemory::MapAlloc(allocator, alloc, checkResult);
     if (!mapPtr) {
         return false;
     }
@@ -870,8 +874,8 @@ bool GrVkGpu::uploadTexDataLinear(GrVkImage* texImage,
                  trimRowBytes,
                  rect.height());
 
-    GrVkMemory::FlushMappedAlloc(this, alloc, offset, size);
-    GrVkMemory::UnmapAlloc(this, alloc);
+    skgpu::VulkanMemory::FlushMappedAlloc(allocator, alloc, offset, size, checkResult);
+    skgpu::VulkanMemory::UnmapAlloc(allocator, alloc);
 
     return true;
 }
@@ -2313,7 +2317,7 @@ void GrVkGpu::copySurfaceAsCopyImage(GrSurface* dst,
     SkIRect dstRect = SkIRect::MakeXYWH(dstPoint.fX, dstPoint.fY,
                                         srcRect.width(), srcRect.height());
     // The rect is already in device space so we pass in kTopLeft so no flip is done.
-    this->didWriteToSurface(dst, kTopLeft_GrSurfaceOrigin, &dstRect, "vk copy as image");
+    this->didWriteToSurface(dst, kTopLeft_GrSurfaceOrigin, &dstRect);
 }
 
 void GrVkGpu::copySurfaceAsBlit(GrSurface* dst,
@@ -2382,7 +2386,7 @@ void GrVkGpu::copySurfaceAsBlit(GrSurface* dst,
                                                     VK_FILTER_NEAREST : VK_FILTER_LINEAR);
 
     // The rect is already in device space so we pass in kTopLeft so no flip is done.
-    this->didWriteToSurface(dst, kTopLeft_GrSurfaceOrigin, &dstRect, "vk copy as blit");
+    this->didWriteToSurface(dst, kTopLeft_GrSurfaceOrigin, &dstRect);
 }
 
 void GrVkGpu::copySurfaceAsResolve(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
@@ -2396,7 +2400,7 @@ void GrVkGpu::copySurfaceAsResolve(GrSurface* dst, GrSurface* src, const SkIRect
     SkIRect dstRect = SkIRect::MakeXYWH(dstPoint.fX, dstPoint.fY,
                                         srcRect.width(), srcRect.height());
     // The rect is already in device space so we pass in kTopLeft so no flip is done.
-    this->didWriteToSurface(dst, kTopLeft_GrSurfaceOrigin, &dstRect, "vk copy as resolve");
+    this->didWriteToSurface(dst, kTopLeft_GrSurfaceOrigin, &dstRect);
 }
 
 bool GrVkGpu::onCopySurface(GrSurface* dst, const SkIRect& dstRect,
@@ -2638,7 +2642,7 @@ void GrVkGpu::endRenderPass(GrRenderTarget* target, GrSurfaceOrigin origin,
     // We had a command buffer when we started the render pass, we should have one now as well.
     SkASSERT(this->currentCommandBuffer());
     this->currentCommandBuffer()->endRenderPass(this);
-    this->didWriteToSurface(target, origin, &bounds, "vk end render pass");
+    this->didWriteToSurface(target, origin, &bounds);
 }
 
 bool GrVkGpu::checkVkResult(VkResult result) {

@@ -34,15 +34,6 @@ public:
                       int srcX,
                       int srcY,
                       CachingHint) const override { return false; }
-    // Temporary and only for testing purposes.
-    // To be removed once asynchronous readback is working.
-    bool testingOnly_ReadPixels(Context*,
-                                Recorder*,
-                                const SkImageInfo& dstInfo,
-                                void* dstPixels,
-                                size_t dstRowBytes,
-                                int srcX,
-                                int srcY);
 
     bool onHasMipmaps() const override {
         return fTextureProxyView.proxy()->mipmapped() == Mipmapped::kYes;
@@ -65,11 +56,6 @@ public:
                                                 GrDirectContext*) const override;
 
     sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const override;
-
-    void onAsyncReadPixels(const SkImageInfo&,
-                           SkIRect srcRect,
-                           ReadPixelsCallback,
-                           ReadPixelsContext) const override;
 
     void onAsyncRescaleAndReadPixels(const SkImageInfo&,
                                      SkIRect srcRect,

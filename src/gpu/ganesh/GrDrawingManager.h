@@ -178,11 +178,6 @@ public:
                        sk_sp<GrRenderTargetProxy> newDest,
                        SkIPoint offset);
 
-#if defined(SK_DEBUG)
-    int flushNumber() const { return fFlushNum; }
-    bool isFlushing() const { return fFlushing; }
-#endif
-
 private:
     GrDrawingManager(GrRecordingContext*,
                      const PathRendererChain::Options&,
@@ -234,6 +229,7 @@ private:
     sk_sp<GrBufferAllocPool::CpuBufferCache> fCpuBufferCache;
 
     SkTArray<sk_sp<GrRenderTask>>            fDAG;
+    std::vector<int>                         fReorderBlockerTaskIndices;
     skgpu::v1::OpsTask*                      fActiveOpsTask = nullptr;
 
     PathRendererChain::Options               fOptionsForPathRendererChain;
@@ -242,7 +238,6 @@ private:
 
     skgpu::TokenTracker                      fTokenTracker;
     bool                                     fFlushing = false;
-    SkDEBUGCODE(int                          fFlushNum = 1;)
     const bool                               fReduceOpsTaskSplitting;
 
     SkTArray<GrOnFlushCallbackObject*>       fOnFlushCBObjects;

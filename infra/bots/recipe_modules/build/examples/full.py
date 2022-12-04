@@ -38,6 +38,7 @@ TEST_BUILDERS = [
   'Build-Debian10-Clang-arm64-Debug-Android_FrameworkWorkarounds',
   'Build-Debian10-Clang-arm64-Debug-Android_Graphite_Vulkan',
   'Build-Debian10-Clang-arm64-Debug-Android_HWASAN',
+  'Build-Debian10-Clang-arm64-Release-Android_Graphite_Dawn',
   'Build-Debian10-Clang-arm64-Release-Android_Wuffs',
   'Build-Debian10-Clang-x86_64-Debug-ASAN_Graphite_Vulkan',
   'Build-Debian10-Clang-x86_64-Debug-AVIF',
@@ -89,7 +90,6 @@ TEST_BUILDERS = [
   'Build-Win-Clang-x86_64-Release-Shared',
   "Build-Win-Clang-x86_64-Release-Dawn",
   'Build-Win-Clang-x86_64-Release-Vulkan',
-  'Housekeeper-PerCommit-CheckGeneratedFiles',
 ]
 
 # Default properties used for TEST_BUILDERS.
