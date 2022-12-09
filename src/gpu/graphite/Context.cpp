@@ -62,9 +62,14 @@ Context::ContextID Context::ContextID::Next() {
 }
 
 //--------------------------------------------------------------------------------------------------
-Context::Context(sk_sp<SharedContext> sharedContext, std::unique_ptr<QueueManager> queueManager)
+Context::Context(sk_sp<SharedContext> sharedContext,
+                 std::unique_ptr<QueueManager> queueManager,
+                 const ContextOptions& options)
         : fSharedContext(std::move(sharedContext))
         , fQueueManager(std::move(queueManager))
+#if GRAPHITE_TEST_UTILS
+        , fStoreContextRefInRecorder(options.fStoreContextRefInRecorder)
+#endif
         , fContextID(ContextID::Next()) {
     // We have to create this outside the initializer list because we need to pass in the Context's
     // SingleOwner object and it is declared last
@@ -72,7 +77,14 @@ Context::Context(sk_sp<SharedContext> sharedContext, std::unique_ptr<QueueManage
     fMappedBufferManager = std::make_unique<ClientMappedBufferManager>(this->contextID());
 }
 
-Context::~Context() {}
+Context::~Context() {
+#if GRAPHITE_TEST_UTILS
+    ASSERT_SINGLE_OWNER
+    for (auto& recorder : fTrackedRecorders) {
+        recorder->priv().setContext(nullptr);
+    }
+#endif
+}
 
 BackendApi Context::backend() const { return fSharedContext->backend(); }
 
@@ -91,7 +103,8 @@ std::unique_ptr<Context> Context::MakeDawn(const DawnBackendContext& backendCont
     }
 
     auto context = std::unique_ptr<Context>(new Context(std::move(sharedContext),
-                                                        std::move(queueManager)));
+                                                        std::move(queueManager),
+                                                        options));
     SkASSERT(context);
     return context;
 }
@@ -111,7 +124,8 @@ std::unique_ptr<Context> Context::MakeMetal(const MtlBackendContext& backendCont
     }
 
     auto context = std::unique_ptr<Context>(new Context(std::move(sharedContext),
-                                                        std::move(queueManager)));
+                                                        std::move(queueManager),
+                                                        options));
     SkASSERT(context);
     return context;
 }
@@ -132,7 +146,8 @@ std::unique_ptr<Context> Context::MakeVulkan(const VulkanBackendContext& backend
     }
 
     auto context = std::unique_ptr<Context>(new Context(std::move(sharedContext),
-                                                        std::move(queueManager)));
+                                                        std::move(queueManager),
+                                                        options));
     SkASSERT(context);
     return context;
 }
@@ -141,7 +156,13 @@ std::unique_ptr<Context> Context::MakeVulkan(const VulkanBackendContext& backend
 std::unique_ptr<Recorder> Context::makeRecorder(const RecorderOptions& options) {
     ASSERT_SINGLE_OWNER
 
-    return std::unique_ptr<Recorder>(new Recorder(fSharedContext, options));
+    auto recorder = std::unique_ptr<Recorder>(new Recorder(fSharedContext, options));
+#if GRAPHITE_TEST_UTILS
+    if (fStoreContextRefInRecorder) {
+        recorder->priv().setContext(this);
+    }
+#endif
+    return recorder;
 }
 
 bool Context::insertRecording(const InsertRecordingInfo& info) {
@@ -168,9 +189,10 @@ void Context::asyncReadPixels(const SkImage* image,
     }
     auto graphiteImage = reinterpret_cast<const skgpu::graphite::Image*>(image);
     TextureProxyView proxyView = graphiteImage->textureProxyView();
-    TextureProxy* proxy = proxyView.proxy();
 
-    this->asyncReadPixels(proxy,
+    std::unique_ptr<Recorder> recorder = this->makeRecorder();
+    this->asyncReadPixels(recorder.get(),
+                          proxyView.proxy(),
                           image->imageInfo(),
                           dstColorInfo,
                           srcRect,
@@ -189,9 +211,10 @@ void Context::asyncReadPixels(const SkSurface* surface,
     }
     auto graphiteSurface = reinterpret_cast<const skgpu::graphite::Surface*>(surface);
     TextureProxyView proxyView = graphiteSurface->readSurfaceView();
-    TextureProxy* proxy = proxyView.proxy();
 
-    this->asyncReadPixels(proxy,
+    std::unique_ptr<Recorder> recorder = this->makeRecorder();
+    this->asyncReadPixels(recorder.get(),
+                          proxyView.proxy(),
                           surface->imageInfo(),
                           dstColorInfo,
                           srcRect,
@@ -199,12 +222,15 @@ void Context::asyncReadPixels(const SkSurface* surface,
                           callbackContext);
 }
 
-void Context::asyncReadPixels(TextureProxy* proxy,
+void Context::asyncReadPixels(Recorder* recorder,
+                              const TextureProxy* proxy,
                               const SkImageInfo& srcImageInfo,
                               const SkColorInfo& dstColorInfo,
                               const SkIRect& srcRect,
                               SkImage::ReadPixelsCallback callback,
                               SkImage::ReadPixelsContext callbackContext) {
+    SkASSERT(recorder);
+
     if (!proxy) {
         callback(callbackContext, nullptr);
         return;
@@ -220,7 +246,6 @@ void Context::asyncReadPixels(TextureProxy* proxy,
         return;
     }
 
-    std::unique_ptr<Recorder> recorder = this->makeRecorder();
     const Caps* caps = recorder->priv().caps();
     if (!caps->supportsReadPixels(proxy->textureInfo())) {
         // TODO: try to copy to a readable texture instead
@@ -234,6 +259,12 @@ void Context::asyncReadPixels(TextureProxy* proxy,
 
     if (!transferResult.fTransferBuffer) {
         // TODO: try to do a synchronous readPixels instead
+        callback(callbackContext, nullptr);
+        return;
+    }
+
+    std::unique_ptr<Recording> recording = recorder->snap();
+    if (!recording) {
         callback(callbackContext, nullptr);
         return;
     }
@@ -267,7 +298,6 @@ void Context::asyncReadPixels(TextureProxy* proxy,
         delete context;
     };
 
-    std::unique_ptr<Recording> recording = recorder->snap();
     InsertRecordingInfo info;
     info.fRecording = recording.get();
     info.fFinishedContext = finishContext;
@@ -321,5 +351,51 @@ void Context::deleteBackendTexture(BackendTexture& texture) {
     }
     fResourceProvider->deleteBackendTexture(texture);
 }
+
+///////////////////////////////////////////////////////////////////////////////////
+
+#if GRAPHITE_TEST_UTILS
+bool ContextPriv::readPixels(Recorder* recorder,
+                             const SkPixmap& pm,
+                             const TextureProxy* textureProxy,
+                             const SkImageInfo& srcImageInfo,
+                             int srcX, int srcY) {
+    auto rect = SkIRect::MakeXYWH(srcX, srcY, pm.width(), pm.height());
+    struct AsyncContext {
+        bool fCalled = false;
+        std::unique_ptr<const SkImage::AsyncReadResult> fResult;
+    } asyncContext;
+    fContext->asyncReadPixels(recorder, textureProxy, srcImageInfo, pm.info().colorInfo(), rect,
+                              [](void* c, std::unique_ptr<const SkImage::AsyncReadResult> result) {
+                                  auto context = static_cast<AsyncContext*>(c);
+                                  context->fResult = std::move(result);
+                                  context->fCalled = true;
+                              },
+                              &asyncContext);
+
+    if (!asyncContext.fCalled) {
+        fContext->submit(SyncToCpu::kYes);
+    }
+    if (!asyncContext.fResult) {
+        return false;
+    }
+    SkRectMemcpy(pm.writable_addr(), pm.rowBytes(), asyncContext.fResult->data(0),
+                 asyncContext.fResult->rowBytes(0), pm.info().minRowBytes(),
+                 pm.height());
+    return true;
+}
+
+void ContextPriv::deregisterRecorder(const Recorder* recorder) {
+    SKGPU_ASSERT_SINGLE_OWNER(fContext->singleOwner())
+    for (auto it = fContext->fTrackedRecorders.begin();
+         it != fContext->fTrackedRecorders.end();
+         it++) {
+        if (*it == recorder) {
+            fContext->fTrackedRecorders.erase(it);
+            return;
+        }
+    }
+}
+#endif
 
 } // namespace skgpu::graphite

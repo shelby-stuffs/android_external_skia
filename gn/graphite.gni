@@ -175,6 +175,8 @@ skia_graphite_dawn_sources = [
   "$_src/dawn/DawnSharedContext.cpp",
   "$_src/dawn/DawnSharedContext.h",
   "$_src/dawn/DawnTypesPriv.cpp",
+  "$_src/dawn/DawnUtils.cpp",
+  "$_src/dawn/DawnUtils.h",
 ]
 
 skia_graphite_mtl_sources = [
@@ -231,4 +233,13 @@ skia_graphite_vk_sources = [
 skia_graphite_piet_sources = [
   "$_src/PietRenderTask.cpp",
   "$_src/PietRenderTask.h",
+]
+
+skia_graphite_precompile_public = [ "$_include/CombinationBuilder.h" ]
+
+skia_graphite_precompile_sources = [
+  "$_src/CombinationBuilder.cpp",
+  "$_src/FactoryFunctions.cpp",
+  "$_src/FactoryFunctions.h",
+  "$_src/Precompile.h",
 ]

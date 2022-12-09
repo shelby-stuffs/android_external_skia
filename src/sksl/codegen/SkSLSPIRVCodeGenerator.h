@@ -24,7 +24,6 @@
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/spirv.h"
 
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string_view>
@@ -162,6 +161,8 @@ private:
     SpvId getType(const Type& type, const MemoryLayout& layout);
 
     SpvId getFunctionType(const FunctionDeclaration& function);
+
+    SpvId getFunctionParameterType(const Type& parameterType);
 
     SpvId getPointerType(const Type& type, SpvStorageClass_ storageClass);
 
@@ -446,8 +447,8 @@ private:
     SpvId toComponent(SpvId id, int component);
 
     struct ConditionalOpCounts {
-        size_t numReachableOps;
-        size_t numStoreOps;
+        int numReachableOps;
+        int numStoreOps;
     };
     ConditionalOpCounts getConditionalOpCounts();
     void pruneConditionalOps(ConditionalOpCounts ops);
