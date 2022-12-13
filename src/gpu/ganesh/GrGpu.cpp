@@ -29,6 +29,7 @@
 #include "src/gpu/ganesh/GrSemaphore.h"
 #include "src/gpu/ganesh/GrStagingBufferManager.h"
 #include "src/gpu/ganesh/GrStencilSettings.h"
+#include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrTextureProxyPriv.h"
 #include "src/gpu/ganesh/GrTracing.h"
 #include "src/sksl/SkSLCompiler.h"
@@ -786,7 +787,7 @@ bool GrGpu::checkAndResetOOMed() {
 }
 
 void GrGpu::callSubmittedProcs(bool success) {
-    for (int i = 0; i < fSubmittedProcs.count(); ++i) {
+    for (int i = 0; i < fSubmittedProcs.size(); ++i) {
         fSubmittedProcs[i].fProc(fSubmittedProcs[i].fContext, success);
     }
     fSubmittedProcs.reset();

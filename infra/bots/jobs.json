@@ -106,6 +106,7 @@
    },
   {"name": "Build-Debian10-Clang-x86_64-OptimizeForSize"},
   {"name": "Build-Debian10-Clang-x86_64-OptimizeForSize-NoPatch"},
+  {"name": "Build-Debian10-Clang-x86_64-OptimizeForSize-Graphite_Vulkan"},
   {"name": "Build-Debian10-Clang-x86_64-Release"},
   {"name": "Build-Debian10-Clang-x86_64-Release-ANGLE"},
   {"name": "Build-Debian10-Clang-x86_64-Release-ASAN"},
@@ -209,7 +210,6 @@
   {"name": "Build-Mac-Clang-arm64-Debug-Graphite_Metal_NoPrecompile"},
   {"name": "Build-Mac-Clang-arm64-Debug-ASAN"},
   {"name": "Build-Mac-Clang-arm64-Debug-ASAN_Graphite_Dawn"},
-  {"name": "Build-Mac-Clang-arm64-Debug-iOS_Graphite_Dawn"},
   {"name": "Build-Mac-Clang-arm64-Debug-ASAN_Graphite_Metal",
    "cq_config": {"location_regexes": ["(tests|src/gpu)/graphite/.*"]}
   },
@@ -222,7 +222,6 @@
   {"name": "Build-Mac-Clang-arm64-Release-Graphite_Metal",
    "cq_config": {"location_regexes": ["(tests|src/gpu)/graphite/.*"]}
   },
-  {"name": "Build-Mac-Clang-arm64-Release-iOS_Graphite_Dawn"},
   {"name": "Build-Mac-Clang-arm64-Release-iOS_Graphite_Metal",
    "cq_config": {"location_regexes": ["(tests|src/gpu)/graphite/.*"]}
   },
@@ -270,6 +269,8 @@
   {"name": "Build-Win-MSVC-x86_64-Debug-Vulkan"},
   {"name": "Build-Win-MSVC-x86_64-Debug-Wuffs"},
   {"name": "Build-Win-MSVC-x86_64-Release"},
+  {"name": "Build-Win-MSVC-x86_64-OptimizeForSize-Graphite_Dawn"},
+  {"name": "Build-Win-MSVC-x86_64-OptimizeForSize-Graphite_Vulkan"},
   {"name": "Build-Win-MSVC-x86_64-Release-Direct3D"},
   {"name": "Build-Win-MSVC-x86_64-Release-Shared"},
   {"name": "Build-Win-MSVC-x86_64-Release-Graphite_Dawn"},
@@ -596,9 +597,7 @@
   {"name": "Test-Debian10-Clang-NUC5PPYH-GPU-IntelHD405-x86_64-Debug-All-Vulkan"},
   {"name": "Test-Debian10-Clang-NUC5PPYH-GPU-IntelHD405-x86_64-Release-All"},
   {"name": "Test-Debian10-Clang-NUC5PPYH-GPU-IntelHD405-x86_64-Release-All-Vulkan"},
-  {"name": "Test-Debian10-Clang-NUC7i5BNK-GPU-IntelIris640-x86_64-Debug-All",
-   "cq_config": {}
-   },
+  {"name": "Test-Debian10-Clang-NUC7i5BNK-GPU-IntelIris640-x86_64-Debug-All"},
   {"name": "Test-Debian10-Clang-NUC7i5BNK-GPU-IntelIris640-x86_64-Debug-All-ASAN_Vulkan"},
   {"name": "Test-Debian10-Clang-NUC7i5BNK-GPU-IntelIris640-x86_64-Debug-All-DDL1"},
   {"name": "Test-Debian10-Clang-NUC7i5BNK-GPU-IntelIris640-x86_64-Debug-All-DDL1_Vulkan"},

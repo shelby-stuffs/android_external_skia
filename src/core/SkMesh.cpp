@@ -20,6 +20,7 @@
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/analysis/SkSLProgramVisitor.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
@@ -161,7 +162,7 @@ static size_t attribute_type_size(Attribute::Type type) {
         case Attribute::Type::kUByte4_unorm:  return 4;
     }
     SkUNREACHABLE;
-};
+}
 
 static const char* attribute_type_string(Attribute::Type type) {
     switch (type) {
@@ -172,7 +173,7 @@ static const char* attribute_type_string(Attribute::Type type) {
         case Attribute::Type::kUByte4_unorm:  return "half4";
     }
     SkUNREACHABLE;
-};
+}
 
 static const char* varying_type_string(Varying::Type type) {
     switch (type) {
@@ -186,7 +187,7 @@ static const char* varying_type_string(Varying::Type type) {
         case Varying::Type::kHalf4:  return "half4";
     }
     SkUNREACHABLE;
-};
+}
 
 std::tuple<bool, SkString>
 check_vertex_offsets_and_stride(SkSpan<const Attribute> attributes,

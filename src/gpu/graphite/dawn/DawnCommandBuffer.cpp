@@ -41,6 +41,7 @@ bool DawnCommandBuffer::onAddRenderPass(const RenderPassDesc& renderPassDesc,
                                         const Texture* colorTexture,
                                         const Texture* resolveTexture,
                                         const Texture* depthStencilTexture,
+                                        SkRect viewport,
                                         const std::vector<std::unique_ptr<DrawPass>>& drawPasses) {
     // TODO
     return false;
@@ -50,6 +51,14 @@ bool DawnCommandBuffer::onAddComputePass(const ComputePassDesc& computePassDesc,
                                          const ComputePipeline* pipeline,
                                          const std::vector<ResourceBinding>& bindings) {
     // TODO
+    return false;
+}
+
+bool DawnCommandBuffer::onCopyBufferToBuffer(const Buffer* srcBuffer,
+                                             size_t srcOffset,
+                                             const Buffer* dstBuffer,
+                                             size_t dstOffset,
+                                             size_t size) {
     return false;
 }
 

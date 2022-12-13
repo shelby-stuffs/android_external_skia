@@ -20,6 +20,7 @@
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkResourceCache.h"
 #include "src/core/SkVM.h"
+#include "src/shaders/SkBitmapProcShader.h"
 #include "src/shaders/SkImageShader.h"
 #include "src/shaders/SkLocalMatrixShader.h"
 #include <atomic>
@@ -36,6 +37,14 @@
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/image/SkImage_Base.h"
 #include "src/shaders/SkLocalMatrixShader.h"
+#endif
+
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/Caps.h"
+#include "src/gpu/graphite/KeyContext.h"
+#include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/PaintParamsKey.h"
+#include "src/gpu/graphite/RecorderPriv.h"
 #endif
 
 sk_sp<SkShader> SkPicture::makeShader(SkTileMode tmx, SkTileMode tmy, SkFilterMode filter,
@@ -343,6 +352,25 @@ skvm::Color SkPictureShader::onProgram(skvm::Builder* p,
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
+#ifdef SK_ENABLE_LEGACY_SHADERCONTEXT
+SkShaderBase::Context* SkPictureShader::onMakeContext(const ContextRec& rec, SkArenaAlloc* alloc)
+const {
+    SkMatrix lm = rec.fLocalMatrix ? *rec.fLocalMatrix : SkMatrix::I();
+    sk_sp<SkShader> bitmapShader = this->rasterShader(*rec.fMatrix, &lm, rec.fDstColorType,
+                                                      rec.fDstColorSpace, rec.fProps);
+    if (!bitmapShader) {
+        return nullptr;
+    }
+
+    ContextRec localRec = rec;
+    localRec.fLocalMatrix = lm.isIdentity() ? nullptr : &lm;
+
+    return as_SB(bitmapShader)->makeContext(localRec, alloc);
+}
+#endif
+
+/////////////////////////////////////////////////////////////////////////////////////////
+
 #if SK_SUPPORT_GPU
 
 #include "src/gpu/ganesh/GrProxyProvider.h"
@@ -419,21 +447,11 @@ std::unique_ptr<GrFragmentProcessor> SkPictureShader::asFragmentProcessor(
 }
 #endif
 
-#ifdef SK_ENABLE_SKSL
-#include "src/core/SkKeyContext.h"
-#include "src/core/SkKeyHelpers.h"
-#include "src/core/SkPaintParamsKey.h"
-
 #ifdef SK_GRAPHITE_ENABLED
-#include "src/gpu/graphite/Caps.h"
-#include "src/gpu/graphite/RecorderPriv.h"
-#endif
+void SkPictureShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
+                               skgpu::graphite::PaintParamsKeyBuilder* builder,
+                               skgpu::graphite::PipelineDataGatherer* gatherer) const {
 
-void SkPictureShader::addToKey(const SkKeyContext& keyContext,
-                               SkPaintParamsKeyBuilder* builder,
-                               SkPipelineDataGatherer* gatherer) const {
-
-#ifdef SK_GRAPHITE_ENABLED
     using namespace skgpu::graphite;
 
     Recorder* recorder = keyContext.recorder();
@@ -483,7 +501,5 @@ void SkPictureShader::addToKey(const SkKeyContext& keyContext,
     }
 
     as_SB(shader)->addToKey(keyContext, builder, gatherer);
-#endif // SK_GRAPHITE_ENABLED
-
 }
-#endif
+#endif // SK_GRAPHITE_ENABLED

@@ -176,7 +176,7 @@ SkGradientShaderBase::SkGradientShaderBase(const Descriptor& desc, const SkMatri
     fOrigPos           = desc.fPos ? reinterpret_cast<SkScalar*>(fOrigColors4f + fColorCount)
                                    : nullptr;
 
-    // Now copy over the colors, adding the dummies as needed
+    // Now copy over the colors, adding the duplicates at t=0 and t=1 as needed
     SkColor4f* origColors = fOrigColors4f;
     if (needsFirst) {
         *origColors++ = desc.fColors[0];
@@ -698,8 +698,7 @@ skvm::Color SkGradientShaderBase::onProgram(skvm::Builder* p,
         skvm::I32 ix;
         if (fOrigPos == nullptr) {
             // Evenly spaced stops... we can calculate ix directly.
-            // Of note: we need to clamp t and skip over that conceptual -inf stop we made up.
-            ix = trunc(clamp01(t) * uniformF(stops.size() - 1) + 1.0f);
+            ix = trunc(clamp(t * uniformF(stops.size() - 1) + 1.0f, 0.0f, uniformF(stops.size())));
         } else {
             // Starting ix at 0 bakes in our conceptual first stop at -inf.
             // TODO: good place to experiment with a loop in skvm.... stops.size() can be huge.
