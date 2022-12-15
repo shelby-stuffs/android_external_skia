@@ -24,15 +24,11 @@
 #include "src/shaders/SkLocalMatrixShader.h"
 #include "src/shaders/SkTransformShader.h"
 
-#ifdef SK_ENABLE_SKSL
-
 #ifdef SK_GRAPHITE_ENABLED
 #include "src/gpu/graphite/ImageUtils.h"
-#endif
-
-#include "src/core/SkKeyContext.h"
-#include "src/core/SkKeyHelpers.h"
-#include "src/core/SkPaintParamsKey.h"
+#include "src/gpu/graphite/KeyContext.h"
+#include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/PaintParamsKey.h"
 #endif
 
 SkM44 SkImageShader::CubicResamplerMatrix(float B, float C) {
@@ -389,13 +385,14 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
 
 #endif
 
-#ifdef SK_ENABLE_SKSL
-void SkImageShader::addToKey(const SkKeyContext& keyContext,
-                             SkPaintParamsKeyBuilder* builder,
-                             SkPipelineDataGatherer* gatherer) const {
+#ifdef SK_GRAPHITE_ENABLED
+void SkImageShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
+                             skgpu::graphite::PaintParamsKeyBuilder* builder,
+                             skgpu::graphite::PipelineDataGatherer* gatherer) const {
+    using namespace skgpu::graphite;
+
     ImageShaderBlock::ImageData imgData(fSampling, fTileModeX, fTileModeY, fSubset);
 
-#ifdef SK_GRAPHITE_ENABLED
     auto [ imageToDraw, newSampling ] = skgpu::graphite::GetGraphiteBacked(keyContext.recorder(),
                                                                            fImage.get(),
                                                                            fSampling);
@@ -409,7 +406,6 @@ void SkImageShader::addToKey(const SkKeyContext& keyContext,
         auto [view, _] = as_IB(imageToDraw)->asView(keyContext.recorder(), mipmapped);
         imgData.fTextureProxy = view.refProxy();
     }
-#endif
 
     ImageShaderBlock::BeginBlock(keyContext, builder, gatherer, imgData);
     builder->endBlock();

@@ -29,9 +29,9 @@
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #endif
 
-#ifdef SK_ENABLE_SKSL
-#include "src/core/SkKeyHelpers.h"
-#include "src/core/SkPaintParamsKey.h"
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/PaintParamsKey.h"
 #endif
 
 bool SkColorFilter::asAColorMode(SkColor* color, SkBlendMode* mode) const {
@@ -147,10 +147,12 @@ SkPMColor4f SkColorFilterBase::onFilterColor4f(const SkPMColor4f& color,
     return SkPMColor4f{0,0,0,0};
 }
 
-#ifdef SK_ENABLE_SKSL
-void SkColorFilterBase::addToKey(const SkKeyContext& keyContext,
-                                 SkPaintParamsKeyBuilder* builder,
-                                 SkPipelineDataGatherer* gatherer) const {
+#ifdef SK_GRAPHITE_ENABLED
+void SkColorFilterBase::addToKey(const skgpu::graphite::KeyContext& keyContext,
+                                 skgpu::graphite::PaintParamsKeyBuilder* builder,
+                                 skgpu::graphite::PipelineDataGatherer* gatherer) const {
+    using namespace skgpu::graphite;
+
     // Return the input color as-is.
     PassthroughShaderBlock::BeginBlock(keyContext, builder, gatherer);
     builder->endBlock();
@@ -207,10 +209,12 @@ public:
     }
 #endif
 
-#ifdef SK_ENABLE_SKSL
-    void addToKey(const SkKeyContext& keyContext,
-                  SkPaintParamsKeyBuilder* builder,
-                  SkPipelineDataGatherer* gatherer) const override {
+#ifdef SK_GRAPHITE_ENABLED
+    void addToKey(const skgpu::graphite::KeyContext& keyContext,
+                  skgpu::graphite::PaintParamsKeyBuilder* builder,
+                  skgpu::graphite::PipelineDataGatherer* gatherer) const override {
+        using namespace skgpu::graphite;
+
         ComposeColorFilterBlock::BeginBlock(keyContext, builder, gatherer);
 
         as_CFB(fInner)->addToKey(keyContext, builder, gatherer);
@@ -218,7 +222,7 @@ public:
 
         builder->endBlock();
     }
-#endif // SK_ENABLE_SKSL
+#endif // SK_GRAPHITE_ENABLED
 
 protected:
     void flatten(SkWriteBuffer& buffer) const override {

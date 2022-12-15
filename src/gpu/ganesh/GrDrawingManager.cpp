@@ -24,6 +24,7 @@
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrMemoryPool.h"
+#include "src/gpu/ganesh/GrNativeRect.h"
 #include "src/gpu/ganesh/GrOnFlushResourceProvider.h"
 #include "src/gpu/ganesh/GrOpFlushState.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
@@ -70,7 +71,7 @@ bool GrDrawingManager::wasAbandoned() const {
 }
 
 void GrDrawingManager::freeGpuResources() {
-    for (int i = fOnFlushCBObjects.count() - 1; i >= 0; --i) {
+    for (int i = fOnFlushCBObjects.size() - 1; i >= 0; --i) {
         if (!fOnFlushCBObjects[i]->retainOnFreeGpuResources()) {
             // it's safe to just do this because we're iterating in reverse
             fOnFlushCBObjects.removeShuffle(i);
@@ -367,7 +368,7 @@ static void reorder_array_by_llist(const SkTInternalLList<T>& llist, SkTArray<sk
         [[maybe_unused]] T* old = array->at(i).release();
         array->at(i++).reset(t);
     }
-    SkASSERT(i == array->count());
+    SkASSERT(i == array->size());
 }
 
 bool GrDrawingManager::reorderTasks(GrResourceAllocator* resourceAllocator) {
@@ -412,7 +413,7 @@ bool GrDrawingManager::reorderTasks(GrResourceAllocator* resourceAllocator) {
     reorder_array_by_llist(llist, &fDAG);
 
     int newCount = 0;
-    for (int i = 0; i < fDAG.count(); i++) {
+    for (int i = 0; i < fDAG.size(); i++) {
         sk_sp<GrRenderTask>& task = fDAG[i];
         if (auto opsTask = task->asOpsTask()) {
             size_t remaining = fDAG.size() - i - 1;
@@ -444,7 +445,7 @@ GrRenderTask* GrDrawingManager::insertTaskBeforeLast(sk_sp<GrRenderTask> task) {
     if (fDAG.empty()) {
         return fDAG.push_back(std::move(task)).get();
     }
-    if (!fReorderBlockerTaskIndices.empty() && fReorderBlockerTaskIndices.back() == fDAG.count()) {
+    if (!fReorderBlockerTaskIndices.empty() && fReorderBlockerTaskIndices.back() == fDAG.size()) {
         fReorderBlockerTaskIndices.back()++;
     }
     fDAG.push_back(std::move(task));
@@ -458,7 +459,7 @@ GrRenderTask* GrDrawingManager::appendTask(sk_sp<GrRenderTask> task) {
         return nullptr;
     }
     if (task->blocksReordering()) {
-        fReorderBlockerTaskIndices.push_back(fDAG.count());
+        fReorderBlockerTaskIndices.push_back(fDAG.size());
     }
     return fDAG.push_back(std::move(task)).get();
 }
@@ -540,7 +541,7 @@ void GrDrawingManager::addOnFlushCallbackObject(GrOnFlushCallbackObject* onFlush
 void GrDrawingManager::testingOnly_removeOnFlushCallbackObject(GrOnFlushCallbackObject* cb) {
     int n = std::find(fOnFlushCBObjects.begin(), fOnFlushCBObjects.end(), cb) -
             fOnFlushCBObjects.begin();
-    SkASSERT(n < fOnFlushCBObjects.count());
+    SkASSERT(n < fOnFlushCBObjects.size());
     fOnFlushCBObjects.removeShuffle(n);
 }
 #endif
@@ -644,7 +645,7 @@ void GrDrawingManager::validate() const {
         SkASSERT(fActiveOpsTask == fDAG.back().get());
     }
 
-    for (int i = 0; i < fDAG.count(); ++i) {
+    for (int i = 0; i < fDAG.size(); ++i) {
         if (fActiveOpsTask != fDAG[i].get()) {
             // The resolveTask associated with the activeTask remains open for as long as the
             // activeTask does.

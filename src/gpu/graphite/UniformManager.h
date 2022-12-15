@@ -14,22 +14,18 @@
 #include "include/private/SkTDArray.h"
 #include "include/private/SkVx.h"
 #include "src/core/SkSLTypeShared.h"
-#include "src/core/SkUniform.h"
+#include "src/gpu/graphite/ResourceTypes.h"
+#include "src/gpu/graphite/Uniform.h"
 
 class SkM44;
 struct SkPoint;
 struct SkRect;
-class SkUniformDataBlock;
 
 namespace skgpu::graphite {
 
 enum class CType : unsigned;
 
-enum class Layout {
-    kStd140,
-    kStd430,
-    kMetal, /** This is our own self-imposed layout we use for Metal. */
-};
+class UniformDataBlock;
 
 class UniformOffsetCalculator {
 public:
@@ -47,6 +43,7 @@ public:
 
 protected:
     SkSLType getUniformTypeForLayout(SkSLType type);
+    void setLayout(Layout);
 
     using WriteUniformFn = uint32_t (*)(SkSLType type,
                                         CType ctype,
@@ -63,9 +60,10 @@ class UniformManager : public UniformOffsetCalculator {
 public:
     UniformManager(Layout layout) : UniformOffsetCalculator(layout, /*startingOffset=*/0) {}
 
-    SkUniformDataBlock finishUniformDataBlock();
+    UniformDataBlock finishUniformDataBlock();
     size_t size() const { return fStorage.size(); }
 
+    void resetWithNewLayout(Layout);
     void reset();
 
     // Write a single instance of `type` from the data block referenced by `src`.
@@ -75,8 +73,8 @@ public:
     // Does nothing if `count` is 0.
     void writeArray(SkSLType type, const void* src, unsigned int count);
 
-    // Copy from `src` using SkUniform array-count semantics.
-    void write(const SkUniform&, const uint8_t* src);
+    // Copy from `src` using Uniform array-count semantics.
+    void write(const Uniform&, const uint8_t* src);
 
     void write(const SkM44&);
     void write(const SkPMColor4f&);
@@ -93,12 +91,12 @@ public:
 
     // Debug only utilities used for debug assertions and tests.
     void checkReset() const;
-    void setExpectedUniforms(SkSpan<const SkUniform>);
+    void setExpectedUniforms(SkSpan<const Uniform>);
     void checkExpected(SkSLType, unsigned int count);
     void doneWithExpectedUniforms();
 
 private:
-    // Writes a single element of the given `type` if `count` == 0 (aka SkUniform::kNonArray).
+    // Writes a single element of the given `type` if `count` == 0 (aka Uniform::kNonArray).
     // Writes an array of `count` elements if `count` > 0, obeying any array layout constraints.
     //
     // Do not call this method directly for any new write()/writeArray() overloads. Instead
@@ -107,7 +105,7 @@ private:
     void writeInternal(SkSLType type, unsigned int count, const void* src);
 
 #ifdef SK_DEBUG
-    SkSpan<const SkUniform> fExpectedUniforms;
+    SkSpan<const Uniform> fExpectedUniforms;
     int fExpectedUniformIndex = 0;
 #endif // SK_DEBUG
 

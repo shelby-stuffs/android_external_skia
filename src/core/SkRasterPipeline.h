@@ -123,7 +123,15 @@ struct skcms_TransferFunction;
     M(mask_2pt_conical_nan)                                        \
     M(mask_2pt_conical_degenerates) M(apply_vector_mask)           \
     /* Dedicated SkSL stages begin here: */                        \
-    M(store_src_rg)
+    M(init_lane_masks) M(store_src_rg) M(immediate_f)              \
+    M(load_unmasked) M(store_unmasked) M(store_masked)             \
+    M(load_condition_mask) M(store_condition_mask)                 \
+    M(copy_slot_masked)    M(copy_2_slots_masked)                  \
+    M(copy_3_slots_masked) M(copy_4_slots_masked)                  \
+    M(copy_slot_unmasked)    M(copy_2_slots_unmasked)              \
+    M(copy_3_slots_unmasked) M(copy_4_slots_unmasked)              \
+    M(zero_slot_unmasked)    M(zero_2_slots_unmasked)              \
+    M(zero_3_slots_unmasked) M(zero_4_slots_unmasked)
 
 // The combined list of all stages:
 #define SK_RASTER_PIPELINE_STAGES_ALL(M) \
@@ -136,6 +144,19 @@ struct skcms_TransferFunction;
 // save memory in the arena.
 inline static constexpr int SkRasterPipeline_kMaxStride = 16;
 inline static constexpr int SkRasterPipeline_kMaxStride_highp = 8;
+
+// Raster pipeline programs are stored as a contiguous array of SkRasterPipelineStages.
+SK_BEGIN_REQUIRE_DENSE
+struct SkRasterPipelineStage {
+    // A function pointer from `stages_lowp` or `stages_highp`. The exact function pointer type
+    // varies depending on architecture (specifically, see `Stage` in SkRasterPipeline_opts.h).
+    void (*fn)();
+
+    // Data used by the stage function. Most context structures are declared at the top of
+    // SkRasterPipeline.h, and have names ending in Ctx (e.g. "SkRasterPipeline_SamplerCtx").
+    void* ctx;
+};
+SK_END_REQUIRE_DENSE
 
 // Structs representing the arguments to some common stages.
 
@@ -199,7 +220,7 @@ struct SkRasterPipeline_RewindCtx {
     float dg[SkRasterPipeline_kMaxStride_highp];
     float db[SkRasterPipeline_kMaxStride_highp];
     float da[SkRasterPipeline_kMaxStride_highp];
-    void** program;
+    SkRasterPipelineStage* stage;
 };
 
 struct SkRasterPipeline_GradientCtx {
@@ -232,6 +253,10 @@ struct SkRasterPipeline_EmbossCtx {
 
 struct SkRasterPipeline_TablesCtx {
     const uint8_t *r, *g, *b, *a;
+};
+
+struct SkRasterPipeline_CopySlotsCtx {
+    float *dst, *src;
 };
 
 class SkRasterPipeline {
@@ -292,6 +317,13 @@ public:
         this->append_set_rgb(alloc, color.vec());
     }
 
+    // Appends one or more `copy_n_slots_[un]masked` stages, based on `numSlots`.
+    void append_copy_slots_masked(SkArenaAlloc* alloc, float* dst, float* src, int numSlots);
+    void append_copy_slots_unmasked(SkArenaAlloc* alloc, float* dst, float* src, int numSlots);
+
+    // Appends one or more `zero_n_slots_unmasked` stages, based on `numSlots`.
+    void append_zero_slots_unmasked(float* dst, int numSlots);
+
     void append_load    (SkColorType, const SkRasterPipeline_MemoryCtx*);
     void append_load_dst(SkColorType, const SkRasterPipeline_MemoryCtx*);
     void append_store   (SkColorType, const SkRasterPipeline_MemoryCtx*);
@@ -311,14 +343,14 @@ private:
         void*      ctx;
     };
 
-    bool build_lowp_pipeline(void** ip) const;
-    void build_highp_pipeline(void** ip) const;
+    bool build_lowp_pipeline(SkRasterPipelineStage* ip) const;
+    void build_highp_pipeline(SkRasterPipelineStage* ip) const;
 
-    using StartPipelineFn = void(*)(size_t,size_t,size_t,size_t, void** program);
-    StartPipelineFn build_pipeline(void**) const;
+    using StartPipelineFn = void(*)(size_t,size_t,size_t,size_t, SkRasterPipelineStage* program);
+    StartPipelineFn build_pipeline(SkRasterPipelineStage*) const;
 
     void unchecked_append(Stage, void*);
-    int slots_needed() const;
+    int stages_needed() const;
 
     SkArenaAlloc*               fAlloc;
     SkRasterPipeline_RewindCtx* fRewindCtx;
