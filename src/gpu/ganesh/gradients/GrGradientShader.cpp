@@ -789,9 +789,7 @@ std::unique_ptr<GrFragmentProcessor> MakeGradientFP(const SkGradientShaderBase& 
     // premul issues depending on the interpolation mode
     bool inputPremul = shader.interpolateInPremul();
     bool allOpaque = true;
-    SkColor4fXformer xformedColors(shader.fOrigColors4f, shader.fColorCount,
-                                   shader.fInterpolation,
-                                   shader.fColorSpace.get(), args.fDstColorInfo->colorSpace());
+    SkColor4fXformer xformedColors(&shader, args.fDstColorInfo->colorSpace());
     const SkPMColor4f* colors = xformedColors.fColors.begin();
 
     for (int i = 0; i < shader.fColorCount; i++) {
@@ -805,8 +803,8 @@ std::unique_ptr<GrFragmentProcessor> MakeGradientFP(const SkGradientShaderBase& 
     // requires lots of position tests, calculate all of the positions up front if needed.
     SkTArray<SkScalar, true> implicitPos;
     SkScalar* positions;
-    if (shader.fOrigPos) {
-        positions = shader.fOrigPos;
+    if (shader.fPositions) {
+        positions = shader.fPositions;
     } else {
         implicitPos.reserve_back(shader.fColorCount);
         SkScalar posScale = SK_Scalar1 / (shader.fColorCount - 1);

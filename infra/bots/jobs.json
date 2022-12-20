@@ -322,7 +322,15 @@
   {"name": "Housekeeper-PerCommit-BuildTaskDrivers_windows_amd64"},
   {"name": "Housekeeper-PerCommit-BundleRecipes"},
   {"name": "Housekeeper-PerCommit-CheckGeneratedFiles",
-   "cq_config": {"location_regexes": ["src/gpu/effects/generated/.*", "src/sksl/.*", "src/gpu/gpu_workaround_list.txt"]}
+   "cq_config": {"location_regexes": [
+     ".*BUILD.bazel",
+     "DEPS",
+     "gn/.*.gni",
+     "modules/.*.gni",
+     "src/gpu/effects/generated/.*",
+     "src/sksl/.*",
+     "src/gpu/gpu_workaround_list.txt"
+   ]}
    },
   {"name": "Housekeeper-PerCommit-CreateDockerImage_Skia_Release"},
   {"name": "Housekeeper-PerCommit-CreateDockerImage_Skia_WASM_Release"},
@@ -376,6 +384,7 @@
   {"name": "Perf-Android12-Clang-Pixel5-GPU-Adreno620-arm64-Release-All-Android"},
   {"name": "Perf-Android12-Clang-Pixel5-GPU-Adreno620-arm64-Release-All-Android_Vulkan"},
   {"name": "Perf-Android-Clang-Pixel6-GPU-MaliG78-arm64-Release-All-Android_Vulkan"},
+  {"name": "Perf-Android-Clang-Pixel7-GPU-MaliG710-arm64-Release-All-Android_Vulkan"},
   {"name": "Perf-Android-Clang-Wembley-GPU-PowerVRGE8320-arm-Release-All-Android"},
   {"name": "Perf-ChromeOS-Clang-Kevin-GPU-MaliT860-arm-Release-All"},
   {"name": "Perf-ChromeOS-Clang-Sparky360-GPU-IntelUHDGraphics605-x86_64-Release-All"},
@@ -553,6 +562,10 @@
   {"name": "Test-Android-Clang-Pixel6-GPU-MaliG78-arm64-Release-All-Android"},
   {"name": "Test-Android-Clang-Pixel6-GPU-MaliG78-arm64-Debug-All-Android"},
   {"name": "Test-Android-Clang-Pixel6-GPU-MaliG78-arm64-Release-All-Android_Vulkan"},
+  {"name": "Test-Android-Clang-Pixel7-GPU-MaliG710-arm64-Release-All-Android"},
+  {"name": "Test-Android-Clang-Pixel7-GPU-MaliG710-arm64-Debug-All-Android"},
+  {"name": "Test-Android-Clang-Pixel7-GPU-MaliG710-arm64-Release-All-Android_Vulkan"},
+  {"name": "Test-Android-Clang-Pixel7-GPU-MaliG710-arm64-Debug-All-Android_Vulkan"},
   {"name": "Test-Android-Clang-Wembley-GPU-PowerVRGE8320-arm-Debug-All-Android"},
   {"name": "Test-Android-Clang-Wembley-GPU-PowerVRGE8320-arm-Release-All-Android"},
   {"name": "Test-ChromeOS-Clang-Kevin-GPU-MaliT860-arm-Debug-All"},
