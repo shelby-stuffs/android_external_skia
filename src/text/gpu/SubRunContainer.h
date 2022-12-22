@@ -54,6 +54,7 @@ namespace skgpu::graphite {
 class DrawWriter;
 class Recorder;
 class Renderer;
+class RendererProvider;
 }
 #endif
 
@@ -112,14 +113,9 @@ public:
     virtual std::tuple<skgpu::graphite::Rect, skgpu::graphite::Transform> boundsAndDeviceMatrix(
             const skgpu::graphite::Transform& localToDevice, SkPoint drawOrigin) const = 0;
 
-    virtual const skgpu::graphite::Renderer* renderer() const = 0;
+    virtual const skgpu::graphite::Renderer* renderer(
+            const skgpu::graphite::RendererProvider*) const = 0;
 
-    virtual void fillVertexData(
-            skgpu::graphite::DrawWriter*,
-            int offset, int count,
-            int ssboIndex,
-            SkScalar depth,
-            const skgpu::graphite::Transform& transform) const = 0;
     virtual void fillInstanceData(
             skgpu::graphite::DrawWriter*,
             int offset, int count,
@@ -128,6 +124,14 @@ public:
 #endif
 
     virtual void testingOnly_packedGlyphIDToGlyph(StrikeCache* cache) const = 0;
+
+protected:
+#if defined(SK_GRAPHITE_ENABLED)
+    void draw(skgpu::graphite::Device*,
+              SkPoint drawOrigin,
+              const SkPaint&,
+              sk_sp<SkRefCnt> subRunStorage) const;
+#endif
 };
 
 // -- SubRun -------------------------------------------------------------------------------------

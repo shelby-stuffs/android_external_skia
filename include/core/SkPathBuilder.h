@@ -12,7 +12,7 @@
 #include "include/core/SkPath.h"
 #include "include/core/SkPathTypes.h"
 #include "include/core/SkRefCnt.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/SkPathRef.h"
 
 class SK_API SkPathBuilder {
 public:
@@ -220,9 +220,9 @@ public:
     }
 
 private:
-    SkTDArray<SkPoint>  fPts;
-    SkTDArray<uint8_t>  fVerbs;
-    SkTDArray<SkScalar> fConicWeights;
+    SkPathRef::PointsArray fPts;
+    SkPathRef::VerbsArray fVerbs;
+    SkPathRef::ConicWeightsArray fConicWeights;
 
     SkPathFillType      fFillType;
     bool                fIsVolatile;

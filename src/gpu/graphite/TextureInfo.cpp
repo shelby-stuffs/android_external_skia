@@ -16,13 +16,18 @@ TextureInfo& TextureInfo::operator=(const TextureInfo& that) {
     }
     fBackend = that.fBackend;
     fSampleCount = that.fSampleCount;
-    fLevelCount = that.fLevelCount;
+    fMipmapped = that.fMipmapped;
     fProtected = that.fProtected;
 
     switch (that.backend()) {
 #ifdef SK_METAL
         case BackendApi::kMetal:
             fMtlSpec = that.fMtlSpec;
+            break;
+#endif
+#ifdef SK_VULKAN
+        case BackendApi::kVulkan:
+            // TODO: Actually fill this out
             break;
 #endif
         default:
@@ -46,7 +51,7 @@ bool TextureInfo::operator==(const TextureInfo& that) const {
     }
 
     if (fSampleCount != that.fSampleCount ||
-        fLevelCount != that.fLevelCount ||
+        fMipmapped != that.fMipmapped ||
         fProtected != that.fProtected) {
         return false;
     }
@@ -55,6 +60,11 @@ bool TextureInfo::operator==(const TextureInfo& that) const {
 #ifdef SK_METAL
         case BackendApi::kMetal:
             return fMtlSpec == that.fMtlSpec;
+#endif
+#ifdef SK_VULKAN
+        case BackendApi::kVulkan:
+            // TODO: Actually fill this out
+            return false;
 #endif
         default:
             return false;

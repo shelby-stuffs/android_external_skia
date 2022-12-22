@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.1] - 2022-11-08
+
+### Fixed
+ - Font resolution algorithm for ellipsis in SkParagraph (skbug.com/11797)
+ - GrContexts will properly target the correct WebGL context
+ - CanvasKit built with no_embedded_font will properly link and be able to load fonts from passed-in
+   bytes.
+ - Text styled with fontSize or heightMultiplier 0 will be invisible.
+
+## [0.37.0] - 2022-09-07
+
+### Added
+ - Paragraph has new setting: `replaceTabCharacters`.
+ - New API, tests and sample for SkParagraph Client provided ICU API:
+   - buildWithClientInfo
+   - getText
+
+### Fixed
+ - readPixels calls could sometimes fail due to a stale internal reference to GrDirectContext.
+
 ## [0.36.1] - 2022-08-22
 
 ### Changed

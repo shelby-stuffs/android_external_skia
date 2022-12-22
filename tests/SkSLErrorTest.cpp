@@ -11,12 +11,14 @@
 #include "include/private/SkSLProgramKind.h"
 #include "src/core/SkOSFile.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
-#include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/ir/SkSLProgram.h" // IWYU pragma: keep
 #include "src/utils/SkOSPath.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
 
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <sstream>
@@ -84,6 +86,21 @@ static void check_expected_errors(skiatest::Reporter* r,
 }
 
 static void test_expect_fail(skiatest::Reporter* r, const char* testFile, SkSL::ProgramKind kind) {
+#ifdef SK_ENABLE_OPTIMIZE_SIZE
+    // In a size-optimized build, there are a handful of errors which report differently, or not at
+    // all. Skip over those tests.
+    static const auto* kTestsToSkip = new SkTHashSet<std::string_view>{
+        "sksl/errors/ArrayInlinedIndexOutOfRange.sksl",
+        "sksl/errors/MatrixInlinedIndexOutOfRange.sksl",
+        "sksl/errors/OverflowInlinedLiteral.sksl",
+        "sksl/errors/VectorInlinedIndexOutOfRange.sksl",
+    };
+    if (kTestsToSkip->contains(testFile)) {
+        INFOF(r, "%s: skipped in SK_ENABLE_OPTIMIZE_SIZE mode", testFile);
+        return;
+    }
+#endif
+
     sk_sp<SkData> shaderData = GetResourceAsData(testFile);
     if (!shaderData) {
         ERRORF(r, "%s: Unable to load file", SkOSPath::Basename(testFile).c_str());
@@ -96,8 +113,7 @@ static void test_expect_fail(skiatest::Reporter* r, const char* testFile, SkSL::
     std::vector<std::string> expectedErrors = get_expected_errors(shaderString.c_str());
 
     // Compile the code.
-    std::unique_ptr<SkSL::ShaderCaps> caps = SkSL::ShaderCapsFactory::Standalone();
-    SkSL::Compiler compiler(caps.get());
+    SkSL::Compiler compiler(SkSL::ShaderCapsFactory::Standalone());
     SkSL::ProgramSettings settings;
     std::unique_ptr<SkSL::Program> program = compiler.convertProgram(kind, std::move(shaderString),
                                                                      settings);

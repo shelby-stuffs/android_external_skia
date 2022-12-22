@@ -17,11 +17,11 @@
 #include "include/core/SkM44.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkShader.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkTileMode.h"
 #include "include/private/SkColorData.h"
+#include "src/shaders/SkShaderBase.h"
 
-enum class SkBackend : uint8_t;
-enum class SkShaderType : uint32_t;
 class SkData;
 class SkPaintParamsKeyBuilder;
 class SkPipelineDataGatherer;
@@ -29,9 +29,29 @@ class SkRuntimeEffect;
 class SkUniquePaintParamsID;
 class SkKeyContext;
 
-// The KeyHelpers can be used to manually construct an SkPaintParamsKey
+#ifdef SK_ENABLE_PRECOMPILE
+namespace skgpu::graphite {
+enum class ShaderType : uint32_t;
+}
+#endif
+
+/**
+ * The KeyHelpers can be used to manually construct an SkPaintParamsKey.
+ *
+ * TODO: If we restructure how the keys are made, we can utilize a single block type for the
+ * different blend blocks outlined below. The different Src/Dst pairings could instead be encoded
+ * as parent-child relationships.
+ */
 
 struct PassthroughShaderBlock {
+
+    static void BeginBlock(const SkKeyContext&,
+                           SkPaintParamsKeyBuilder*,
+                           SkPipelineDataGatherer*);
+
+};
+
+struct PassthroughBlenderBlock {
 
     static void BeginBlock(const SkKeyContext&,
                            SkPaintParamsKeyBuilder*,
@@ -57,12 +77,11 @@ struct GradientShaderBlocks {
         // This ctor is used during pre-compilation when we don't have enough information to
         // extract uniform data. However, we must be able to provide enough data to make all the
         // relevant decisions about which code snippets to use.
-        GradientData(SkShader::GradientType, int numStops);
+        GradientData(SkShaderBase::GradientType, int numStops);
 
         // This ctor is used when extracting information from PaintParams. It must provide
         // enough data to generate the uniform data the selected code snippet will require.
-        GradientData(SkShader::GradientType,
-                     const SkM44& localMatrix,
+        GradientData(SkShaderBase::GradientType,
                      SkPoint point0, SkPoint point1,
                      float radius0, float radius1,
                      float bias, float scale,
@@ -73,7 +92,6 @@ struct GradientShaderBlocks {
 
         bool operator==(const GradientData& rhs) const {
             return fType == rhs.fType &&
-                   fLocalMatrix == rhs.fLocalMatrix &&
                    fPoints[0] == rhs.fPoints[0] &&
                    fPoints[1] == rhs.fPoints[1] &&
                    fRadii[0] == rhs.fRadii[0] &&
@@ -88,10 +106,9 @@ struct GradientShaderBlocks {
         bool operator!=(const GradientData& rhs) const { return !(*this == rhs); }
 
         // Layout options.
-        SkShader::GradientType fType;
-        SkM44                  fLocalMatrix;
-        SkPoint                fPoints[2];
-        float                  fRadii[2];
+        SkShaderBase::GradientType fType;
+        SkPoint                    fPoints[2];
+        float                      fRadii[2];
 
         // Layout options for sweep gradient.
         float                  fBias;
@@ -133,13 +150,11 @@ struct ImageShaderBlock {
         ImageData(const SkSamplingOptions& sampling,
                   SkTileMode tileModeX,
                   SkTileMode tileModeY,
-                  SkRect subset,
-                  const SkMatrix& localMatrix);
+                  SkRect subset);
 
         SkSamplingOptions fSampling;
         SkTileMode fTileModes[2];
         SkRect fSubset;
-        const SkMatrix& fLocalMatrix;
 
 #ifdef SK_GRAPHITE_ENABLED
         // TODO: Currently this is only filled in when we're generating the key from an actual
@@ -156,9 +171,22 @@ struct ImageShaderBlock {
 
 };
 
+struct PorterDuffBlendShaderBlock {
+    struct PorterDuffBlendShaderData {
+        SkSpan<const float> fPorterDuffConstants;
+    };
+
+    static void BeginBlock(const SkKeyContext&,
+                           SkPaintParamsKeyBuilder*,
+                           SkPipelineDataGatherer*,
+                           const PorterDuffBlendShaderData&);
+};
+
 struct BlendShaderBlock {
+    /**
+     * Blend shader blocks are used to blend the output of two shaders.
+     */
     struct BlendShaderData {
-        // TODO: add support for blenders
         SkBlendMode fBM;
     };
 
@@ -166,7 +194,12 @@ struct BlendShaderBlock {
                            SkPaintParamsKeyBuilder*,
                            SkPipelineDataGatherer*,
                            const BlendShaderData&);
+};
 
+struct ColorFilterShaderBlock {
+    static void BeginBlock(const SkKeyContext&,
+                           SkPaintParamsKeyBuilder*,
+                           SkPipelineDataGatherer*);
 };
 
 struct MatrixColorFilterBlock {
@@ -193,6 +226,9 @@ struct MatrixColorFilterBlock {
 };
 
 struct BlendColorFilterBlock {
+    /**
+     * Blend color filter blocks are used to blend the output of a shader with a color uniform.
+     */
     struct BlendColorFilterData {
         BlendColorFilterData(SkBlendMode blendMode, const SkPMColor4f& srcColor)
                 : fBlendMode(blendMode)
@@ -237,6 +273,9 @@ struct GaussianColorFilterBlock {
 };
 
 struct BlendModeBlock {
+    /**
+     * Blend mode blocks are used to blend a color attachment with the output of a shader.
+     */
     static void BeginBlock(const SkKeyContext&,
                            SkPaintParamsKeyBuilder*,
                            SkPipelineDataGatherer*,
@@ -244,13 +283,18 @@ struct BlendModeBlock {
 };
 
 struct PrimitiveBlendModeBlock {
+    /**
+     * Primitive blend mode blocks are used to blend a primitive color emitted by certain draw
+     * geometry calls (drawVertices, drawAtlas, etc.) with either the paint color or the output of
+     * another shader. Dst: primitiveColor Src: Paint color/shader output
+     */
     static void BeginBlock(const SkKeyContext&,
                            SkPaintParamsKeyBuilder*,
                            SkPipelineDataGatherer*,
                            SkBlendMode);
 };
 
-struct RuntimeShaderBlock {
+struct RuntimeEffectBlock {
     struct ShaderData {
         // This ctor is used during pre-compilation when we don't have enough information to
         // extract uniform data.
@@ -258,7 +302,6 @@ struct RuntimeShaderBlock {
 
         // This ctor is used when extracting information from PaintParams.
         ShaderData(sk_sp<const SkRuntimeEffect> effect,
-                   const SkMatrix& localMatrix,
                    sk_sp<const SkData> uniforms);
 
         bool operator==(const ShaderData& rhs) const;
@@ -266,7 +309,6 @@ struct RuntimeShaderBlock {
 
         // Runtime shader data.
         sk_sp<const SkRuntimeEffect> fEffect;
-        SkMatrix                     fLocalMatrix;
         sk_sp<const SkData>          fUniforms;
     };
 
@@ -274,29 +316,6 @@ struct RuntimeShaderBlock {
                            SkPaintParamsKeyBuilder*,
                            SkPipelineDataGatherer*,
                            const ShaderData&);
-};
-
-struct RuntimeColorFilterBlock {
-    struct ColorFilterData {
-        // This ctor is used during pre-compilation when we don't have enough information to
-        // extract uniform data.
-        ColorFilterData(sk_sp<const SkRuntimeEffect> effect);
-
-        // This ctor is used when extracting information from PaintParams.
-        ColorFilterData(sk_sp<const SkRuntimeEffect> effect, sk_sp<const SkData> uniforms);
-
-        bool operator==(const ColorFilterData& rhs) const;
-        bool operator!=(const ColorFilterData& rhs) const { return !(*this == rhs); }
-
-        // Runtime shader data.
-        sk_sp<const SkRuntimeEffect> fEffect;
-        sk_sp<const SkData>          fUniforms;
-    };
-
-    static void BeginBlock(const SkKeyContext&,
-                           SkPaintParamsKeyBuilder*,
-                           SkPipelineDataGatherer*,
-                           const ColorFilterData&);
 };
 
 #endif // SkKeyHelpers_DEFINED

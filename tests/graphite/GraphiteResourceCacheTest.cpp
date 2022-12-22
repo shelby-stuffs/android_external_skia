@@ -74,7 +74,7 @@ static sk_sp<SkData> create_image_data(const SkImageInfo& info) {
     return data;
 }
 
-DEF_GRAPHITE_TEST_FOR_CONTEXTS(GraphiteBudgetedResourcesTest, reporter, context) {
+DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(GraphiteBudgetedResourcesTest, reporter, context) {
     std::unique_ptr<Recorder> recorder = context->makeRecorder();
     ResourceProvider* resourceProvider = recorder->priv().resourceProvider();
     ResourceCache* resourceCache = resourceProvider->resourceCache();
@@ -227,6 +227,15 @@ DEF_GRAPHITE_TEST_FOR_CONTEXTS(GraphiteBudgetedResourcesTest, reporter, context)
     REPORTER_ASSERT(reporter, resourceCache->getResourceCount() == 5);
     REPORTER_ASSERT(reporter, resourceCache->numFindableResources() == 4);
     REPORTER_ASSERT(reporter, surfaceResourcePtr->budgeted() == SkBudgeted::kNo);
+
+    // The creation of the surface may have added an initial clear to it. Thus if we just reset the
+    // surface it will flush the clean on the device and we don't be dropping all our refs to the
+    // surface. So we force all the work to happen first.
+    recording = recorder->snap();
+    insertInfo.fRecording = recording.get();
+    context->insertRecording(insertInfo);
+    context->submit(SyncToCpu::kYes);
+    recording.reset();
 
     surface.reset();
     resourceCache->forceProcessReturnedResources();

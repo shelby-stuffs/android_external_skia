@@ -18,6 +18,7 @@
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/CopyTask.h"
+#include "src/gpu/graphite/Image_Graphite.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/ResourceProvider.h"
 #include "src/gpu/graphite/SynchronizeToCpuTask.h"
@@ -28,6 +29,7 @@ namespace skgpu::graphite {
 
 std::tuple<TextureProxyView, SkColorType> MakeBitmapProxyView(Recorder* recorder,
                                                               const SkBitmap& bitmap,
+                                                              sk_sp<SkMipmap> mipmapsIn,
                                                               Mipmapped mipmapped,
                                                               SkBudgeted budgeted) {
     // Adjust params based on input and Caps
@@ -37,14 +39,12 @@ std::tuple<TextureProxyView, SkColorType> MakeBitmapProxyView(Recorder* recorder
     if (bitmap.dimensions().area() <= 1) {
         mipmapped = Mipmapped::kNo;
     }
-    int mipLevelCount = (mipmapped == Mipmapped::kYes) ?
-            SkMipmap::ComputeLevelCount(bitmap.width(), bitmap.height()) + 1 : 1;
 
-    auto textureInfo = caps->getDefaultSampledTextureInfo(ct, mipLevelCount, Protected::kNo,
+    auto textureInfo = caps->getDefaultSampledTextureInfo(ct, mipmapped, Protected::kNo,
                                                           Renderable::kNo);
     if (!textureInfo.isValid()) {
         ct = kRGBA_8888_SkColorType;
-        textureInfo = caps->getDefaultSampledTextureInfo(ct, mipLevelCount, Protected::kNo,
+        textureInfo = caps->getDefaultSampledTextureInfo(ct, mipmapped, Protected::kNo,
                                                          Renderable::kNo);
     }
     SkASSERT(textureInfo.isValid());
@@ -65,6 +65,10 @@ std::tuple<TextureProxyView, SkColorType> MakeBitmapProxyView(Recorder* recorder
         return {};
     }
 
+    int mipLevelCount = (mipmapped == Mipmapped::kYes) ?
+            SkMipmap::ComputeLevelCount(bitmap.width(), bitmap.height()) + 1 : 1;
+
+
     // setup MipLevels
     sk_sp<SkMipmap> mipmaps;
     std::vector<MipLevel> texels;
@@ -73,7 +77,8 @@ std::tuple<TextureProxyView, SkColorType> MakeBitmapProxyView(Recorder* recorder
         texels[0].fPixels = bmpToUpload.getPixels();
         texels[0].fRowBytes = bmpToUpload.rowBytes();
     } else {
-        mipmaps.reset(SkMipmap::Build(bmpToUpload.pixmap(), nullptr));
+        mipmaps = SkToBool(mipmapsIn) ? mipmapsIn
+                                      : sk_ref_sp(SkMipmap::Build(bmpToUpload.pixmap(), nullptr));
         if (!mipmaps) {
             return {};
         }
@@ -111,68 +116,22 @@ std::tuple<TextureProxyView, SkColorType> MakeBitmapProxyView(Recorder* recorder
     return {{std::move(proxy), swizzle}, ct};
 }
 
-bool ReadPixelsHelper(FlushPendingWorkCallback&& flushPendingWork,
-                      Context* context,
-                      Recorder* recorder,
-                      TextureProxy* srcProxy,
-                      const SkImageInfo& dstInfo,
-                      void* dstPixels,
-                      size_t dstRowBytes,
-                      int srcX,
-                      int srcY) {
-    // TODO: Support more formats that we can read back into
-    if (dstInfo.colorType() != kRGBA_8888_SkColorType) {
-        return false;
+sk_sp<SkImage> MakeFromBitmap(Recorder* recorder,
+                              const SkColorInfo& colorInfo,
+                              const SkBitmap& bitmap,
+                              sk_sp<SkMipmap> mipmaps,
+                              SkBudgeted budgeted,
+                              SkImage::RequiredImageProperties requiredProps) {
+    auto [ view, ct ] = MakeBitmapProxyView(recorder, bitmap, std::move(mipmaps),
+                                            requiredProps.fMipmapped, budgeted);
+    if (!view) {
+        return nullptr;
     }
 
-    ResourceProvider* resourceProvider = recorder->priv().resourceProvider();
-    if (!srcProxy->instantiate(resourceProvider)) {
-        return false;
-    }
-    sk_sp<Texture> srcTexture = srcProxy->refTexture();
-    SkASSERT(srcTexture);
-
-    size_t size = dstRowBytes * dstInfo.height();
-    sk_sp<Buffer> dstBuffer = resourceProvider->findOrCreateBuffer(size,
-                                                                   BufferType::kXferGpuToCpu,
-                                                                   PrioritizeGpuReads::kNo);
-    if (!dstBuffer) {
-        return false;
-    }
-
-    SkIRect srcRect = SkIRect::MakeXYWH(srcX, srcY, dstInfo.width(), dstInfo.height());
-    sk_sp<CopyTextureToBufferTask> copyTask = CopyTextureToBufferTask::Make(std::move(srcTexture),
-                                                                            srcRect,
-                                                                            dstBuffer,
-                                                                            /*bufferOffset=*/0,
-                                                                            dstRowBytes);
-    if (!copyTask) {
-        return false;
-    }
-
-    sk_sp<SynchronizeToCpuTask> syncTask = SynchronizeToCpuTask::Make(dstBuffer);
-    if (!syncTask) {
-        return false;
-    }
-
-    flushPendingWork();
-    recorder->priv().add(std::move(copyTask));
-    recorder->priv().add(std::move(syncTask));
-
-    std::unique_ptr<Recording> recording = recorder->snap();
-    if (!recording) {
-        return false;
-    }
-    InsertRecordingInfo info;
-    info.fRecording = recording.get();
-    context->insertRecording(info);
-    context->submit(SyncToCpu::kYes);
-
-    void* mappedMemory = dstBuffer->map();
-
-    memcpy(dstPixels, mappedMemory, size);
-
-    return true;
+    SkASSERT(requiredProps.fMipmapped == skgpu::graphite::Mipmapped::kNo ||
+             view.proxy()->mipmapped() == skgpu::graphite::Mipmapped::kYes);
+    return sk_make_sp<skgpu::graphite::Image>(std::move(view),
+                                              colorInfo.makeColorType(ct));
 }
 
 } // namespace skgpu::graphite

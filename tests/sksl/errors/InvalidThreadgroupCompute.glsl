@@ -1,8 +1,8 @@
 ### Compilation failed:
 
-error: 8: 'threadgroup' is not permitted here
+error: 8: modifier 'threadgroup' is not permitted on a struct field
    threadgroup float bar;
-   ^^^^^^^^^^^
+   ^^^^^^^^^^^^^^^^^^^^^^
 error: 11: 'threadgroup' is not permitted here
 threadgroup texture2D tex;
 ^^^^^^^^^^^

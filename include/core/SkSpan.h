@@ -8,12 +8,18 @@
 #ifndef SkSpan_DEFINED
 #define SkSpan_DEFINED
 
+#include "include/core/SkTypes.h"
+#include "include/private/SkTo.h"
+
 #include <cstddef>
 #include <initializer_list>
 #include <iterator>
-#include <type_traits>
+#include <limits>
 #include <utility>
-#include "include/private/SkTLogic.h"
+
+// Having this be an export works around IWYU churn related to
+// https://github.com/include-what-you-use/include-what-you-use/issues/1121
+#include <type_traits> // IWYU pragma: export
 
 // Add macro to check the lifetime of initializer_list arguments. initializer_list has a very
 // short life span, and can only be used as a parameter, and not as a variable.
@@ -58,9 +64,11 @@ template <typename T>
 class SkSpan {
 public:
     constexpr SkSpan() : fPtr{nullptr}, fSize{0} {}
-    constexpr SkSpan(T* ptr, size_t size) : fPtr{ptr}, fSize{size} {
-        SkASSERT(ptr || size == 0);  // disallow nullptr + a nonzero size
-        SkASSERT(size < kMaxSize);
+
+    template <typename Integer, std::enable_if_t<std::is_integral_v<Integer>, bool> = true>
+    constexpr SkSpan(T* ptr, Integer size) : fPtr{ptr}, fSize{SkToSizeT(size)} {
+        SkASSERT(ptr || fSize == 0);  // disallow nullptr + a nonzero size
+        SkASSERT(fSize < kMaxSize);
     }
     template <typename U, typename = typename std::enable_if<std::is_same<const U, T>::value>::type>
     constexpr SkSpan(const SkSpan<U>& that) : fPtr(std::data(that)), fSize{std::size(that)} {}

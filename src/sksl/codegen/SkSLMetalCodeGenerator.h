@@ -11,14 +11,12 @@
 #include "include/private/SkSLDefines.h"
 #include "include/private/SkTArray.h"
 #include "include/private/SkTHash.h"
-#include "include/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/codegen/SkSLCodeGenerator.h"
 #include "src/sksl/ir/SkSLType.h"
 
 #include <cstdint>
 #include <initializer_list>
-#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -58,6 +56,7 @@ class TernaryExpression;
 class VarDeclaration;
 class Variable;
 class VariableReference;
+enum class OperatorPrecedence : uint8_t;
 enum IntrinsicKind : int8_t;
 struct IndexExpression;
 struct Layout;
@@ -78,7 +77,7 @@ public:
     bool generateCode() override;
 
 protected:
-    using Precedence = Operator::Precedence;
+    using Precedence = OperatorPrecedence;
 
     typedef int Requirements;
     inline static constexpr Requirements kNo_Requirements          = 0;
@@ -136,15 +135,9 @@ protected:
 
     std::string typeName(const Type& type);
 
-    std::string textureTypeName(const Type& type, const Modifiers* modifiers);
-
     void writeStructDefinition(const StructDefinition& s);
 
     void writeType(const Type& type);
-
-    void writeTextureType(const Type& type, const Modifiers& modifiers);
-
-    void writeParameterType(const Type& type, const Modifiers& modifiers);
 
     void writeExtension(const Extension& ext);
 
@@ -306,7 +299,6 @@ protected:
     int fVarCount = 0;
     int fIndentation = 0;
     bool fAtLineStart = false;
-    std::set<std::string> fWrittenIntrinsics;
     // true if we have run into usages of dFdx / dFdy
     bool fFoundDerivatives = false;
     SkTHashMap<const FunctionDeclaration*, Requirements> fRequirements;
@@ -318,6 +310,11 @@ protected:
     bool fIgnoreVariableReferenceModifiers = false;
     static constexpr char kTextureSuffix[] = "_Tex";
     static constexpr char kSamplerSuffix[] = "_Smplr";
+
+    // Workaround/polyfill flags
+    bool fWrittenInverse2 = false, fWrittenInverse3 = false, fWrittenInverse4 = false;
+    bool fWrittenMatrixCompMult = false;
+    bool fWrittenOuterProduct = false;
 
     using INHERITED = CodeGenerator;
 };

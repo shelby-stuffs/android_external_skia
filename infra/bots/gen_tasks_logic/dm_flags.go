@@ -314,65 +314,18 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		if b.extraConfig("Graphite") {
 			args = append(args, "--nogpu") // disable non-Graphite tests
 
-			// TODO: re-enable - currently fails with "Failed to make lazy image"
+			// Failed to make lazy image.
 			skip(ALL, "gm", ALL, "image_subset")
 
-			// TODO: re-enable - currently fails readback from surface
-			skip(ALL, "gm", ALL, "blurrect_compare")
-			skip(ALL, "gm", ALL, "lattice_alpha")
-			skip(ALL, "gm", ALL, "localmatriximageshader")
-			skip(ALL, "gm", ALL, "savelayer_f16")
-			skip(ALL, "gm", ALL, "anisomips")
-			skip(ALL, "gm", ALL, "path_huge_aa")
+			// Could not readback from surface.
 			skip(ALL, "gm", ALL, "hugebitmapshader")
-
-			// TODO: re-enable - currently fail bc surface to image conversion isn't implemented
-			skip(ALL, "gm", ALL, "xfermodes3")
+			skip(ALL, "gm", ALL, "path_huge_aa")
 			skip(ALL, "gm", ALL, "verylargebitmap")
-			skip(ALL, "gm", ALL, "clipped_thinrect")
-			skip(ALL, "gm", ALL, "textblobgeometrychange")
-			skip(ALL, "gm", ALL, "surface_underdraw")
-			skip(ALL, "gm", ALL, "copy_on_write_savelayer")
-			skip(ALL, "gm", ALL, "simple_snap_image2")
-			skip(ALL, "gm", ALL, "simple_snap_image")
-			skip(ALL, "gm", ALL, "copy_on_write_retain2")
-			skip(ALL, "gm", ALL, "copy_on_write_retain")
-			skip(ALL, "gm", ALL, "surfacenew")
-			skip(ALL, "gm", ALL, "srcmode")
-			skip(ALL, "gm", ALL, "lit_shader_linear_rt")
-			skip(ALL, "gm", ALL, "linear_gradient_rt")
-			skip(ALL, "gm", ALL, "persp_shaders_bw")
-			skip(ALL, "gm", ALL, "persp_shaders_aa")
-			skip(ALL, "gm", ALL, "ninepatch-stretch")
-			skip(ALL, "gm", ALL, "localmatriximagefilter")
-			skip(ALL, "gm", ALL, "lcdblendmodes")
-			skip(ALL, "gm", ALL, "lattice2")
-			skip(ALL, "gm", ALL, "lattice")
-			skip(ALL, "gm", ALL, "fast_slow_blurimagefilter")
-			skip(ALL, "gm", ALL, "imageblurrepeatmode")
-			skip(ALL, "gm", ALL, "imageblurclampmode")
-			skip(ALL, "gm", ALL, "imagealphathreshold_surface")
-			skip(ALL, "gm", ALL, "dstreadshuffle")
-			skip(ALL, "gm", ALL, "drawbitmaprect-imagerect-subset")
-			skip(ALL, "gm", ALL, "drawbitmaprect-imagerect")
-			skip(ALL, "gm", ALL, "drawbitmaprect-subset")
-			skip(ALL, "gm", ALL, "drawbitmaprect")
-			skip(ALL, "gm", ALL, "custommesh_cs")
-			skip(ALL, "gm", ALL, "complexclip_blur_tiled")
-			skip(ALL, "gm", ALL, "bleed_downscale")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_no_bleed")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_text_up")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_dog_down")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_rose")
+			skip(ALL, "gm", ALL, "verylarge_picture_image")
 
-			if b.extraConfig("ASAN") {
-				// skbug.com/12507 (Neon UB during JPEG compression on M1 ASAN Graphite bot)
-				skip(ALL, "gm", ALL, "yuv420_odd_dim") // Oddly enough yuv420_odd_dim_repeat doesn't crash
-				skip(ALL, "gm", ALL, "encode-alpha-jpeg")
-				skip(ALL, "gm", ALL, "encode")
-				skip(ALL, "gm", ALL, "jpg-color-cube")
+			if (b.extraConfig("Metal")) {
+				configs = []string{"grmtl"}
 			}
-			configs = []string{"grmtl"}
 		}
 
 		// ANGLE bot *only* runs the angle configs
@@ -451,7 +404,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 				configs = append(configs, "vkdmsaa")
 			}
 		}
-		if b.extraConfig("Metal") {
+		if b.extraConfig("Metal") && !b.extraConfig("Graphite") {
 			configs = []string{"mtl"}
 			// MSAA doesn't work well on Intel GPUs chromium:527565, chromium:983926
 			if !b.matchGpu("Intel") {
@@ -543,7 +496,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			skip("mtltestprecompile", "svg", ALL, "tiger-8.svg")
 		}
 		// Test reduced shader mode on iPhone 11 as representative iOS device
-		if b.model("iPhone11") && b.extraConfig("Metal") {
+		if b.model("iPhone11") && b.extraConfig("Metal") && !b.extraConfig("Graphite") {
 			configs = append(configs, "mtlreducedshaders")
 		}
 
@@ -642,12 +595,14 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 	}
 
 	if b.matchExtraConfig("Graphite") {
-		// The Graphite bots run the skps, gms and tests
 		removeFromArgs("image")
 		removeFromArgs("lottie")
 		removeFromArgs("colorImage")
 		removeFromArgs("svg")
-	} else if b.matchExtraConfig("DDL", "PDF") {
+	}
+
+	// Remove skps for all bots except for a select few. On bots that will run SKPs remove some of their other tests.
+	if b.matchExtraConfig("DDL", "PDF") {
 		// The DDL and PDF bots just render the large skps and the gms
 		removeFromArgs("tests")
 		removeFromArgs("image")
@@ -659,13 +614,11 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		removeFromArgs("gm")
 		removeFromArgs("image")
 		removeFromArgs("colorImage")
-		removeFromArgs("lottie")
 		removeFromArgs("svg")
 	} else if b.matchExtraConfig("FailFlushTimeCallbacks") {
 		// The FailFlushTimeCallbacks bot only runs skps, gms and svgs
 		removeFromArgs("tests")
 		removeFromArgs("image")
-		removeFromArgs("lottie")
 		removeFromArgs("colorImage")
 	} else {
 		// No other bots render the .skps.
@@ -885,6 +838,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 	badSerializeGMs = append(badSerializeGMs, "wacky_yuv_formats_qtr")
 	badSerializeGMs = append(badSerializeGMs, "runtime_effect_image")
 	badSerializeGMs = append(badSerializeGMs, "ctmpatheffect")
+	badSerializeGMs = append(badSerializeGMs, "image_out_of_gamut")
 
 	// This GM forces a path to be convex. That property doesn't survive
 	// serialization.
@@ -1044,6 +998,10 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		skip(ALL, "tests", ALL, "SkSLMatrixScalarMath") // skia:12681
 	}
 
+	if b.matchGpu("Mali400") {
+		skip(ALL, "tests", ALL, "SkSLCross")
+	}
+
 	if b.gpu("IntelIris6100", "IntelHD4400") && b.matchOs("Win") && b.extraConfig("ANGLE") {
 		skip(ALL, "tests", ALL, "SkSLVectorToMatrixCast_GPU")             // skia:12179, vec4(mat2) crash
 		skip(ALL, "tests", ALL, "SkSLTrivialArgumentsInlineDirectly_GPU") // skia:12179 again
@@ -1065,7 +1023,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		skip(ALL, "tests", ALL, "SkSLSwitchDefaultOnly_GPU") // skia:12465
 	}
 
-	if b.extraConfig("ANGLE") && b.matchOs("Win") && b.matchGpu("IntelIris(540|655)") {
+	if b.extraConfig("ANGLE") && b.matchOs("Win") && b.matchGpu("IntelIris(540|655|Xe)") {
 		skip(ALL, "tests", ALL, "SkSLSwitchDefaultOnly_GPU") // skia:12465
 	}
 
@@ -1235,14 +1193,14 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		match = append(match, "~FloatingPointTextureTest$")
 	}
 
-	if b.extraConfig("Metal") && b.gpu("RadeonHD8870M") && b.matchOs("Mac") {
+	if b.extraConfig("Metal") && !b.extraConfig("Graphite") && b.gpu("RadeonHD8870M") && b.matchOs("Mac") {
 		// skia:9255
 		match = append(match, "~WritePixelsNonTextureMSAA_Gpu")
 		// skbug.com/11366
 		match = append(match, "~SurfacePartialDraw_Gpu")
 	}
 
-	if b.extraConfig("Metal") && b.gpu("PowerVRGX6450") && b.matchOs("iOS") {
+	if b.extraConfig("Metal") && !b.extraConfig("Graphite") && b.gpu("PowerVRGX6450") && b.matchOs("iOS") {
 		// skbug.com/11885
 		match = append(match, "~flight_animated_image")
 	}
@@ -1274,6 +1232,12 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 	if b.arch("arm64") && b.extraConfig("ASAN") {
 		// skbug.com/13155 the use of longjmp may cause ASAN stack check issues.
 		skip(ALL, "test", ALL, "SkPDF_JpegIdentification")
+	}
+
+	if b.extraConfig("HWASAN") {
+		// HWASAN adds tag bytes to pointers. That's incompatible with this test -- it compares
+		// pointers from unrelated stack frames to check that RP isn't growing the stack.
+		skip(ALL, "test", ALL, "SkRasterPipeline_stack_rewind")
 	}
 
 	if b.matchOs("Mac") && b.gpu("IntelHD6000") {

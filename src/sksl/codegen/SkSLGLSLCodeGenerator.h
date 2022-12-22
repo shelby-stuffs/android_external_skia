@@ -8,12 +8,11 @@
 #ifndef SKSL_GLSLCODEGENERATOR
 #define SKSL_GLSLCODEGENERATOR
 
-#include "include/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/codegen/SkSLCodeGenerator.h"
 
-#include <set>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -49,6 +48,7 @@ class Type;
 class VarDeclaration;
 class Variable;
 class VariableReference;
+enum class OperatorPrecedence : uint8_t;
 struct IndexExpression;
 struct Layout;
 struct Modifiers;
@@ -67,7 +67,7 @@ public:
     bool generateCode() override;
 
 protected:
-    using Precedence = Operator::Precedence;
+    using Precedence = OperatorPrecedence;
 
     void write(std::string_view s);
 
@@ -78,6 +78,8 @@ protected:
     virtual void writeHeader();
 
     bool usesPrecisionModifiers() const;
+
+    void writeIdentifier(std::string_view identifier);
 
     virtual std::string getTypeName(const Type& type);
 
@@ -186,7 +188,6 @@ protected:
     int fVarCount = 0;
     int fIndentation = 0;
     bool fAtLineStart = false;
-    std::set<std::string> fWrittenIntrinsics;
     // true if we have run into usages of dFdx / dFdy
     bool fFoundDerivatives = false;
     bool fFoundExternalSamplerDecl = false;
@@ -194,6 +195,12 @@ protected:
     bool fSetupClockwise = false;
     bool fSetupFragPosition = false;
     bool fSetupFragCoordWorkaround = false;
+
+    // Workaround/polyfill flags
+    bool fWrittenAbsEmulation = false;
+    bool fWrittenDeterminant2 = false, fWrittenDeterminant3 = false, fWrittenDeterminant4 = false;
+    bool fWrittenInverse2 = false, fWrittenInverse3 = false, fWrittenInverse4 = false;
+    bool fWrittenTranspose[3][3] = {};
 
     using INHERITED = CodeGenerator;
 };

@@ -8,6 +8,8 @@
 #ifndef skgpu_graphite_RecorderPriv_DEFINED
 #define skgpu_graphite_RecorderPriv_DEFINED
 
+#include <functional>
+
 #include "include/gpu/graphite/Recorder.h"
 #include "src/gpu/graphite/SharedContext.h"
 
@@ -39,6 +41,10 @@ public:
         return fRecorder->fSharedContext->shaderCodeDictionary();
     }
 
+    const RendererProvider* rendererProvider() const {
+        return fRecorder->fSharedContext->rendererProvider();
+    }
+
     UniformDataCache* uniformDataCache() { return fRecorder->fUniformDataCache.get(); }
     TextureDataCache* textureDataCache() { return fRecorder->fTextureDataCache.get(); }
     DrawBufferManager* drawBufferManager() { return fRecorder->fDrawBufferManager.get(); }
@@ -50,6 +56,28 @@ public:
     sktext::gpu::TextBlobRedrawCoordinator* textBlobCache() {
         return fRecorder->fTextBlobCache.get();
     }
+
+    // Inserts a texture to buffer transfer task, used by asyncReadPixels methods in Context
+    struct PixelTransferResult {
+        using ConversionFn = void(void* dst, const void* mappedBuffer);
+        // If null then the transfer could not be performed. Otherwise this buffer will contain
+        // the pixel data when the transfer is complete.
+        sk_sp<Buffer> fTransferBuffer;
+        // If this is null then the transfer buffer will contain the data in the requested
+        // color type. Otherwise, when the transfer is done this must be called to convert
+        // from the transfer buffer's color type to the requested color type.
+        std::function<ConversionFn> fPixelConverter;
+    };
+    PixelTransferResult transferPixels(const TextureProxy*,
+                                       const SkImageInfo& srcImageInfo,
+                                       const SkColorInfo& dstColorInfo,
+                                       const SkIRect& srcRect);
+
+#if GRAPHITE_TEST_UTILS
+    // used by the Context that created this Recorder to set a back pointer
+    void setContext(Context*);
+    Context* context() { return fRecorder->fContext; }
+#endif
 
 private:
     explicit RecorderPriv(Recorder* recorder) : fRecorder(recorder) {}

@@ -6,18 +6,41 @@
  */
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkClipOp.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathEffect.h"
+#include "include/core/SkPathTypes.h"
+#include "include/core/SkPixmap.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRRect.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkStrokeRec.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkTypes.h"
 #include "include/effects/SkDashPathEffect.h"
 #include "include/pathops/SkPathOps.h"
+#include "include/private/SkTArray.h"
+#include "include/private/SkTemplates.h"
 #include "src/core/SkPathEffectBase.h"
+#include "src/core/SkPathPriv.h"
 #include "src/core/SkRectPriv.h"
+#include "src/gpu/ganesh/GrStyle.h"
+#include "src/gpu/ganesh/geometry/GrShape.h"
 #include "src/gpu/ganesh/geometry/GrStyledShape.h"
 #include "tests/Test.h"
 
-#include <initializer_list>
+#include <cstdint>
+#include <cstring>
 #include <functional>
+#include <initializer_list>
 #include <memory>
+#include <string>
 #include <utility>
 
 uint32_t GrStyledShape::testingOnly_getOriginalGenerationID() const {
@@ -1664,7 +1687,7 @@ void test_rrect(skiatest::Reporter* r, const SkRRect& rrect) {
     strokeRecs[kStrokeAndFill].setStrokeParams(SkPaint::kButt_Cap, SkPaint::kBevel_Join, 1.f);
     sk_sp<SkPathEffect> dashEffect = make_dash();
 
-    static constexpr Style kStyleCnt = static_cast<Style>(std::size(strokeRecs));
+    static constexpr size_t kStyleCnt = std::size(strokeRecs);
 
     auto index = [](bool inverted,
                     SkPathDirection dir,

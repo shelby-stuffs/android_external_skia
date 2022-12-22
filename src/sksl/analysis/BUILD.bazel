@@ -9,6 +9,7 @@ ANALYSIS_FILES = [
     "SkSLCheckProgramStructure.cpp",
     "SkSLFinalizationChecks.cpp",
     "SkSLGetLoopUnrollInfo.cpp",
+    "SkSLHasSideEffects.cpp",
     "SkSLIsConstantExpression.cpp",
     "SkSLIsSameExpressionTree.cpp",
     "SkSLIsTrivialExpression.cpp",
@@ -17,6 +18,7 @@ ANALYSIS_FILES = [
     "SkSLProgramUsage.h",
     "SkSLProgramVisitor.h",
     "SkSLSwitchCaseContainsExit.cpp",
+    "SkSLSymbolTableStackBuilder.cpp",
 ]
 
 split_srcs_and_hdrs(

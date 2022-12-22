@@ -5,19 +5,15 @@
  * found in the LICENSE file.
  */
 
-#define ABORT_TEST(r, cond, ...)                                   \
-    do {                                                           \
-        if (cond) {                                                \
-            REPORT_FAILURE(r, #cond, SkStringPrintf(__VA_ARGS__)); \
-            return;                                                \
-        }                                                          \
-    } while (0)
+#include "include/core/SkTypes.h"
+#ifdef SK_XML
 
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkPathEffect.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTextBlob.h"
@@ -26,16 +22,22 @@
 #include "include/svg/SkSVGCanvas.h"
 #include "include/utils/SkParse.h"
 #include "src/shaders/SkImageShader.h"
-#include "tests/Test.h"
-#include "tools/ToolUtils.h"
-
-#include <string.h>
-
-#ifdef SK_XML
-
 #include "src/svg/SkSVGDevice.h"
 #include "src/xml/SkDOM.h"
 #include "src/xml/SkXMLWriter.h"
+#include "tests/Test.h"
+#include "tools/ToolUtils.h"
+
+#include <string>
+
+#define ABORT_TEST(r, cond, ...)                                   \
+    do {                                                           \
+        if (cond) {                                                \
+            REPORT_FAILURE(r, #cond, SkStringPrintf(__VA_ARGS__)); \
+            return;                                                \
+        }                                                          \
+    } while (0)
+
 
 static std::unique_ptr<SkCanvas> MakeDOMCanvas(SkDOM* dom, uint32_t flags = 0) {
     auto svgDevice = SkSVGDevice::Make(SkISize::Make(100, 100),
@@ -606,6 +608,23 @@ DEF_TEST(SVGDevice_color_shader, reporter) {
     const auto* fill = dom.findAttr(ellipseElement, "fill");
     REPORTER_ASSERT(reporter, fill, "fill attribute not found");
     REPORTER_ASSERT(reporter, !strcmp(fill, "yellow"));
+}
+
+DEF_TEST(SVGDevice_parse_minmax, reporter) {
+    auto check = [&](int64_t n, bool expected) {
+        const auto str = std::to_string(n);
+
+        int val;
+        REPORTER_ASSERT(reporter, SkToBool(SkParse::FindS32(str.c_str(), &val)) == expected);
+        if (expected) {
+            REPORTER_ASSERT(reporter, val == n);
+        }
+    };
+
+    check(std::numeric_limits<int>::max(), true);
+    check(std::numeric_limits<int>::min(), true);
+    check(static_cast<int64_t>(std::numeric_limits<int>::max()) + 1, false);
+    check(static_cast<int64_t>(std::numeric_limits<int>::min()) - 1, false);
 }
 
 #endif

@@ -9,7 +9,9 @@
 #define SkTArray_DEFINED
 
 #include "include/core/SkMath.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
+#include "include/private/SkContainers.h"
 #include "include/private/SkMalloc.h"
 #include "include/private/SkSafe32.h"
 #include "include/private/SkTLogic.h"
@@ -17,6 +19,7 @@
 #include "include/private/SkTo.h"
 
 #include <algorithm>
+#include <climits>
 #include <string.h>
 #include <initializer_list>
 #include <memory>
@@ -33,9 +36,9 @@
     Modern implementations of std::vector<T> will generally provide similar performance
     characteristics when used with appropriate care. Consider using std::vector<T> in new code.
 */
-template <typename T, bool MEM_MOVE = sk_is_trivially_relocatable<T>::value> class SkTArray {
+template <typename T, bool MEM_MOVE = sk_is_trivially_relocatable_v<T>> class SkTArray {
 private:
-    enum ReallocType { kExactFit, kGrowing, kShrinking };
+    enum ReallocType { kExactFit, kGrowing };
 
 public:
     using value_type = T;
@@ -63,13 +66,11 @@ public:
             fCount = that.fCount;
             fAllocCount = that.fAllocCount;
             fOwnMemory = true;
-            fReserved = that.fReserved;
 
             that.fItemArray = nullptr;
             that.fCount = 0;
             that.fAllocCount = 0;
             that.fOwnMemory = true;
-            that.fReserved = false;
         } else {
             this->init(that.fCount);
             that.move(fItemArray);
@@ -96,10 +97,7 @@ public:
         if (this == &that) {
             return *this;
         }
-        for (int i = 0; i < this->count(); ++i) {
-            fItemArray[i].~T();
-        }
-        fCount = 0;
+        this->clear();
         this->checkRealloc(that.count(), kExactFit);
         fCount = that.fCount;
         this->copy(that.fItemArray);
@@ -121,9 +119,7 @@ public:
     }
 
     ~SkTArray() {
-        for (int i = 0; i < this->count(); ++i) {
-            fItemArray[i].~T();
-        }
+        this->clear();
         if (fOwnMemory) {
             sk_free(fItemArray);
         }
@@ -134,7 +130,6 @@ public:
      */
     void reset() {
         this->pop_back_n(fCount);
-        fReserved = false;
     }
 
     /**
@@ -142,31 +137,34 @@ public:
      */
     void reset(int n) {
         SkASSERT(n >= 0);
-        for (int i = 0; i < this->count(); ++i) {
-            fItemArray[i].~T();
-        }
-        // Set fCount to 0 before calling checkRealloc so that no elements are moved.
-        fCount = 0;
+        this->clear();
         this->checkRealloc(n, kExactFit);
         fCount = n;
         for (int i = 0; i < this->count(); ++i) {
             new (fItemArray + i) T;
         }
-        fReserved = false;
     }
 
     /**
      * Resets to a copy of a C array and resets any reserve count.
      */
     void reset(const T* array, int count) {
-        for (int i = 0; i < this->count(); ++i) {
-            fItemArray[i].~T();
-        }
-        fCount = 0;
+        SkASSERT(count >= 0);
+        this->clear();
         this->checkRealloc(count, kExactFit);
         fCount = count;
         this->copy(array);
-        fReserved = false;
+    }
+
+    /**
+     * Ensures there is enough reserved space for n elements.
+     */
+    void reserve(int n) {
+        SkASSERT(n >= 0);
+        if (n < count()) {
+          return;
+        }
+        reserve_back(n - count());
     }
 
     /**
@@ -178,9 +176,6 @@ public:
         SkASSERT(n >= 0);
         if (n > 0) {
             this->checkRealloc(n, kExactFit);
-            fReserved = fOwnMemory;
-        } else {
-            fReserved = false;
         }
     }
 
@@ -245,11 +240,11 @@ public:
      */
     T* push_back_n(int n) {
         SkASSERT(n >= 0);
-        void* newTs = this->push_back_raw(n);
+        T* newTs = TCast(this->push_back_raw(n));
         for (int i = 0; i < n; ++i) {
-            new (static_cast<char*>(newTs) + i * sizeof(T)) T;
+            new (&newTs[i]) T;
         }
-        return static_cast<T*>(newTs);
+        return newTs;
     }
 
     /**
@@ -258,9 +253,9 @@ public:
      */
     T* push_back_n(int n, const T& t) {
         SkASSERT(n >= 0);
-        void* newTs = this->push_back_raw(n);
+        T* newTs = TCast(this->push_back_raw(n));
         for (int i = 0; i < n; ++i) {
-            new (static_cast<char*>(newTs) + i * sizeof(T)) T(t);
+            new (&newTs[i]) T(t);
         }
         return static_cast<T*>(newTs);
     }
@@ -299,7 +294,6 @@ public:
         SkASSERT(fCount > 0);
         --fCount;
         fItemArray[fCount].~T();
-        this->checkRealloc(0, kShrinking);
     }
 
     /**
@@ -312,7 +306,6 @@ public:
         for (int i = 0; i < n; ++i) {
             fItemArray[fCount + i].~T();
         }
-        this->checkRealloc(0, kShrinking);
     }
 
     /**
@@ -360,16 +353,46 @@ public:
     const T* begin() const {
         return fItemArray;
     }
+
+    // It's safe to use fItemArray + fCount because if fItemArray is nullptr then adding 0 is
+    // valid and returns nullptr. See [expr.add] in the C++ standard.
     T* end() {
-        return fItemArray ? fItemArray + fCount : nullptr;
+        if (fItemArray == nullptr) {
+            SkASSERT(fCount == 0);
+        }
+        return fItemArray + fCount;
     }
     const T* end() const {
-        return fItemArray ? fItemArray + fCount : nullptr;
+        if (fItemArray == nullptr) {
+            SkASSERT(fCount == 0);
+        }
+        return fItemArray + fCount;
     }
     T* data() { return fItemArray; }
     const T* data() const { return fItemArray; }
-    size_t size() const { return (size_t)fCount; }
+    int size() const { return fCount; }
+    size_t size_bytes() const { return this->bytes(fCount); }
     void resize(size_t count) { this->resize_back((int)count); }
+
+    void clear() { this->pop_back_n(fCount); }
+
+    void shrink_to_fit() {
+        if (!fOwnMemory || fCount == fAllocCount) {
+            return;
+        }
+        if (fCount == 0) {
+            sk_free(fItemArray);
+            fItemArray = nullptr;
+            fAllocCount = 0;
+        } else {
+            SkSpan<std::byte> allocation = Allocate(fCount);
+            this->move(TCast(allocation.data()));
+            if (fOwnMemory) {
+                sk_free(fItemArray);
+            }
+            this->setItemArray(allocation);
+        }
+    }
 
     /**
      * Get the i^th element.
@@ -461,6 +484,23 @@ protected:
     }
 
 private:
+    static constexpr int kMinHeapAllocCount = 8;
+    static_assert(SkIsPow2(kMinHeapAllocCount), "min alloc count not power of two.");
+    // Note for 32-bit machines kMaxCapacity will be <= SIZE_MAX. For 64-bit machines it will
+    // just be INT_MAX if the sizeof(T) < 2^32.
+    static constexpr uint32_t kMaxCapacity = std::min(SIZE_MAX / sizeof(T), (size_t)INT_MAX);
+
+    void setItemArray(SkSpan<std::byte> allocation) {
+        fItemArray = TCast(allocation.data());
+        // We have gotten extra bytes back from the allocation limit, pin to kMaxCapacity. It
+        // would seem like the SkContainerAllocator should handle the divide, but it would have
+        // to a full divide instruction. If done here the size is known at compile, and usually
+        // can be implemented by a right shift. The full divide takes ~50X longer than the shift.
+        fAllocCount =
+                SkToU32(std::min(allocation.size() / sizeof(T), SkToSizeT(kMaxCapacity)));
+        fOwnMemory = true;
+    }
+
     // We disable Control-Flow Integrity sanitization (go/cfi) when casting item-array buffers.
     // CFI flags this code as dangerous because we are casting `buffer` to a T* while the buffer's
     // contents might still be uninitialized memory. When T has a vtable, this is especially risky
@@ -473,30 +513,37 @@ private:
         return (T*)buffer;
     }
 
+    size_t bytes(int n) const {
+        SkASSERT(n <= SkToInt(kMaxCapacity));
+        return SkToSizeT(n) * sizeof(T);
+    }
+
+    static SkSpan<std::byte> Allocate(int capacity, double growthFactor = 1.0) {
+        return SkContainerAllocator{sizeof(T), kMaxCapacity}.allocate(capacity, growthFactor);
+    }
+
     void init(int count) {
-        fCount = SkToU32(count);
+        fCount = count;
         if (!count) {
             fAllocCount = 0;
             fItemArray = nullptr;
         } else {
             fAllocCount = SkToU32(std::max(count, kMinHeapAllocCount));
-            fItemArray = TCast(sk_malloc_throw((size_t)fAllocCount, sizeof(T)));
+            this->setItemArray(Allocate(fAllocCount));
         }
         fOwnMemory = true;
-        fReserved = false;
     }
 
     void initWithPreallocatedStorage(int count, void* preallocStorage, int preallocCount) {
         SkASSERT(count >= 0);
         SkASSERT(preallocCount > 0);
         SkASSERT(preallocStorage);
-        fCount = SkToU32(count);
+        fCount = count;
         fItemArray = nullptr;
-        fReserved = false;
         if (count > preallocCount) {
             fAllocCount = SkToU32(std::max(count, kMinHeapAllocCount));
-            fItemArray = TCast(sk_malloc_throw(fAllocCount, sizeof(T)));
-            fOwnMemory = true;
+            SkSpan<std::byte> allocation = Allocate(fAllocCount);
+            this->setItemArray(allocation);
         } else {
             fAllocCount = SkToU32(preallocCount);
             fItemArray = TCast(preallocStorage);
@@ -508,36 +555,38 @@ private:
      *  In the following move methods, 'src' is destroyed leaving behind uninitialized raw storage.
      */
     void copy(const T* src) {
-        // Some types may be trivially copyable, in which case we *could* use memcopy; but
-        // MEM_MOVE == true implies that the type is trivially movable, and not necessarily
-        // trivially copyable (think sk_sp<>).  So short of adding another template arg, we
-        // must be conservative and use copy construction.
-        for (int i = 0; i < this->count(); ++i) {
-            new (fItemArray + i) T(src[i]);
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            if (!this->empty() && src != nullptr) {
+                sk_careful_memcpy(fItemArray, src, this->size_bytes());
+            }
+        } else {
+            for (int i = 0; i < this->count(); ++i) {
+                new (fItemArray + i) T(src[i]);
+            }
         }
     }
 
-    template <bool E = MEM_MOVE> std::enable_if_t<E, void> move(int dst, int src) {
-        memcpy(static_cast<void*>(&fItemArray[dst]),
-               static_cast<void*>(&fItemArray[src]),
-               sizeof(T));
-    }
-    template <bool E = MEM_MOVE> std::enable_if_t<E, void> move(void* dst) {
-        sk_careful_memcpy(dst, fItemArray, fCount * sizeof(T));
-    }
-
-    template <bool E = MEM_MOVE> std::enable_if_t<!E, void> move(int dst, int src) {
-        new (&fItemArray[dst]) T(std::move(fItemArray[src]));
-        fItemArray[src].~T();
-    }
-    template <bool E = MEM_MOVE> std::enable_if_t<!E, void> move(void* dst) {
-        for (int i = 0; i < this->count(); ++i) {
-            new (static_cast<char*>(dst) + sizeof(T) * (size_t)i) T(std::move(fItemArray[i]));
-            fItemArray[i].~T();
+    void move(int dst, int src) {
+        if constexpr (MEM_MOVE) {
+            memcpy(static_cast<void*>(&fItemArray[dst]),
+                   static_cast<void*>(&fItemArray[src]),
+                   sizeof(T));
+        } else {
+            new (&fItemArray[dst]) T(std::move(fItemArray[src]));
+            fItemArray[src].~T();
         }
     }
 
-    static constexpr int kMinHeapAllocCount = 8;
+    void move(void* dst) {
+        if constexpr (MEM_MOVE) {
+            sk_careful_memcpy(dst, fItemArray, this->bytes(fCount));
+        } else {
+            for (int i = 0; i < this->count(); ++i) {
+                new (static_cast<char*>(dst) + this->bytes(i)) T(std::move(fItemArray[i]));
+                fItemArray[i].~T();
+            }
+        }
+    }
 
     // Helper function that makes space for n objects, adjusts the count, but does not initialize
     // the new objects.
@@ -549,53 +598,38 @@ private:
     }
 
     void checkRealloc(int delta, ReallocType reallocType) {
+        // This constant needs to be declared in the function where it is used to work around
+        // MSVC's persnickety nature about template definitions.
+        SkASSERT(delta >= 0);
         SkASSERT(fCount >= 0);
         SkASSERT(fAllocCount >= 0);
-        SkASSERT(-delta <= this->count());
 
-        // Move into 64bit math temporarily, to avoid local overflows
-        int64_t newCount = fCount + delta;
+        // Return if there are enough remaining allocated elements to satisfy the request.
+        if (SkToInt(fAllocCount) - fCount >= delta) { return; }
 
-        // We allow fAllocCount to be in the range [newCount, 3*newCount]. We also never shrink
-        // when we're currently using preallocated memory, would allocate less than
-        // kMinHeapAllocCount, or a reserve count was specified that has yet to be exceeded.
-        bool mustGrow = newCount > fAllocCount;
-        bool shouldShrink = fAllocCount > 3 * newCount && fOwnMemory && !fReserved;
-        if (!mustGrow && !shouldShrink) {
-            return;
-        }
+        // Don't overflow fCount or size_t later in the memory allocation. Overflowing memory
+        // allocation really only applies to fCounts on 32-bit machines; on 64-bit machines this
+        // will probably never produce a check. Since kMaxCapacity is bounded above by INT_MAX,
+        // this also checks the bounds of fCount.
+        SkASSERT_RELEASE(delta <= SkToInt(kMaxCapacity) - fCount);
+        const int newCount = fCount + delta;
 
-        int64_t newAllocCount = newCount;
-        if (reallocType != kExactFit) {
-            // Whether we're growing or shrinking, leave at least 50% extra space for future growth.
-            newAllocCount += ((newCount + 1) >> 1);
-            // Align the new allocation count to kMinHeapAllocCount.
-            static_assert(SkIsPow2(kMinHeapAllocCount), "min alloc count not power of two.");
-            newAllocCount = (newAllocCount + (kMinHeapAllocCount - 1)) & ~(kMinHeapAllocCount - 1);
-        }
+        double growthFactor = reallocType == kExactFit ? 1.0 : 1.5;
+        SkSpan<std::byte> allocation = Allocate(newCount, growthFactor);
 
-        // At small sizes the old and new alloc count can both be kMinHeapAllocCount.
-        if (newAllocCount == fAllocCount) {
-            return;
-        }
-
-        fAllocCount = SkToU32(Sk64_pin_to_s32(newAllocCount));
-        SkASSERT(fAllocCount >= newCount);
-        T* newItemArray = TCast(sk_malloc_throw((size_t)fAllocCount, sizeof(T)));
-        this->move(newItemArray);
+        this->move(TCast(allocation.data()));
         if (fOwnMemory) {
             sk_free(fItemArray);
         }
-        fItemArray = newItemArray;
-        fOwnMemory = true;
-        fReserved = false;
+        this->setItemArray(allocation);
+        SkASSERT(SkToInt(fAllocCount) >= newCount);
+        SkASSERT(fItemArray != nullptr);
     }
 
     T* fItemArray;
-    uint32_t fOwnMemory  :  1;
-    uint32_t fCount      : 31;
-    uint32_t fReserved   :  1;
+    int fCount;
     uint32_t fAllocCount : 31;
+    uint32_t fOwnMemory  :  1;
 };
 
 template <typename T, bool M> static inline void swap(SkTArray<T, M>& a, SkTArray<T, M>& b) {
@@ -607,7 +641,7 @@ template<typename T, bool MEM_MOVE> constexpr int SkTArray<T, MEM_MOVE>::kMinHea
 /**
  * Subclass of SkTArray that contains a preallocated memory block for the array.
  */
-template <int N, typename T, bool MEM_MOVE = sk_is_trivially_relocatable<T>::value>
+template <int N, typename T, bool MEM_MOVE = sk_is_trivially_relocatable_v<T>>
 class SkSTArray : private SkAlignedSTStorage<N,T>, public SkTArray<T, MEM_MOVE> {
 private:
     using STORAGE   = SkAlignedSTStorage<N,T>;
@@ -621,7 +655,7 @@ public:
         : STORAGE{}, INHERITED(array, count, static_cast<STORAGE*>(this)) {}
 
     SkSTArray(std::initializer_list<T> data)
-        : SkSTArray(data.begin(), data.size()) {}
+        : SkSTArray(data.begin(), SkToInt(data.size())) {}
 
     explicit SkSTArray(int reserveCount)
         : SkSTArray() {

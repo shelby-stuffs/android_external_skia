@@ -26,12 +26,11 @@ void SkRasterPipeline::reset() {
     fNumStages = 0;
 }
 
-void SkRasterPipeline::append(StockStage stage, void* ctx) {
+void SkRasterPipeline::append(Stage stage, void* ctx) {
     SkASSERT(stage !=           uniform_color);  // Please use append_constant_color().
     SkASSERT(stage != unbounded_uniform_color);  // Please use append_constant_color().
     SkASSERT(stage !=                 set_rgb);  // Please use append_set_rgb().
     SkASSERT(stage !=       unbounded_set_rgb);  // Please use append_set_rgb().
-    SkASSERT(stage !=             clamp_gamut);  // Please use append_gamut_clamp_if_normalized().
     SkASSERT(stage !=              parametric);  // Please use append_transfer_function().
     SkASSERT(stage !=                  gamma_);  // Please use append_transfer_function().
     SkASSERT(stage !=                   PQish);  // Please use append_transfer_function().
@@ -41,11 +40,11 @@ void SkRasterPipeline::append(StockStage stage, void* ctx) {
     SkASSERT(stage !=            stack_rewind);  // Please use append_stack_rewind().
     this->unchecked_append(stage, ctx);
 }
-void SkRasterPipeline::unchecked_append(StockStage stage, void* ctx) {
-    fStages = fAlloc->make<StageList>( StageList{fStages, stage, ctx} );
+void SkRasterPipeline::unchecked_append(Stage stage, void* ctx) {
+    fStages = fAlloc->make<StageList>(StageList{fStages, stage, ctx});
     fNumStages += 1;
 }
-void SkRasterPipeline::append(StockStage stage, uintptr_t ctx) {
+void SkRasterPipeline::append(Stage stage, uintptr_t ctx) {
     void* ptrCtx;
     memcpy(&ptrCtx, &ctx, sizeof(ctx));
     this->append(stage, ptrCtx);
@@ -352,64 +351,81 @@ void SkRasterPipeline::append_transfer_function(const skcms_TransferFunction& tf
     }
 }
 
-// Clamp premul values to [0,alpha] (logical [0,1]) to avoid the confusing
-// scenario of being able to store a logical color channel > 1.0 when alpha < 1.0.
-// Most software that works with normalized premul values expect r,g,b channels all <= a.
-//
-// In addition, GL clamps all its color channels to limits of the format just
-// before the blend step (~here).  To match that auto-clamp, we clamp alpha to
-// [0,1] too, just in case someone gave us a crazy alpha.
-void SkRasterPipeline::append_gamut_clamp_if_normalized(const SkImageInfo& info) {
+// GPUs clamp all color channels to the limits of the format just before the blend step. To match
+// that auto-clamp, the RP blitter uses this helper immediately before appending blending stages.
+void SkRasterPipeline::append_clamp_if_normalized(const SkImageInfo& info) {
+#if defined(SK_USE_LEGACY_GAMUT_CLAMP)
+    // Temporarily support Skia's old behavior, until chromium is rebaselined:
+    // Clamp premul values to [0,alpha] (logical [0,1]) to avoid the confusing
+    // scenario of being able to store a logical color channel > 1.0 when alpha < 1.0.
+    // Most software that works with normalized premul values expect r,g,b channels all <= a.
     if (info.alphaType() == kPremul_SkAlphaType && SkColorTypeIsNormalized(info.colorType())) {
         this->unchecked_append(SkRasterPipeline::clamp_gamut, nullptr);
     }
+#else
+    if (SkColorTypeIsNormalized(info.colorType())) {
+        this->unchecked_append(SkRasterPipeline::clamp_01, nullptr);
+    }
+#endif
 }
 
 void SkRasterPipeline::append_stack_rewind() {
-    // If we have a (working) musttail attribute, we never need to rewind the stack
-#if !SK_HAS_MUSTTAIL
     if (!fRewindCtx) {
         fRewindCtx = fAlloc->make<SkRasterPipeline_RewindCtx>();
     }
     this->unchecked_append(SkRasterPipeline::stack_rewind, fRewindCtx);
-#endif
+}
+
+static void prepend_to_pipeline(void**& ip, SkOpts::StageFn stageFn, void* ctx) {
+    *--ip = ctx;
+    *--ip = (void*)stageFn;
+}
+
+static void prepend_to_pipeline(void**& ip, SkOpts::StageFn stageFn) {
+    *--ip = (void*)stageFn;
+}
+
+bool SkRasterPipeline::build_lowp_pipeline(void** ip) const {
+    if (gForceHighPrecisionRasterPipeline || fRewindCtx) {
+        return false;
+    }
+    // Stages are stored backwards in fStages; to compensate, we assemble the pipeline in reverse
+    // here, back to front.
+    prepend_to_pipeline(ip, SkOpts::just_return_lowp);
+    for (const StageList* st = fStages; st; st = st->prev) {
+        if (st->stage >= kNumLowpStages || !SkOpts::stages_lowp[st->stage]) {
+            // This program contains a stage that doesn't exist in lowp.
+            return false;
+        }
+        prepend_to_pipeline(ip, SkOpts::stages_lowp[st->stage], st->ctx);
+        continue;
+    }
+    return true;
+}
+
+void SkRasterPipeline::build_highp_pipeline(void** ip) const {
+    // We assemble the pipeline in reverse, since the stage list is stored backwards.
+    prepend_to_pipeline(ip, SkOpts::just_return_highp);
+    for (const StageList* st = fStages; st; st = st->prev) {
+        prepend_to_pipeline(ip, SkOpts::stages_highp[st->stage], st->ctx);
+    }
+
+    // stack_checkpoint and stack_rewind are only implemented in highp. We only need these stages
+    // when generating long (or looping) pipelines from SkSL. The other stages used by the SkSL
+    // Raster Pipeline generator will only have highp implementations, because we can't execute SkSL
+    // code without floating point.
+    if (fRewindCtx) {
+        prepend_to_pipeline(ip, SkOpts::stages_highp[stack_checkpoint], fRewindCtx);
+    }
 }
 
 SkRasterPipeline::StartPipelineFn SkRasterPipeline::build_pipeline(void** ip) const {
-    // stack_checkpoint and stack_rewind are only implemented in highp. We only need these stages
-    // when generating long (or looping) pipelines from SkSL. The other stages used by the SkSL RP
-    // generator will only have highp implementations, because we can't execute SkSL code without
-    // floating point.
-    if (!gForceHighPrecisionRasterPipeline && !fRewindCtx) {
-        // We'll try to build a lowp pipeline, but if that fails fallback to a highp float pipeline.
-        void** reset_point = ip;
-
-        // Stages are stored backwards in fStages, so we reverse here, back to front.
-        *--ip = (void*)SkOpts::just_return_lowp;
-        for (const StageList* st = fStages; st; st = st->prev) {
-            // All of the stages with lowp implementations come first in the enumeration. Any stage
-            // with a larger value only has a highp implementation.
-            if (st->stage >= kNumLowpStages || !SkOpts::stages_lowp[st->stage]) {
-                ip = reset_point;
-                break;
-            }
-            *--ip = st->ctx;
-            *--ip = (void*)SkOpts::stages_lowp[st->stage];
-        }
-        if (ip != reset_point) {
-            return SkOpts::start_pipeline_lowp;
-        }
+    // We try to build a lowp pipeline first; if that fails, we fall back to a highp float pipeline.
+    if (this->build_lowp_pipeline(ip)) {
+        return SkOpts::start_pipeline_lowp;
     }
 
-    *--ip = (void*)SkOpts::just_return_highp;
-    for (const StageList* st = fStages; st; st = st->prev) {
-        *--ip = st->ctx;
-        *--ip = (void*)SkOpts::stages_highp[st->stage];
-    }
-    if (fRewindCtx) {
-        *--ip = fRewindCtx;
-        *--ip = (void*)SkOpts::stages_highp[stack_checkpoint];
-    }
+    this->build_highp_pipeline(ip);
     return SkOpts::start_pipeline_highp;
 }
 

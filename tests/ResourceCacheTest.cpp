@@ -5,14 +5,34 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkData.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrConfig.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/GrTypes.h"
+#include "include/private/SkTDArray.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "include/utils/SkRandom.h"
 #include "src/core/SkMessageBus.h"
-#include "src/core/SkMipmap.h"
+#include "src/gpu/ResourceKey.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrGpuResource.h"
 #include "src/gpu/ganesh/GrGpuResourceCacheAccess.h"
 #include "src/gpu/ganesh/GrGpuResourcePriv.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
@@ -21,21 +41,32 @@
 #include "src/gpu/ganesh/GrResourceCache.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
 #include "src/gpu/ganesh/GrTexture.h"
-#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tools/gpu/GrContextFactory.h"
 #include "tools/gpu/ManagedBackendTexture.h"
 
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <initializer_list>
+#include <memory>
+#include <string_view>
 #include <thread>
+#include <utility>
+#include <vector>
+
+class GrAttachment;
+struct GrContextOptions;
 
 static const int gWidth = 640;
 static const int gHeight = 480;
 
 ////////////////////////////////////////////////////////////////////////////////
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceCacheCache,
-                                   reporter,
-                                   ctxInfo,
-                                   CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ResourceCacheCache,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     SkImageInfo info = SkImageInfo::MakeN32Premul(gWidth, gHeight);
     auto surface(SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, info));
@@ -115,12 +146,12 @@ static sk_sp<GrRenderTarget> create_RT_with_SB(GrResourceProvider* provider,
 }
 
 // This currently fails on ES3 ANGLE contexts
-DEF_GPUTEST_FOR_CONTEXTS(ResourceCacheStencilBuffers,
-                         &is_rendering_and_not_angle_es3,
-                         reporter,
-                         ctxInfo,
-                         nullptr,
-                         CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_CONTEXTS(ResourceCacheStencilBuffers,
+                             &is_rendering_and_not_angle_es3,
+                             reporter,
+                             ctxInfo,
+                             nullptr,
+                             CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     const GrCaps* caps = context->priv().caps();
 
@@ -194,10 +225,10 @@ DEF_GPUTEST_FOR_CONTEXTS(ResourceCacheStencilBuffers,
     }
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceCacheWrappedResources,
-                                   reporter,
-                                   ctxInfo,
-                                   CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ResourceCacheWrappedResources,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     GrResourceProvider* resourceProvider = context->priv().resourceProvider();
     GrGpu* gpu = context->priv().getGpu();
@@ -1233,7 +1264,7 @@ static void test_timestamp_wrap(skiatest::Reporter* reporter) {
             skgpu::UniqueKey key;
             make_unique_key<0>(&key, j);
             GrGpuResource* res = cache->findAndRefUniqueResource(key);
-            if (currShouldPurgeIdx < shouldPurgeIdxs.count() &&
+            if (currShouldPurgeIdx < shouldPurgeIdxs.size() &&
                 shouldPurgeIdxs[currShouldPurgeIdx] == j) {
                 ++currShouldPurgeIdx;
                 REPORTER_ASSERT(reporter, nullptr == res);
@@ -1243,7 +1274,7 @@ static void test_timestamp_wrap(skiatest::Reporter* reporter) {
             SkSafeUnref(res);
         }
 
-        for (int j = 0; j < resourcesToUnref.count(); ++j) {
+        for (int j = 0; j < resourcesToUnref.size(); ++j) {
             resourcesToUnref[j]->unref();
         }
     }
@@ -1623,7 +1654,7 @@ static void test_free_texture_messages(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 3 == (freed[0] + freed[1] + freed[2]));
 }
 
-DEF_GPUTEST(ResourceCacheMisc, reporter, /* options */, CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST(ResourceCacheMisc, reporter, /* options */, CtsEnforcement::kApiLevel_T) {
     // The below tests create their own mock contexts.
     test_no_key(reporter);
     test_purge_unlocked(reporter);
@@ -1648,10 +1679,10 @@ DEF_GPUTEST(ResourceCacheMisc, reporter, /* options */, CtsEnforcement::kApiLeve
 
 // This simulates a portion of Chrome's context abandonment processing.
 // Please see: crbug.com/1011368 and crbug.com/1014993
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceMessagesAfterAbandon,
-                                   reporter,
-                                   ctxInfo,
-                                   CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ResourceMessagesAfterAbandon,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
     GrGpu* gpu = dContext->priv().getGpu();
 
@@ -1724,7 +1755,10 @@ static sk_sp<GrTextureProxy> make_mipmap_proxy(GrRecordingContext* rContext,
 
 // Exercise GrSurface::gpuMemorySize for different combos of MSAA, RT-only,
 // Texture-only, both-RT-and-Texture and MIPmapped
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GPUMemorySize, reporter, ctxInfo, CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GPUMemorySize,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     GrResourceProvider* resourceProvider = context->priv().resourceProvider();
     const GrCaps* caps = context->priv().caps();
@@ -1779,10 +1813,10 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GPUMemorySize, reporter, ctxInfo, CtsEnforcem
     }
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(PurgeToMakeHeadroom,
-                                   reporter,
-                                   ctxInfo,
-                                   CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PurgeToMakeHeadroom,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     constexpr size_t kTexSize = 16 * 16 * 4;
 
     auto dContext = ctxInfo.directContext();
@@ -1817,7 +1851,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(PurgeToMakeHeadroom,
 }
 
 #if GR_GPU_STATS
-DEF_GPUTEST_FOR_MOCK_CONTEXT(OverbudgetFlush, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_MOCK_CONTEXT(OverbudgetFlush, reporter, ctxInfo) {
     auto context = ctxInfo.directContext();
     context->setResourceCacheLimit(1);
 

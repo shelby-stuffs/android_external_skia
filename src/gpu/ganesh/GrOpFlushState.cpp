@@ -84,6 +84,7 @@ void GrOpFlushState::preExecuteDraws() {
     // Setup execution iterators.
     fCurrDraw = fDraws.begin();
     fCurrUpload = fInlineUploads.begin();
+    fGpu->willExecute();
 }
 
 void GrOpFlushState::reset() {
@@ -221,9 +222,11 @@ GrAtlasManager* GrOpFlushState::atlasManager() const {
     return fGpu->getContext()->priv().getAtlasManager();
 }
 
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 skgpu::v1::SmallPathAtlasMgr* GrOpFlushState::smallPathAtlasManager() const {
     return fGpu->getContext()->priv().getSmallPathAtlasMgr();
 }
+#endif
 
 void GrOpFlushState::drawMesh(const GrSimpleMesh& mesh) {
     SkASSERT(mesh.fIsInitialized);

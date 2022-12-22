@@ -58,10 +58,6 @@ SkSL::Compiler* GrMtlPipelineStateBuilder::shaderCompiler() const {
     return fGpu->shaderCompiler();
 }
 
-void GrMtlPipelineStateBuilder::finalizeFragmentOutputColor(GrShaderVar& outputColor) {
-    outputColor.addLayoutQualifier("location = 0, index = 0");
-}
-
 void GrMtlPipelineStateBuilder::finalizeFragmentSecondaryColor(GrShaderVar& outputColor) {
     outputColor.addLayoutQualifier("location = 0, index = 1");
 }
@@ -693,14 +689,13 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(
     id<MTLRenderPipelineState> pipelineState;
     {
         TRACE_EVENT0("skia.shaders", "newRenderPipelineStateWithDescriptor");
-#if defined(SK_BUILD_FOR_MAC)
-        pipelineState = GrMtlNewRenderPipelineStateWithDescriptor(
-                                                     fGpu->device(), pipelineDescriptor, &error);
-#else
-        pipelineState =
-            [fGpu->device() newRenderPipelineStateWithDescriptor: pipelineDescriptor
-                                                           error: &error];
-#endif
+        if (@available(macOS 10.15, *)) {
+            pipelineState = [fGpu->device() newRenderPipelineStateWithDescriptor: pipelineDescriptor
+                                                                           error: &error];
+        } else {
+            pipelineState = GrMtlNewRenderPipelineStateWithDescriptor(
+                    fGpu->device(), pipelineDescriptor, &error);
+        }
     }
     if (error) {
         SkDebugf("Error creating pipeline: %s\n",

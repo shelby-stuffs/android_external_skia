@@ -25,20 +25,25 @@
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/vk/GrVkGpu.h"
 #include "src/gpu/ganesh/vk/GrVkImage.h"
-#include "src/gpu/ganesh/vk/GrVkInterface.h"
 #include "src/gpu/ganesh/vk/GrVkRenderTarget.h"
 #include "src/gpu/ganesh/vk/GrVkTexture.h"
 #include "src/gpu/ganesh/vk/GrVkUniformHandler.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
+#include "src/gpu/vk/VulkanInterface.h"
+#include "src/gpu/vk/VulkanUtils.h"
 
 #ifdef SK_BUILD_FOR_ANDROID
 #include <sys/system_properties.h>
 #endif
 
-GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* vkInterface,
-                   VkPhysicalDevice physDev, const VkPhysicalDeviceFeatures2& features,
-                   uint32_t instanceVersion, uint32_t physicalDeviceVersion,
-                   const skgpu::VulkanExtensions& extensions, GrProtected isProtected)
+GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions,
+                   const skgpu::VulkanInterface* vkInterface,
+                   VkPhysicalDevice physDev,
+                   const VkPhysicalDeviceFeatures2& features,
+                   uint32_t instanceVersion,
+                   uint32_t physicalDeviceVersion,
+                   const skgpu::VulkanExtensions& extensions,
+                   GrProtected isProtected)
         : INHERITED(contextOptions) {
     /**************************************************************************
      * GrCaps fields
@@ -199,8 +204,8 @@ bool GrVkCaps::canCopyAsResolve(VkFormat dstFormat, int dstSampleCnt, bool dstHa
     return true;
 }
 
-bool GrVkCaps::onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
-                                const SkIRect& srcRect, const SkIPoint& dstPoint) const {
+bool GrVkCaps::onCanCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRect,
+                                const GrSurfaceProxy* src, const SkIRect& srcRect) const {
     if (src->isProtected() == GrProtected::kYes && dst->isProtected() != GrProtected::kYes) {
         return false;
     }
@@ -263,12 +268,18 @@ bool GrVkCaps::onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy*
     SkAssertResult(dst->backendFormat().asVkFormat(&dstFormat));
     SkAssertResult(src->backendFormat().asVkFormat(&srcFormat));
 
-    return this->canCopyImage(dstFormat, dstSampleCnt, dstHasYcbcr,
-                              srcFormat, srcSampleCnt, srcHasYcbcr) ||
-           this->canCopyAsBlit(dstFormat, dstSampleCnt, dstIsLinear, dstHasYcbcr,
-                               srcFormat, srcSampleCnt, srcIsLinear, srcHasYcbcr) ||
-           this->canCopyAsResolve(dstFormat, dstSampleCnt, dstHasYcbcr,
-                                  srcFormat, srcSampleCnt, srcHasYcbcr);
+    // Only blits support scaling, but since we've already clamped the src and dst rects,
+    // the dimensions of the scaled blit aren't important to know if it's allowed.
+    const bool copyScales = srcRect.size() != dstRect.size();
+    if (!copyScales && (this->canCopyImage(dstFormat, dstSampleCnt, dstHasYcbcr,
+                                           srcFormat, srcSampleCnt, srcHasYcbcr) ||
+                        this->canCopyAsResolve(dstFormat, dstSampleCnt, dstHasYcbcr,
+                                               srcFormat, srcSampleCnt, srcHasYcbcr))) {
+        return true;
+    }
+    return this->canCopyAsBlit(dstFormat, dstSampleCnt, dstIsLinear, dstHasYcbcr,
+                               srcFormat, srcSampleCnt, srcIsLinear, srcHasYcbcr);
+
 }
 
 template<typename T> T* get_extension_feature_struct(const VkPhysicalDeviceFeatures2& features,
@@ -292,9 +303,12 @@ template<typename T> T* get_extension_feature_struct(const VkPhysicalDeviceFeatu
     return nullptr;
 }
 
-void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface* vkInterface,
-                    VkPhysicalDevice physDev, const VkPhysicalDeviceFeatures2& features,
-                    uint32_t physicalDeviceVersion, const skgpu::VulkanExtensions& extensions,
+void GrVkCaps::init(const GrContextOptions& contextOptions,
+                    const skgpu::VulkanInterface* vkInterface,
+                    VkPhysicalDevice physDev,
+                    const VkPhysicalDeviceFeatures2& features,
+                    uint32_t physicalDeviceVersion,
+                    const skgpu::VulkanExtensions& extensions,
                     GrProtected isProtected) {
     VkPhysicalDeviceProperties properties;
     GR_VK_CALL(vkInterface, GetPhysicalDeviceProperties(physDev, &properties));
@@ -614,7 +628,7 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
     }
 }
 
-void GrVkCaps::initGrCaps(const GrVkInterface* vkInterface,
+void GrVkCaps::initGrCaps(const skgpu::VulkanInterface* vkInterface,
                           VkPhysicalDevice physDev,
                           const VkPhysicalDeviceProperties& properties,
                           const VkPhysicalDeviceMemoryProperties& memoryProperties,
@@ -708,6 +722,7 @@ void GrVkCaps::initShaderCaps(const VkPhysicalDeviceProperties& properties,
     shaderCaps->fSampleMaskSupport = true;
 
     shaderCaps->fShaderDerivativeSupport = true;
+    shaderCaps->fExplicitTextureLodSupport = true;
 
     shaderCaps->fDualSourceBlendingSupport = features.features.dualSrcBlend;
 
@@ -729,7 +744,7 @@ void GrVkCaps::initShaderCaps(const VkPhysicalDeviceProperties& properties,
                                               (uint32_t)INT_MAX);
 }
 
-bool stencil_format_supported(const GrVkInterface* interface,
+bool stencil_format_supported(const skgpu::VulkanInterface* interface,
                               VkPhysicalDevice physDev,
                               VkFormat format) {
     VkFormatProperties props;
@@ -738,7 +753,8 @@ bool stencil_format_supported(const GrVkInterface* interface,
     return SkToBool(VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT & props.optimalTilingFeatures);
 }
 
-void GrVkCaps::initStencilFormat(const GrVkInterface* interface, VkPhysicalDevice physDev) {
+void GrVkCaps::initStencilFormat(const skgpu::VulkanInterface* interface,
+                                 VkPhysicalDevice physDev) {
     if (stencil_format_supported(interface, physDev, VK_FORMAT_S8_UINT)) {
         fPreferredStencilFormat = VK_FORMAT_S8_UINT;
     } else if (stencil_format_supported(interface, physDev, VK_FORMAT_D24_UNORM_S8_UINT)) {
@@ -835,7 +851,8 @@ GrVkCaps::FormatInfo& GrVkCaps::getFormatInfo(VkFormat format) {
     return kInvalidFormat;
 }
 
-void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice physDev,
+void GrVkCaps::initFormatTable(const skgpu::VulkanInterface* interface,
+                               VkPhysicalDevice physDev,
                                const VkPhysicalDeviceProperties& properties) {
     static_assert(std::size(kVkFormats) == GrVkCaps::kNumVkFormats,
                   "Size of VkFormats array must match static value in header");
@@ -1330,7 +1347,7 @@ void GrVkCaps::FormatInfo::InitFormatFlags(VkFormatFeatureFlags vkFlags, uint16_
     }
 }
 
-void GrVkCaps::FormatInfo::initSampleCounts(const GrVkInterface* interface,
+void GrVkCaps::FormatInfo::initSampleCounts(const skgpu::VulkanInterface* interface,
                                             VkPhysicalDevice physDev,
                                             const VkPhysicalDeviceProperties& physProps,
                                             VkFormat format) {
@@ -1374,7 +1391,7 @@ void GrVkCaps::FormatInfo::initSampleCounts(const GrVkInterface* interface,
     // than 16. Omit 32 and 64.
 }
 
-void GrVkCaps::FormatInfo::init(const GrVkInterface* interface,
+void GrVkCaps::FormatInfo::init(const skgpu::VulkanInterface* interface,
                                 VkPhysicalDevice physDev,
                                 const VkPhysicalDeviceProperties& properties,
                                 VkFormat format) {
@@ -1480,14 +1497,14 @@ int GrVkCaps::getRenderTargetSampleCount(int requestedCount, VkFormat format) co
 
     const FormatInfo& info = this->getFormatInfo(format);
 
-    int count = info.fColorSampleCounts.count();
+    int count = info.fColorSampleCounts.size();
 
     if (!count) {
         return 0;
     }
 
     if (1 == requestedCount) {
-        SkASSERT(info.fColorSampleCounts.count() && info.fColorSampleCounts[0] == 1);
+        SkASSERT(info.fColorSampleCounts.size() && info.fColorSampleCounts[0] == 1);
         return 1;
     }
 
@@ -1511,10 +1528,10 @@ int GrVkCaps::maxRenderTargetSampleCount(VkFormat format) const {
     const FormatInfo& info = this->getFormatInfo(format);
 
     const auto& table = info.fColorSampleCounts;
-    if (!table.count()) {
+    if (!table.size()) {
         return 0;
     }
-    return table[table.count() - 1];
+    return table[table.size() - 1];
 }
 
 static inline size_t align_to_4(size_t v) {
@@ -1538,12 +1555,12 @@ GrCaps::SupportedWrite GrVkCaps::supportedWritePixelsColorType(GrColorType surfa
 
     // We don't support the ability to upload to external formats or formats that require a ycbcr
     // sampler. In general these types of formats are only used for sampling in a shader.
-    if (backend_format_is_external(surfaceFormat) || GrVkFormatNeedsYcbcrSampler(vkFormat)) {
+    if (backend_format_is_external(surfaceFormat) || skgpu::VkFormatNeedsYcbcrSampler(vkFormat)) {
         return {GrColorType::kUnknown, 0};
     }
 
     // The VkBufferImageCopy bufferOffset field must be both a multiple of 4 and of a single texel.
-    size_t offsetAlignment = align_to_4(GrVkFormatBytesPerBlock(vkFormat));
+    size_t offsetAlignment = align_to_4(skgpu::VkFormatBytesPerBlock(vkFormat));
 
     const auto& info = this->getFormatInfo(vkFormat);
     for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
@@ -1570,7 +1587,7 @@ GrCaps::SurfaceReadPixelsSupport GrVkCaps::surfaceSupportsReadPixels(
             return SurfaceReadPixelsSupport::kCopyToTexture2D;
         }
         // We can't directly read from a compressed format
-        if (GrVkFormatIsCompressed(texImage->imageFormat())) {
+        if (skgpu::VkFormatIsCompressed(texImage->imageFormat())) {
             return SurfaceReadPixelsSupport::kCopyToTexture2D;
         }
         return SurfaceReadPixelsSupport::kSupported;
@@ -1620,7 +1637,7 @@ bool GrVkCaps::onAreColorTypeAndFormatCompatible(GrColorType ct,
     const GrVkYcbcrConversionInfo* ycbcrInfo = format.getVkYcbcrConversionInfo();
     SkASSERT(ycbcrInfo);
 
-    if (ycbcrInfo->isValid() && !GrVkFormatNeedsYcbcrSampler(vkFormat)) {
+    if (ycbcrInfo->isValid() && !skgpu::VkFormatNeedsYcbcrSampler(vkFormat)) {
         // Format may be undefined for external images, which are required to have YCbCr conversion.
         if (VK_FORMAT_UNDEFINED == vkFormat && ycbcrInfo->fExternalFormat != 0) {
             return true;
@@ -1767,7 +1784,7 @@ GrCaps::SupportedRead GrVkCaps::onSupportedReadPixelsColorType(
         return {GrColorType::kUnknown, 0};
     }
 
-    if (GrVkFormatNeedsYcbcrSampler(vkFormat)) {
+    if (skgpu::VkFormatNeedsYcbcrSampler(vkFormat)) {
         return {GrColorType::kUnknown, 0};
     }
 
@@ -1778,7 +1795,7 @@ GrCaps::SupportedRead GrVkCaps::onSupportedReadPixelsColorType(
     }
 
     // The VkBufferImageCopy bufferOffset field must be both a multiple of 4 and of a single texel.
-    size_t offsetAlignment = align_to_4(GrVkFormatBytesPerBlock(vkFormat));
+    size_t offsetAlignment = align_to_4(skgpu::VkFormatBytesPerBlock(vkFormat));
 
     const auto& info = this->getFormatInfo(vkFormat);
     for (int i = 0; i < info.fColorTypeInfoCount; ++i) {

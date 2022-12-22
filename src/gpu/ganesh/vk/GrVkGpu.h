@@ -14,7 +14,6 @@
 #include "src/gpu/ganesh/GrStagingBufferManager.h"
 #include "src/gpu/ganesh/vk/GrVkCaps.h"
 #include "src/gpu/ganesh/vk/GrVkMSAALoadManager.h"
-#include "src/gpu/ganesh/vk/GrVkMemory.h"
 #include "src/gpu/ganesh/vk/GrVkResourceProvider.h"
 #include "src/gpu/ganesh/vk/GrVkSemaphore.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
@@ -25,7 +24,6 @@ class GrPipeline;
 class GrVkBuffer;
 class GrVkCommandPool;
 class GrVkFramebuffer;
-class GrVkMemoryAllocator;
 class GrVkPipeline;
 class GrVkPipelineState;
 class GrVkPrimaryCommandBuffer;
@@ -33,7 +31,10 @@ class GrVkOpsRenderPass;
 class GrVkRenderPass;
 class GrVkSecondaryCommandBuffer;
 class GrVkTexture;
-struct GrVkInterface;
+
+namespace skgpu { struct VulkanInterface; }
+
+namespace skgpu { class VulkanMemoryAllocator; }
 
 class GrVkGpu : public GrGpu {
 public:
@@ -51,7 +52,7 @@ public:
     GrThreadSafePipelineBuilder* pipelineBuilder() override;
     sk_sp<GrThreadSafePipelineBuilder> refPipelineBuilder() override;
 
-    const GrVkInterface* vkInterface() const { return fInterface.get(); }
+    const skgpu::VulkanInterface* vkInterface() const { return fInterface.get(); }
     const GrVkCaps& vkCaps() const { return *fVkCaps; }
 
     GrStagingBufferManager* stagingBufferManager() override { return &fStagingBufferManager; }
@@ -59,7 +60,7 @@ public:
 
     bool isDeviceLost() const override { return fDeviceIsLost; }
 
-    GrVkMemoryAllocator* memoryAllocator() const { return fMemoryAllocator.get(); }
+    skgpu::VulkanMemoryAllocator* memoryAllocator() const { return fMemoryAllocator.get(); }
 
     VkPhysicalDevice physicalDevice() const { return fPhysicalDevice; }
     VkDevice device() const { return fDevice; }
@@ -81,13 +82,13 @@ public:
     void xferBarrier(GrRenderTarget*, GrXferBarrierType) override;
 
     bool setBackendTextureState(const GrBackendTexture&,
-                                const GrBackendSurfaceMutableState&,
-                                GrBackendSurfaceMutableState* previousState,
+                                const skgpu::MutableTextureState&,
+                                skgpu::MutableTextureState* previousState,
                                 sk_sp<skgpu::RefCntedCallback> finishedCallback) override;
 
     bool setBackendRenderTargetState(const GrBackendRenderTarget&,
-                                     const GrBackendSurfaceMutableState&,
-                                     GrBackendSurfaceMutableState* previousState,
+                                     const skgpu::MutableTextureState&,
+                                     skgpu::MutableTextureState* previousState,
                                      sk_sp<skgpu::RefCntedCallback> finishedCallback) override;
 
     void deleteBackendTexture(const GrBackendTexture&) override;
@@ -195,8 +196,8 @@ public:
     void endRenderPass(GrRenderTarget* target, GrSurfaceOrigin origin, const SkIRect& bounds);
 
     // Returns true if VkResult indicates success and also checks for device lost or OOM. Every
-    // Vulkan call (and GrVkMemoryAllocator call that returns VkResult) made on behalf of the
-    // GrVkGpu should be processed by this function so that we respond to OOMs and lost devices.
+    // Vulkan call (and skgpu::VulkanMemoryAllocator call that returns VkResult) made on behalf of
+    // the GrVkGpu should be processed by this function so that we respond to OOMs and lost devices.
     bool checkVkResult(VkResult);
 
 private:
@@ -205,9 +206,13 @@ private:
         kSkip_SyncQueue
     };
 
-    GrVkGpu(GrDirectContext*, const GrVkBackendContext&, const sk_sp<GrVkCaps> caps,
-            sk_sp<const GrVkInterface>, uint32_t instanceVersion, uint32_t physicalDeviceVersion,
-            sk_sp<GrVkMemoryAllocator>);
+    GrVkGpu(GrDirectContext*,
+            const GrVkBackendContext&,
+            const sk_sp<GrVkCaps> caps,
+            sk_sp<const skgpu::VulkanInterface>,
+            uint32_t instanceVersion,
+            uint32_t physicalDeviceVersion,
+            sk_sp<skgpu::VulkanMemoryAllocator>);
 
     void destroyResources();
 
@@ -232,10 +237,10 @@ private:
                                           size_t length) override;
 
     bool setBackendSurfaceState(GrVkImageInfo info,
-                                sk_sp<GrBackendSurfaceMutableStateImpl> currentState,
+                                sk_sp<skgpu::MutableTextureStateRef> currentState,
                                 SkISize dimensions,
-                                const GrVkSharedImageInfo& newInfo,
-                                GrBackendSurfaceMutableState* previousState,
+                                const skgpu::VulkanMutableTextureState& newState,
+                                skgpu::MutableTextureState* previousState,
                                 sk_sp<skgpu::RefCntedCallback> finishedCallback);
 
     sk_sp<GrTexture> onCreateTexture(SkISize,
@@ -308,8 +313,9 @@ private:
                               sk_sp<GrGpuBuffer>,
                               size_t offset) override;
 
-    bool onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
-                       const SkIPoint& dstPoint) override;
+    bool onCopySurface(GrSurface* dst, const SkIRect& dstRect,
+                       GrSurface* src, const SkIRect& srcRect,
+                       GrSamplerState::Filter) override;
 
     void addFinishedProc(GrGpuFinishedProc finishedProc,
                          GrGpuFinishedContext finishedContext) override;
@@ -329,7 +335,7 @@ private:
     void prepareSurfacesForBackendAccessAndStateUpdates(
             SkSpan<GrSurfaceProxy*> proxies,
             SkSurface::BackendSurfaceAccess access,
-            const GrBackendSurfaceMutableState* newState) override;
+            const skgpu::MutableTextureState* newState) override;
 
     bool onSubmitToGpu(bool syncCpu) override;
 
@@ -355,7 +361,8 @@ private:
                            GrVkImage* dstImage,
                            GrVkImage* srcImage,
                            const SkIRect& srcRect,
-                           const SkIPoint& dstPoint);
+                           const SkIRect& dstRect,
+                           GrSamplerState::Filter filter);
 
     void copySurfaceAsResolve(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
                               const SkIPoint& dstPoint);
@@ -386,8 +393,8 @@ private:
                                         GrVkImageInfo*,
                                         GrProtected);
 
-    sk_sp<const GrVkInterface>                            fInterface;
-    sk_sp<GrVkMemoryAllocator>                            fMemoryAllocator;
+    sk_sp<const skgpu::VulkanInterface>                   fInterface;
+    sk_sp<skgpu::VulkanMemoryAllocator>                   fMemoryAllocator;
     sk_sp<GrVkCaps>                                       fVkCaps;
     bool                                                  fDeviceIsLost = false;
 

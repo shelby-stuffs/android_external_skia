@@ -563,8 +563,7 @@ DEF_TEST(SkRasterPipeline_lowp_clamp01, r) {
     SkRasterPipeline_<256> p;
     p.append(SkRasterPipeline::load_8888,  &ptr);
     p.append(SkRasterPipeline::swap_rb);
-    p.append(SkRasterPipeline::clamp_0);
-    p.append(SkRasterPipeline::clamp_1);
+    p.append(SkRasterPipeline::clamp_01);
     p.append(SkRasterPipeline::store_8888, &ptr);
     p.run(0,0,1,1);
 }
@@ -586,19 +585,10 @@ public:
     };
 
     static Behavior GrowthBehavior() {
-#if SK_HAS_MUSTTAIL
-        // Wih the musttail attribute, we expect ALL addresses to match the baseline
-        return Behavior::kBaseline;
-#else
-    #ifdef SK_DEBUG
-        // In debug builds without musttail, we expect actual stack growth
-        return Behavior::kGrowth;
-    #else
-        // In release builds without musttail, it's possible that the compiler will (or won't)
-        // apply tail call optimization, so we can't make any prediction about stack growth
+        // Without the musttail attribute, we have no way of knowing what's going to happen.
+        // In release builds, it's likely that the compiler will apply tail call optimization.
+        // Even in some debug builds (on Windows), we don't see stack growth.
         return Behavior::kUnknown;
-    #endif
-#endif
     }
 
     // Call one of these two each time the checker callback is added:
@@ -615,6 +605,12 @@ public:
     void validate(skiatest::Reporter* r) {
         REPORTER_ASSERT(r, fStackAddrs.size() == fExpectedBehavior.size());
 
+        // This test is storing and comparing stack pointers (to dead stack frames) as a way of
+        // measuring stack usage. Unsurprisingly, ASAN doesn't like that. HWASAN actually inserts
+        // tag bytes in the pointers, causing them not to match. Newer versions of vanilla ASAN
+        // also appear to salt the stack slightly, causing repeated calls to scrape different
+        // addresses, even though $rsp is identical on each invocation of the lambda.
+#if !defined(SK_SANITIZE_ADDRESS)
         void* baseline = fStackAddrs[0];
         for (size_t i = 1; i < fStackAddrs.size(); i++) {
             if (fExpectedBehavior[i] == Behavior::kGrowth) {
@@ -625,6 +621,7 @@ public:
                 // Unknown behavior, nothing we can assert here
             }
         }
+#endif
     }
 
 private:

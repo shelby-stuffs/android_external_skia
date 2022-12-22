@@ -1,12 +1,39 @@
+EXPORTER_TOOL=bazel-bin/bazel/exporter_tool/exporter_tool_/exporter_tool
+EXPORTER_RULES=-rule='//src/...' -rule='//modules/...' -rule='//include/...'
+
 generate:
 	echo "You do not need to run this any more for C++ code, only if you modify go code"
 
 generate_go:
-	cd .. && bazelisk run //:gazelle -- update infra/bots/task_drivers modules/canvaskit/go bazel/exporter
+	cd .. && bazelisk run //:gazelle -- update infra/bots/task_drivers modules/canvaskit/go \
+       bazel/exporter  bazel/deps_parser tools/gpu/gl/interface
 
 .PHONY: generate_cmake
 generate_cmake:
-	cd .. && bazel build //bazel/exporter_tool && bazel-bin/bazel/exporter_tool/exporter_tool_/exporter_tool -proj_name=Skia -rule='//:skia_public'
+	cd .. && bazelisk build //bazel/exporter_tool && ${EXPORTER_TOOL} \
+		-output_format=cmake -proj_name=Skia -rule='//:skia_public'
+
+.PHONY: generate_gni
+generate_gni:
+	# It is tempting to try to put this into a blaze run command. However, that
+	# is currently infeasible due to the fact that the exporter tool *calls*
+	# Bazel, resulting in a deadlock because only one Bazel command can run
+	# at a time.
+	cd .. && bazelisk build //bazel/exporter_tool && \
+        ${EXPORTER_TOOL} -output_format=gni -proj_name=Skia ${EXPORTER_RULES} \
+		&& bazelisk run //bazel/external/gn -- format gn/*.gni modules/*/*.gni
+
+.PHONY: generate_gni_rbe
+generate_gni_rbe:
+	cd .. && bazelisk build //bazel/exporter_tool --config=linux_rbe --jobs=100 \
+ 			--remote_download_toplevel && \
+        ${EXPORTER_TOOL} -output_format=gni -proj_name=Skia ${EXPORTER_RULES} \
+		&& bazelisk run //bazel/external/gn -- format gn/*.gni modules/*/*.gni
+
+.PHONY: check_gni
+check_gni:
+	cd .. && bazelisk build //bazel/exporter_tool && ${EXPORTER_TOOL} \
+		-output_format=gni -proj_name=Skia ${EXPORTER_RULES} -check_current
 
 .PHONY: mocks
 mocks:
@@ -51,9 +78,22 @@ rbe_known_good_builds:
 	bazelisk build //modules/canvaskit:canvaskit --config=linux_rbe \
 		--config=ck_full_webgl2_debug --remote_download_minimal
 
+rbe_known_good_tests:
+	bazel test //tests/... --config=cpu_only_debug --config=linux_rbe \
+		--remote_download_minimal --test_output=errors
+
 iwyu_rbe:
-	bazelisk build //:skia_public --config=for_linux_x64_with_rbe --config=enforce_iwyu \
-	 	--remote_download_minimal --nobuild_runfile_manifests
+	bazelisk build //:skia_public --config=for_linux_x64_with_rbe \
+		--config=enforce_iwyu --remote_download_minimal --nobuild_runfile_manifests
+	bazelisk build //modules/skottie:skottie_tool_gpu --config=for_linux_x64_with_rbe \
+		--config=enforce_iwyu --remote_download_minimal --nobuild_runfile_manifests
+	bazelisk build //tests/... --config=for_linux_x64_with_rbe \
+		--config=enforce_iwyu --remote_download_minimal --nobuild_runfile_manifests
 
 iwyu:
-	bazelisk build //:skia_public --config=enforce_iwyu --nobuild_runfile_manifests
+	bazelisk build //:skia_public --config=enforce_iwyu \
+		--nobuild_runfile_manifests
+	bazelisk build //modules/skottie:skottie_tool_gpu --config=enforce_iwyu \
+		--nobuild_runfile_manifests
+	bazelisk build //tests/... --config=enforce_iwyu \
+		--nobuild_runfile_manifests

@@ -7,6 +7,8 @@
 
 #include "tools/debugger/DebugCanvas.h"
 
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkClipOp.h"
 #include "include/core/SkData.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
@@ -133,19 +135,24 @@ DebugCanvas::DebugCanvas(int width, int height)
 DebugCanvas::DebugCanvas(SkIRect bounds)
         : DebugCanvas(bounds.width(), bounds.height()) {}
 
-DebugCanvas::~DebugCanvas() { fCommandVector.deleteAll(); }
+DebugCanvas::~DebugCanvas() {
+    for (DrawCommand* p : fCommandVector) {
+        delete p;
+    }
+    fCommandVector.reset();
+}
 
 void DebugCanvas::addDrawCommand(DrawCommand* command) { fCommandVector.push_back(command); }
 
 void DebugCanvas::draw(SkCanvas* canvas) {
-    if (!fCommandVector.isEmpty()) {
-        this->drawTo(canvas, fCommandVector.count() - 1);
+    if (!fCommandVector.empty()) {
+        this->drawTo(canvas, fCommandVector.size() - 1);
     }
 }
 
 void DebugCanvas::drawTo(SkCanvas* originalCanvas, int index, int m) {
-    SkASSERT(!fCommandVector.isEmpty());
-    SkASSERT(index < fCommandVector.count());
+    SkASSERT(!fCommandVector.empty());
+    SkASSERT(index < fCommandVector.size());
 
     int saveCount = originalCanvas->save();
 
@@ -274,13 +281,13 @@ void DebugCanvas::drawTo(SkCanvas* originalCanvas, int index, int m) {
 }
 
 void DebugCanvas::deleteDrawCommandAt(int index) {
-    SkASSERT(index < fCommandVector.count());
+    SkASSERT(index < fCommandVector.size());
     delete fCommandVector[index];
     fCommandVector.remove(index);
 }
 
 DrawCommand* DebugCanvas::getDrawCommandAt(int index) const {
-    SkASSERT(index < fCommandVector.count());
+    SkASSERT(index < fCommandVector.size());
     return fCommandVector[index];
 }
 
@@ -633,7 +640,7 @@ void DebugCanvas::didSetM44(const SkM44& matrix) {
 }
 
 void DebugCanvas::toggleCommand(int index, bool toggle) {
-    SkASSERT(index < fCommandVector.count());
+    SkASSERT(index < fCommandVector.size());
     fCommandVector[index]->setVisible(toggle);
 }
 

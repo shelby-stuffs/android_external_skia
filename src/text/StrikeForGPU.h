@@ -79,12 +79,10 @@ public:
     // rectangle will be in device space, and for transformed masks this rectangle will be in
     // source space.
     virtual SkRect prepareForMaskDrawing(
-                SkScalar strikeToSourceScale,
                 SkDrawableGlyphBuffer* accepted,
                 SkSourceGlyphBuffer* rejected) = 0;
 
     virtual SkRect prepareForSDFTDrawing(
-                SkScalar strikeToSourceScale,
                 SkDrawableGlyphBuffer* accepted,
                 SkSourceGlyphBuffer* rejected) = 0;
 

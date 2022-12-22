@@ -67,8 +67,11 @@
         s['_ellipsisLen'] = 0;
       }
 
-      s['heightMultiplier'] = s['heightMultiplier'] || 0;
+      if (s['heightMultiplier'] == null) {
+        s['heightMultiplier'] = -1
+      }
       s['maxLines'] = s['maxLines'] || 0;
+      s['replaceTabCharacters'] = s['replaceTabCharacters'] || false;
       s['strutStyle'] = strutStyle(s['strutStyle']);
       s['textAlign'] = s['textAlign'] || CanvasKit.TextAlign.Start;
       s['textDirection'] = s['textDirection'] || CanvasKit.TextDirection.LTR;
@@ -100,8 +103,12 @@
             s['_fontFamiliesLen'] = 0;
         }
         s['fontStyle'] = fontStyle(s['fontStyle']);
-        s['fontSize'] = s['fontSize'] || 0;
-        s['heightMultiplier'] = s['heightMultiplier'] || 0;
+        if (s['fontSize'] == null) {
+          s['fontSize'] = -1
+        }
+        if (s['heightMultiplier'] == null) {
+          s['heightMultiplier'] = -1
+        }
         s['halfLeading'] = s['halfLeading'] || false;
         s['leading'] = s['leading'] || 0;
         s['forceStrutHeight'] = s['forceStrutHeight'] || false;
@@ -118,10 +125,14 @@
       s['decorationThickness'] = s['decorationThickness'] || 0;
       s['decorationStyle'] = s['decorationStyle'] || CanvasKit.DecorationStyle.Solid;
       s['textBaseline'] = s['textBaseline'] || CanvasKit.TextBaseline.Alphabetic;
-      s['fontSize'] = s['fontSize'] || 0;
+      if (s['fontSize'] == null) {
+        s['fontSize'] = -1
+      }
       s['letterSpacing'] = s['letterSpacing'] || 0;
       s['wordSpacing'] = s['wordSpacing'] || 0;
-      s['heightMultiplier'] = s['heightMultiplier'] || 0;
+      if (s['heightMultiplier'] == null) {
+        s['heightMultiplier'] = -1
+      }
       s['halfLeading'] = s['halfLeading'] || false;
       s['fontStyle'] = fontStyle(s['fontStyle']);
 
@@ -319,6 +330,25 @@
       baseline = baseline || CanvasKit.TextBaseline.Alphabetic;
       offset = offset || 0;
       this._addPlaceholder(width, height, alignment, baseline, offset);
+    };
+
+    CanvasKit.ParagraphBuilder.prototype.buildWithClientInfo =
+          function(bidiRegions, words, graphemeBreaks, lineBreaks) {
+
+      var bPtr = copy1dArray(bidiRegions, 'HEAPU32');
+      var wPtr = copy1dArray(words, 'HEAPU32');
+      var gPtr = copy1dArray(graphemeBreaks, 'HEAPU32');
+      var lPtr = copy1dArray(lineBreaks, 'HEAPU32');
+      var para = this._buildWithClientInfo(
+                          bPtr, bidiRegions && bidiRegions.length || 0,
+                          wPtr, words && words.length || 0,
+                          gPtr, graphemeBreaks && graphemeBreaks.length || 0,
+                          lPtr, lineBreaks && lineBreaks.length || 0);
+      freeArraysThatAreNotMallocedByUsers(bPtr,     bidiRegions);
+      freeArraysThatAreNotMallocedByUsers(wPtr,     words);
+      freeArraysThatAreNotMallocedByUsers(gPtr,     graphemeBreaks);
+      freeArraysThatAreNotMallocedByUsers(lPtr,     lineBreaks);
+      return para;
     };
 });
 }(Module)); // When this file is loaded in, the high level object is "Module";

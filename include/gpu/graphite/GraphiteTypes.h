@@ -43,14 +43,6 @@ enum class SyncToCpu : bool {
 };
 
 /**
- * Possible 3D APIs that may be used by Graphite.
- */
-enum class BackendApi : unsigned {
-    kMetal,
-    kMock,
-};
-
-/**
  * Is the texture mipmapped or not
  */
 enum class Mipmapped : bool {
@@ -58,12 +50,13 @@ enum class Mipmapped : bool {
     kYes = true,
 };
 
-/**
- * Is the data protected on the GPU or not.
+/*
+ * Only relevant for Promise Images - should the Promise Image be fulfilled every time a
+ * Recording that references it is inserted into the Context.
  */
-enum class Protected : bool {
-    kNo = false,
-    kYes = true,
+enum class Volatile : bool {
+    kNo = false,              // only fulfilled once
+    kYes = true               // fulfilled on every insertion call
 };
 
 } // namespace skgpu::graphite

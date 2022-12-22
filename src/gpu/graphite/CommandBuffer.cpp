@@ -30,6 +30,13 @@ void CommandBuffer::releaseResources() {
     fTrackedResources.reset();
 }
 
+void CommandBuffer::resetCommandBuffer() {
+    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
+
+    this->releaseResources();
+    this->onResetCommandBuffer();
+}
+
 void CommandBuffer::trackResource(sk_sp<Resource> resource) {
     fTrackedResources.push_back(std::move(resource));
 }
@@ -129,6 +136,25 @@ bool CommandBuffer::copyBufferToTexture(const Buffer* buffer,
     }
 
     this->trackResource(std::move(texture));
+
+    SkDEBUGCODE(fHasWork = true;)
+
+    return true;
+}
+
+bool CommandBuffer::copyTextureToTexture(sk_sp<Texture> src,
+                                         SkIRect srcRect,
+                                         sk_sp<Texture> dst,
+                                         SkIPoint dstPoint) {
+    SkASSERT(src);
+    SkASSERT(dst);
+
+    if (!this->onCopyTextureToTexture(src.get(), srcRect, dst.get(), dstPoint)) {
+        return false;
+    }
+
+    this->trackResource(std::move(src));
+    this->trackResource(std::move(dst));
 
     SkDEBUGCODE(fHasWork = true;)
 

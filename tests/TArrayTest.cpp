@@ -5,10 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkRefCnt.h"
 #include "include/private/SkTArray.h"
 #include "include/utils/SkRandom.h"
 #include "tests/Test.h"
+
+#include <array>
+#include <cstdint>
+#include <initializer_list>
+#include <utility>
 
 // This class is used to test SkTArray's behavior with classes containing a vtable.
 
@@ -89,7 +93,8 @@ template <typename T> static void test_construction(skiatest::Reporter* reporter
     // Single integer: Creates an empty array that will preallocate space for reserveCount elements.
     T arrayReserve(15);
     REPORTER_ASSERT(reporter, arrayReserve.empty());
-    REPORTER_ASSERT(reporter, arrayReserve.capacity() == 15);
+    // May get some extra elements for free because sk_allocate_* can round up.
+    REPORTER_ASSERT(reporter, arrayReserve.capacity() >= 15 && arrayReserve.capacity() < 50);
 
     // Another array, const&: Copies one array to another.
     T arrayInitial;
@@ -329,7 +334,7 @@ template <typename Array> static void test_array_reserve(skiatest::Reporter* rep
         // Two steps forward, one step back
         if (random.nextULessThan(3) < 2) {
             array->push_back();
-        } else if (array->count() > 0) {
+        } else if (array->size() > 0) {
             array->pop_back();
         }
         REPORTER_ASSERT(reporter, array->capacity() >= reserveCount);

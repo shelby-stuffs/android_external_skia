@@ -1,9 +1,9 @@
 /*
-* Copyright 2016 Google Inc.
-*
-* Use of this source code is governed by a BSD-style license that can be
-* found in the LICENSE file.
-*/
+ * Copyright 2016 Google Inc.
+ *
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ */
 
 #include "tools/viewer/Viewer.h"
 
@@ -197,34 +197,46 @@ static DEFINE_bool(binaryarchive, false, "Enable MTLBinaryArchive use (if availa
 static_assert(false, "viewer requires GL backend for raster.")
 #endif
 
-const char* kBackendTypeStrings[sk_app::Window::kBackendTypeCount] = {
-    "OpenGL",
+const char* get_backend_string(sk_app::Window::BackendType type) {
+    switch (type) {
+        case sk_app::Window::kNativeGL_BackendType: return "OpenGL";
 #if SK_ANGLE && defined(SK_BUILD_FOR_WIN)
-    "ANGLE",
+        case sk_app::Window::kANGLE_BackendType: return "ANGLE";
 #endif
 #ifdef SK_DAWN
-    "Dawn",
+        case sk_app::Window::kDawn_BackendType: return "Dawn";
+#ifdef SK_GRAPHITE_ENABLED
+        case sk_app::Window::kGraphiteDawn_BackendType: return "Dawn (Graphite)";
+#endif
 #endif
 #ifdef SK_VULKAN
-    "Vulkan",
+        case sk_app::Window::kVulkan_BackendType: return "Vulkan";
 #endif
 #ifdef SK_METAL
-    "Metal",
+        case sk_app::Window::kMetal_BackendType: return "Metal";
 #ifdef SK_GRAPHITE_ENABLED
-    "Metal (Graphite)",
+        case sk_app::Window::kGraphiteMetal_BackendType: return "Metal (Graphite)";
 #endif
 #endif
 #ifdef SK_DIRECT3D
-    "Direct3D",
+        case sk_app::Window::kDirect3D_BackendType: return "Direct3D";
 #endif
-    "Raster"
-};
+        case sk_app::Window::kRaster_BackendType: return "Raster";
+    }
+    SkASSERT(false);
+    return nullptr;
+}
 
 static sk_app::Window::BackendType get_backend_type(const char* str) {
 #ifdef SK_DAWN
     if (0 == strcmp(str, "dawn")) {
         return sk_app::Window::kDawn_BackendType;
     } else
+#ifdef SK_GRAPHITE_ENABLED
+    if (0 == strcmp(str, "grdawn")) {
+        return sk_app::Window::kGraphiteDawn_BackendType;
+    } else
+#endif
 #endif
 #ifdef SK_VULKAN
     if (0 == strcmp(str, "vk")) {
@@ -307,10 +319,6 @@ static Window::BackendType backend_type_for_window(Window::BackendType backendTy
 }
 
 class NullSlide : public Slide {
-    SkISize getDimensions() const override {
-        return SkISize::Make(640, 480);
-    }
-
     void draw(SkCanvas* canvas) override {
         canvas->clear(0xffff11ff);
     }
@@ -763,12 +771,12 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
 }
 
 void Viewer::initSlides() {
-    using SlideFactory = sk_sp<Slide>(*)(const SkString& name, const SkString& path);
+    using SlideMaker = sk_sp<Slide> (*)(const SkString& name, const SkString& path);
     static const struct {
         const char*                            fExtension;
         const char*                            fDirName;
         const CommandLineFlags::StringArray&   fFlags;
-        const SlideFactory                     fFactory;
+        const SlideMaker                       fFactory;
     } gExternalSlidesInfo[] = {
         { ".mskp", "mskp-dir", FLAGS_mskps,
           [](const SkString& name, const SkString& path) -> sk_sp<Slide> {
@@ -806,17 +814,16 @@ void Viewer::initSlides() {
 
     SkTArray<sk_sp<Slide>> dirSlides;
 
-    const auto addSlide =
-            [&](const SkString& name, const SkString& path, const SlideFactory& fact) {
-                if (CommandLineFlags::ShouldSkip(FLAGS_match, name.c_str())) {
-                    return;
-                }
+    const auto addSlide = [&](const SkString& name, const SkString& path, const SlideMaker& fact) {
+        if (CommandLineFlags::ShouldSkip(FLAGS_match, name.c_str())) {
+            return;
+        }
 
-                if (auto slide = fact(name, path)) {
-                    dirSlides.push_back(slide);
-                    fSlides.push_back(std::move(slide));
-                }
-            };
+        if (auto slide = fact(name, path)) {
+            dirSlides.push_back(slide);
+            fSlides.push_back(std::move(slide));
+        }
+    };
 
     if (!FLAGS_file.isEmpty()) {
         // single file mode
@@ -842,7 +849,7 @@ void Viewer::initSlides() {
     if (!FLAGS_bisect.isEmpty()) {
         sk_sp<BisectSlide> bisect = BisectSlide::Create(FLAGS_bisect[0]);
         if (bisect && !CommandLineFlags::ShouldSkip(FLAGS_match, bisect->getName().c_str())) {
-            if (FLAGS_bisect.count() >= 2) {
+            if (FLAGS_bisect.size() >= 2) {
                 for (const char* ch = FLAGS_bisect[1]; *ch; ++ch) {
                     bisect->onChar(*ch);
                 }
@@ -875,16 +882,15 @@ void Viewer::initSlides() {
         }
     }
 
-    std::sort(fSlides.begin() + firstSample, fSlides.end(), orderBySlideName);
-
-    // Particle demo
-    {
-        // TODO: Convert this to a sample
-        auto slide = sk_make_sp<ParticlesSlide>();
+    // Registered slides are replacing Samples.
+    for (const SlideFactory& factory : SlideRegistry::Range()) {
+        auto slide = sk_sp<Slide>(factory());
         if (!CommandLineFlags::ShouldSkip(FLAGS_match, slide->getName().c_str())) {
-            fSlides.push_back(std::move(slide));
+            fSlides.push_back(slide);
         }
     }
+
+    std::sort(fSlides.begin() + firstSample, fSlides.end(), orderBySlideName);
 
     // Runtime shader editor
     {
@@ -1116,7 +1122,7 @@ void Viewer::updateTitle() {
     }
 
     title.append(" [");
-    title.append(kBackendTypeStrings[fBackendType]);
+    title.append(get_backend_string(fBackendType));
     int msaa = fWindow->sampleCount();
     if (msaa > 1) {
         title.appendf(" MSAA: %i", msaa);
@@ -1182,14 +1188,20 @@ void Viewer::setCurrentSlide(int slide) {
     this->setupCurrentSlide();
 }
 
+SkISize Viewer::currentSlideSize() const {
+    if (auto size = fSlides[fCurrentSlide]->getDimensions(); !size.isEmpty()) {
+        return size;
+    }
+    return {fWindow->width(), fWindow->height()};
+}
+
 void Viewer::setupCurrentSlide() {
     if (fCurrentSlide >= 0) {
         // prepare dimensions for image slides
         fGesture.resetTouchState();
         fDefaultMatrix.reset();
 
-        const SkISize slideSize = fSlides[fCurrentSlide]->getDimensions();
-        const SkRect slideBounds = SkRect::MakeIWH(slideSize.width(), slideSize.height());
+        const SkRect slideBounds = SkRect::Make(this->currentSlideSize());
         const SkRect windowRect = SkRect::MakeIWH(fWindow->width(), fWindow->height());
 
         // Start with a matrix that scales the slide to the available screen space
@@ -1223,8 +1235,7 @@ void Viewer::changeZoomLevel(float delta) {
 
 void Viewer::preTouchMatrixChanged() {
     // Update the trans limit as the transform changes.
-    const SkISize slideSize = fSlides[fCurrentSlide]->getDimensions();
-    const SkRect slideBounds = SkRect::MakeIWH(slideSize.width(), slideSize.height());
+    const SkRect slideBounds = SkRect::Make(this->currentSlideSize());
     const SkRect windowRect = SkRect::MakeIWH(fWindow->width(), fWindow->height());
     fGesture.setTransLimit(slideBounds, windowRect, this->computePreTouchMatrix());
 }
@@ -1253,7 +1264,7 @@ SkMatrix Viewer::computePreTouchMatrix() {
     m.preTranslate((fOffset.x() - 0.5f) * 2.0f, (fOffset.y() - 0.5f) * 2.0f);
     m.preScale(zoomScale, zoomScale);
 
-    const SkISize slideSize = fSlides[fCurrentSlide]->getDimensions();
+    const SkISize slideSize = this->currentSlideSize();
     m.preRotate(fRotation, slideSize.width() * 0.5f, slideSize.height() * 0.5f);
 
     if (kPerspective_Real == fPerspectiveMode) {
@@ -1528,9 +1539,8 @@ void Viewer::drawSlide(SkSurface* surface) {
 
     if (fSaveToSKP) {
         SkPictureRecorder recorder;
-        SkCanvas* recorderCanvas = recorder.beginRecording(
-                SkRect::Make(fSlides[fCurrentSlide]->getDimensions()));
-        fSlides[fCurrentSlide]->draw(recorderCanvas);
+        SkCanvas* recorderCanvas = recorder.beginRecording(SkRect::Make(this->currentSlideSize()));
+        fSlides[fCurrentSlide]->draw(fWindow->graphiteContext(), recorderCanvas);
         sk_sp<SkPicture> picture(recorder.finishRecordingAsPicture());
         SkFILEWStream stream("sample_app.skp");
         picture->serialize(&stream);
@@ -1584,8 +1594,7 @@ void Viewer::drawSlide(SkSurface* surface) {
     SkCanvas* recorderRestoreCanvas = nullptr;
     if (fDrawViaSerialize) {
         recorderRestoreCanvas = slideCanvas;
-        slideCanvas = recorder.beginRecording(
-                SkRect::Make(fSlides[fCurrentSlide]->getDimensions()));
+        slideCanvas = recorder.beginRecording(SkRect::Make(this->currentSlideSize()));
     }
 
     int count = slideCanvas->save();
@@ -1599,7 +1608,7 @@ void Viewer::drawSlide(SkSurface* surface) {
             for (int x = 0; x < fWindow->width(); x += tileW) {
                 SkAutoCanvasRestore acr(slideCanvas, true);
                 slideCanvas->clipRect(SkRect::MakeXYWH(x, y, tileW, tileH));
-                fSlides[fCurrentSlide]->draw(slideCanvas);
+                fSlides[fCurrentSlide]->draw(fWindow->graphiteContext(), slideCanvas);
             }
         }
 
@@ -1623,9 +1632,9 @@ void Viewer::drawSlide(SkSurface* surface) {
             OveridePaintFilterCanvas filterCanvas(slideCanvas,
                                                   &fPaint, &fPaintOverrides,
                                                   &fFont, &fFontOverrides);
-            fSlides[fCurrentSlide]->draw(&filterCanvas);
+            fSlides[fCurrentSlide]->draw(fWindow->graphiteContext(), &filterCanvas);
         } else {
-            fSlides[fCurrentSlide]->draw(slideCanvas);
+            fSlides[fCurrentSlide]->draw(fWindow->graphiteContext(), slideCanvas);
         }
     }
     fStatsLayer.endTiming(fPaintTimer);
@@ -1665,7 +1674,7 @@ void Viewer::drawSlide(SkSurface* surface) {
         SkCanvas* canvas = surface->getCanvas();
         SkAutoCanvasRestore acr(canvas, true);
         canvas->concat(this->computeMatrix());
-        SkRect r = SkRect::Make(fSlides[fCurrentSlide]->getDimensions());
+        SkRect r = SkRect::Make(this->currentSlideSize());
         SkPaint paint;
         paint.setColor(0x40FFFF00);
         canvas->drawRect(r, paint);
@@ -1733,11 +1742,11 @@ bool Viewer::onTouch(intptr_t owner, skui::InputState state, float x, float y) {
                 // swiping left or right
                 if (SkTAbs(dir.fX) > SkTAbs(dir.fY)) {
                     if (dir.fX < 0) {
-                        this->setCurrentSlide(fCurrentSlide < fSlides.count() - 1 ?
+                        this->setCurrentSlide(fCurrentSlide < fSlides.size() - 1 ?
                                               fCurrentSlide + 1 : 0);
                     } else {
                         this->setCurrentSlide(fCurrentSlide > 0 ?
-                                              fCurrentSlide - 1 : fSlides.count() - 1);
+                                              fCurrentSlide - 1 : fSlides.size() - 1);
                     }
                 }
                 fGesture.reset();
@@ -1876,20 +1885,19 @@ static bool ImGui_DragQuad(SkPoint* pts) {
 }
 
 static std::string build_sksl_highlight_shader() {
-    return std::string("out half4 sk_FragColor;\n"
-                        "void main() { sk_FragColor = half4(1, 0, 1, 0.5); }");
+    return std::string("void main() { sk_FragColor = half4(1, 0, 1, 0.5); }");
 }
 
 static std::string build_metal_highlight_shader(const std::string& inShader) {
     // Metal fragment shaders need a lot of non-trivial boilerplate that we don't want to recompute
     // here. So keep all shader code, but right before `return *_out;`, swap out the sk_FragColor.
-    size_t pos = inShader.rfind("return *_out;\n");
+    size_t pos = inShader.rfind("return _out;\n");
     if (pos == std::string::npos) {
         return inShader;
     }
 
     std::string replacementShader = inShader;
-    replacementShader.insert(pos, "_out->sk_FragColor = float4(1.0, 0.0, 1.0, 0.5); ");
+    replacementShader.insert(pos, "_out.sk_FragColor = float4(1.0, 0.0, 1.0, 0.5); ");
     return replacementShader;
 }
 
@@ -2995,10 +3003,11 @@ void Viewer::updateUIState() {
         });
 
     // Backend state
-    WriteStateObject(writer, kBackendStateName, kBackendTypeStrings[fBackendType],
+    WriteStateObject(writer, kBackendStateName, get_backend_string(fBackendType),
         [](SkJSONWriter& writer) {
-            for (const auto& str : kBackendTypeStrings) {
-                writer.appendCString(str);
+            for (int i = 0; i < sk_app::Window::kBackendTypeCount; ++i) {
+                auto backendType = static_cast<sk_app::Window::BackendType>(i);
+                writer.appendCString(get_backend_string(backendType));
             }
         });
 
@@ -3081,9 +3090,10 @@ void Viewer::onUIStateChanged(const SkString& stateName, const SkString& stateVa
         SkDebugf("Slide not found: %s", stateValue.c_str());
     } else if (stateName.equals(kBackendStateName)) {
         for (int i = 0; i < sk_app::Window::kBackendTypeCount; i++) {
-            if (stateValue.equals(kBackendTypeStrings[i])) {
+            auto backendType = static_cast<sk_app::Window::BackendType>(i);
+            if (stateValue.equals(get_backend_string(backendType))) {
                 if (fBackendType != i) {
-                    fBackendType = (sk_app::Window::BackendType)i;
+                    fBackendType = backendType;
                     for(auto& slide : fSlides) {
                         slide->gpuTeardown();
                     }

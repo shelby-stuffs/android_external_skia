@@ -227,7 +227,8 @@ void update_gl_texture(void* context, GrDirectContext* dContext) {
 }
 
 static GrBackendTexture make_gl_backend_texture(
-        GrDirectContext* dContext, AHardwareBuffer* hardwareBuffer,
+        GrDirectContext* dContext,
+        AHardwareBuffer* hardwareBuffer,
         int width, int height,
         DeleteImageProc* deleteProc,
         UpdateImageProc* updateProc,
@@ -499,7 +500,7 @@ static GrBackendTexture make_vk_backend_texture(
         return GrBackendTexture();
     }
 
-    GrVkAlloc alloc;
+    skgpu::VulkanAlloc alloc;
     alloc.fMemory = memory;
     alloc.fOffset = 0;
     alloc.fSize = hwbProps.allocationSize;
@@ -563,7 +564,8 @@ static bool can_import_protected_content(GrDirectContext* dContext) {
     return false;
 }
 
-GrBackendTexture MakeBackendTexture(GrDirectContext* dContext, AHardwareBuffer* hardwareBuffer,
+GrBackendTexture MakeBackendTexture(GrDirectContext* dContext,
+                                    AHardwareBuffer* hardwareBuffer,
                                     int width, int height,
                                     DeleteImageProc* deleteProc,
                                     UpdateImageProc* updateProc,
@@ -601,4 +603,3 @@ GrBackendTexture MakeBackendTexture(GrDirectContext* dContext, AHardwareBuffer* 
 } // GrAHardwareBufferUtils
 
 #endif
-

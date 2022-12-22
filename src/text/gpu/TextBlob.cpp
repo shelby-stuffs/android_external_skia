@@ -5,17 +5,6 @@
  * found in the LICENSE file.
  */
 
-// -- GPU Text -------------------------------------------------------------------------------------
-// Naming conventions
-//  * drawMatrix - the CTM from the canvas.
-//  * drawOrigin - the x, y location of the drawTextBlob call.
-//  * positionMatrix - this is the combination of the drawMatrix and the drawOrigin:
-//        positionMatrix = drawMatrix * TranslationMatrix(drawOrigin.x, drawOrigin.y);
-//
-// Note:
-//   In order to transform Slugs, you need to set the fSupportBilerpFromGlyphAtlas on
-//   GrContextOptions.
-
 #include "src/text/gpu/TextBlob.h"
 
 #include "include/core/SkMatrix.h"
@@ -121,6 +110,7 @@ public:
 #endif
 
     SkRect sourceBounds() const override { return fSourceBounds; }
+    SkRect sourceBoundsWithOrigin() const override { return fSourceBounds.makeOffset(fOrigin); }
     const SkPaint& initialPaint() const override { return fInitialPaint; }
 
     const SkMatrix& initialPositionMatrix() const { return fSubRuns->initialPosition(); }
@@ -269,7 +259,7 @@ auto TextBlob::Key::Make(const GlyphRunList& glyphRunList,
 
         // Do any runs use direct drawing types?.
         key.fHasSomeDirectSubRuns = false;
-        SkPoint glyphRunListLocation = glyphRunList.sourceBounds().center();
+        SkPoint glyphRunListLocation = glyphRunList.sourceBoundsWithOrigin().center();
         for (auto& run : glyphRunList) {
             SkScalar approximateDeviceTextSize =
                     SkFontPriv::ApproximateTransformedTextSize(run.font(), drawMatrix,
@@ -315,19 +305,14 @@ bool TextBlob::Key::operator==(const TextBlob::Key& that) const {
             return false;
         }
     }
+
     if (fScalerContextFlags != that.fScalerContextFlags) { return false; }
 
-    if (fPositionMatrix.hasPerspective()) {
-        if (fPositionMatrix[SkMatrix::kMPersp0] != that.fPositionMatrix[SkMatrix::kMPersp0] ||
-            fPositionMatrix[SkMatrix::kMPersp1] != that.fPositionMatrix[SkMatrix::kMPersp1] ||
-            fPositionMatrix[SkMatrix::kMPersp2] != that.fPositionMatrix[SkMatrix::kMPersp2]) {
-                return false;
-        }
-    }
+    // DirectSubRuns do not support perspective when used with a TextBlob. SDFT, Transformed,
+    // Path, and Drawable do support perspective.
+    if (fPositionMatrix.hasPerspective() && fHasSomeDirectSubRuns) { return false; }
 
-    if (fHasSomeDirectSubRuns != that.fHasSomeDirectSubRuns) {
-        return false;
-    }
+    if (fHasSomeDirectSubRuns != that.fHasSomeDirectSubRuns) { return false; }
 
     if (fHasSomeDirectSubRuns) {
         auto [compatible, _] = can_use_direct(fPositionMatrix, that.fPositionMatrix);

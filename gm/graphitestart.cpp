@@ -60,8 +60,11 @@ sk_sp<SkShader> create_image_shader(SkCanvas* destCanvas, SkTileMode tmX, SkTile
 
     sk_sp<SkImage> img = SkImage::MakeFromBitmap(bitmap);
     img = ToolUtils::MakeTextureImage(destCanvas, std::move(img));
-
-    return img->makeShader(tmX, tmY, SkSamplingOptions());
+    if (img) {
+        return img->makeShader(tmX, tmY, SkSamplingOptions());
+    } else {
+        return nullptr;
+    }
 }
 
 sk_sp<SkShader> create_blend_shader(SkCanvas* destCanvas, SkBlendMode bm) {
@@ -72,6 +75,15 @@ sk_sp<SkShader> create_blend_shader(SkCanvas* destCanvas, SkBlendMode bm) {
                             std::move(dst),
                             create_image_shader(destCanvas,
                                                 SkTileMode::kRepeat, SkTileMode::kRepeat));
+}
+
+sk_sp<SkColorFilter> create_grayscale_colorfilter() {
+    float matrix[20] = {};
+    matrix[0] = matrix[5] = matrix[10] = 0.2126f;
+    matrix[1] = matrix[6] = matrix[11] = 0.7152f;
+    matrix[2] = matrix[7] = matrix[12] = 0.0722f;
+    matrix[18] = 1.0f;
+    return SkColorFilters::Matrix(matrix);
 }
 
 void draw_image_shader_tile(SkCanvas* canvas, SkRect clipRect) {
@@ -294,7 +306,19 @@ protected:
 
         // Middle-right tile
         {
-            // <add tile here>
+            sk_sp<SkImage> image(GetResourceAsImage("images/mandrill_128.png"));
+            sk_sp<SkShader> shader;
+
+            if (image) {
+                shader = image->makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat, {});
+                shader = shader->makeWithColorFilter(create_grayscale_colorfilter());
+            }
+
+            SkPaint p;
+            p.setShader(std::move(shader));
+
+            SkRect r = SkRect::MakeXYWH(2*kTileWidth, kTileHeight, kTileWidth, kTileHeight);
+            canvas->drawRect(r.makeInset(1.0f, 1.0f), p);
         }
 
         canvas->restore();
@@ -311,7 +335,25 @@ protected:
 
         // Bottom-right corner
         {
-            // <add tile here>
+            const SkRect kTile = SkRect::MakeXYWH(2*kTileWidth, 2*kTileHeight,
+                                                  kTileWidth, kTileHeight);
+
+            SkPaint circlePaint;
+            circlePaint.setColor(SK_ColorBLUE);
+            circlePaint.setBlendMode(SkBlendMode::kSrc);
+
+            canvas->clipRect(kTile);
+            canvas->drawRect(kTile.makeInset(10, 20), circlePaint);
+
+            SkPaint restorePaint;
+            restorePaint.setBlendMode(SkBlendMode::kPlus);
+
+            canvas->saveLayer(nullptr, &restorePaint);
+                circlePaint.setColor(SK_ColorRED);
+                circlePaint.setBlendMode(SkBlendMode::kSrc);
+
+                canvas->drawRect(kTile.makeInset(15, 25), circlePaint);
+            canvas->restore();
         }
     }
 

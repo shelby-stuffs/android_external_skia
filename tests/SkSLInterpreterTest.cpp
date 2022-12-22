@@ -17,11 +17,13 @@
 #include "include/core/SkTypes.h"
 #include "include/private/SkFloatingPoint.h"
 #include "include/private/SkSLProgramKind.h"
+#include "include/private/SkSLString.h"
 #include "include/private/SkTemplates.h"
 #include "src/core/SkVM.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/codegen/SkSLVMCodeGenerator.h"
 #include "src/sksl/ir/SkSLExternalFunction.h"
@@ -29,8 +31,10 @@
 #include "src/sksl/tracing/SkVMDebugTrace.h"
 #include "tests/Test.h"
 
-#include <math.h>
-#include <stdio.h>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -86,16 +90,18 @@ static void verify_values(skiatest::Reporter* r,
     if (!valid) {
         printf("for program: %s\n", src);
         printf("    expected (");
-        const char* separator = "";
-        for (int i = 0; i < N; ++i) {
-            printf("%s%f", separator, expected[i]);
-            separator = ", ";
+        {
+            auto separator = SkSL::String::Separator();
+            for (int i = 0; i < N; ++i) {
+                printf("%s%f", separator().c_str(), expected[i]);
+            }
         }
         printf("), but received (");
-        separator = "";
-        for (int i = 0; i < N; ++i) {
-            printf("%s%f", separator, actual[i]);
-            separator = ", ";
+        {
+            auto separator = SkSL::String::Separator();
+            for (int i = 0; i < N; ++i) {
+                printf("%s%f", separator().c_str(), actual[i]);
+            }
         }
         printf(")\n");
     }

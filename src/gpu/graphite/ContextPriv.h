@@ -9,6 +9,7 @@
 #define skgpu_graphite_ContextPriv_DEFINED
 
 #include "include/gpu/graphite/Context.h"
+#include "src/gpu/graphite/QueueManager.h"
 #include "src/gpu/graphite/SharedContext.h"
 
 class SkShaderCodeDictionary;
@@ -33,6 +34,21 @@ public:
     SkShaderCodeDictionary* shaderCodeDictionary() {
         return fContext->fSharedContext->shaderCodeDictionary();
     }
+
+    void startCapture() {
+        fContext->fQueueManager->startCapture();
+    }
+    void stopCapture() {
+        fContext->fQueueManager->stopCapture();
+    }
+
+    void deregisterRecorder(const Recorder*);
+
+    bool readPixels(Recorder*,
+                    const SkPixmap&,
+                    const TextureProxy*,
+                    const SkImageInfo& srcImageInfo,
+                    int srcX, int srcY);
 #endif
 
 private:

@@ -31,6 +31,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTime.h"
+#include "include/private/SkMacros.h"
 #include "src/core/SkAutoMalloc.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkLeanWindows.h"
@@ -348,7 +349,7 @@ struct GraphiteTarget : public Target {
         // context options when we make the factory here.
         this->factory = std::make_unique<ContextFactory>();
 
-        auto [testCtx, ctx] = this->factory->getContextInfo(this->config.graphiteCtxType);
+        auto [testCtx, ctx] = this->factory->getContextInfo(this->config.ctxType);
         if (!ctx) {
             return false;
         }
@@ -545,7 +546,6 @@ static int setup_gpu_bench(Target* target, Benchmark* bench, int maxGpuFrameLag)
 }
 
 #define kBogusContextType GrContextFactory::kGL_ContextType
-#define kBogusGraphiteContextType skiatest::graphite::ContextFactory::ContextType::kMetal
 #define kBogusContextOverrides GrContextFactory::ContextOverrides::kNone
 
 static std::optional<Config> create_config(const SkCommandLineConfig* config) {
@@ -588,7 +588,6 @@ static std::optional<Config> create_config(const SkCommandLineConfig* config) {
                       sampleCount,
                       ctxType,
                       ctxOverrides,
-                      kBogusGraphiteContextType,
                       gpuConfig->getSurfaceFlags()};
     }
 #ifdef SK_GRAPHITE_ENABLED
@@ -637,9 +636,8 @@ static std::optional<Config> create_config(const SkCommandLineConfig* config) {
                       kPremul_SkAlphaType,
                       config->refColorSpace(),
                       sampleCount,
-                      kBogusContextType,
-                      kBogusContextOverrides,
                       graphiteCtxType,
+                      kBogusContextOverrides,
                       0};
     }
 #endif
@@ -658,7 +656,6 @@ static std::optional<Config> create_config(const SkCommandLineConfig* config) {
                       0,                                                                \
                       kBogusContextType,                                                \
                       kBogusContextOverrides,                                           \
-                      kBogusGraphiteContextType,                                        \
                       0};                                                               \
     }
 
@@ -689,7 +686,7 @@ void create_configs(SkTArray<Config>* configs) {
     }
 
     // If no just default configs were requested, then we're okay.
-    if (array.count() == 0 || FLAGS_config.count() == 0 ||
+    if (array.count() == 0 || FLAGS_config.size() == 0 ||
         // Otherwise, make sure that all specified configs have been created.
         array.count() == configs->count()) {
         return;
@@ -769,7 +766,7 @@ static void cleanup_run(Target* target) {
 static void collect_files(const CommandLineFlags::StringArray& paths,
                           const char*                          ext,
                           SkTArray<SkString>*                  list) {
-    for (int i = 0; i < paths.count(); ++i) {
+    for (int i = 0; i < paths.size(); ++i) {
         if (SkStrEndsWith(paths[i], ext)) {
             list->push_back(SkString(paths[i]));
         } else {
@@ -797,7 +794,7 @@ public:
             exit(1);
         }
 
-        for (int i = 0; i < FLAGS_scales.count(); i++) {
+        for (int i = 0; i < FLAGS_scales.size(); i++) {
             if (1 != sscanf(FLAGS_scales[i], "%f", &fScales.push_back())) {
                 SkDebugf("Can't parse %s from --scales as an SkScalar.\n", FLAGS_scales[i]);
                 exit(1);
@@ -1317,6 +1314,7 @@ static void start_keepalive() {
         }
     });
     (void)intentionallyLeaked;
+    SK_INTENTIONALLY_LEAKED(intentionallyLeaked);
 }
 
 class NanobenchShaderErrorHandler : public GrContextOptions::ShaderErrorHandler {
@@ -1370,21 +1368,21 @@ int main(int argc, char** argv) {
     NanoJSONResultsWriter log(logStream.get(), SkJSONWriter::Mode::kPretty);
     log.beginObject(); // root
 
-    if (1 == FLAGS_properties.count() % 2) {
+    if (1 == FLAGS_properties.size() % 2) {
         SkDebugf("ERROR: --properties must be passed with an even number of arguments.\n");
         return 1;
     }
-    for (int i = 1; i < FLAGS_properties.count(); i += 2) {
+    for (int i = 1; i < FLAGS_properties.size(); i += 2) {
         log.appendCString(FLAGS_properties[i-1], FLAGS_properties[i]);
     }
 
-    if (1 == FLAGS_key.count() % 2) {
+    if (1 == FLAGS_key.size() % 2) {
         SkDebugf("ERROR: --key must be passed with an even number of arguments.\n");
         return 1;
     }
-    if (FLAGS_key.count()) {
+    if (FLAGS_key.size()) {
         log.beginObject("key");
-        for (int i = 1; i < FLAGS_key.count(); i += 2) {
+        for (int i = 1; i < FLAGS_key.size(); i += 2) {
             log.appendCString(FLAGS_key[i - 1], FLAGS_key[i]);
         }
         log.endObject(); // key
@@ -1433,7 +1431,7 @@ int main(int argc, char** argv) {
     // those allocations. If a paint has already occurred, some modules will have already been
     // loaded, so we won't be able to capture a delta for them.
     log.beginObject("results");
-    RunSkSLMemoryBenchmarks(&log);
+    RunSkSLModuleBenchmarks(&log);
 
     int runs = 0;
     BenchmarkStream benchStream;

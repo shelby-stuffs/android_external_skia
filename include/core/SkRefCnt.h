@@ -174,7 +174,7 @@ public:
 
     bool unique() const { return 1 == fRefCnt.load(std::memory_order_acquire); }
     void ref() const { (void)fRefCnt.fetch_add(+1, std::memory_order_relaxed); }
-    void  unref() const {
+    void unref() const {
         if (1 == fRefCnt.fetch_add(-1, std::memory_order_acq_rel)) {
             // restore the 1 for our destructor's assert
             SkDEBUGCODE(fRefCnt.store(1, std::memory_order_relaxed));
@@ -337,6 +337,8 @@ public:
         swap(fPtr, that.fPtr);
     }
 
+    using sk_is_trivially_relocatable = std::true_type;
+
 private:
     T*  fPtr;
 };
@@ -388,8 +390,5 @@ template <typename T> sk_sp<T> sk_ref_sp(T* obj) {
 template <typename T> sk_sp<T> sk_ref_sp(const T* obj) {
     return sk_sp<T>(const_cast<T*>(SkSafeRef(obj)));
 }
-
-template <typename T>
-struct sk_is_trivially_relocatable<sk_sp<T>> : std::true_type {};
 
 #endif

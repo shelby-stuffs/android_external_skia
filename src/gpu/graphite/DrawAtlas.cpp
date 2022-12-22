@@ -400,10 +400,11 @@ bool DrawAtlas::activateNewPage(Recorder* recorder) {
     SkASSERT(fNumActivePages < this->maxPages());
     SkASSERT(!fProxies[fNumActivePages]);
 
-    auto textureInfo = recorder->priv().caps()->getDefaultSampledTextureInfo(fColorType,
-                                                                             /*levelCount=*/1,
-                                                                             Protected::kNo,
-                                                                             Renderable::kNo);
+    auto textureInfo = recorder->priv().caps()->getDefaultSampledTextureInfo(
+            fColorType,
+            /*mipmapped=*/Mipmapped::kNo,
+            Protected::kNo,
+            Renderable::kNo);
     fProxies[fNumActivePages].reset(new TextureProxy({fTextureWidth, fTextureHeight}, textureInfo,
                                                      SkBudgeted::kYes));
     if (!fProxies[fNumActivePages]) {
@@ -444,6 +445,17 @@ inline void DrawAtlas::deactivateLastPage() {
     // remove ref to the texture proxy
     fProxies[lastPageIndex].reset();
     --fNumActivePages;
+}
+
+void DrawAtlas::evictAllPlots() {
+    PlotList::Iter plotIter;
+    for (uint32_t pageIndex = 0; pageIndex < fNumActivePages; ++pageIndex) {
+        plotIter.init(fPages[pageIndex].fPlotList, PlotList::Iter::kHead_IterStart);
+        while (Plot* plot = plotIter.get()) {
+            this->processEvictionAndResetRects(plot);
+            plotIter.next();
+        }
+    }
 }
 
 DrawAtlasConfig::DrawAtlasConfig(int maxTextureSize, size_t maxBytes) {

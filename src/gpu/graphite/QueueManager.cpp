@@ -31,7 +31,7 @@ QueueManager::~QueueManager() {
     this->checkForFinishedWork(SyncToCpu::kYes);
 }
 
-void QueueManager::addRecording(const InsertRecordingInfo& info,
+bool QueueManager::addRecording(const InsertRecordingInfo& info,
                                 ResourceProvider* resourceProvider) {
     sk_sp<RefCntedCallback> callback;
     if (info.fFinishedProc) {
@@ -43,30 +43,66 @@ void QueueManager::addRecording(const InsertRecordingInfo& info,
         if (callback) {
             callback->setFailureResult();
         }
-        SKGPU_LOG_W("No valid Recording passed into addRecording call");
-        return;
+        SKGPU_LOG_E("No valid Recording passed into addRecording call");
+        return false;
     }
 
     if (!fCurrentCommandBuffer) {
-        fCurrentCommandBuffer = this->getNewCommandBuffer();
+        if (fAvailableCommandBuffers.size()) {
+            fCurrentCommandBuffer = std::move(fAvailableCommandBuffers.back());
+            fAvailableCommandBuffers.pop_back();
+            if (!fCurrentCommandBuffer->setNewCommandBufferResources()) {
+                fCurrentCommandBuffer.reset();
+            }
+        }
+    }
+    if (!fCurrentCommandBuffer) {
+        fCurrentCommandBuffer = this->getNewCommandBuffer(resourceProvider);
     }
     if (!fCurrentCommandBuffer) {
         if (callback) {
             callback->setFailureResult();
         }
-        return;
+        SKGPU_LOG_E("CommandBuffer creation failed");
+        return false;
+    }
+
+    if (info.fRecording->priv().hasNonVolatileLazyProxies()) {
+        if (!info.fRecording->priv().instantiateNonVolatileLazyProxies(resourceProvider)) {
+            if (callback) {
+                callback->setFailureResult();
+            }
+            SKGPU_LOG_E("Non-volatile PromiseImage instantiation has failed");
+            return false;
+        }
+    }
+
+    if (info.fRecording->priv().hasVolatileLazyProxies()) {
+        if (!info.fRecording->priv().instantiateVolatileLazyProxies(resourceProvider)) {
+            if (callback) {
+                callback->setFailureResult();
+            }
+            info.fRecording->priv().deinstantiateVolatileLazyProxies();
+            SKGPU_LOG_E("Volatile PromiseImage instantiation has failed");
+            return false;
+        }
     }
 
     if (!info.fRecording->priv().addCommands(resourceProvider, fCurrentCommandBuffer.get())) {
         if (callback) {
             callback->setFailureResult();
         }
-        return;
+        info.fRecording->priv().deinstantiateVolatileLazyProxies();
+        SKGPU_LOG_E("Adding commands to the CommandBuffer has failed");
+        return false;
     }
 
     if (callback) {
         fCurrentCommandBuffer->addFinishedProc(std::move(callback));
     }
+
+    info.fRecording->priv().deinstantiateVolatileLazyProxies();
+    return true;
 }
 
 bool QueueManager::submitToGpu() {
@@ -95,7 +131,7 @@ void QueueManager::checkForFinishedWork(SyncToCpu sync) {
         // wait for the last submission to finish
         OutstandingSubmission* back = (OutstandingSubmission*)fOutstandingSubmissions.back();
         if (back) {
-            (*back)->waitUntilFinished(fSharedContext);
+            (*back)->waitUntilFinished();
         }
     }
 
@@ -114,6 +150,10 @@ void QueueManager::checkForFinishedWork(SyncToCpu sync) {
         front = (OutstandingSubmission*)fOutstandingSubmissions.front();
     }
     SkASSERT(sync == SyncToCpu::kNo || fOutstandingSubmissions.empty());
+}
+
+void QueueManager::returnCommandBuffer(std::unique_ptr<CommandBuffer> commandBuffer) {
+    fAvailableCommandBuffers.push_back(std::move(commandBuffer));
 }
 
 } // namespace skgpu::graphite

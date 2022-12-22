@@ -10,12 +10,12 @@
 #ifdef SK_GRAPHITE_ENABLED
 
 #include "include/core/SkBitmap.h"
-#include "include/core/SkCombinationBuilder.h"
 #include "include/core/SkM44.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkShader.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkRuntimeEffect.h"
+#include "include/gpu/graphite/CombinationBuilder.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/private/SkUniquePaintParamsID.h"
 #include "src/core/SkKeyContext.h"
@@ -50,7 +50,7 @@ sk_sp<SkImage> make_image(Recorder* recorder) {
 }
 
 std::tuple<SkPaint, int> create_paint(Recorder* recorder,
-                                      SkShaderType shaderType,
+                                      ShaderType shaderType,
                                       SkTileMode tm,
                                       SkBlendMode bm) {
     SkPoint pts[2] = {{-100, -100},
@@ -61,35 +61,42 @@ std::tuple<SkPaint, int> create_paint(Recorder* recorder,
     sk_sp<SkShader> s;
     int numTextures = 0;
     switch (shaderType) {
-        case SkShaderType::kSolidColor:
+        case ShaderType::kSolidColor:
+            s = SkShaders::Color(SK_ColorYELLOW);
             break;
-        case SkShaderType::kLinearGradient:
+        case ShaderType::kLinearGradient:
             s = SkGradientShader::MakeLinear(pts, colors, offsets, 2, tm);
             break;
-        case SkShaderType::kRadialGradient:
+        case ShaderType::kRadialGradient:
             s = SkGradientShader::MakeRadial({0, 0}, 100, colors, offsets, 2, tm);
             break;
-        case SkShaderType::kSweepGradient:
+        case ShaderType::kSweepGradient:
             s = SkGradientShader::MakeSweep(0, 0, colors, offsets, 2, tm,
                                             0, 359, 0, nullptr);
             break;
-        case SkShaderType::kConicalGradient:
+        case ShaderType::kConicalGradient:
             s = SkGradientShader::MakeTwoPointConical({100, 100}, 100,
                                                       {-100, -100}, 100,
                                                       colors, offsets, 2, tm);
             break;
-        case SkShaderType::kLocalMatrix: {
+        case ShaderType::kLocalMatrix: {
             s = SkShaders::Color(SK_ColorYELLOW);
             s = s->makeWithLocalMatrix(SkMatrix::Scale(1.5f, 2.0f));
             break;
         }
-        case SkShaderType::kImage: {
+        case ShaderType::kImage: {
             ++numTextures;
             s = SkImageShader::Make(make_image(recorder), tm, tm,
                                     SkSamplingOptions(), nullptr);
             break;
         }
-        case SkShaderType::kBlendShader: {
+        case ShaderType::kPorterDuffBlendShader: {
+            sk_sp<SkShader> src = SkShaders::Color(SK_ColorGREEN);
+            sk_sp<SkShader> dst = SkShaders::Color(SK_ColorLTGRAY);
+            s = SkShaders::Blend(SkBlendMode::kSrcOver, std::move(dst), std::move(src));
+            break;
+        }
+        case ShaderType::kBlendShader: {
             sk_sp<SkShader> src = SkShaders::Color(SK_ColorGREEN);
             sk_sp<SkShader> dst = SkShaders::Color(SK_ColorLTGRAY);
             s = SkShaders::Blend(SkBlendMode::kColorDodge, std::move(dst), std::move(src));
@@ -105,36 +112,41 @@ std::tuple<SkPaint, int> create_paint(Recorder* recorder,
 
 SkUniquePaintParamsID create_key(Context* context,
                                  SkPaintParamsKeyBuilder* keyBuilder,
-                                 SkShaderType shaderType,
+                                 ShaderType shaderType,
                                  SkTileMode tileMode,
                                  SkBlendMode blendMode) {
     SkShaderCodeDictionary* dict = context->priv().shaderCodeDictionary();
 
-    SkCombinationBuilder combinationBuilder(context->priv().shaderCodeDictionary());
+    CombinationBuilder combinationBuilder(context->priv().shaderCodeDictionary());
 
     switch (shaderType) {
-        case SkShaderType::kSolidColor:
+        case ShaderType::kSolidColor:
             combinationBuilder.addOption(shaderType);
             break;
-        case SkShaderType::kLinearGradient:         [[fallthrough]];
-        case SkShaderType::kRadialGradient:         [[fallthrough]];
-        case SkShaderType::kSweepGradient:          [[fallthrough]];
-        case SkShaderType::kConicalGradient:
+        case ShaderType::kLinearGradient:         [[fallthrough]];
+        case ShaderType::kRadialGradient:         [[fallthrough]];
+        case ShaderType::kSweepGradient:          [[fallthrough]];
+        case ShaderType::kConicalGradient:
             combinationBuilder.addOption(shaderType, 2, 2);
             break;
-        case SkShaderType::kLocalMatrix: {
-            SkCombinationOption option = combinationBuilder.addOption(shaderType);
-            option.addChildOption(0, SkShaderType::kSolidColor);
+        case ShaderType::kLocalMatrix: {
+            CombinationOption option = combinationBuilder.addOption(shaderType);
+            option.addChildOption(0, ShaderType::kSolidColor);
         } break;
-        case SkShaderType::kImage: {
-            SkTileModePair tilingOptions[] = { { tileMode,  tileMode } };
+        case ShaderType::kImage: {
+            TileModePair tilingOptions[] = { { tileMode,  tileMode } };
 
             combinationBuilder.addOption(shaderType, tilingOptions);
         } break;
-        case SkShaderType::kBlendShader: {
-            SkCombinationOption option = combinationBuilder.addOption(shaderType);
-            option.addChildOption(0, SkShaderType::kSolidColor);
-            option.addChildOption(1, SkShaderType::kSolidColor);
+        case ShaderType::kPorterDuffBlendShader: {
+            CombinationOption option = combinationBuilder.addOption(shaderType);
+            option.addChildOption(0, ShaderType::kSolidColor);
+            option.addChildOption(1, ShaderType::kSolidColor);
+        } break;
+        case ShaderType::kBlendShader: {
+            CombinationOption option = combinationBuilder.addOption(shaderType);
+            option.addChildOption(0, ShaderType::kSolidColor);
+            option.addChildOption(1, ShaderType::kSolidColor);
         } break;
     }
 
@@ -160,29 +172,29 @@ SkUniquePaintParamsID create_key(Context* context,
 //   call Context::precompile and, somehow, get the created SkPaintParamsKey
 //           - maybe via a testing only callback on SkShaderCodeDictionary::findOrCreate
 //   draw w/ the SkPaint and, again, somehow, intercept the created SkPaintParamsKey
-DEF_GRAPHITE_TEST_FOR_CONTEXTS(PaintParamsKeyTest, reporter, context) {
+DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(PaintParamsKeyTest, reporter, context) {
     auto recorder = context->makeRecorder();
     SkKeyContext keyContext(recorder.get(), {});
     auto dict = keyContext.dict();
-    auto tCache = recorder->priv().textureDataCache();
 
-    SkPaintParamsKeyBuilder builder(dict, SkBackend::kGraphite);
+    SkPaintParamsKeyBuilder builder(dict);
     SkPipelineDataGatherer gatherer(Layout::kMetal);
 
-    for (auto s : { SkShaderType::kSolidColor,
-                    SkShaderType::kLinearGradient,
-                    SkShaderType::kRadialGradient,
-                    SkShaderType::kSweepGradient,
-                    SkShaderType::kConicalGradient,
-                    SkShaderType::kLocalMatrix,
-                    SkShaderType::kImage,
-                    SkShaderType::kBlendShader }) {
+    for (auto s : { ShaderType::kSolidColor,
+                    ShaderType::kLinearGradient,
+                    ShaderType::kRadialGradient,
+                    ShaderType::kSweepGradient,
+                    ShaderType::kConicalGradient,
+                    ShaderType::kLocalMatrix,
+                    ShaderType::kImage,
+                    ShaderType::kPorterDuffBlendShader,
+                    ShaderType::kBlendShader }) {
         for (auto tm: { SkTileMode::kClamp,
                         SkTileMode::kRepeat,
                         SkTileMode::kMirror,
                         SkTileMode::kDecal }) {
-            if (s == SkShaderType::kSolidColor || s == SkShaderType::kLocalMatrix ||
-                s == SkShaderType::kBlendShader) {
+            if (s == ShaderType::kSolidColor || s == ShaderType::kLocalMatrix ||
+                s == ShaderType::kPorterDuffBlendShader || s == ShaderType::kBlendShader) {
                 if (tm != SkTileMode::kClamp) {
                     continue;  // the TileMode doesn't matter for these cases
                 }
@@ -192,16 +204,15 @@ DEF_GRAPHITE_TEST_FOR_CONTEXTS(PaintParamsKeyTest, reporter, context) {
             for (auto bm : { SkBlendMode::kSrc, SkBlendMode::kSrcOver }) {
                 auto [ p, expectedNumTextures ] = create_paint(recorder.get(), s, tm, bm);
 
-                auto [ uniqueID1, uIndex, tIndex] = ExtractPaintData(recorder.get(), &gatherer,
-                                                                     &builder, {}, PaintParams(p));
+                auto [ uniqueID1, uData, tData] = ExtractPaintData(recorder.get(), &gatherer,
+                                                                   &builder, {}, PaintParams(p));
 
                 SkUniquePaintParamsID uniqueID2 = create_key(context, &builder, s, tm, bm);
                 // ExtractPaintData and CreateKey agree
                 REPORTER_ASSERT(reporter, uniqueID1 == uniqueID2);
 
                 {
-                    const SkTextureDataBlock* textureData = tCache->lookup(tIndex);
-                    int actualNumTextures = textureData ? textureData->numTextures() : 0;
+                    int actualNumTextures = tData ? tData->numTextures() : 0;
 
                     REPORTER_ASSERT(reporter, expectedNumTextures == actualNumTextures);
                 }

@@ -290,8 +290,8 @@ bool GrCaps::surfaceSupportsWritePixels(const GrSurface* surface) const {
     return surface->readOnly() ? false : this->onSurfaceSupportsWritePixels(surface);
 }
 
-bool GrCaps::canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
-                            const SkIRect& srcRect, const SkIPoint& dstPoint) const {
+bool GrCaps::canCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRect,
+                            const GrSurfaceProxy* src, const SkIRect& srcRect) const {
     if (dst->readOnly()) {
         return false;
     }
@@ -299,7 +299,13 @@ bool GrCaps::canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src
     if (dst->backendFormat() != src->backendFormat()) {
         return false;
     }
-    return this->onCanCopySurface(dst, src, srcRect, dstPoint);
+    // For simplicity, all GrGpu::copySurface() calls can assume that srcRect and dstRect
+    // are already contained within their respective surfaces.
+    if (!SkIRect::MakeSize(dst->dimensions()).contains(dstRect) ||
+        !SkIRect::MakeSize(src->dimensions()).contains(srcRect)) {
+        return false;
+    }
+    return this->onCanCopySurface(dst, dstRect, src, srcRect);
 }
 
 bool GrCaps::validateSurfaceParams(const SkISize& dimensions, const GrBackendFormat& format,

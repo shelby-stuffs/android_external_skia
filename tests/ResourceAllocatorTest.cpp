@@ -5,20 +5,44 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkSpan.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrTypes.h"
+#include "include/private/SkTArray.h"
+#include "include/private/SkTo.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/ResourceKey.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
 #include "src/gpu/ganesh/GrResourceAllocator.h"
-#include "src/gpu/ganesh/GrResourceProviderPriv.h"
+#include "src/gpu/ganesh/GrResourceCache.h"
+#include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/GrSurface.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrSurfaceProxyPriv.h"
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tools/gpu/ManagedBackendTexture.h"
+
+#include <array>
+#include <cstddef>
+#include <functional>
+#include <utility>
+
+class GrRecordingContext;
+struct GrContextOptions;
 
 namespace {
 struct ProxyParams {
@@ -126,7 +150,7 @@ static sk_sp<GrSurfaceProxy> make_lazy(GrProxyProvider* proxyProvider, const GrC
                                           GrMipmapped::kNo, GrMipmapStatus::kNotAllocated,
                                           GrInternalSurfaceFlags::kNone,
                                           p.fFit, p.fBudgeted, GrProtected::kNo,
-                                          GrSurfaceProxy::UseAllocator::kYes);
+                                          GrSurfaceProxy::UseAllocator::kYes, /*label=*/{});
 }
 
 static sk_sp<GrSurfaceProxy> make_proxy(GrDirectContext* dContext, const ProxyParams& p) {
@@ -210,10 +234,10 @@ static void non_overlap_test(skiatest::Reporter* reporter, GrDirectContext* dCon
     REPORTER_ASSERT(reporter, expectedResult == doTheBackingStoresMatch);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceAllocatorTest,
-                                   reporter,
-                                   ctxInfo,
-                                   CtsEnforcement::kNever) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ResourceAllocatorTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
     const GrCaps* caps = dContext->priv().caps();
 
@@ -254,7 +278,9 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceAllocatorTest,
     int k2 = caps->getRenderTargetSampleCount(2, beFormat);
     int k4 = caps->getRenderTargetSampleCount(4, beFormat);
 
-    static const TestCase nonOverlappingTests[] = {
+    // This cannot be made static as some of the members depend on non static variables like
+    // kConditionallyShare, k2, and k4.
+    const TestCase nonOverlappingTests[] = {
         // Two non-overlapping intervals w/ compatible proxies should share
         // both same size & approx
         {{64, kRT, kRGBA, kA, 1, kNotB, kDeferred},
@@ -337,10 +363,10 @@ static void draw(GrRecordingContext* rContext) {
     c->clear(SK_ColorBLACK);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceAllocatorStressTest,
-                                   reporter,
-                                   ctxInfo,
-                                   CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ResourceAllocatorStressTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
 
     size_t maxBytes = context->getResourceCacheLimit();
@@ -422,10 +448,10 @@ static void memory_budget_test(skiatest::Reporter* reporter,
     REPORTER_ASSERT(reporter, alloc.makeBudgetHeadroom() == test.fShouldFit);
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceAllocatorMemoryBudgetTest,
-                                   reporter,
-                                   ctxInfo,
-                                   CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ResourceAllocatorMemoryBudgetTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
 
     constexpr bool    kUnder               = true;

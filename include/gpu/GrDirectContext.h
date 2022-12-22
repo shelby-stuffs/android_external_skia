@@ -42,7 +42,9 @@ class SkTraceMemoryDump;
 
 namespace skgpu {
 class Swizzle;
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 namespace v1 { class SmallPathAtlasMgr; }
+#endif
 }
 
 namespace sktext::gpu {
@@ -147,6 +149,9 @@ public:
      *
      * The typical use case for this function is that the underlying 3D context was lost and further
      * API calls may crash.
+     *
+     * This call is not valid to be made inside ReleaseProcs passed into SkSurface or SkImages. The
+     * call will simply fail (and assert in debug) if it is called while inside a ReleaseProc.
      *
      * For Vulkan, even if the device becomes lost, the VkQueue, VkDevice, or VkInstance used to
      * create the context must be kept alive even after abandoning the context. Those objects must
@@ -765,16 +770,16 @@ public:
 
     /**
      * Updates the state of the GrBackendTexture/RenderTarget to have the passed in
-     * GrBackendSurfaceMutableState. All objects that wrap the backend surface (i.e. SkSurfaces and
+     * skgpu::MutableTextureState. All objects that wrap the backend surface (i.e. SkSurfaces and
      * SkImages) will also be aware of this state change. This call does not submit the state change
      * to the gpu, but requires the client to call `submit` to send it to the GPU. The work
      * for this call is ordered linearly with all other calls that require GrContext::submit to be
      * called (e.g updateBackendTexture and flush). If finishedProc is not null then it will be
      * called with finishedContext after the state transition is known to have occurred on the GPU.
      *
-     * See GrBackendSurfaceMutableState to see what state can be set via this call.
+     * See skgpu::MutableTextureState to see what state can be set via this call.
      *
-     * If the backend API is Vulkan, the caller can set the GrBackendSurfaceMutableState's
+     * If the backend API is Vulkan, the caller can set the skgpu::MutableTextureState's
      * VkImageLayout to VK_IMAGE_LAYOUT_UNDEFINED or queueFamilyIndex to VK_QUEUE_FAMILY_IGNORED to
      * tell Skia to not change those respective states.
      *
@@ -782,13 +787,13 @@ public:
      * previousState to have the values of the state before this call.
      */
     bool setBackendTextureState(const GrBackendTexture&,
-                                const GrBackendSurfaceMutableState&,
-                                GrBackendSurfaceMutableState* previousState = nullptr,
+                                const skgpu::MutableTextureState&,
+                                skgpu::MutableTextureState* previousState = nullptr,
                                 GrGpuFinishedProc finishedProc = nullptr,
                                 GrGpuFinishedContext finishedContext = nullptr);
     bool setBackendRenderTargetState(const GrBackendRenderTarget&,
-                                     const GrBackendSurfaceMutableState&,
-                                     GrBackendSurfaceMutableState* previousState = nullptr,
+                                     const skgpu::MutableTextureState&,
+                                     skgpu::MutableTextureState* previousState = nullptr,
                                      GrGpuFinishedProc finishedProc = nullptr,
                                      GrGpuFinishedContext finishedContext = nullptr);
 
@@ -847,7 +852,9 @@ protected:
     bool init() override;
 
     GrAtlasManager* onGetAtlasManager() { return fAtlasManager.get(); }
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
     skgpu::v1::SmallPathAtlasMgr* onGetSmallPathAtlasMgr();
+#endif
 
     GrDirectContext* asDirectContext() override { return this; }
 
@@ -876,6 +883,12 @@ private:
     std::unique_ptr<GrResourceCache>          fResourceCache;
     std::unique_ptr<GrResourceProvider>       fResourceProvider;
 
+    // This is incremented before we start calling ReleaseProcs from GrSurfaces and decremented
+    // after. A ReleaseProc may trigger code causing another resource to get freed so we to track
+    // the count to know if we in a ReleaseProc at any level. When this is set to a value greated
+    // than zero we will not allow abandonContext calls to be made on the context.
+    int                                     fInsideReleaseProcCnt = 0;
+
     bool                                    fDidTestPMConversions;
     // true if the PM/UPM conversion succeeded; false otherwise
     bool                                    fPMUPMConversionsRoundTrip;
@@ -885,7 +898,9 @@ private:
     std::unique_ptr<GrClientMappedBufferManager> fMappedBufferManager;
     std::unique_ptr<GrAtlasManager> fAtlasManager;
 
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
     std::unique_ptr<skgpu::v1::SmallPathAtlasMgr> fSmallPathAtlasMgr;
+#endif
 
     friend class GrDirectContextPriv;
 

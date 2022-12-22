@@ -5,8 +5,15 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkPath.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkString.h"
 #include "include/utils/SkParsePath.h"
 #include "tests/Test.h"
+
+#include <array>
+#include <cstddef>
 
 static void test_to_from(skiatest::Reporter* reporter, const SkPath& path) {
     SkString str, str2;
@@ -70,23 +77,6 @@ DEF_TEST(ParsePath_invalid, r) {
     // crash.
     bool success = SkParsePath::FromSVGString("M 5", &path);
     REPORTER_ASSERT(r, !success);
-}
-
-#include "include/utils/SkRandom.h"
-#include "tools/random_parse_path.h"
-
-DEF_TEST(ParsePathRandom, r) {
-    SkRandom rand;
-    for (int index = 0; index < 1000; ++index) {
-        SkPath path, path2;
-        SkString spec;
-        uint32_t count = rand.nextRangeU(0, 10);
-        for (uint32_t i = 0; i < count; ++i) {
-            spec.append(MakeRandomParsePathPiece(&rand));
-        }
-        bool success = SkParsePath::FromSVGString(spec.c_str(), &path);
-        REPORTER_ASSERT(r, success);
-    }
 }
 
 DEF_TEST(ParsePathOptionalCommand, r) {

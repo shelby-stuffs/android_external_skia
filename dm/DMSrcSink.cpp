@@ -10,7 +10,6 @@
 #include "include/codec/SkAndroidCodec.h"
 #include "include/codec/SkCodec.h"
 #include "include/core/SkColorSpace.h"
-#include "include/core/SkCombinationBuilder.h"
 #include "include/core/SkData.h"
 #include "include/core/SkDeferredDisplayListRecorder.h"
 #include "include/core/SkDocument.h"
@@ -84,6 +83,7 @@
 #endif
 
 #ifdef SK_GRAPHITE_ENABLED
+#include "include/gpu/graphite/CombinationBuilder.h"
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
@@ -115,10 +115,16 @@ namespace DM {
 GMSrc::GMSrc(skiagm::GMFactory factory) : fFactory(factory) {}
 
 Result GMSrc::draw(GrDirectContext* context, SkCanvas* canvas) const {
+    return this->draw(nullptr, context, canvas);
+}
+
+Result GMSrc::draw(skgpu::graphite::Context* graphiteContext,
+                   GrDirectContext* ganeshContext,
+                   SkCanvas* canvas) const {
     std::unique_ptr<skiagm::GM> gm(fFactory());
     SkString msg;
 
-    skiagm::DrawResult gpuSetupResult = gm->gpuSetup(context, canvas, &msg);
+    skiagm::DrawResult gpuSetupResult = gm->gpuSetup(ganeshContext, canvas, &msg);
     switch (gpuSetupResult) {
         case skiagm::DrawResult::kOk  : break;
         case skiagm::DrawResult::kFail: return Result(Result::Status::Fatal, msg);
@@ -126,7 +132,7 @@ Result GMSrc::draw(GrDirectContext* context, SkCanvas* canvas) const {
         default: SK_ABORT("");
     }
 
-    skiagm::DrawResult drawResult = gm->draw(canvas, &msg);
+    skiagm::DrawResult drawResult = gm->draw(graphiteContext, canvas, &msg);
     switch (drawResult) {
         case skiagm::DrawResult::kOk  : return Result(Result::Status::Ok,    msg);
         case skiagm::DrawResult::kFail: return Result(Result::Status::Fatal, msg);
@@ -1121,11 +1127,6 @@ Result SKPSrc::draw(GrDirectContext* dContext, SkCanvas* canvas) const {
             if (context->fDirectContext) {
                 image = image->makeTextureImage(context->fDirectContext);
             }
-#ifdef SK_GRAPHITE_ENABLED
-            else if (context->fRecorder) {
-                image = image->makeTextureImage(context->fRecorder);
-            }
-#endif
         }
 
         return image;
@@ -2163,7 +2164,7 @@ Result GraphiteSink::draw(const Src& src,
         if (!surface) {
             return Result::Fatal("Could not create a surface.");
         }
-        Result result = src.draw(/* dContext */ nullptr, surface->getCanvas());
+        Result result = src.draw(context, nullptr, surface->getCanvas());
         if (!result.isOk()) {
             return result;
         }
@@ -2189,7 +2190,9 @@ Result GraphiteSink::draw(const Src& src,
 
     skgpu::graphite::InsertRecordingInfo info;
     info.fRecording = recording.get();
-    context->insertRecording(info);
+    if (!context->insertRecording(info)) {
+        return Result::Fatal("Context::insertRecording failed.");
+    }
     context->submit(skgpu::graphite::SyncToCpu::kYes);
 
     return Result::Ok();

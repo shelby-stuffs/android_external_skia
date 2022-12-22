@@ -7,8 +7,8 @@
 
 #include "tests/Test.h"
 
-#include "include/core/SkCombinationBuilder.h"
 #include "include/effects/SkRuntimeEffect.h"
+#include "include/gpu/graphite/CombinationBuilder.h"
 #include "include/gpu/graphite/Context.h"
 #include "src/core/SkKeyHelpers.h"
 #include "src/core/SkRuntimeEffectPriv.h"
@@ -26,14 +26,14 @@ namespace {
 //    2 children ("a", "b")
 // TODO: add a helper function
 sk_sp<SkRuntimeEffect> get_combo_effect() {
-    SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForBlender(SkString(R"(
-            uniform float blendFrac;
-            uniform blender a;
-            uniform blender b;
-            half4 main(half4 src, half4 dst) {
-                return (blendFrac * a.eval(src, dst)) + ((1 - blendFrac) * b.eval(src, dst));
-            }
-        )"));
+    SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForBlender(SkString(
+            "uniform float blendFrac;"
+            "uniform blender a;"
+            "uniform blender b;"
+            "half4 main(half4 src, half4 dst) {"
+                "return (blendFrac * a.eval(src, dst)) + ((1 - blendFrac) * b.eval(src, dst));"
+            "}"
+        ));
 
     return result.effect;
 }
@@ -41,12 +41,12 @@ sk_sp<SkRuntimeEffect> get_combo_effect() {
 // returns opaque red w/ the red value determined by 'redColor'
 //    1 uniform ("redColor)
 sk_sp<SkRuntimeEffect> get_red_effect() {
-    SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForBlender(SkString(R"(
-            uniform float redColor;
-            half4 main(half4 src, half4 dst) {
-                return half4(redColor, 0, 0, 1);
-            }
-        )"));
+    SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForBlender(SkString(
+            "uniform float redColor;"
+            "half4 main(half4 src, half4 dst) {"
+                "return half4(redColor, 0, 0, 1);"
+            "}"
+        ));
 
     return result.effect;
 }
@@ -54,12 +54,12 @@ sk_sp<SkRuntimeEffect> get_red_effect() {
 // returns opaque blue w/ the blue value determined by 'blueColor'
 //    1 uniform ("blueColor)
 sk_sp<SkRuntimeEffect> get_blue_effect() {
-    SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForBlender(SkString(R"(
-            uniform float blueColor;
-            half4 main(half4 src, half4 dst) {
-                return half4(0, 0, blueColor, 1);
-            }
-        )"));
+    SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForBlender(SkString(
+            "uniform float blueColor;"
+            "half4 main(half4 src, half4 dst) {"
+                "return half4(0, 0, blueColor, 1);"
+            "}"
+        ));
 
     return result.effect;
 }
@@ -95,20 +95,20 @@ static sk_sp<SkBlender> get_blender(sk_sp<SkRuntimeEffect> comboEffect,
 
 } // anonymous namespace
 
-DEF_GRAPHITE_TEST_FOR_CONTEXTS(RTEffectTest, reporter, context) {
+DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(RTEffectTest, reporter, context) {
     SkShaderCodeDictionary* dict = context->priv().shaderCodeDictionary();
 
     sk_sp<SkRuntimeEffect> comboEffect = get_combo_effect();
     sk_sp<SkRuntimeEffect> redEffect = get_red_effect();
     sk_sp<SkRuntimeEffect> blueEffect = get_blue_effect();
 
-    SkBlenderID comboId = context->addUserDefinedBlender(comboEffect);
+    BlenderID comboId = context->addUserDefinedBlender(comboEffect);
     SkASSERT(comboId.isValid());
 
-    SkBlenderID redId = context->addUserDefinedBlender(redEffect);
+    BlenderID redId = context->addUserDefinedBlender(redEffect);
     SkASSERT(redId.isValid());
 
-    SkBlenderID blueId = context->addUserDefinedBlender(blueEffect);
+    BlenderID blueId = context->addUserDefinedBlender(blueEffect);
     SkASSERT(blueId.isValid());
 
     auto comboEntry = dict->getEntry(comboId);
@@ -132,15 +132,14 @@ DEF_GRAPHITE_TEST_FOR_CONTEXTS(RTEffectTest, reporter, context) {
 
 #endif // SK_ENABLE_PRECOMPILE
 
-DEF_GRAPHITE_TEST_FOR_CONTEXTS(Shader_FindOrCreateSnippetForRuntimeEffect, reporter, context) {
+DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(Shader_FindOrCreateSnippetForRuntimeEffect, reporter, context) {
     SkShaderCodeDictionary* dict = context->priv().shaderCodeDictionary();
 
     std::unique_ptr<SkRuntimeEffect> testEffect(SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
-    R"(
-        half4 main(float2 coords) {
-            return half4(coords.xy01);
-        }
-    )"));
+        "half4 main(float2 coords) {"
+            "return half4(coords.xy01);"
+        "}"
+    ));
 
     // Create a new runtime-effect snippet.
     int snippetID = dict->findOrCreateRuntimeEffectSnippet(testEffect.get());
@@ -157,16 +156,17 @@ DEF_GRAPHITE_TEST_FOR_CONTEXTS(Shader_FindOrCreateSnippetForRuntimeEffect, repor
     REPORTER_ASSERT(reporter, foundSnippetID == snippetID);
 }
 
-DEF_GRAPHITE_TEST_FOR_CONTEXTS(ColorFilter_FindOrCreateSnippetForRuntimeEffect, reporter, context) {
+DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(ColorFilter_FindOrCreateSnippetForRuntimeEffect,
+                                   reporter,
+                                   context) {
     SkShaderCodeDictionary* dict = context->priv().shaderCodeDictionary();
 
     std::unique_ptr<SkRuntimeEffect> testEffect(SkMakeRuntimeEffect(
             SkRuntimeEffect::MakeForColorFilter,
-            R"(
-                half4 main(half4 color) {
-                    return color.gbra;
-                }
-            )"));
+                "half4 main(half4 color) {"
+                    "return color.gbra;"
+                "}"
+            ));
 
     // Create a new runtime-effect snippet.
     int snippetID = dict->findOrCreateRuntimeEffectSnippet(testEffect.get());
@@ -183,19 +183,18 @@ DEF_GRAPHITE_TEST_FOR_CONTEXTS(ColorFilter_FindOrCreateSnippetForRuntimeEffect, 
     REPORTER_ASSERT(reporter, foundSnippetID == snippetID);
 }
 
-DEF_GRAPHITE_TEST_FOR_CONTEXTS(ShaderUniforms_FindOrCreateSnippetForRuntimeEffect,
-                               reporter, context) {
+DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(ShaderUniforms_FindOrCreateSnippetForRuntimeEffect,
+                                   reporter, context) {
     SkShaderCodeDictionary* dict = context->priv().shaderCodeDictionary();
 
     std::unique_ptr<SkRuntimeEffect> testEffect(SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
-    R"(
-        uniform float3x3 MyFloat3x3Uniform;
-        uniform int4 MyInt4ArrayUniform[1];
-        uniform half2 MyHalf2ArrayUniform[99];
-        half4 main(float2 coords) {
-            return half4(coords.xy01);
-        }
-    )"));
+        "uniform float3x3 MyFloat3x3Uniform;"
+        "uniform int4 MyInt4ArrayUniform[1];"
+        "uniform half2 MyHalf2ArrayUniform[99];"
+        "half4 main(float2 coords) {"
+            "return half4(coords.xy01);"
+        "}"
+    ));
 
     // Create a new runtime-effect snippet.
     int snippetID = dict->findOrCreateRuntimeEffectSnippet(testEffect.get());
@@ -209,42 +208,37 @@ DEF_GRAPHITE_TEST_FOR_CONTEXTS(ShaderUniforms_FindOrCreateSnippetForRuntimeEffec
     REPORTER_ASSERT(reporter, snippet);
 
     // The uniform span should match our expectations even though the runtime effect was deleted.
-    REPORTER_ASSERT(reporter, snippet->fUniforms.size() == 4);
+    REPORTER_ASSERT(reporter, snippet->fUniforms.size() == 3);
 
-    REPORTER_ASSERT(reporter, std::string_view(snippet->fUniforms[0].name()) == "localMatrix");
-    REPORTER_ASSERT(reporter, snippet->fUniforms[0].type() == SkSLType::kFloat4x4);
+    REPORTER_ASSERT(reporter,
+                    std::string_view(snippet->fUniforms[0].name()) == "MyFloat3x3Uniform");
+    REPORTER_ASSERT(reporter, snippet->fUniforms[0].type() == SkSLType::kFloat3x3);
     REPORTER_ASSERT(reporter, snippet->fUniforms[0].count() == 0);
 
     REPORTER_ASSERT(reporter,
-                    std::string_view(snippet->fUniforms[1].name()) == "MyFloat3x3Uniform");
-    REPORTER_ASSERT(reporter, snippet->fUniforms[1].type() == SkSLType::kFloat3x3);
-    REPORTER_ASSERT(reporter, snippet->fUniforms[1].count() == 0);
+                    std::string_view(snippet->fUniforms[1].name()) == "MyInt4ArrayUniform");
+    REPORTER_ASSERT(reporter, snippet->fUniforms[1].type() == SkSLType::kInt4);
+    REPORTER_ASSERT(reporter, snippet->fUniforms[1].count() == 1);
 
     REPORTER_ASSERT(reporter,
-                    std::string_view(snippet->fUniforms[2].name()) == "MyInt4ArrayUniform");
-    REPORTER_ASSERT(reporter, snippet->fUniforms[2].type() == SkSLType::kInt4);
-    REPORTER_ASSERT(reporter, snippet->fUniforms[2].count() == 1);
-
-    REPORTER_ASSERT(reporter,
-                    std::string_view(snippet->fUniforms[3].name()) == "MyHalf2ArrayUniform");
-    REPORTER_ASSERT(reporter, snippet->fUniforms[3].type() == SkSLType::kHalf2);
-    REPORTER_ASSERT(reporter, snippet->fUniforms[3].count() == 99);
+                    std::string_view(snippet->fUniforms[2].name()) == "MyHalf2ArrayUniform");
+    REPORTER_ASSERT(reporter, snippet->fUniforms[2].type() == SkSLType::kHalf2);
+    REPORTER_ASSERT(reporter, snippet->fUniforms[2].count() == 99);
 }
 
-DEF_GRAPHITE_TEST_FOR_CONTEXTS(ColorFilterUniforms_FindOrCreateSnippetForRuntimeEffect,
-                               reporter, context) {
+DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(ColorFilterUniforms_FindOrCreateSnippetForRuntimeEffect,
+                                   reporter, context) {
     SkShaderCodeDictionary* dict = context->priv().shaderCodeDictionary();
 
     std::unique_ptr<SkRuntimeEffect> testEffect(SkMakeRuntimeEffect(
             SkRuntimeEffect::MakeForColorFilter,
-            R"(
-                uniform float3x3 MyFloat3x3Uniform;
-                uniform int4 MyInt4ArrayUniform[1];
-                uniform half2 MyHalf2ArrayUniform[99];
-                half4 main(half4 color) {
-                    return color.gbra;
-                }
-            )"));
+                "uniform float3x3 MyFloat3x3Uniform;"
+                "uniform int4 MyInt4ArrayUniform[1];"
+                "uniform half2 MyHalf2ArrayUniform[99];"
+                "half4 main(half4 color) {"
+                    "return color.gbra;"
+                "}"
+            ));
 
     // Create a new runtime-effect snippet.
     int snippetID = dict->findOrCreateRuntimeEffectSnippet(testEffect.get());

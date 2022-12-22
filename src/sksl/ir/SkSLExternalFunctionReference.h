@@ -20,21 +20,17 @@ namespace SkSL {
  */
 class ExternalFunctionReference final : public Expression {
 public:
-    inline static constexpr Kind kExpressionKind = Kind::kExternalFunctionReference;
+    inline static constexpr Kind kIRNodeKind = Kind::kExternalFunctionReference;
 
     ExternalFunctionReference(Position pos, const ExternalFunction* ef)
-        : INHERITED(pos, kExpressionKind, &ef->type())
+        : INHERITED(pos, kIRNodeKind, &ef->type())
         , fFunction(*ef) {}
 
     const ExternalFunction& function() const {
         return fFunction;
     }
 
-    bool hasProperty(Property property) const override {
-        return property == Property::kSideEffects;
-    }
-
-    std::string description() const override {
+    std::string description(OperatorPrecedence) const override {
         return std::string(this->function().name());
     }
 

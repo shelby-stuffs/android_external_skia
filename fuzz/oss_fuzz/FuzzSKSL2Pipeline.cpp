@@ -15,8 +15,7 @@
 #include "fuzz/Fuzz.h"
 
 bool FuzzSKSL2Pipeline(sk_sp<SkData> bytes) {
-    std::unique_ptr<SkSL::ShaderCaps> caps = SkSL::ShaderCapsFactory::Default();
-    SkSL::Compiler compiler(caps.get());
+    SkSL::Compiler compiler(SkSL::ShaderCapsFactory::Default());
     SkSL::ProgramSettings settings;
     std::unique_ptr<SkSL::Program> program = compiler.convertProgram(
                                                     SkSL::ProgramKind::kRuntimeShader,
@@ -29,7 +28,7 @@ bool FuzzSKSL2Pipeline(sk_sp<SkData> bytes) {
 
     class Callbacks : public SkSL::PipelineStage::Callbacks {
         std::string declareUniform(const SkSL::VarDeclaration* decl) override {
-            return std::string(decl->var().name());
+            return std::string(decl->var()->name());
         }
 
         void defineFunction(const char* /*decl*/, const char* /*body*/, bool /*isMain*/) override {}

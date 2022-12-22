@@ -404,8 +404,9 @@ sk_sp<GrGpuBuffer> GrGpu::createBuffer(size_t size,
     return buffer;
 }
 
-bool GrGpu::copySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
-                        const SkIPoint& dstPoint) {
+bool GrGpu::copySurface(GrSurface* dst, const SkIRect& dstRect,
+                        GrSurface* src, const SkIRect& srcRect,
+                        GrSamplerState::Filter filter) {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
     SkASSERT(dst && src);
     SkASSERT(!src->framebufferOnly());
@@ -416,7 +417,7 @@ bool GrGpu::copySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
 
     this->handleDirtyContext();
 
-    return this->onCopySurface(dst, src, srcRect, dstPoint);
+    return this->onCopySurface(dst, dstRect, src, srcRect, filter);
 }
 
 bool GrGpu::readPixels(GrSurface* surface,
@@ -662,7 +663,7 @@ void GrGpu::didWriteToSurface(GrSurface* surface, GrSurfaceOrigin origin, const 
                               uint32_t mipLevels) const {
     SkASSERT(surface);
     SkASSERT(!surface->readOnly());
-    // Mark any MIP chain and resolve buffer as dirty if and only if there is a non-empty bounds.
+    // Mark any MIP chain as dirty if and only if there is a non-empty bounds.
     if (nullptr == bounds || !bounds->isEmpty()) {
         GrTexture* texture = surface->asTexture();
         if (texture) {
@@ -678,7 +679,7 @@ void GrGpu::didWriteToSurface(GrSurface* surface, GrSurfaceOrigin origin, const 
 void GrGpu::executeFlushInfo(SkSpan<GrSurfaceProxy*> proxies,
                              SkSurface::BackendSurfaceAccess access,
                              const GrFlushInfo& info,
-                             const GrBackendSurfaceMutableState* newState) {
+                             const skgpu::MutableTextureState* newState) {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
 
     GrResourceProvider* resourceProvider = fContext->priv().resourceProvider();

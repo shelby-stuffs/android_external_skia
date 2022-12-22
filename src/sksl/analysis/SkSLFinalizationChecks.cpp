@@ -7,10 +7,10 @@
 
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
+#include "include/private/SkSLIRNode.h"
 #include "include/private/SkSLLayout.h"
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramElement.h"
-#include "include/private/SkSLStatement.h"
 #include "include/private/SkTHash.h"
 #include "include/sksl/SkSLErrorReporter.h"
 #include "src/core/SkSafeMath.h"
@@ -24,10 +24,8 @@
 #include "src/sksl/ir/SkSLFunctionCall.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
-#include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
 #include "src/sksl/ir/SkSLProgram.h"
-#include "src/sksl/ir/SkSLSwitchStatement.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
@@ -65,26 +63,26 @@ public:
     }
 
     void checkGlobalVariableSizeLimit(const GlobalVarDeclaration& globalDecl) {
-        if (ProgramConfig::IsCompute(fContext.fConfig->fKind)) {
+        if (!ProgramConfig::IsRuntimeEffect(fContext.fConfig->fKind)) {
             return;
         }
-        const VarDeclaration& decl = globalDecl.declaration()->as<VarDeclaration>();
+        const VarDeclaration& decl = globalDecl.varDeclaration();
 
         size_t prevSlotsUsed = fGlobalSlotsUsed;
-        fGlobalSlotsUsed = SkSafeMath::Add(fGlobalSlotsUsed, decl.var().type().slotCount());
+        fGlobalSlotsUsed = SkSafeMath::Add(fGlobalSlotsUsed, decl.var()->type().slotCount());
         // To avoid overzealous error reporting, only trigger the error at the first place where the
         // global limit is exceeded.
         if (prevSlotsUsed < kVariableSlotLimit && fGlobalSlotsUsed >= kVariableSlotLimit) {
             fContext.fErrors->error(decl.fPosition,
-                                    "global variable '" + std::string(decl.var().name()) +
+                                    "global variable '" + std::string(decl.var()->name()) +
                                     "' exceeds the size limit");
         }
     }
 
     void checkBindUniqueness(const InterfaceBlock& block) {
-        const Variable& var = block.variable();
-        int32_t set = var.modifiers().fLayout.fSet;
-        int32_t binding = var.modifiers().fLayout.fBinding;
+        const Variable* var = block.var();
+        int32_t set = var->modifiers().fLayout.fSet;
+        int32_t binding = var->modifiers().fLayout.fBinding;
         if (binding != -1) {
             // TODO(skia:13664): This should map a `set` value of -1 to the default settings value
             // used by codegen backends to prevent duplicates that may arise from the effective
@@ -127,28 +125,6 @@ public:
                 }
             }
         }
-    }
-
-    bool visitStatement(const Statement& stmt) override {
-        switch (stmt.kind()) {
-            case Statement::Kind::kIf:
-                if (stmt.as<IfStatement>().isStatic()) {
-                    fContext.fErrors->error(stmt.as<IfStatement>().test()->fPosition,
-                            "static if has non-static test");
-                }
-                break;
-
-            case Statement::Kind::kSwitch:
-                if (stmt.as<SwitchStatement>().isStatic()) {
-                    fContext.fErrors->error(stmt.as<SwitchStatement>().value()->fPosition,
-                            "static switch has non-static test");
-                }
-                break;
-
-            default:
-                break;
-        }
-        return INHERITED::visitStatement(stmt);
     }
 
     bool visitExpression(const Expression& expr) override {

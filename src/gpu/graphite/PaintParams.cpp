@@ -7,6 +7,7 @@
 
 #include "src/gpu/graphite/PaintParams.h"
 
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkShader.h"
 #include "src/core/SkBlenderBase.h"
 #include "src/core/SkColorFilterBase.h"
@@ -63,16 +64,25 @@ void PaintParams::toKey(const SkKeyContext& keyContext,
                         SkPaintParamsKeyBuilder* builder,
                         SkPipelineDataGatherer* gatherer) const {
 
+    // Begin the key with a solid color shader block to set the initial color to the paint's color.
+    SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, fColor.makeOpaque().premul());
+    builder->endBlock();
+
+    if (fShader) {
+        as_SB(fShader)->addToKey(keyContext, builder, gatherer);
+    }
+
     if (fPrimitiveBlender) {
         as_BB(fPrimitiveBlender)->addToKey(keyContext, builder, gatherer,
                                            /*primitiveColorBlender=*/true);
     }
 
-    if (fShader) {
-        as_SB(fShader)->addToKey(keyContext, builder, gatherer);
-    } else {
-        SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, fColor.premul());
-        builder->endBlock();
+    // Apply the paint's alpha value.
+    auto alphaColorFilter = SkColorFilters::Blend({0, 0, 0, fColor[3]},
+                                                  /*colorSpace*/nullptr,
+                                                  SkBlendMode::kDstIn);
+    if (alphaColorFilter) {
+        as_CFB(alphaColorFilter)->addToKey(keyContext, builder, gatherer);
     }
 
     if (fColorFilter) {
@@ -85,18 +95,6 @@ void PaintParams::toKey(const SkKeyContext& keyContext,
     } else {
         BlendModeBlock::BeginBlock(keyContext, builder, gatherer, SkBlendMode::kSrcOver);
         builder->endBlock();
-    }
-
-    if (gatherer) {
-        if (gatherer->needsLocalCoords()) {
-#ifdef SK_DEBUG
-            static constexpr SkUniform kDev2LocalUniform[] = {{ "dev2Local", SkSLType::kFloat4x4 }};
-            UniformExpectationsValidator uev(gatherer,
-                                             SkSpan<const SkUniform>(kDev2LocalUniform, 1));
-#endif
-
-            gatherer->write(keyContext.dev2Local());
-        }
     }
 
     SkASSERT(builder->sizeInBytes() > 0);

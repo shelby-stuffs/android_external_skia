@@ -9,12 +9,12 @@
 #define SKSL_THREADCONTEXT
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkSLProgramKind.h"
 #include "include/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLProgram.h"
 
+#include <cstdint>
 #include <memory>
 #include <string_view>
 #include <vector>
@@ -28,13 +28,13 @@ class Position;
 class ProgramElement;
 class SymbolTable;
 class Variable;
+enum class ProgramKind : int8_t;
 struct Modifiers;
-struct ParsedModule;
+struct Module;
 
 namespace dsl {
 
 class DSLCore;
-class DSLWriter;
 
 } // namespace dsl
 
@@ -43,9 +43,11 @@ class DSLWriter;
  */
 class ThreadContext {
 public:
-    ThreadContext(SkSL::Compiler* compiler,  SkSL::ProgramKind kind,
-              const SkSL::ProgramSettings& settings, SkSL::ParsedModule module, bool isModule);
-
+    ThreadContext(SkSL::Compiler* compiler,
+                  SkSL::ProgramKind kind,
+                  const SkSL::ProgramSettings& settings,
+                  const SkSL::Module* module,
+                  bool isModule);
     ~ThreadContext();
 
     /**
@@ -168,7 +170,6 @@ private:
     Program::Inputs fInputs;
 
     friend class dsl::DSLCore;
-    friend class dsl::DSLWriter;
 };
 
 } // namespace SkSL

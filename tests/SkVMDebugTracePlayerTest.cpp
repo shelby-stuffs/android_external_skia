@@ -5,15 +5,28 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkM44.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSpan.h"
+#include "include/private/SkSLProgramKind.h"
+#include "include/private/SkSLString.h"
+#include "src/core/SkVM.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/codegen/SkSLVMCodeGenerator.h"
-#include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/ir/SkSLProgram.h" // IWYU pragma: keep
 #include "src/sksl/tracing/SkVMDebugTrace.h"
 #include "src/sksl/tracing/SkVMDebugTracePlayer.h"
-
 #include "tests/Test.h"
+
+#include <cstddef>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+namespace SkSL { class FunctionDefinition; }
 
 using LineNumberMap = SkSL::SkVMDebugTracePlayer::LineNumberMap;
 
@@ -63,10 +76,9 @@ static std::string make_vars_string(
         const SkSL::SkVMDebugTrace& trace,
         const std::vector<SkSL::SkVMDebugTracePlayer::VariableData>& vars) {
     std::string text;
-    const char* separator = "";
+    auto separator = SkSL::String::Separator();
     for (const SkSL::SkVMDebugTracePlayer::VariableData& var : vars) {
-        text += separator;
-        separator = ", ";
+        text += separator();
 
         if (var.fSlotIndex < 0 || (size_t)var.fSlotIndex >= trace.fSlotInfo.size()) {
             text += "???";

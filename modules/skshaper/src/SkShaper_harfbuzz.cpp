@@ -525,6 +525,14 @@ struct ShapedRun {
     std::unique_ptr<ShapedGlyph[]> fGlyphs;
     size_t fNumGlyphs;
     SkVector fAdvance;
+
+    static_assert(::sk_is_trivially_relocatable<decltype(fUtf8Range)>::value);
+    static_assert(::sk_is_trivially_relocatable<decltype(fFont)>::value);
+    static_assert(::sk_is_trivially_relocatable<decltype(fLevel)>::value);
+    static_assert(::sk_is_trivially_relocatable<decltype(fGlyphs)>::value);
+    static_assert(::sk_is_trivially_relocatable<decltype(fAdvance)>::value);
+
+    using sk_is_trivially_relocatable = std::true_type;
 };
 struct ShapedLine {
     SkTArray<ShapedRun> runs;
@@ -908,12 +916,18 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
                 SkVector advance = {0, 0};
                 modelText = std::make_unique<TextProps[]>(utf8runLength + 1);
                 size_t modelStartCluster = utf8Start - utf8;
+                size_t previousCluster = 0;
                 for (size_t i = 0; i < model.fNumGlyphs; ++i) {
                     SkASSERT(modelStartCluster <= model.fGlyphs[i].fCluster);
                     SkASSERT(                     model.fGlyphs[i].fCluster < (size_t)(utf8End - utf8));
                     if (!model.fGlyphs[i].fUnsafeToBreak) {
-                        modelText[model.fGlyphs[i].fCluster - modelStartCluster].glyphLen = i;
-                        modelText[model.fGlyphs[i].fCluster - modelStartCluster].advance = advance;
+                        // Store up to the first glyph in the cluster.
+                        size_t currentCluster = model.fGlyphs[i].fCluster - modelStartCluster;
+                        if (previousCluster != currentCluster) {
+                            previousCluster  = currentCluster;
+                            modelText[currentCluster].glyphLen = i;
+                            modelText[currentCluster].advance = advance;
+                        }
                     }
                     advance += model.fGlyphs[i].fAdvance;
                 }

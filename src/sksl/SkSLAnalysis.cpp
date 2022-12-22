@@ -10,6 +10,7 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
+#include "include/private/SkSLIRNode.h"
 #include "include/private/SkSLLayout.h"
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramElement.h"
@@ -22,6 +23,7 @@
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLIntrinsicList.h"
 #include "src/sksl/analysis/SkSLNoOpErrorReporter.h"
 #include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/analysis/SkSLProgramVisitor.h"
@@ -56,6 +58,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace SkSL {
 
@@ -112,24 +115,6 @@ protected:
 
         return INHERITED::visitExpression(e);
     }
-
-    using INHERITED = ProgramVisitor;
-};
-
-// Visitor that searches through the program for references to a particular builtin variable
-class BuiltinVariableVisitor : public ProgramVisitor {
-public:
-    BuiltinVariableVisitor(int builtin) : fBuiltin(builtin) {}
-
-    bool visitExpression(const Expression& e) override {
-        if (e.is<VariableReference>()) {
-            const VariableReference& var = e.as<VariableReference>();
-            return var.variable()->modifiers().fLayout.fBuiltin == fBuiltin;
-        }
-        return INHERITED::visitExpression(e);
-    }
-
-    int fBuiltin;
 
     using INHERITED = ProgramVisitor;
 };
@@ -332,8 +317,13 @@ SampleUsage Analysis::GetSampleUsage(const Program& program,
 }
 
 bool Analysis::ReferencesBuiltin(const Program& program, int builtin) {
-    BuiltinVariableVisitor visitor(builtin);
-    return visitor.visit(program);
+    SkASSERT(program.fUsage);
+    for (const auto& [variable, counts] : program.fUsage->fVariableCounts) {
+        if (counts.fRead > 0 && variable->modifiers().fLayout.fBuiltin == builtin) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool Analysis::ReferencesSampleCoords(const Program& program) {
@@ -364,13 +354,68 @@ bool Analysis::ReturnsOpaqueColor(const FunctionDefinition& function) {
     return !visitor.visitProgramElement(function);
 }
 
+bool Analysis::ContainsRTAdjust(const Expression& expr) {
+    class ContainsRTAdjustVisitor : public ProgramVisitor {
+    public:
+        bool visitExpression(const Expression& expr) override {
+            if (expr.is<VariableReference>() &&
+                expr.as<VariableReference>().variable()->name() == Compiler::RTADJUST_NAME) {
+                return true;
+            }
+            return INHERITED::visitExpression(expr);
+        }
+
+        using INHERITED = ProgramVisitor;
+    };
+
+    ContainsRTAdjustVisitor visitor;
+    return visitor.visitExpression(expr);
+}
+
+bool Analysis::IsCompileTimeConstant(const Expression& expr) {
+    class IsCompileTimeConstantVisitor : public ProgramVisitor {
+    public:
+        bool visitExpression(const Expression& expr) override {
+            switch (expr.kind()) {
+                case Expression::Kind::kLiteral:
+                    // Literals are compile-time constants.
+                    return false;
+
+                case Expression::Kind::kConstructorArray:
+                case Expression::Kind::kConstructorCompound:
+                case Expression::Kind::kConstructorDiagonalMatrix:
+                case Expression::Kind::kConstructorMatrixResize:
+                case Expression::Kind::kConstructorSplat:
+                case Expression::Kind::kConstructorStruct:
+                    // Constructors might be compile-time constants, if they are composed entirely
+                    // of literals and constructors. (Casting constructors are intentionally omitted
+                    // here. If the value inside was a compile-time constant, we would have not have
+                    // generated a cast at all.)
+                    return INHERITED::visitExpression(expr);
+
+                default:
+                    // This expression isn't a compile-time constant.
+                    fIsConstant = false;
+                    return true;
+            }
+        }
+
+        bool fIsConstant = true;
+        using INHERITED = ProgramVisitor;
+    };
+
+    IsCompileTimeConstantVisitor visitor;
+    visitor.visitExpression(expr);
+    return visitor.fIsConstant;
+}
+
 bool Analysis::DetectVarDeclarationWithoutScope(const Statement& stmt, ErrorReporter* errors) {
     // A variable declaration can create either a lone VarDeclaration or an unscoped Block
     // containing multiple VarDeclaration statements. We need to detect either case.
     const Variable* var;
     if (stmt.is<VarDeclaration>()) {
         // The single-variable case. No blocks at all.
-        var = &stmt.as<VarDeclaration>().var();
+        var = stmt.as<VarDeclaration>().var();
     } else if (stmt.is<Block>()) {
         // The multiple-variable case: an unscoped, non-empty block...
         const Block& block = stmt.as<Block>();
@@ -382,7 +427,7 @@ bool Analysis::DetectVarDeclarationWithoutScope(const Statement& stmt, ErrorRepo
         if (!innerStmt.is<VarDeclaration>()) {
             return false;
         }
-        var = &innerStmt.as<VarDeclaration>().var();
+        var = innerStmt.as<VarDeclaration>().var();
     } else {
         // This statement wasn't a variable declaration. No problem.
         return false;
@@ -436,7 +481,7 @@ public:
         if (s.is<ForStatement>()) {
             const ForStatement& f = s.as<ForStatement>();
             SkASSERT(f.initializer() && f.initializer()->is<VarDeclaration>());
-            const Variable* var = &f.initializer()->as<VarDeclaration>().var();
+            const Variable* var = f.initializer()->as<VarDeclaration>().var();
             auto [iter, inserted] = fLoopIndices.insert(var);
             SkASSERT(inserted);
             bool result = this->visitStatement(*f.statement());

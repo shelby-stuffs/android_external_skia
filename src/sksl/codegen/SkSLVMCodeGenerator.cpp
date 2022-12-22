@@ -15,11 +15,13 @@
 #include "include/core/SkTypes.h"
 #include "include/private/SkFloatingPoint.h"
 #include "include/private/SkSLDefines.h"
+#include "include/private/SkSLIRNode.h"
 #include "include/private/SkSLLayout.h"
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLStatement.h"
 #include "include/private/SkSLString.h"
+#include "include/private/SkStringView.h"
 #include "include/private/SkTArray.h"
 #include "include/private/SkTHash.h"
 #include "include/private/SkTPin.h"
@@ -27,6 +29,7 @@
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLIntrinsicList.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
@@ -66,7 +69,6 @@
 #include <functional>
 #include <iterator>
 #include <string_view>
-#include <type_traits>
 #include <utility>
 
 namespace {
@@ -112,7 +114,6 @@ namespace {
 }  // namespace
 
 namespace SkSL {
-class IRNode;
 
 namespace {
 
@@ -142,13 +143,13 @@ struct Value {
         skvm::Val& fVal;
     };
 
-    ValRef    operator[](size_t i) {
+    ValRef    operator[](int i) {
         // These redundant asserts work around what we think is a codegen bug in GCC 8.x for
         // 32-bit x86 Debug builds.
         SkASSERT(i < fVals.size());
         return fVals[i];
     }
-    skvm::Val operator[](size_t i) const {
+    skvm::Val operator[](int i) const {
         // These redundant asserts work around what we think is a codegen bug in GCC 8.x for
         // 32-bit x86 Debug builds.
         SkASSERT(i < fVals.size());
@@ -476,30 +477,30 @@ void SkVMGenerator::setupGlobals(SkSpan<skvm::Val> uniforms, skvm::Coord device)
     for (const ProgramElement* e : fProgram.elements()) {
         if (e->is<GlobalVarDeclaration>()) {
             const GlobalVarDeclaration& gvd = e->as<GlobalVarDeclaration>();
-            const VarDeclaration& decl = gvd.declaration()->as<VarDeclaration>();
-            const Variable& var = decl.var();
-            SkASSERT(!fSlotMap.find(&var));
+            const VarDeclaration& decl = gvd.varDeclaration();
+            const Variable* var = decl.var();
+            SkASSERT(!fSlotMap.find(var));
 
             // For most variables, fSlotMap stores an index into fSlots, but for children,
             // fSlotMap stores the index to pass to fSample(Shader|ColorFilter|Blender)
-            if (var.type().isEffectChild()) {
-                fSlotMap.set(&var, fpCount++);
+            if (var->type().isEffectChild()) {
+                fSlotMap.set(var, fpCount++);
                 continue;
             }
 
             // Opaque types include child processors and GL objects (samplers, textures, etc).
             // Of those, only child processors are legal variables.
-            SkASSERT(!var.type().isVoid());
-            SkASSERT(!var.type().isOpaque());
+            SkASSERT(!var->type().isVoid());
+            SkASSERT(!var->type().isOpaque());
 
             // getSlot() allocates space for the variable's value in fSlots, initializes it to zero,
             // and populates fSlotMap.
-            size_t slot   = this->getSlot(var),
-                   nslots = var.type().slotCount();
+            size_t slot   = this->getSlot(*var),
+                   nslots = var->type().slotCount();
 
             // builtin variables are system-defined, with special semantics. The only builtin
             // variable exposed to runtime effects is sk_FragCoord.
-            if (int builtin = var.modifiers().fLayout.fBuiltin; builtin >= 0) {
+            if (int builtin = var->modifiers().fLayout.fBuiltin; builtin >= 0) {
                 switch (builtin) {
                     case SK_FRAGCOORD_BUILTIN:
                         SkASSERT(nslots == 4);
@@ -515,7 +516,7 @@ void SkVMGenerator::setupGlobals(SkSpan<skvm::Val> uniforms, skvm::Coord device)
             }
 
             // For uniforms, copy the supplied IDs over
-            if (is_uniform(var)) {
+            if (is_uniform(*var)) {
                 SkASSERT(uniformIter + nslots <= uniforms.end());
                 for (size_t i = 0; i < nslots; ++i) {
                     this->writeToSlot(slot + i, uniformIter[i]);
@@ -548,6 +549,13 @@ int SkVMGenerator::getDebugFunctionInfo(const FunctionDeclaration& decl) {
     SkASSERT(fDebugTrace);
 
     std::string name = decl.description();
+
+    // When generating the debug trace, we typically mark every function as `noinline`. This makes
+    // the trace more confusing, since this isn't in the source program, so remove it.
+    static constexpr std::string_view kNoInline = "noinline ";
+    if (skstd::starts_with(name, kNoInline)) {
+        name = name.substr(kNoInline.size());
+    }
 
     // Look for a matching SkVMFunctionInfo slot.
     for (size_t index = 0; index < fDebugTrace->fFuncInfo.size(); ++index) {
@@ -1732,7 +1740,7 @@ Value SkVMGenerator::writePostfixExpression(const PostfixExpression& p) {
 Value SkVMGenerator::writeSwizzle(const Swizzle& s) {
     Value base = this->writeExpression(*s.base());
     Value swizzled(s.components().size());
-    for (size_t i = 0; i < s.components().size(); ++i) {
+    for (int i = 0; i < s.components().size(); ++i) {
         swizzled[i] = base[s.components()[i]];
     }
     return swizzled;
@@ -1824,7 +1832,7 @@ Value SkVMGenerator::writeStore(const Expression& lhs, const Value& rhs) {
 
     // Start with the identity slot map - this basically says that the values from rhs belong in
     // slots [0, 1, 2 ... N] of the lhs.
-    for (size_t i = 0; i < slots.size(); ++i) {
+    for (int i = 0; i < slots.size(); ++i) {
         slots[i] = i;
     }
 
@@ -2031,8 +2039,8 @@ void SkVMGenerator::writeSwitchStatement(const SwitchStatement& s) {
 }
 
 void SkVMGenerator::writeVarDeclaration(const VarDeclaration& decl) {
-    size_t slot   = this->getSlot(decl.var()),
-           nslots = decl.var().type().slotCount();
+    size_t slot   = this->getSlot(*decl.var()),
+           nslots = decl.var()->type().slotCount();
 
     Value val = decl.value() ? this->writeExpression(*decl.value()) : Value{};
     for (size_t i = 0; i < nslots; ++i) {
@@ -2304,7 +2312,7 @@ std::unique_ptr<UniformInfo> Program_GetUniformInfo(const Program& program) {
             continue;
         }
         const GlobalVarDeclaration& decl = e->as<GlobalVarDeclaration>();
-        const Variable& var = decl.declaration()->as<VarDeclaration>().var();
+        const Variable& var = *decl.varDeclaration().var();
         if (var.modifiers().fFlags & Modifiers::kUniform_Flag) {
             gather_uniforms(info.get(), var.type(), std::string(var.name()));
         }
@@ -2329,7 +2337,7 @@ bool testingOnly_ProgramToSkVMShader(const Program& program,
     for (const SkSL::ProgramElement* e : program.elements()) {
         if (e->is<GlobalVarDeclaration>()) {
             const GlobalVarDeclaration& decl = e->as<GlobalVarDeclaration>();
-            const Variable& var = decl.declaration()->as<VarDeclaration>().var();
+            const Variable& var = *decl.varDeclaration().var();
             if (var.type().isEffectChild()) {
                 childSlots++;
             } else if (is_uniform(var)) {
