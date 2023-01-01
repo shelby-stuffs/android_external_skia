@@ -7,6 +7,9 @@
 
 #pragma once
 
+#include <stddef.h>
+#include <stdint.h>
+
 // skcms_Transform.h contains skcms implementation details.
 // Please don't use this header from outside the skcms repo.
 
@@ -134,4 +137,27 @@ enum class Op : int {
     template <int N, typename T> using Vec = typename VecHelper<N, T>::V;
 #endif
 
+/** Interface */
+
+namespace baseline {
+
+void run_program(const Op* program, const void** contexts, ptrdiff_t /*programSize*/,
+                 const char* src, char* dst, int n,
+                 const size_t src_bpp, const size_t dst_bpp);
+
+}
+namespace hsw {
+
+void run_program(const Op* program, const void** contexts, ptrdiff_t /*programSize*/,
+                 const char* src, char* dst, int n,
+                 const size_t src_bpp, const size_t dst_bpp);
+
+}
+namespace skx {
+
+void run_program(const Op* program, const void** contexts, ptrdiff_t /*programSize*/,
+                 const char* src, char* dst, int n,
+                 const size_t src_bpp, const size_t dst_bpp);
+
+}
 }  // namespace skcms_private

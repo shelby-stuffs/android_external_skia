@@ -66,12 +66,13 @@ extern "C" {
 // If this isn't Clang, GCC, or Emscripten with SIMD support, we are in SKCMS_PORTABLE mode.
 #if !defined(SKCMS_PORTABLE) && !(defined(__clang__) || \
                                   defined(__GNUC__) || \
-                                  (defined(__EMSCRIPTEN_major__) && !defined(__wasm_simd128__)))
+                                  (defined(__EMSCRIPTEN_major__) && defined(__wasm_simd128__)))
     #define SKCMS_PORTABLE 1
 #endif
 
 // If we are in SKCMS_PORTABLE mode or running on a non-x86-64 platform, we can't enable HSW or SKX.
-#if defined(SKCMS_PORTABLE) || !defined(__x86_64__)
+// We also disable HSW/SKX on Android, even if it's Android on x64, since it's unlikely to benefit.
+#if defined(SKCMS_PORTABLE) || !defined(__x86_64__) || defined(ANDROID) || defined(__ANDROID__)
     #undef SKCMS_FORCE_HSW
     #if !defined(SKCMS_DISABLE_HSW)
         #define SKCMS_DISABLE_HSW 1

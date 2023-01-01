@@ -54,6 +54,7 @@ license {
 
 cc_defaults {
     name: "skia_arch_defaults",
+    cpp_std: "gnu++17",
     arch: {
         arm: {
             srcs: [],
@@ -153,8 +154,6 @@ cc_library_static {
     srcs: [
         "modules/skcms/skcms.cc",
         "modules/skcms/src/skcms_TransformBaseline.cc",
-        "modules/skcms/src/skcms_TransformHsw.cc",
-        "modules/skcms/src/skcms_TransformSkx.cc",
         "src/android/SkAndroidFrameworkPerfettoStaticStorage.cpp",
         "src/android/SkAndroidFrameworkUtils.cpp",
         "src/android/SkAnimatedImage.cpp",
@@ -994,8 +993,6 @@ cc_library_static {
         "client_utils/android/FrontBufferedStream.cpp",
         "modules/skcms/skcms.cc",
         "modules/skcms/src/skcms_TransformBaseline.cc",
-        "modules/skcms/src/skcms_TransformHsw.cc",
-        "modules/skcms/src/skcms_TransformSkx.cc",
         "src/android/SkAndroidFrameworkUtils.cpp",
         "src/android/SkAnimatedImage.cpp",
         "src/base/SkArenaAlloc.cpp",
@@ -2822,7 +2819,6 @@ cc_defaults {
         "tests/GainmapShaderTest.cpp",
         "tests/GeometryTest.cpp",
         "tests/GifTest.cpp",
-        "tests/GlyphRunTest.cpp",
         "tests/GpuDrawPathTest.cpp",
         "tests/GpuRectanizerTest.cpp",
         "tests/GrAHardwareBufferTest.cpp",
@@ -3138,6 +3134,7 @@ cc_defaults {
 
 cc_test {
     name: "skia_dm",
+    cpp_std: "gnu++17",
 
     defaults: [
         "skia_gm_srcs",
@@ -3161,7 +3158,6 @@ cc_test {
         "tools/HashAndEncode.cpp",
         "tools/flags/CommonFlagsAA.cpp",
         "tools/flags/CommonFlagsConfig.cpp",
-        "tools/flags/CommonFlagsFontMgr.cpp",
         "tools/flags/CommonFlagsGpu.cpp",
         "tools/flags/CommonFlagsImages.cpp",
         "tools/trace/ChromeTracingTracer.cpp",
@@ -3177,6 +3173,7 @@ cc_test {
 
 cc_test {
     name: "skia_nanobench",
+    cpp_std: "gnu++17",
 
     defaults: [
         "skia_gm_srcs",
@@ -3837,8 +3834,6 @@ cc_library_shared {
         "modules/bentleyottmann/tests/SweepLineTest.cpp",
         "modules/skcms/skcms.cc",
         "modules/skcms/src/skcms_TransformBaseline.cc",
-        "modules/skcms/src/skcms_TransformHsw.cc",
-        "modules/skcms/src/skcms_TransformSkx.cc",
         "modules/sksg/src/SkSGClipEffect.cpp",
         "modules/sksg/src/SkSGColorFilter.cpp",
         "modules/sksg/src/SkSGDraw.cpp",
@@ -4891,7 +4886,6 @@ cc_library_shared {
         "tests/GainmapShaderTest.cpp",
         "tests/GeometryTest.cpp",
         "tests/GifTest.cpp",
-        "tests/GlyphRunTest.cpp",
         "tests/GpuDrawPathTest.cpp",
         "tests/GpuRectanizerTest.cpp",
         "tests/GrAHardwareBufferTest.cpp",

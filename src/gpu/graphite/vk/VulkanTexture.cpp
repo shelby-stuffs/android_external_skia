@@ -36,8 +36,10 @@ bool VulkanTexture::MakeVkImage(const VulkanSharedContext* sharedContext,
         return false;
     }
 
-    if (info.isProtected() == Protected::kYes && !caps.protectedSupport()) {
-        SKGPU_LOG_E("Tried to create protected VkImage when protected not supported.");
+    if ((info.isProtected() == Protected::kYes) != caps.protectedSupport()) {
+        SKGPU_LOG_E("Tried to create %s VkImage in %s Context.",
+                    info.isProtected() == Protected::kYes ? "protected" : "unprotected",
+                    caps.protectedSupport() ? "protected" : "unprotected");
         return false;
     }
 
@@ -58,8 +60,7 @@ bool VulkanTexture::MakeVkImage(const VulkanSharedContext* sharedContext,
     SkASSERT(!isLinear || vkSamples == VK_SAMPLE_COUNT_1_BIT);
 
     VkImageCreateFlags createflags = 0;
-    if (info.isProtected() == Protected::kYes) {
-        SkASSERT(caps.protectedSupport());
+    if (info.isProtected() == Protected::kYes && caps.protectedSupport()) {
         createflags |= VK_IMAGE_CREATE_PROTECTED_BIT;
     }
 
