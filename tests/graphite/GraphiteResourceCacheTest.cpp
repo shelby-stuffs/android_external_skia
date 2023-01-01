@@ -53,6 +53,8 @@ public:
         return resource;
     }
 
+    const char* getResourceType() const override { return "Test Resource"; }
+
     static void CreateKey(GraphiteResourceKey* key, Shareable shareable) {
         // Internally we assert that we don't make the same key twice where the only difference is
         // shareable vs non-shareable. That allows us to now have Shareable be part of the Key's
@@ -68,7 +70,11 @@ private:
                  Ownership owned,
                  skgpu::Budgeted budgeted,
                  size_t gpuMemorySize)
-            : Resource(sharedContext, owned, budgeted, gpuMemorySize) {}
+            : Resource(sharedContext,
+                       owned,
+                       budgeted,
+                       gpuMemorySize,
+                       	/*label=*/"TestResource") {}
 
     void freeGpuData() override {}
 };
@@ -133,7 +139,7 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(GraphiteBudgetedResourcesTest, reporter, cont
     resourcePtr2->unref();
     resourceCache->forceProcessReturnedResources();
 
-    // Test making a non budgeted, non shareable resource.
+    // Test making a budgeted, shareable resource.
     resource = TestResource::Make(
             sharedContext, Ownership::kOwned, skgpu::Budgeted::kYes, Shareable::kYes);
     if (!resource) {
