@@ -150,6 +150,7 @@ SKIA_PUBLIC_HDRS = [
     "include/gpu/ganesh/gl/GrGLBackendSurface.h",
     "include/gpu/ganesh/gl/GrGLDirectContext.h",
     "include/gpu/ganesh/mtl/SkSurfaceMetal.h",
+    "include/gpu/ganesh/vk/GrVkBackendSemaphore.h",
     "include/gpu/ganesh/vk/GrVkBackendSurface.h",
     "include/gpu/ganesh/vk/GrVkDirectContext.h",
     "include/gpu/gl/egl/GrGLMakeEGLInterface.h",
@@ -186,6 +187,7 @@ SKIA_PUBLIC_HDRS = [
     "include/gpu/vk/GrVkTypes.h",
     "include/gpu/vk/VulkanExtensions.h",
     "include/gpu/vk/VulkanMemoryAllocator.h",
+    "include/gpu/vk/VulkanMutableTextureState.h",
     "include/gpu/vk/VulkanTypes.h",
     "include/pathops/SkPathOps.h",
     "include/ports/SkCFObject.h",
@@ -784,7 +786,7 @@ BASE_SRCS_ALL = [
     "src/gpu/DitherUtils.h",
     "src/gpu/GpuTypesPriv.h",
     "src/gpu/KeyBuilder.h",
-    "src/gpu/MutableTextureStateRef.h",
+    "src/gpu/MutableTextureState.cpp",
     "src/gpu/PipelineUtils.cpp",
     "src/gpu/PipelineUtils.h",
     "src/gpu/Rectanizer.h",
@@ -796,6 +798,7 @@ BASE_SRCS_ALL = [
     "src/gpu/ResourceKey.cpp",
     "src/gpu/ResourceKey.h",
     "src/gpu/ShaderErrorHandler.cpp",
+    "src/gpu/SkBackingFit.cpp",
     "src/gpu/SkBackingFit.h",
     "src/gpu/SkRenderEngineAbortf.h",
     "src/gpu/Swizzle.cpp",
@@ -2068,6 +2071,7 @@ PORTS_SRCS_WASM = [
     "src/ports/SkFontMgr_custom.cpp",
     "src/ports/SkFontMgr_custom.h",
     "src/ports/SkFontMgr_custom_embedded.cpp",
+    "src/ports/SkFontMgr_custom_empty.cpp",
     "src/ports/SkFontMgr_empty_factory.cpp",
     "src/ports/SkGlobalInitialization_default.cpp",
     "src/ports/SkMemory_malloc.cpp",
@@ -2137,6 +2141,9 @@ MTL_SRCS = [
 ]
 
 VULKAN_SRCS = [
+    "src/gpu/vk/VulkanMutableTextureState.cpp",
+    "src/gpu/vk/VulkanMutableTextureStatePriv.h",
+    "src/gpu/ganesh/vk/GrVkBackendSemaphore.cpp",
     "src/gpu/ganesh/vk/GrVkBackendSurface.cpp",
     "src/gpu/ganesh/vk/GrVkBackendSurfacePriv.h",
     "src/gpu/ganesh/vk/GrVkBuffer.cpp",
@@ -2239,6 +2246,9 @@ UNIX_DEFINES = [
     "SK_R32_SHIFT=16",
     "SK_GL",
     "SK_CODEC_DECODES_JPEG",
+    "SK_FONTMGR_FREETYPE_DIRECTORY_AVAILABLE",
+    "SK_FONTMGR_FREETYPE_EMPTY_AVAILABLE",
+    "SK_FONTMGR_FONTCONFIG_AVAILABLE",
 ]
 ANDROID_DEFINES = [
     "SK_BUILD_FOR_ANDROID",
@@ -2246,10 +2256,15 @@ ANDROID_DEFINES = [
     "SK_CODEC_DECODES_WEBP",
     "SK_GL",
     "SK_CODEC_DECODES_JPEG",
+    "SK_FONTMGR_ANDROID_AVAILABLE",
+    "SK_FONTMGR_FREETYPE_DIRECTORY_AVAILABLE",
+    "SK_FONTMGR_FREETYPE_EMPTY_AVAILABLE",
+    "SK_FONTMGR_FONTCONFIG_AVAILABLE",
 ]
 IOS_DEFINES = [
     "SK_BUILD_FOR_IOS",
     "SK_CODEC_DECODES_JPEG",
+    "SK_FONTMGR_CORETEXT_AVAILABLE",
 ]
 WASM_DEFINES = [
     "SK_DISABLE_LEGACY_SHADERCONTEXT",
@@ -2260,6 +2275,7 @@ WASM_DEFINES = [
     "SK_FORCE_8_BYTE_ALIGNMENT",
     "SKNX_NO_SIMD",
     "SK_CODEC_DECODES_JPEG",
+    "SK_FONTMGR_FREETYPE_EMPTY_AVAILABLE",
 ]
 FUCHSIA_DEFINES = [
     "SK_BUILD_FOR_UNIX",
@@ -2268,11 +2284,13 @@ FUCHSIA_DEFINES = [
     "SK_R32_SHIFT=16",
     "SK_VULKAN",
     "SK_CODEC_DECODES_JPEG",
+    "SK_FONTMGR_FUCHSIA_AVAILABLE",
 ]
 MACOS_DEFINES = [
     "SK_BUILD_FOR_MAC",
     "SK_GL",
     "SK_CODEC_DECODES_JPEG",
+    "SK_FONTMGR_CORETEXT_AVAILABLE",
 ]
 ANDROID_NO_CODECS_DEFINES = [
     "SK_BUILD_FOR_ANDROID",

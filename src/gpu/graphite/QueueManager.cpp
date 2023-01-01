@@ -10,6 +10,7 @@
 #include "include/gpu/graphite/Recording.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/RefCntedCallback.h"
+#include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/ContextPriv.h"
@@ -33,7 +34,12 @@ QueueManager::QueueManager(const SharedContext* sharedContext)
 }
 
 QueueManager::~QueueManager() {
-    this->checkForFinishedWork(SyncToCpu::kYes);
+    if (fSharedContext->caps()->allowCpuSync()) {
+        this->checkForFinishedWork(SyncToCpu::kYes);
+    } else if (!fOutstandingSubmissions.empty()) {
+        SKGPU_LOG_F("When ContextOptions::fNeverYieldToWebGPU is specified all GPU work must be "
+                    "finished before destroying Context.");
+    }
 }
 
 bool QueueManager::setupCommandBuffer(ResourceProvider* resourceProvider) {
@@ -179,7 +185,8 @@ bool QueueManager::addTask(Task* task,
 }
 
 bool QueueManager::addFinishInfo(const InsertFinishInfo& info,
-                                 ResourceProvider* resourceProvider) {
+                                 ResourceProvider* resourceProvider,
+                                 SkSpan<const sk_sp<Buffer>> buffersToAsyncMap) {
     sk_sp<RefCntedCallback> callback;
     if (info.fFinishedProc) {
         callback = RefCntedCallback::Make(info.fFinishedProc, info.fFinishedContext);
@@ -196,6 +203,7 @@ bool QueueManager::addFinishInfo(const InsertFinishInfo& info,
     if (callback) {
         fCurrentCommandBuffer->addFinishedProc(std::move(callback));
     }
+    fCurrentCommandBuffer->addBuffersToAsyncMapOnSubmit(buffersToAsyncMap);
 
     return true;
 }
@@ -226,10 +234,13 @@ bool QueueManager::submitToGpu() {
     return true;
 }
 
+bool QueueManager::hasUnfinishedGpuWork() { return !fOutstandingSubmissions.empty(); }
+
 void QueueManager::checkForFinishedWork(SyncToCpu sync) {
     TRACE_EVENT1("skia.gpu", TRACE_FUNC, "sync", sync == SyncToCpu::kYes);
 
     if (sync == SyncToCpu::kYes) {
+        SkASSERT(fSharedContext->caps()->allowCpuSync());
         // wait for the last submission to finish
         OutstandingSubmission* back = (OutstandingSubmission*)fOutstandingSubmissions.back();
         if (back) {

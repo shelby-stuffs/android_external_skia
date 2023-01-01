@@ -34,10 +34,19 @@ arch("skcms_TransformHsw") {
   enabled = current_cpu == "x64" && target_os != "android"
   sources = skcms_TransformHsw
   if (is_win) {
-    cflags = [ "/arch:AVX2" ]
+    if (is_clang) {
+      cflags = [
+        "/clang:-mavx2",
+        "/clang:-mf16c",
+        "/clang:-ffp-contract=off",
+      ]
+    } else {
+      cflags = [ "/arch:AVX2" ]
+    }
   } else {
     cflags = [
-      "-march=haswell",
+      "-mavx2",
+      "-mf16c",
       "-std=c11",
     ]
   }
@@ -47,10 +56,25 @@ arch("skcms_TransformSkx") {
   enabled = current_cpu == "x64" && target_os != "android"
   sources = skcms_TransformSkx
   if (is_win) {
-    cflags = [ "/arch:AVX512" ]
+    if (is_clang) {
+      cflags = [
+        "/clang:-mavx512f",
+        "/clang:-mavx512dq",
+        "/clang:-mavx512cd",
+        "/clang:-mavx512bw",
+        "/clang:-mavx512vl",
+        "/clang:-ffp-contract=off",
+      ]
+    } else {
+      cflags = [ "/arch:AVX512" ]
+    }
   } else {
     cflags = [
-      "-march=skylake-avx512",
+      "-mavx512f",
+      "-mavx512dq",
+      "-mavx512cd",
+      "-mavx512bw",
+      "-mavx512vl",
       "-std=c11",
     ]
   }
