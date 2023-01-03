@@ -12,6 +12,7 @@
 #include "src/gpu/Swizzle.h"
 #include "tests/Test.h"
 
+#include <cmath>
 #include <numeric>
 
 DEF_TEST(SkRasterPipeline, r) {
@@ -122,24 +123,72 @@ DEF_TEST(SkRasterPipeline_LoadStoreMasked, r) {
 
 DEF_TEST(SkRasterPipeline_LoadStoreConditionMask, r) {
     alignas(64) int32_t val[SkRasterPipeline_kMaxStride_highp] = {};
-    alignas(64) int32_t data[] = {~0, 0, ~0, 0, ~0, ~0, ~0, 0};
-    static_assert(std::size(data) == SkRasterPipeline_kMaxStride_highp);
+    alignas(64) int32_t mask[]  = {~0, 0, ~0,  0, ~0, ~0, ~0,  0};
+    alignas(64) int32_t mask2[] = { 0, 0, ~0, ~0, ~0,  0, ~0, ~0};
+    alignas(64) int32_t combination[2 * SkRasterPipeline_kMaxStride_highp] = {};
+    alignas(64) int32_t dst[4 * SkRasterPipeline_kMaxStride_highp] = {};
+    static_assert(std::size(mask)  == SkRasterPipeline_kMaxStride_highp);
+    static_assert(std::size(mask2) == SkRasterPipeline_kMaxStride_highp);
+
+    std::copy(std::begin(mask2),
+              std::begin(mask2) + SkOpts::raster_pipeline_highp_stride,
+              std::begin(combination));
 
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::load_condition_mask, data);
+    p.append(SkRasterPipeline::init_lane_masks);
+    p.append(SkRasterPipeline::load_condition_mask, mask);
     p.append(SkRasterPipeline::store_condition_mask, val);
-    p.run(0,0,1,1);
+    p.append(SkRasterPipeline::combine_condition_mask, combination);
+    p.append(SkRasterPipeline::update_return_mask);
+    p.append(SkRasterPipeline::store_dst, dst);
+    p.run(0,0,SkOpts::raster_pipeline_highp_stride,1);
 
-    // `val` should be populated with `data` in the frontmost positions
-    // (depending on the architecture that SkRasterPipeline is targeting).
-    size_t index = 0;
-    for (; index < SkOpts::raster_pipeline_highp_stride; ++index) {
-        REPORTER_ASSERT(r, val[index] == data[index]);
+    {
+        // `val` should be populated with `mask` in the frontmost positions
+        // (depending on the architecture that SkRasterPipeline is targeting).
+        size_t index = 0;
+        for (; index < SkOpts::raster_pipeline_highp_stride; ++index) {
+            REPORTER_ASSERT(r, val[index] == mask[index]);
+        }
+
+        // The remaining slots should have been left alone.
+        for (; index < std::size(val); ++index) {
+            REPORTER_ASSERT(r, val[index] == 0);
+        }
     }
+    {
+        // `combination` should be populated with `mask2` in the frontmost positions, then `mask` in
+        // the immediately-following positions.
+        size_t index = 0;
+        for (size_t loop = 0; loop < SkOpts::raster_pipeline_highp_stride; ++loop, ++index) {
+            REPORTER_ASSERT(r, combination[index] == mask2[loop]);
+        }
+        for (size_t loop = 0; loop < SkOpts::raster_pipeline_highp_stride; ++loop, ++index) {
+            REPORTER_ASSERT(r, combination[index] == mask[loop]);
+        }
 
-    // The remaining slots should have been left alone.
-    for (; index < std::size(val); ++index) {
-        REPORTER_ASSERT(r, val[index] == 0);
+        // The remaining slots should have been left alone.
+        for (; index < std::size(combination); ++index) {
+            REPORTER_ASSERT(r, combination[index] == 0);
+        }
+    }
+    {
+        // `dr` (dst channel zero) should be populated with `mask & mask2`.
+        const int dr = 0 * SkOpts::raster_pipeline_highp_stride;
+        for (size_t index = 0; index < SkOpts::raster_pipeline_highp_stride; ++index) {
+            REPORTER_ASSERT(r, dst[dr + index] == (mask[index] & mask2[index]));
+        }
+        // `dg` (dst channel one) isn't used in this test and is ignored.
+        // `db` (dst channel two) should be populated with the opposite of `dr`.
+        const int db = 2 * SkOpts::raster_pipeline_highp_stride;
+        for (size_t index = 0; index < SkOpts::raster_pipeline_highp_stride; ++index) {
+            REPORTER_ASSERT(r, dst[db + index] == ~(mask[index] & mask2[index]));
+        }
+        // `da` (dst channel three) should be zero.
+        const int da = 3 * SkOpts::raster_pipeline_highp_stride;
+        for (size_t index = 0; index < SkOpts::raster_pipeline_highp_stride; ++index) {
+            REPORTER_ASSERT(r, dst[da + index] == 0);
+        }
     }
 }
 
@@ -165,7 +214,7 @@ DEF_TEST(SkRasterPipeline_InitLaneMasks, r) {
         // Execute our program.
         p.run(0,0,width,1);
 
-        // Initialized data should look like on/on/on/off (RGB are set, A is ignored) and is
+        // Initialized data should look like on/on/on/on (RGBA are all set) and is
         // striped by the raster pipeline stride because we wrote it using store_dst.
         size_t index = 0;
         int32_t* channelR = dRGBA;
@@ -176,7 +225,7 @@ DEF_TEST(SkRasterPipeline_InitLaneMasks, r) {
             REPORTER_ASSERT(r, *channelR++ == ~0);
             REPORTER_ASSERT(r, *channelG++ == ~0);
             REPORTER_ASSERT(r, *channelB++ == ~0);
-            REPORTER_ASSERT(r, *channelA++ ==  0);
+            REPORTER_ASSERT(r, *channelA++ == ~0);
         }
 
         // The rest of the output array should be untouched (all zero).
@@ -303,6 +352,389 @@ DEF_TEST(SkRasterPipeline_ZeroSlotsUnmasked, r) {
                 ++destPtr;
                 expectedUnchanged += 1.0f;
             }
+        }
+    }
+}
+
+DEF_TEST(SkRasterPipeline_AddFloats, r) {
+    // Allocate space for 20 dest slots.
+    alignas(64) float slots[20 * SkRasterPipeline_kMaxStride_highp];
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    for (int slotCount = 0; slotCount < 10; ++slotCount) {
+        // Initialize the slot values to 1,2,3...
+        std::iota(&slots[0], &slots[20 * N], 1.0f);
+
+        // Run `add_n_floats` over our data.
+        SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+        SkRasterPipeline p(&alloc);
+        p.append_adjacent_multi_slot_op(&alloc,
+                                        SkRasterPipeline::Stage::add_n_floats,
+                                        &slots[0],
+                                        &slots[slotCount * N],
+                                        slotCount);
+        p.run(0,0,1,1);
+
+        // Verify that the affected slots now equal (1,2,3...) + (4,5,6...).
+        float leftValue = 1.0f;
+        float rightValue = float(slotCount * N) + 1.0f;
+        float* destPtr = &slots[0];
+        for (int checkSlot = 0; checkSlot < 20; ++checkSlot) {
+            for (int checkLane = 0; checkLane < N; ++checkLane) {
+                if (checkSlot < slotCount) {
+                    REPORTER_ASSERT(r, *destPtr == leftValue + rightValue);
+                } else {
+                    REPORTER_ASSERT(r, *destPtr == leftValue);
+                }
+
+                ++destPtr;
+                leftValue += 1.0f;
+                rightValue += 1.0f;
+            }
+        }
+    }
+}
+
+DEF_TEST(SkRasterPipeline_CompareFloats, r) {
+    // Allocate space for 20 dest slots.
+    alignas(64) float slots[20 * SkRasterPipeline_kMaxStride_highp];
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    struct CompareOp {
+        SkRasterPipeline::Stage stage;
+        std::function<bool(float, float)> verify;
+    };
+
+    static const CompareOp kCompareOps[] = {
+        {SkRasterPipeline::Stage::cmpeq_n_floats, [](float a, float b) { return a == b; }},
+        {SkRasterPipeline::Stage::cmpne_n_floats, [](float a, float b) { return a != b; }},
+        {SkRasterPipeline::Stage::cmplt_n_floats, [](float a, float b) { return a <  b; }},
+        {SkRasterPipeline::Stage::cmple_n_floats, [](float a, float b) { return a <= b; }},
+    };
+
+    for (const CompareOp& op : kCompareOps) {
+        for (int slotCount = 0; slotCount < 10; ++slotCount) {
+            // Initialize the slot values to 0,1,2,0,1,2,0,1,2...
+            for (int index = 0; index < 20 * N; ++index) {
+                slots[index] = std::fmod(index, 3.0f);
+            }
+
+            float leftValue = slots[0];
+            float rightValue = slots[slotCount * N];
+
+            // Run the comparison op over our data.
+            SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+            SkRasterPipeline p(&alloc);
+            p.append_adjacent_multi_slot_op(
+                    &alloc, op.stage, &slots[0], &slots[slotCount * N], slotCount);
+            p.run(0, 0, 1, 1);
+
+            // Verify that the affected slots now contain "(0,1,2,0...) op (1,2,0,1...)".
+            float* destPtr = &slots[0];
+            for (int checkSlot = 0; checkSlot < 20; ++checkSlot) {
+                for (int checkLane = 0; checkLane < N; ++checkLane) {
+                    if (checkSlot < slotCount) {
+                        bool compareIsTrue = op.verify(leftValue, rightValue);
+                        REPORTER_ASSERT(r, *(int*)destPtr == (compareIsTrue ? ~0 : 0));
+                    } else {
+                        REPORTER_ASSERT(r, *destPtr == leftValue);
+                    }
+
+                    ++destPtr;
+                    leftValue = std::fmod(leftValue + 1.0f, 3.0f);
+                    rightValue = std::fmod(rightValue + 1.0f, 3.0f);
+                }
+            }
+        }
+    }
+}
+
+DEF_TEST(SkRasterPipeline_CompareInts, r) {
+    // Allocate space for 20 dest slots.
+    alignas(64) int slots[20 * SkRasterPipeline_kMaxStride_highp];
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    struct CompareOp {
+        SkRasterPipeline::Stage stage;
+        std::function<bool(int, int)> verify;
+    };
+
+    static const CompareOp kCompareOps[] = {
+        {SkRasterPipeline::Stage::cmpeq_n_ints, [](int a, int b) { return a == b; }},
+        {SkRasterPipeline::Stage::cmpne_n_ints, [](int a, int b) { return a != b; }},
+        {SkRasterPipeline::Stage::cmplt_n_ints, [](int a, int b) { return a <  b; }},
+        {SkRasterPipeline::Stage::cmple_n_ints, [](int a, int b) { return a <= b; }},
+    };
+
+    for (const CompareOp& op : kCompareOps) {
+        for (int slotCount = 0; slotCount < 10; ++slotCount) {
+            // Initialize the slot values to 0,1,2,0,1,2,0,1,2...
+            for (int index = 0; index < 20 * N; ++index) {
+                slots[index] = index % 3;
+            }
+
+            int leftValue = slots[0];
+            int rightValue = slots[slotCount * N];
+
+            // Run the comparison op over our data.
+            SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+            SkRasterPipeline p(&alloc);
+            p.append_adjacent_multi_slot_op(
+                    &alloc, op.stage, (float*)&slots[0], (float*)&slots[slotCount * N], slotCount);
+            p.run(0, 0, 1, 1);
+
+            // Verify that the affected slots now contain "(0,1,2,0...) op (1,2,0,1...)".
+            int* destPtr = &slots[0];
+            for (int checkSlot = 0; checkSlot < 20; ++checkSlot) {
+                for (int checkLane = 0; checkLane < N; ++checkLane) {
+                    if (checkSlot < slotCount) {
+                        bool compareIsTrue = op.verify(leftValue, rightValue);
+                        REPORTER_ASSERT(r, *destPtr == (compareIsTrue ? ~0 : 0));
+                    } else {
+                        REPORTER_ASSERT(r, *destPtr == leftValue);
+                    }
+
+                    ++destPtr;
+                    leftValue = (leftValue + 1) % 3;
+                    rightValue = (rightValue + 1) % 3;
+                }
+            }
+        }
+    }
+}
+
+DEF_TEST(SkRasterPipeline_BinaryBitwiseOps, r) {
+    // Allocate space for 2 slots.
+    alignas(64) int slots[2 * SkRasterPipeline_kMaxStride_highp];
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    struct BitwiseOp {
+        SkRasterPipeline::Stage stage;
+        std::function<int(int, int)> verify;
+    };
+
+    static const BitwiseOp kBitwiseOps[] = {
+        {SkRasterPipeline::Stage::bitwise_and, [](int a, int b) { return a & b; }},
+        {SkRasterPipeline::Stage::bitwise_or,  [](int a, int b) { return a | b; }},
+        {SkRasterPipeline::Stage::bitwise_xor, [](int a, int b) { return a ^ b; }},
+    };
+
+    for (const BitwiseOp& op : kBitwiseOps) {
+        // Initialize the slot values to -5,-4,-3,-2...
+        std::iota(&slots[0], &slots[2 * N], -5);
+        int leftValue = slots[0];
+        int rightValue = slots[N];
+
+        // Run the bitwise op over our data.
+        SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+        SkRasterPipeline p(&alloc);
+        p.append_adjacent_single_slot_op(op.stage, (float*)&slots[0], (float*)&slots[N]);
+        p.run(0, 0, 1, 1);
+
+        // Verify that the destination slots have been updated.
+        int* destPtr = &slots[0];
+        for (int checkSlot = 0; checkSlot < 2; ++checkSlot) {
+            for (int checkLane = 0; checkLane < N; ++checkLane) {
+                if (checkSlot == 0) {
+                    int expected = op.verify(leftValue, rightValue);
+                    REPORTER_ASSERT(r, *destPtr == expected);
+                } else {
+                    REPORTER_ASSERT(r, *destPtr == leftValue);
+                }
+
+                ++destPtr;
+                ++leftValue;
+                ++rightValue;
+            }
+        }
+    }
+}
+
+DEF_TEST(SkRasterPipeline_UnaryBitwiseOps, r) {
+    // Allocate space for 1 slot.
+    alignas(64) int slots[SkRasterPipeline_kMaxStride_highp];
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    struct BitwiseOp {
+        SkRasterPipeline::Stage stage;
+        std::function<int(int)> verify;
+    };
+
+    static const BitwiseOp kBitwiseOps[] = {
+        {SkRasterPipeline::Stage::bitwise_not, [](int a) { return ~a; }},
+    };
+
+    for (const BitwiseOp& op : kBitwiseOps) {
+        // Initialize the slot values to -3,-2,-1...
+        std::iota(&slots[0], &slots[N], -3);
+        int inputValue = slots[0];
+
+        // Run the bitwise op over our data.
+        SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+        SkRasterPipeline p(&alloc);
+        p.append(op.stage, &slots[0]);
+        p.run(0, 0, 1, 1);
+
+        // Verify that the destination slots have been updated.
+        int* destPtr = &slots[0];
+        for (int checkLane = 0; checkLane < N; ++checkLane) {
+            int expected = op.verify(inputValue);
+            REPORTER_ASSERT(r, *destPtr == expected);
+
+            ++destPtr;
+            ++inputValue;
+        }
+    }
+}
+
+DEF_TEST(SkRasterPipeline_AddInts, r) {
+    // Allocate space for 20 dest slots.
+    alignas(64) int slots[20 * SkRasterPipeline_kMaxStride_highp];
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    for (int slotCount = 0; slotCount < 10; ++slotCount) {
+        // Initialize the slot values to 1,2,3...
+        std::iota(&slots[0], &slots[20 * N], 1);
+
+        // Run `add_n_ints` over our data.
+        SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+        SkRasterPipeline p(&alloc);
+        p.append_adjacent_multi_slot_op(&alloc,
+                                        SkRasterPipeline::Stage::add_n_ints,
+                                        (float*)&slots[0],
+                                        (float*)&slots[slotCount * N],
+                                        slotCount);
+        p.run(0,0,1,1);
+
+        // Verify that the affected slots now equal (1,2,3...) + (4,5,6...).
+        int leftValue = 1;
+        int rightValue = float(slotCount * N) + 1;
+        int* destPtr = &slots[0];
+        for (int checkSlot = 0; checkSlot < 20; ++checkSlot) {
+            for (int checkLane = 0; checkLane < N; ++checkLane) {
+                if (checkSlot < slotCount) {
+                    REPORTER_ASSERT(r, *destPtr == leftValue + rightValue);
+                } else {
+                    REPORTER_ASSERT(r, *destPtr == leftValue);
+                }
+
+                ++destPtr;
+                leftValue += 1;
+                rightValue += 1;
+            }
+        }
+    }
+}
+
+DEF_TEST(SkRasterPipeline_Jump, r) {
+    // Allocate space for 4 slots.
+    alignas(64) float slots[4 * SkRasterPipeline_kMaxStride_highp] = {};
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    alignas(64) static constexpr float kColorDarkRed[4] = {0.5f, 0.0f, 0.0f, 0.75f};
+    alignas(64) static constexpr float kColorGreen[4]   = {0.0f, 1.0f, 0.0f, 1.0f};
+    const int offset = 2;
+
+    // Make a program which jumps over an append_constant_color op.
+    SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+    SkRasterPipeline p(&alloc);
+    p.append_constant_color(&alloc, kColorGreen);    // assign green
+    p.append(SkRasterPipeline::jump, &offset);       // jump over the dark-red color assignment
+    p.append_constant_color(&alloc, kColorDarkRed);  // (not executed)
+    p.append(SkRasterPipeline::store_src, slots);    // store the result so we can check it
+    p.run(0,0,1,1);
+
+    // Verify that the slots contain green.
+    float* destPtr = &slots[0];
+    for (int checkSlot = 0; checkSlot < 4; ++checkSlot) {
+        for (int checkLane = 0; checkLane < N; ++checkLane) {
+            REPORTER_ASSERT(r, *destPtr == kColorGreen[checkSlot]);
+            ++destPtr;
+        }
+    }
+}
+
+DEF_TEST(SkRasterPipeline_BranchIfAnyActiveLanes, r) {
+    // Allocate space for 4 slots.
+    alignas(64) float slots[4 * SkRasterPipeline_kMaxStride_highp] = {};
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    alignas(64) static constexpr float kColorDarkRed[4] = {0.5f, 0.0f, 0.0f, 0.75f};
+    alignas(64) static constexpr float kColorGreen[4]   = {0.0f, 1.0f, 0.0f, 1.0f};
+    const int offset = 2;
+
+    // An array of all zeros.
+    alignas(64) static constexpr int32_t kNoLanesActive[4 * SkRasterPipeline_kMaxStride_highp] = {};
+
+    // An array of all zeros, except for a single ~0 in the first dA slot.
+    alignas(64) int32_t oneLaneActive[4 * SkRasterPipeline_kMaxStride_highp] = {};
+    oneLaneActive[3*N] = ~0;
+
+    // Make a program which conditionally branches past two append_constant_color ops.
+    SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+    SkRasterPipeline p(&alloc);
+    p.append_constant_color(&alloc, kColorDarkRed);                  // set the color to dark red
+    p.append(SkRasterPipeline::load_dst, kNoLanesActive);            // make no lanes active
+    p.append(SkRasterPipeline::branch_if_any_active_lanes, &offset); // do not skip past next line
+    p.append_constant_color(&alloc, kColorGreen);                    // set the color to green
+    p.append(SkRasterPipeline::load_dst, oneLaneActive);             // set one lane active
+    p.append(SkRasterPipeline::branch_if_any_active_lanes, &offset); // skip past next line
+    p.append_constant_color(&alloc, kColorDarkRed);                  // (not executed)
+    p.append(SkRasterPipeline::init_lane_masks);                     // set all lanes active
+    p.append(SkRasterPipeline::branch_if_any_active_lanes, &offset); // skip past next line
+    p.append_constant_color(&alloc, kColorDarkRed);                  // (not executed)
+    p.append(SkRasterPipeline::store_src, slots);                    // store final color
+    p.run(0,0,1,1);
+
+    // Verify that the slots contain green.
+    float* destPtr = &slots[0];
+    for (int checkSlot = 0; checkSlot < 4; ++checkSlot) {
+        for (int checkLane = 0; checkLane < N; ++checkLane) {
+            REPORTER_ASSERT(r, *destPtr == kColorGreen[checkSlot]);
+            ++destPtr;
+        }
+    }
+}
+
+DEF_TEST(SkRasterPipeline_BranchIfNoActiveLanes, r) {
+    // Allocate space for 4 slots.
+    alignas(64) float slots[4 * SkRasterPipeline_kMaxStride_highp] = {};
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    alignas(64) static constexpr float kColorBlack[4]   = {0.0f, 0.0f, 0.0f, 0.0f};
+    alignas(64) static constexpr float kColorRed[4]     = {1.0f, 0.0f, 0.0f, 1.0f};
+    alignas(64) static constexpr float kColorBlue[4]    = {0.0f, 0.0f, 1.0f, 1.0f};
+    const int offset = 2;
+
+    // An array of all zeros.
+    alignas(64) static constexpr int32_t kNoLanesActive[4 * SkRasterPipeline_kMaxStride_highp] = {};
+
+    // An array of all zeros, except for a single ~0 in the first dA slot.
+    alignas(64) int32_t oneLaneActive[4 * SkRasterPipeline_kMaxStride_highp] = {};
+    oneLaneActive[3*N] = ~0;
+
+    // Make a program which conditionally branches past a append_constant_color op.
+    SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+    SkRasterPipeline p(&alloc);
+    p.append_constant_color(&alloc, kColorBlack);                    // set the color to black
+    p.append(SkRasterPipeline::init_lane_masks);                     // set all lanes active
+    p.append(SkRasterPipeline::branch_if_no_active_lanes, &offset);  // do not skip past next line
+    p.append_constant_color(&alloc, kColorRed);                      // sets the color to red
+    p.append(SkRasterPipeline::load_dst, oneLaneActive);             // set one lane active
+    p.append(SkRasterPipeline::branch_if_no_active_lanes, &offset);  // do not skip past next line
+    p.append(SkRasterPipeline::swap_rb);                             // swap R and B (making blue)
+    p.append(SkRasterPipeline::load_dst, kNoLanesActive);            // make no lanes active
+    p.append(SkRasterPipeline::branch_if_no_active_lanes, &offset);  // skip past next line
+    p.append_constant_color(&alloc, kColorBlack);                    // (not executed)
+    p.append(SkRasterPipeline::store_src, slots);                    // store final blue color
+    p.run(0,0,1,1);
+
+    // Verify that the slots contain blue.
+    float* destPtr = &slots[0];
+    for (int checkSlot = 0; checkSlot < 4; ++checkSlot) {
+        for (int checkLane = 0; checkLane < N; ++checkLane) {
+            REPORTER_ASSERT(r, *destPtr == kColorBlue[checkSlot]);
+            ++destPtr;
         }
     }
 }

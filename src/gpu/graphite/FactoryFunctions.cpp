@@ -10,8 +10,13 @@
 #ifdef SK_ENABLE_PRECOMPILE
 
 #include "src/gpu/graphite/FactoryFunctions.h"
+
+#include "src/gpu/graphite/KeyContext.h"
+#include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/PaintParamsKey.h"
 #include "src/gpu/graphite/Precompile.h"
 #include "src/gpu/graphite/PrecompileBasePriv.h"
+#include "src/shaders/SkShaderBase.h"
 
 namespace skgpu::graphite {
 
@@ -23,6 +28,18 @@ public:
     std::optional<SkBlendMode> asBlendMode() const final { return fBlendMode; }
 
 private:
+    void addToKey(const KeyContext& keyContext,
+                  int desiredCombination,
+                  PaintParamsKeyBuilder* builder) const override {
+        SkASSERT(desiredCombination == 0); // The blend mode blender only ever has one combination
+
+        // The blend mode is used in this BeginBlock! It is used to choose between fixed function
+        // and shader-based blending
+        BlendModeBlock::BeginBlock(keyContext, builder, /* gatherer= */ nullptr, fBlendMode);
+        builder->endBlock();
+    }
+
+
     SkBlendMode fBlendMode;
 };
 
@@ -34,6 +51,21 @@ sk_sp<PrecompileBlender> PrecompileBlender::Mode(SkBlendMode blendMode) {
 class PrecompileColorShader : public PrecompileShader {
 public:
     PrecompileColorShader() {}
+
+private:
+    void addToKey(const KeyContext& keyContext,
+                  int desiredCombination,
+                  PaintParamsKeyBuilder* builder) const override {
+
+        SkASSERT(desiredCombination == 0); // The color shader only ever has one combination
+
+        constexpr SkPMColor4f kUnusedColor = { 1, 0, 0, 1 };
+
+        SolidColorShaderBlock::BeginBlock(keyContext, builder, /* gatherer= */ nullptr,
+                                          kUnusedColor); // color isn't used w/o a gatherer
+        builder->endBlock();
+    }
+
 };
 
 sk_sp<PrecompileShader> PrecompileShaders::Color() {
@@ -53,19 +85,35 @@ public:
 
 private:
     int numChildCombinations() const override {
-        int numBlenderCombos = CountBlenderCombos(fBlenders);
+        // TODO (robertphillips): This computation for blender combinations isn't quite correct but
+        // good enough for now. In particular, the 'fBlenders' array could contain a bunch of
+        // mode-based blenders that would all reduce to just one or two combinations
+        // (PorterDuff and full shader-based blending). Please see the PrecompileBlendShader in
+        // https://skia-review.googlesource.com/c/skia/+/606897/ for how I intend to solve this.
+        int numBlenderCombos = 0;
+        for (auto b : fBlenders) {
+            numBlenderCombos += b->numCombinations();
+        }
+        if (!numBlenderCombos) {
+            numBlenderCombos = 1; // fallback to kSrcOver
+        }
 
         int numDstCombos = 0;
         for (auto d : fDsts) {
-            numDstCombos += d->priv().numChildCombinations();
+            numDstCombos += d->numCombinations();
         }
 
         int numSrcCombos = 0;
         for (auto s : fSrcs) {
-            numSrcCombos += s->priv().numChildCombinations();
+            numSrcCombos += s->numCombinations();
         }
 
         return numBlenderCombos * numDstCombos * numSrcCombos;
+    }
+
+    void addToKey(const KeyContext& keyContext,
+                  int desiredCombination,
+                  PaintParamsKeyBuilder* builder) const override {
     }
 
     std::vector<sk_sp<PrecompileBlender>> fBlenders;
@@ -95,46 +143,204 @@ sk_sp<PrecompileShader> PrecompileShaders::Blend(
 }
 
 //--------------------------------------------------------------------------------------------------
+class PrecompileImageShader : public PrecompileShader {
+public:
+    PrecompileImageShader() {}
+
+private:
+    void addToKey(const KeyContext& keyContext,
+                  int desiredCombination,
+                  PaintParamsKeyBuilder* builder) const override {
+        SkASSERT(desiredCombination == 0);
+
+        ImageShaderBlock::BeginBlock(keyContext, builder,
+                                     /* gatherer= */ nullptr, /* imgData= */ nullptr);
+        builder->endBlock();
+    }
+};
+
 sk_sp<PrecompileShader> PrecompileShaders::Image() {
-    return sk_make_sp<PrecompileShader>();
+    return sk_make_sp<PrecompileImageShader>();
 }
 
 //--------------------------------------------------------------------------------------------------
+class PrecompileGradientShader : public PrecompileShader {
+public:
+    PrecompileGradientShader(SkShaderBase::GradientType type) : fType(type) {}
+
+private:
+    /*
+     * The gradients currently have two specializations based on the number of stops.
+     */
+    inline static constexpr int kNumStopVariants = 2;
+    inline static constexpr int kStopVariants[kNumStopVariants] = { 4, 8 };
+
+    int numIntrinsicCombinations() const override {
+        return kNumStopVariants;
+    }
+
+    void addToKey(const KeyContext& keyContext,
+                  int desiredCombination,
+                  PaintParamsKeyBuilder* builder) const override {
+        const int intrinsicCombination = desiredCombination / this->numChildCombinations();
+        SkDEBUGCODE(int childCombination = desiredCombination % this->numChildCombinations();)
+        SkASSERT(intrinsicCombination < kNumStopVariants);
+        SkASSERT(childCombination == 0);
+
+        // Only the type and number of stops are accessed when there is no gatherer
+        GradientShaderBlocks::GradientData gradData(fType, kStopVariants[intrinsicCombination]);
+
+        // TODO: we may need SkLocalMatrixShader-wrapped versions too
+        GradientShaderBlocks::BeginBlock(keyContext, builder, /* gatherer= */ nullptr, gradData);
+        builder->endBlock();
+    }
+
+    SkShaderBase::GradientType fType;
+};
+
 sk_sp<PrecompileShader> PrecompileShaders::LinearGradient() {
-    return sk_make_sp<PrecompileShader>();
+    return sk_make_sp<PrecompileGradientShader>(SkShaderBase::GradientType::kLinear);
 }
 
-//--------------------------------------------------------------------------------------------------
 sk_sp<PrecompileShader> PrecompileShaders::RadialGradient() {
-    return sk_make_sp<PrecompileShader>();
-}
-
-//--------------------------------------------------------------------------------------------------
-sk_sp<PrecompileShader> PrecompileShaders::TwoPointConicalGradient() {
-    return sk_make_sp<PrecompileShader>();
+    return sk_make_sp<PrecompileGradientShader>(SkShaderBase::GradientType::kRadial);
 }
 
 sk_sp<PrecompileShader> PrecompileShaders::SweepGradient() {
-    return sk_make_sp<PrecompileShader>();
+    return sk_make_sp<PrecompileGradientShader>(SkShaderBase::GradientType::kSweep);
+}
+
+sk_sp<PrecompileShader> PrecompileShaders::TwoPointConicalGradient() {
+    return sk_make_sp<PrecompileGradientShader>(SkShaderBase::GradientType::kConical);
 }
 
 //--------------------------------------------------------------------------------------------------
+class PrecompileLocalMatrixShader : public PrecompileShader {
+public:
+    PrecompileLocalMatrixShader(sk_sp<PrecompileShader> wrapped) : fWrapped(std::move(wrapped)) {}
+
+private:
+    bool isALocalMatrixShader() const override { return true; }
+
+    int numChildCombinations() const override {
+        return fWrapped->numChildCombinations();
+    }
+
+    void addToKey(const KeyContext& keyContext,
+                  int desiredCombination,
+                  PaintParamsKeyBuilder* builder) const override {
+        SkASSERT(desiredCombination < fWrapped->numCombinations());
+
+        LocalMatrixShaderBlock::BeginBlock(keyContext, builder,
+                                           /* gatherer= */ nullptr, /* lmShaderData= */ nullptr);
+
+        fWrapped->priv().addToKey(keyContext, desiredCombination, builder);
+
+        builder->endBlock();
+    }
+
+    sk_sp<PrecompileShader> fWrapped;
+};
+
+sk_sp<PrecompileShader> PrecompileShaders::LocalMatrix(sk_sp<PrecompileShader> wrapped) {
+    return sk_make_sp<PrecompileLocalMatrixShader>(std::move(wrapped));
+}
+
+//--------------------------------------------------------------------------------------------------
+class PrecompileColorFilterShader : public PrecompileShader {
+public:
+    PrecompileColorFilterShader(sk_sp<PrecompileShader> shader, sk_sp<PrecompileColorFilter> cf)
+            : fShader(std::move(shader))
+            , fColorFilter(std::move(cf)) {}
+
+private:
+    int numChildCombinations() const override {
+        const int numShaderCombos = fShader->numCombinations();
+        const int numColorFilterCombos = fColorFilter->numCombinations();
+
+        return numShaderCombos * numColorFilterCombos;
+    }
+
+    void addToKey(const KeyContext& keyContext,
+                  int desiredCombination,
+                  PaintParamsKeyBuilder* builder) const override {
+
+        SkASSERT(desiredCombination < this->numCombinations());
+
+        const int numShaderCombos = fShader->numCombinations();
+        SkDEBUGCODE(int numColorFilterCombos = fColorFilter->numCombinations();)
+
+        int desiredShaderCombination = desiredCombination % numShaderCombos;
+        int desiredColorFilterCombination = desiredCombination / numShaderCombos;
+        SkASSERT(desiredColorFilterCombination < numColorFilterCombos);
+
+        ColorFilterShaderBlock::BeginBlock(keyContext, builder, /* gatherer= */ nullptr);
+
+        fShader->priv().addToKey(keyContext, desiredShaderCombination, builder);
+        fColorFilter->priv().addToKey(keyContext, desiredColorFilterCombination, builder);
+
+        builder->endBlock();
+    }
+
+    sk_sp<PrecompileShader> fShader;
+    sk_sp<PrecompileColorFilter> fColorFilter;
+};
+
+sk_sp<PrecompileShader> PrecompileShaders::ColorFilter(sk_sp<PrecompileShader> shader,
+                                                       sk_sp<PrecompileColorFilter> cf) {
+    return sk_make_sp<PrecompileColorFilterShader>(std::move(shader), std::move(cf));
+}
+
+//--------------------------------------------------------------------------------------------------
+class PrecompileBlurMaskFilter : public PrecompileMaskFilter {
+public:
+    PrecompileBlurMaskFilter() {}
+
+private:
+    void addToKey(const KeyContext& keyContext,
+                  int desiredCombination,
+                  PaintParamsKeyBuilder* builder) const override {
+        SkASSERT(desiredCombination == 0);
+
+        // TODO: need to add a BlurMaskFilter Block. This is somewhat blocked on figuring out
+        // what we're going to do with the Blur system.
+    }
+};
+
 sk_sp<PrecompileMaskFilter> PrecompileMaskFilters::Blur() {
-    return sk_make_sp<PrecompileMaskFilter>();
+    return sk_make_sp<PrecompileBlurMaskFilter>();
 }
 
 //--------------------------------------------------------------------------------------------------
+class PrecompileMatrixColorFilter : public PrecompileColorFilter {
+public:
+    PrecompileMatrixColorFilter() {}
+
+private:
+    void addToKey(const KeyContext& keyContext,
+                  int desiredCombination,
+                  PaintParamsKeyBuilder* builder) const override {
+        SkASSERT(desiredCombination == 0);
+
+        MatrixColorFilterBlock::BeginBlock(keyContext, builder,
+                                           /* gatherer= */ nullptr,
+                                           /* matrixCFData= */ nullptr);
+        builder->endBlock();
+    }
+};
+
 sk_sp<PrecompileColorFilter> PrecompileColorFilters::Matrix() {
-    return sk_make_sp<PrecompileColorFilter>();
+    return sk_make_sp<PrecompileMatrixColorFilter>();
 }
 
 //--------------------------------------------------------------------------------------------------
+// TODO: need to figure out how we're going to decompose ImageFilters
 sk_sp<PrecompileImageFilter> PrecompileImageFilters::Blur() {
-    return sk_make_sp<PrecompileImageFilter>();
+    return nullptr; // sk_make_sp<PrecompileImageFilter>();
 }
 
 sk_sp<PrecompileImageFilter> PrecompileImageFilters::Image() {
-    return sk_make_sp<PrecompileImageFilter>();
+    return nullptr; // sk_make_sp<PrecompileImageFilter>();
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -222,6 +428,11 @@ public:
 private:
     int numChildCombinations() const override {
         return fChildOptions.size();
+    }
+
+    void addToKey(const KeyContext& keyContext,
+                  int desiredCombination,
+                  PaintParamsKeyBuilder* builder) const override {
     }
 
     sk_sp<SkRuntimeEffect> fEffect;
