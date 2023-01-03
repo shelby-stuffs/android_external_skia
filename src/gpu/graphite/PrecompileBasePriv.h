@@ -17,12 +17,14 @@ namespace skgpu::graphite {
     data members or virtual methods. */
 class PrecompileBasePriv {
 public:
-    int numChildCombinations() const {
-        return fPrecompileBase->numChildCombinations();
+    bool isALocalMatrixShader() const {
+        return fPrecompileBase->isALocalMatrixShader();
     }
 
-    int numCombinations() const {
-        return fPrecompileBase->numCombinations();
+    void addToKey(const KeyContext& keyContext,
+                  int desiredCombination,
+                  PaintParamsKeyBuilder* builder) const {
+        fPrecompileBase->addToKey(keyContext, desiredCombination, builder);
     }
 
 private:

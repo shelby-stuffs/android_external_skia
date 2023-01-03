@@ -70,17 +70,21 @@ void SkRasterPipeline::extend(const SkRasterPipeline& src) {
     fNumStages += src.fNumStages;
 }
 
+const char* SkRasterPipeline::GetStageName(SkRasterPipeline::Stage stage) {
+    const char* name = "";
+    switch (stage) {
+    #define M(x) case x: name = #x; break;
+        SK_RASTER_PIPELINE_STAGES_ALL(M)
+    #undef M
+    }
+    return name;
+}
+
 void SkRasterPipeline::dump() const {
     SkDebugf("SkRasterPipeline, %d stages\n", fNumStages);
     std::vector<const char*> stages;
     for (auto st = fStages; st; st = st->prev) {
-        const char* name = "";
-        switch (st->stage) {
-        #define M(x) case x: name = #x; break;
-            SK_RASTER_PIPELINE_STAGES_ALL(M)
-        #undef M
-        }
-        stages.push_back(name);
+        stages.push_back(GetStageName(st->stage));
     }
     std::reverse(stages.begin(), stages.end());
     for (const char* name : stages) {
@@ -211,6 +215,35 @@ void SkRasterPipeline::append_zero_slots_unmasked(float* dst, int numSlots) {
         default: SkUNREACHABLE;
     }
 
+    this->unchecked_append(stage, dst);
+}
+
+void SkRasterPipeline::append_adjacent_multi_slot_op(SkArenaAlloc* alloc,
+                                                     SkRasterPipeline::Stage baseStage,
+                                                     float* dst,
+                                                     float* src,
+                                                     int numSlots) {
+    // The source and destination must be directly next to one another.
+    SkASSERT(numSlots >= 0);
+    SkASSERT((dst + SkOpts::raster_pipeline_highp_stride * numSlots) == src);
+
+    if (numSlots > 4) {
+        auto ctx = alloc->make<SkRasterPipeline_CopySlotsCtx>();
+        ctx->dst = dst;
+        ctx->src = src;
+        this->unchecked_append(baseStage, ctx);
+        return;
+    } else if (numSlots > 0) {
+        auto specializedStage = (SkRasterPipeline::Stage)(baseStage + numSlots);
+        this->unchecked_append(specializedStage, dst);
+    }
+}
+
+void SkRasterPipeline::append_adjacent_single_slot_op(SkRasterPipeline::Stage stage,
+                                                      float* dst,
+                                                      float* src) {
+    // The source and destination must be directly next to one another.
+    SkASSERT((dst + SkOpts::raster_pipeline_highp_stride) == src);
     this->unchecked_append(stage, dst);
 }
 

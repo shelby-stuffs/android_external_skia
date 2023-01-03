@@ -122,16 +122,29 @@ struct skcms_TransferFunction;
     M(alter_2pt_conical_unswap)                                    \
     M(mask_2pt_conical_nan)                                        \
     M(mask_2pt_conical_degenerates) M(apply_vector_mask)           \
-    /* Dedicated SkSL stages begin here: */                        \
-    M(init_lane_masks) M(store_src_rg) M(immediate_f)              \
-    M(load_unmasked) M(store_unmasked) M(store_masked)             \
-    M(load_condition_mask) M(store_condition_mask)                 \
-    M(copy_slot_masked)    M(copy_2_slots_masked)                  \
-    M(copy_3_slots_masked) M(copy_4_slots_masked)                  \
-    M(copy_slot_unmasked)    M(copy_2_slots_unmasked)              \
-    M(copy_3_slots_unmasked) M(copy_4_slots_unmasked)              \
-    M(zero_slot_unmasked)    M(zero_2_slots_unmasked)              \
-    M(zero_3_slots_unmasked) M(zero_4_slots_unmasked)
+    /* Dedicated SkSL stages begin here: */                                                \
+    M(init_lane_masks) M(store_src_rg) M(immediate_f)                                      \
+    M(load_unmasked) M(store_unmasked) M(store_masked)                                     \
+    M(load_condition_mask) M(store_condition_mask) M(combine_condition_mask)               \
+    M(update_return_mask)                                                                  \
+    M(branch_if_any_active_lanes) M(branch_if_no_active_lanes) M(jump)                     \
+    M(bitwise_and) M(bitwise_or) M(bitwise_xor) M(bitwise_not)                             \
+    M(copy_slot_masked)    M(copy_2_slots_masked)                                          \
+    M(copy_3_slots_masked) M(copy_4_slots_masked)                                          \
+    M(copy_slot_unmasked)    M(copy_2_slots_unmasked)                                      \
+    M(copy_3_slots_unmasked) M(copy_4_slots_unmasked)                                      \
+    M(zero_slot_unmasked)    M(zero_2_slots_unmasked)                                      \
+    M(zero_3_slots_unmasked) M(zero_4_slots_unmasked)                                      \
+    M(add_n_floats) M(add_float) M(add_2_floats) M(add_3_floats) M(add_4_floats)           \
+    M(add_n_ints)   M(add_int)   M(add_2_ints)   M(add_3_ints)   M(add_4_ints)             \
+    M(cmplt_n_floats) M(cmplt_float) M(cmplt_2_floats) M(cmplt_3_floats) M(cmplt_4_floats) \
+    M(cmplt_n_ints)   M(cmplt_int)   M(cmplt_2_ints)   M(cmplt_3_ints)   M(cmplt_4_ints)   \
+    M(cmple_n_floats) M(cmple_float) M(cmple_2_floats) M(cmple_3_floats) M(cmple_4_floats) \
+    M(cmple_n_ints)   M(cmple_int)   M(cmple_2_ints)   M(cmple_3_ints)   M(cmple_4_ints)   \
+    M(cmpeq_n_floats) M(cmpeq_float) M(cmpeq_2_floats) M(cmpeq_3_floats) M(cmpeq_4_floats) \
+    M(cmpeq_n_ints)   M(cmpeq_int)   M(cmpeq_2_ints)   M(cmpeq_3_ints)   M(cmpeq_4_ints)   \
+    M(cmpne_n_floats) M(cmpne_float) M(cmpne_2_floats) M(cmpne_3_floats) M(cmpne_4_floats) \
+    M(cmpne_n_ints)   M(cmpne_int)   M(cmpne_2_ints)   M(cmpne_3_ints)   M(cmpne_4_ints)
 
 // The combined list of all stages:
 #define SK_RASTER_PIPELINE_STAGES_ALL(M) \
@@ -295,6 +308,17 @@ public:
     // Allocates a thunk which amortizes run() setup cost in alloc.
     std::function<void(size_t, size_t, size_t, size_t)> compile() const;
 
+    // Callers can inspect the stage list for debugging purposes.
+    struct StageList {
+        StageList* prev;
+        Stage      stage;
+        void*      ctx;
+    };
+
+    static const char* GetStageName(Stage stage);
+    const StageList* getStageList() const { return fStages; }
+    int getNumStages() const { return fNumStages; }
+
     // Prints the entire StageList using SkDebugf.
     void dump() const;
 
@@ -324,6 +348,21 @@ public:
     // Appends one or more `zero_n_slots_unmasked` stages, based on `numSlots`.
     void append_zero_slots_unmasked(float* dst, int numSlots);
 
+    // Appends a multi-slot math operation. `src` must be _immediately_ after `dst` in memory.
+    // `baseStage` must refer to an unbounded "apply_to_n_slots" stage, which must be immediately
+    // followed by specializations for 1-4 slots. For instance, {`add_n_floats`, `add_float`,
+    // `add_2_floats`, `add_3_floats`, `add_4_floats`} must be contiguous ops in the stage list,
+    // listed in that order; pass `add_n_floats` and we pick the appropriate op based on `numSlots`.
+    void append_adjacent_multi_slot_op(SkArenaAlloc* alloc,
+                                       SkRasterPipeline::Stage baseStage,
+                                       float* dst,
+                                       float* src,
+                                       int numSlots);
+
+    // Appends a math operation with two inputs (dst op src) and one output (dst).
+    // `src` must be _immediately_ after `dst` in memory.
+    void append_adjacent_single_slot_op(SkRasterPipeline::Stage stage, float* dst, float* src);
+
     void append_load    (SkColorType, const SkRasterPipeline_MemoryCtx*);
     void append_load_dst(SkColorType, const SkRasterPipeline_MemoryCtx*);
     void append_store   (SkColorType, const SkRasterPipeline_MemoryCtx*);
@@ -337,12 +376,6 @@ public:
     bool empty() const { return fStages == nullptr; }
 
 private:
-    struct StageList {
-        StageList* prev;
-        Stage      stage;
-        void*      ctx;
-    };
-
     bool build_lowp_pipeline(SkRasterPipelineStage* ip) const;
     void build_highp_pipeline(SkRasterPipelineStage* ip) const;
 
@@ -356,8 +389,6 @@ private:
     SkRasterPipeline_RewindCtx* fRewindCtx;
     StageList*                  fStages;
     int                         fNumStages;
-
-    friend struct TestingOnly_SkRasterPipelineInspector;
 };
 
 template <size_t bytes>

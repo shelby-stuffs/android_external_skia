@@ -7,6 +7,7 @@
 
 #include "include/core/SkTypes.h"
 #include "include/private/SkTArray.h"
+#include "include/private/SkTHash.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkUtils.h"
 
@@ -15,8 +16,12 @@
 #include <memory>
 
 class SkArenaAlloc;
+class SkWStream;
 
 namespace SkSL {
+
+class SkRPDebugTrace;
+
 namespace RP {
 
 // A single scalar in our program consumes one slot.
@@ -43,6 +48,12 @@ enum class BuilderOp {
     copy_stack_to_slots_unmasked,
     discard_stack,
     duplicate,
+    select,
+    push_condition_mask,
+    pop_condition_mask,
+    change_stack,
+    label,
+    unsupported
 };
 
 // Represents a single raster-pipeline SkSL instruction.
@@ -72,26 +83,46 @@ struct Instruction {
 
 class Program {
 public:
-    Program(SkTArray<Instruction> instrs, int numValueSlots);
+    Program(SkTArray<Instruction> instrs,
+            int numValueSlots,
+            int numLabels,
+            int numBranches,
+            SkRPDebugTrace* debugTrace);
 
     void appendStages(SkRasterPipeline* pipeline, SkArenaAlloc* alloc);
+    void dump(SkWStream* s);
 
 private:
+    using StackDepthMap = SkTHashMap<int, int>; // <stack index, depth of stack>
+
+    float* allocateSlotData(SkArenaAlloc* alloc);
+    void appendStages(SkRasterPipeline* pipeline, SkArenaAlloc* alloc, float* slotPtr);
     void optimize();
     int numValueSlots();
-    int numTempStackSlots();
-    int numConditionMaskSlots();
+    StackDepthMap tempStackMaxDepths();
 
     SkTArray<Instruction> fInstructions;
     int fNumValueSlots = 0;
     int fNumTempStackSlots = 0;
-    int fNumConditionMaskSlots = 0;
+    int fNumLabels = 0;
+    int fNumBranches = 0;
+    SkTHashMap<int, int> fTempStackMaxDepths;
+    SkRPDebugTrace* fDebugTrace = nullptr;
 };
 
 class Builder {
 public:
     /** Finalizes and optimizes the program. */
-    std::unique_ptr<Program> finish(int numValueSlots);
+    std::unique_ptr<Program> finish(int numValueSlots, SkRPDebugTrace* debugTrace = nullptr);
+
+    /**
+     * Peels off a label ID for use in the program. Set the label's position in the program with
+     * the `label` instruction. Actually branch to the target with an instruction like
+     * `branch_if_any_active_lanes` or `jump`.
+     */
+    int nextLabelID() {
+        return fNumLabels++;
+    }
 
     /** Assemble a program from the Raster Pipeline instructions below. */
     void init_lane_masks() {
@@ -123,7 +154,34 @@ public:
         fInstructions.push_back({BuilderOp::load_dst, {slots.index}});
     }
 
-    // Use the same SkRasterPipeline op regardless of the literal type.
+    void change_stack(int stackIdx) {
+        fInstructions.push_back({BuilderOp::change_stack, {}, stackIdx});
+    }
+
+    void label(int labelID) {
+        SkASSERT(labelID >= 0 && labelID < fNumLabels);
+        fInstructions.push_back({BuilderOp::label, {}, labelID});
+    }
+
+    void jump(int labelID) {
+        SkASSERT(labelID >= 0 && labelID < fNumLabels);
+        fInstructions.push_back({BuilderOp::jump, {}, labelID});
+        ++fNumBranches;
+    }
+
+    void branch_if_any_active_lanes(int labelID) {
+        SkASSERT(labelID >= 0 && labelID < fNumLabels);
+        fInstructions.push_back({BuilderOp::branch_if_any_active_lanes, {}, labelID});
+        ++fNumBranches;
+    }
+
+    void branch_if_no_active_lanes(int labelID) {
+        SkASSERT(labelID >= 0 && labelID < fNumLabels);
+        fInstructions.push_back({BuilderOp::branch_if_no_active_lanes, {}, labelID});
+        ++fNumBranches;
+    }
+
+    // We use the same SkRasterPipeline op regardless of the literal type, and bitcast the value.
     void immediate_f(float val) {
         fInstructions.push_back({BuilderOp::immediate_f, {}, sk_bit_cast<int32_t>(val)});
     }
@@ -165,6 +223,14 @@ public:
         fInstructions.push_back({BuilderOp::copy_stack_to_slots_unmasked, {dst.index}, dst.count});
     }
 
+    // Performs a unary op (like `bitwise_not`), given a slot count of `slots`. The stack top is
+    // replaced with the result.
+    void unary_op(BuilderOp op, int32_t slots);
+
+    // Performs a binary op (like `add_n_floats` or `cmpeq_n_ints`), given a slot count of
+    // `slots`. Both input values are consumed, and the result is pushed onto the stack.
+    void binary_op(BuilderOp op, int32_t slots);
+
     void discard_stack(int32_t count = 1) {
         // Shrinks the temp stack, discarding values on top.
         fInstructions.push_back({BuilderOp::discard_stack, {}, count});
@@ -181,6 +247,13 @@ public:
         // Creates duplicates of the top item on the temp stack.
         SkASSERT(count >= 0);
         fInstructions.push_back({BuilderOp::duplicate, {}, count});
+    }
+
+    void select(int slots) {
+        // Overlays the top two entries on the stack, making one hybrid entry. The execution mask
+        // is used to select which lanes are preserved.
+        SkASSERT(slots > 0);
+        fInstructions.push_back({BuilderOp::select, {}, slots});
     }
 
     void pop_slots_unmasked(SlotRange dst) {
@@ -217,17 +290,21 @@ public:
     }
 
     void push_condition_mask() {
-        // Raster pipeline uses a "store" op, and the builder manages the stack position.
-        fInstructions.push_back({BuilderOp::store_condition_mask, {}});
+        fInstructions.push_back({BuilderOp::push_condition_mask, {}});
     }
 
     void pop_condition_mask() {
-        // Raster pipeline uses a "load" op, and the builder manages the stack position.
-        fInstructions.push_back({BuilderOp::load_condition_mask, {}});
+        fInstructions.push_back({BuilderOp::pop_condition_mask, {}});
+    }
+
+    void update_return_mask() {
+        fInstructions.push_back({BuilderOp::update_return_mask, {}});
     }
 
 private:
     SkTArray<Instruction> fInstructions;
+    int fNumLabels = 0;
+    int fNumBranches = 0;
 };
 
 }  // namespace RP
