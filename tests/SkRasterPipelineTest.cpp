@@ -479,7 +479,7 @@ DEF_TEST(SkRasterPipeline_CopySlotsMasked, r) {
             // Run `copy_slots_masked` over our data.
             SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
             SkRasterPipeline p(&alloc);
-            auto* ctx = alloc.make<SkRasterPipeline_CopySlotsCtx>();
+            auto* ctx = alloc.make<SkRasterPipeline_BinaryOpCtx>();
             ctx->dst = &slots[N * dstIndex];
             ctx->src = &slots[N * srcIndex];
 
@@ -535,7 +535,7 @@ DEF_TEST(SkRasterPipeline_CopySlotsUnmasked, r) {
         // Run `copy_slots_unmasked` over our data.
         SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
         SkRasterPipeline p(&alloc);
-        auto* ctx = alloc.make<SkRasterPipeline_CopySlotsCtx>();
+        auto* ctx = alloc.make<SkRasterPipeline_BinaryOpCtx>();
         ctx->dst = &slots[N * dstIndex];
         ctx->src = &slots[N * srcIndex];
         p.append(op.stage, ctx);
@@ -632,7 +632,7 @@ DEF_TEST(SkRasterPipeline_CopyConstants, r) {
         // Run `copy_constants` over our data.
         SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
         SkRasterPipeline p(&alloc);
-        auto* ctx = alloc.make<SkRasterPipeline_CopySlotsCtx>();
+        auto* ctx = alloc.make<SkRasterPipeline_BinaryOpCtx>();
         ctx->dst = slots;
         ctx->src = constants;
         p.append(op.stage, ctx);
@@ -730,7 +730,7 @@ DEF_TEST(SkRasterPipeline_FloatArithmeticWithNSlots, r) {
             // Run the arithmetic op over our data.
             SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
             SkRasterPipeline p(&alloc);
-            auto* ctx = alloc.make<SkRasterPipeline_CopySlotsCtx>();
+            auto* ctx = alloc.make<SkRasterPipeline_BinaryOpCtx>();
             ctx->dst = &slots[0];
             ctx->src = &slots[numSlotsAffected * N];
             p.append(op.stage, ctx);
@@ -820,6 +820,10 @@ DEF_TEST(SkRasterPipeline_FloatArithmeticWithHardcodedSlots, r) {
     }
 }
 
+static int divide_unsigned(int a, int b) { return int(uint32_t(a) / uint32_t(b)); }
+static int min_unsigned   (int a, int b) { return uint32_t(a) < uint32_t(b) ? a : b; }
+static int max_unsigned   (int a, int b) { return uint32_t(a) > uint32_t(b) ? a : b; }
+
 DEF_TEST(SkRasterPipeline_IntArithmeticWithNSlots, r) {
     // Allocate space for 5 dest and 5 source slots.
     alignas(64) int slots[10 * SkRasterPipeline_kMaxStride_highp];
@@ -831,29 +835,34 @@ DEF_TEST(SkRasterPipeline_IntArithmeticWithNSlots, r) {
     };
 
     static const ArithmeticOp kArithmeticOps[] = {
-        {SkRasterPipeline::Stage::add_n_ints, [](int a, int b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_n_ints, [](int a, int b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_n_ints, [](int a, int b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_n_ints, [](int a, int b) { return a / b; }},
+        {SkRasterPipeline::Stage::add_n_ints,  [](int a, int b) { return a + b; }},
+        {SkRasterPipeline::Stage::sub_n_ints,  [](int a, int b) { return a - b; }},
+        {SkRasterPipeline::Stage::mul_n_ints,  [](int a, int b) { return a * b; }},
+        {SkRasterPipeline::Stage::div_n_ints,  [](int a, int b) { return a / b; }},
+        {SkRasterPipeline::Stage::div_n_uints, divide_unsigned},
+        {SkRasterPipeline::Stage::min_n_ints,  [](int a, int b) { return a < b ? a : b; }},
+        {SkRasterPipeline::Stage::min_n_uints, min_unsigned},
+        {SkRasterPipeline::Stage::max_n_ints,  [](int a, int b) { return a > b ? a : b; }},
+        {SkRasterPipeline::Stage::max_n_uints, max_unsigned},
     };
 
     for (const ArithmeticOp& op : kArithmeticOps) {
         for (int numSlotsAffected = 1; numSlotsAffected <= 5; ++numSlotsAffected) {
             // Initialize the slot values to 1,2,3...
             std::iota(&slots[0], &slots[10 * N], 1);
+            int leftValue = slots[0];
+            int rightValue = slots[numSlotsAffected * N];
 
-            // Run `add_n_ints` over our data.
+            // Run the op (e.g. `add_n_ints`) over our data.
             SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
             SkRasterPipeline p(&alloc);
-            auto* ctx = alloc.make<SkRasterPipeline_CopySlotsCtx>();
+            auto* ctx = alloc.make<SkRasterPipeline_BinaryOpCtx>();
             ctx->dst = (float*)&slots[0];
             ctx->src = (float*)&slots[numSlotsAffected * N];
             p.append(op.stage, ctx);
             p.run(0,0,1,1);
 
             // Verify that the affected slots now equal (1,2,3...) op (4,5,6...).
-            int leftValue = 1;
-            int rightValue = float(numSlotsAffected * N) + 1;
             int* destPtr = &slots[0];
             for (int checkSlot = 0; checkSlot < 10; ++checkSlot) {
                 for (int checkLane = 0; checkLane < N; ++checkLane) {
@@ -884,40 +893,60 @@ DEF_TEST(SkRasterPipeline_IntArithmeticWithHardcodedSlots, r) {
     };
 
     static const ArithmeticOp kArithmeticOps[] = {
-        {SkRasterPipeline::Stage::add_int,    1, [](int a, int b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_int,    1, [](int a, int b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_int,    1, [](int a, int b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_int,    1, [](int a, int b) { return a / b; }},
+        {SkRasterPipeline::Stage::add_int,     1, [](int a, int b) { return a + b; }},
+        {SkRasterPipeline::Stage::sub_int,     1, [](int a, int b) { return a - b; }},
+        {SkRasterPipeline::Stage::mul_int,     1, [](int a, int b) { return a * b; }},
+        {SkRasterPipeline::Stage::div_int,     1, [](int a, int b) { return a / b; }},
+        {SkRasterPipeline::Stage::div_uint,    1, divide_unsigned},
+        {SkRasterPipeline::Stage::min_int,     1, [](int a, int b) { return a < b ? a : b; }},
+        {SkRasterPipeline::Stage::min_uint,    1, min_unsigned},
+        {SkRasterPipeline::Stage::max_int,     1, [](int a, int b) { return a > b ? a : b; }},
+        {SkRasterPipeline::Stage::max_uint,    1, max_unsigned},
 
-        {SkRasterPipeline::Stage::add_2_ints, 2, [](int a, int b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_2_ints, 2, [](int a, int b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_2_ints, 2, [](int a, int b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_2_ints, 2, [](int a, int b) { return a / b; }},
+        {SkRasterPipeline::Stage::add_2_ints,  2, [](int a, int b) { return a + b; }},
+        {SkRasterPipeline::Stage::sub_2_ints,  2, [](int a, int b) { return a - b; }},
+        {SkRasterPipeline::Stage::mul_2_ints,  2, [](int a, int b) { return a * b; }},
+        {SkRasterPipeline::Stage::div_2_ints,  2, [](int a, int b) { return a / b; }},
+        {SkRasterPipeline::Stage::div_2_uints, 2, divide_unsigned},
+        {SkRasterPipeline::Stage::min_2_ints,  2, [](int a, int b) { return a < b ? a : b; }},
+        {SkRasterPipeline::Stage::min_2_uints, 2, min_unsigned},
+        {SkRasterPipeline::Stage::max_2_ints,  2, [](int a, int b) { return a > b ? a : b; }},
+        {SkRasterPipeline::Stage::max_2_uints, 2, max_unsigned},
 
-        {SkRasterPipeline::Stage::add_3_ints, 3, [](int a, int b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_3_ints, 3, [](int a, int b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_3_ints, 3, [](int a, int b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_3_ints, 3, [](int a, int b) { return a / b; }},
+        {SkRasterPipeline::Stage::add_3_ints,  3, [](int a, int b) { return a + b; }},
+        {SkRasterPipeline::Stage::sub_3_ints,  3, [](int a, int b) { return a - b; }},
+        {SkRasterPipeline::Stage::mul_3_ints,  3, [](int a, int b) { return a * b; }},
+        {SkRasterPipeline::Stage::div_3_ints,  3, [](int a, int b) { return a / b; }},
+        {SkRasterPipeline::Stage::div_3_uints, 3, divide_unsigned},
+        {SkRasterPipeline::Stage::min_3_ints,  3, [](int a, int b) { return a < b ? a : b; }},
+        {SkRasterPipeline::Stage::min_3_uints, 3, min_unsigned},
+        {SkRasterPipeline::Stage::max_3_ints,  3, [](int a, int b) { return a > b ? a : b; }},
+        {SkRasterPipeline::Stage::max_3_uints, 3, max_unsigned},
 
-        {SkRasterPipeline::Stage::add_4_ints, 4, [](int a, int b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_4_ints, 4, [](int a, int b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_4_ints, 4, [](int a, int b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_4_ints, 4, [](int a, int b) { return a / b; }},
+        {SkRasterPipeline::Stage::add_4_ints,  4, [](int a, int b) { return a + b; }},
+        {SkRasterPipeline::Stage::sub_4_ints,  4, [](int a, int b) { return a - b; }},
+        {SkRasterPipeline::Stage::mul_4_ints,  4, [](int a, int b) { return a * b; }},
+        {SkRasterPipeline::Stage::div_4_ints,  4, [](int a, int b) { return a / b; }},
+        {SkRasterPipeline::Stage::div_4_uints, 4, divide_unsigned},
+        {SkRasterPipeline::Stage::min_4_ints,  4, [](int a, int b) { return a < b ? a : b; }},
+        {SkRasterPipeline::Stage::min_4_uints, 4, min_unsigned},
+        {SkRasterPipeline::Stage::max_4_ints,  4, [](int a, int b) { return a > b ? a : b; }},
+        {SkRasterPipeline::Stage::max_4_uints, 4, max_unsigned},
     };
 
     for (const ArithmeticOp& op : kArithmeticOps) {
         // Initialize the slot values to 1,2,3...
         std::iota(&slots[0], &slots[10 * N], 1);
+        int leftValue = slots[0];
+        int rightValue = slots[op.numSlotsAffected * N];
 
-        // Run `add_n_ints` over our data.
+        // Run the op (e.g. `add_2_ints`) over our data.
         SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
         SkRasterPipeline p(&alloc);
         p.append(op.stage, &slots[0]);
         p.run(0,0,1,1);
 
         // Verify that the affected slots now equal (1,2,3...) op (4,5,6...).
-        int leftValue = 1;
-        int rightValue = float(op.numSlotsAffected * N) + 1;
         int* destPtr = &slots[0];
         for (int checkSlot = 0; checkSlot < 10; ++checkSlot) {
             for (int checkLane = 0; checkLane < N; ++checkLane) {
@@ -965,7 +994,7 @@ DEF_TEST(SkRasterPipeline_CompareFloatsWithNSlots, r) {
             // Run the comparison op over our data.
             SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
             SkRasterPipeline p(&alloc);
-            auto* ctx = alloc.make<SkRasterPipeline_CopySlotsCtx>();
+            auto* ctx = alloc.make<SkRasterPipeline_BinaryOpCtx>();
             ctx->dst = &slots[0];
             ctx->src = &slots[numSlotsAffected * N];
             p.append(op.stage, ctx);
@@ -1058,6 +1087,9 @@ DEF_TEST(SkRasterPipeline_CompareFloatsWithHardcodedSlots, r) {
     }
 }
 
+static bool compare_lt_uint  (int a, int b) { return uint32_t(a) <  uint32_t(b); }
+static bool compare_lteq_uint(int a, int b) { return uint32_t(a) <= uint32_t(b); }
+
 DEF_TEST(SkRasterPipeline_CompareIntsWithNSlots, r) {
     // Allocate space for 5 dest and 5 source slots.
     alignas(64) int slots[10 * SkRasterPipeline_kMaxStride_highp];
@@ -1069,17 +1101,19 @@ DEF_TEST(SkRasterPipeline_CompareIntsWithNSlots, r) {
     };
 
     static const CompareOp kCompareOps[] = {
-        {SkRasterPipeline::Stage::cmpeq_n_ints, [](int a, int b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_n_ints, [](int a, int b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_n_ints, [](int a, int b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_n_ints, [](int a, int b) { return a <= b; }},
+        {SkRasterPipeline::Stage::cmpeq_n_ints,  [](int a, int b) { return a == b; }},
+        {SkRasterPipeline::Stage::cmpne_n_ints,  [](int a, int b) { return a != b; }},
+        {SkRasterPipeline::Stage::cmplt_n_ints,  [](int a, int b) { return a <  b; }},
+        {SkRasterPipeline::Stage::cmple_n_ints,  [](int a, int b) { return a <= b; }},
+        {SkRasterPipeline::Stage::cmplt_n_uints, compare_lt_uint},
+        {SkRasterPipeline::Stage::cmple_n_uints, compare_lteq_uint},
     };
 
     for (const CompareOp& op : kCompareOps) {
         for (int numSlotsAffected = 1; numSlotsAffected <= 5; ++numSlotsAffected) {
-            // Initialize the slot values to 0,1,2,0,1,2,0,1,2...
+            // Initialize the slot values to -1,0,1,-1,0,1,-1,0,1,-1...
             for (int index = 0; index < 10 * N; ++index) {
-                slots[index] = index % 3;
+                slots[index] = (index % 3) - 1;
             }
 
             int leftValue = slots[0];
@@ -1088,13 +1122,13 @@ DEF_TEST(SkRasterPipeline_CompareIntsWithNSlots, r) {
             // Run the comparison op over our data.
             SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
             SkRasterPipeline p(&alloc);
-            auto* ctx = alloc.make<SkRasterPipeline_CopySlotsCtx>();
+            auto* ctx = alloc.make<SkRasterPipeline_BinaryOpCtx>();
             ctx->dst = (float*)&slots[0];
             ctx->src = (float*)&slots[numSlotsAffected * N];
             p.append(op.stage, ctx);
             p.run(0, 0, 1, 1);
 
-            // Verify that the affected slots now contain "(0,1,2,0...) op (1,2,0,1...)".
+            // Verify that the affected slots now contain "(-1,0,1,-1...) op (0,1,-1,0...)".
             int* destPtr = &slots[0];
             for (int checkSlot = 0; checkSlot < 10; ++checkSlot) {
                 for (int checkLane = 0; checkLane < N; ++checkLane) {
@@ -1106,8 +1140,12 @@ DEF_TEST(SkRasterPipeline_CompareIntsWithNSlots, r) {
                     }
 
                     ++destPtr;
-                    leftValue = (leftValue + 1) % 3;
-                    rightValue = (rightValue + 1) % 3;
+                    if (++leftValue == 2) {
+                        leftValue = -1;
+                    }
+                    if (++rightValue == 2) {
+                        rightValue = -1;
+                    }
                 }
             }
         }
@@ -1126,31 +1164,39 @@ DEF_TEST(SkRasterPipeline_CompareIntsWithHardcodedSlots, r) {
     };
 
     static const CompareOp kCompareOps[] = {
-        {SkRasterPipeline::Stage::cmpeq_int,    1, [](int a, int b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_int,    1, [](int a, int b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_int,    1, [](int a, int b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_int,    1, [](int a, int b) { return a <= b; }},
+        {SkRasterPipeline::Stage::cmpeq_int,     1, [](int a, int b) { return a == b; }},
+        {SkRasterPipeline::Stage::cmpne_int,     1, [](int a, int b) { return a != b; }},
+        {SkRasterPipeline::Stage::cmplt_int,     1, [](int a, int b) { return a <  b; }},
+        {SkRasterPipeline::Stage::cmple_int,     1, [](int a, int b) { return a <= b; }},
+        {SkRasterPipeline::Stage::cmplt_uint,    1, compare_lt_uint},
+        {SkRasterPipeline::Stage::cmple_uint,    1, compare_lteq_uint},
 
-        {SkRasterPipeline::Stage::cmpeq_2_ints, 2, [](int a, int b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_2_ints, 2, [](int a, int b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_2_ints, 2, [](int a, int b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_2_ints, 2, [](int a, int b) { return a <= b; }},
+        {SkRasterPipeline::Stage::cmpeq_2_ints,  2, [](int a, int b) { return a == b; }},
+        {SkRasterPipeline::Stage::cmpne_2_ints,  2, [](int a, int b) { return a != b; }},
+        {SkRasterPipeline::Stage::cmplt_2_ints,  2, [](int a, int b) { return a <  b; }},
+        {SkRasterPipeline::Stage::cmple_2_ints,  2, [](int a, int b) { return a <= b; }},
+        {SkRasterPipeline::Stage::cmplt_2_uints, 2, compare_lt_uint},
+        {SkRasterPipeline::Stage::cmple_2_uints, 2, compare_lteq_uint},
 
-        {SkRasterPipeline::Stage::cmpeq_3_ints, 3, [](int a, int b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_3_ints, 3, [](int a, int b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_3_ints, 3, [](int a, int b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_3_ints, 3, [](int a, int b) { return a <= b; }},
+        {SkRasterPipeline::Stage::cmpeq_3_ints,  3, [](int a, int b) { return a == b; }},
+        {SkRasterPipeline::Stage::cmpne_3_ints,  3, [](int a, int b) { return a != b; }},
+        {SkRasterPipeline::Stage::cmplt_3_ints,  3, [](int a, int b) { return a <  b; }},
+        {SkRasterPipeline::Stage::cmple_3_ints,  3, [](int a, int b) { return a <= b; }},
+        {SkRasterPipeline::Stage::cmplt_3_uints, 3, compare_lt_uint},
+        {SkRasterPipeline::Stage::cmple_3_uints, 3, compare_lteq_uint},
 
-        {SkRasterPipeline::Stage::cmpeq_4_ints, 4, [](int a, int b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_4_ints, 4, [](int a, int b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_4_ints, 4, [](int a, int b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_4_ints, 4, [](int a, int b) { return a <= b; }},
+        {SkRasterPipeline::Stage::cmpeq_4_ints,  4, [](int a, int b) { return a == b; }},
+        {SkRasterPipeline::Stage::cmpne_4_ints,  4, [](int a, int b) { return a != b; }},
+        {SkRasterPipeline::Stage::cmplt_4_ints,  4, [](int a, int b) { return a <  b; }},
+        {SkRasterPipeline::Stage::cmple_4_ints,  4, [](int a, int b) { return a <= b; }},
+        {SkRasterPipeline::Stage::cmplt_4_uints, 4, compare_lt_uint},
+        {SkRasterPipeline::Stage::cmple_4_uints, 4, compare_lteq_uint},
     };
 
     for (const CompareOp& op : kCompareOps) {
-        // Initialize the slot values to 0,1,2,0,1,2,0,1,2...
+        // Initialize the slot values to -1,0,1,-1,0,1,-1,0,1,-1...
         for (int index = 0; index < 10 * N; ++index) {
-            slots[index] = index % 3;
+            slots[index] = (index % 3) - 1;
         }
 
         int leftValue = slots[0];
@@ -1174,8 +1220,12 @@ DEF_TEST(SkRasterPipeline_CompareIntsWithHardcodedSlots, r) {
                 }
 
                 ++destPtr;
-                leftValue = (leftValue + 1) % 3;
-                rightValue = (rightValue + 1) % 3;
+                if (++leftValue == 2) {
+                    leftValue = -1;
+                }
+                if (++rightValue == 2) {
+                    rightValue = -1;
+                }
             }
         }
     }
@@ -1229,22 +1279,26 @@ DEF_TEST(SkRasterPipeline_BinaryBitwiseOps, r) {
 }
 
 DEF_TEST(SkRasterPipeline_UnaryBitwiseOps, r) {
-    // Allocate space for 1 slot.
-    alignas(64) int slots[SkRasterPipeline_kMaxStride_highp];
+    // Allocate space for 5 slots.
+    alignas(64) int slots[5 * SkRasterPipeline_kMaxStride_highp];
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct BitwiseOp {
         SkRasterPipeline::Stage stage;
+        int numSlotsAffected;
         std::function<int(int)> verify;
     };
 
     static const BitwiseOp kBitwiseOps[] = {
-        {SkRasterPipeline::Stage::bitwise_not, [](int a) { return ~a; }},
+        {SkRasterPipeline::Stage::bitwise_not,   1, [](int a) { return ~a; }},
+        {SkRasterPipeline::Stage::bitwise_not_2, 2, [](int a) { return ~a; }},
+        {SkRasterPipeline::Stage::bitwise_not_3, 3, [](int a) { return ~a; }},
+        {SkRasterPipeline::Stage::bitwise_not_4, 4, [](int a) { return ~a; }},
     };
 
     for (const BitwiseOp& op : kBitwiseOps) {
         // Initialize the slot values to -3,-2,-1...
-        std::iota(&slots[0], &slots[N], -3);
+        std::iota(&slots[0], &slots[5 * N], -3);
         int inputValue = slots[0];
 
         // Run the bitwise op over our data.
@@ -1255,12 +1309,91 @@ DEF_TEST(SkRasterPipeline_UnaryBitwiseOps, r) {
 
         // Verify that the destination slots have been updated.
         int* destPtr = &slots[0];
-        for (int checkLane = 0; checkLane < N; ++checkLane) {
-            int expected = op.verify(inputValue);
-            REPORTER_ASSERT(r, *destPtr == expected);
+        for (int checkSlot = 0; checkSlot < 5; ++checkSlot) {
+            for (int checkLane = 0; checkLane < N; ++checkLane) {
+                if (checkSlot < op.numSlotsAffected) {
+                    int expected = op.verify(inputValue);
+                    REPORTER_ASSERT(r, *destPtr == expected);
+                } else {
+                    REPORTER_ASSERT(r, *destPtr == inputValue);
+                }
 
-            ++destPtr;
-            ++inputValue;
+                ++destPtr;
+                ++inputValue;
+            }
+        }
+    }
+}
+
+static float to_mix_weight(float value) {
+    // Convert a positive value to a mix-weight (a number between 0 and 1).
+    value /= 16.0f;
+    return value - std::floor(value);
+}
+
+DEF_TEST(SkRasterPipeline_MixTest, r) {
+    // Allocate space for 5 dest and 10 source slots.
+    alignas(64) float slots[15 * SkRasterPipeline_kMaxStride_highp];
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    struct MixOp {
+        int numSlotsAffected;
+        std::function<void(SkRasterPipeline*, SkArenaAlloc*)> append;
+    };
+
+    static const MixOp kMixOps[] = {
+        {1, [&](SkRasterPipeline* p, SkArenaAlloc* alloc) {
+                p->append(SkRasterPipeline::mix_float, slots);
+            }},
+        {2, [&](SkRasterPipeline* p, SkArenaAlloc* alloc) {
+                p->append(SkRasterPipeline::mix_2_floats, slots);
+            }},
+        {3, [&](SkRasterPipeline* p, SkArenaAlloc* alloc) {
+                p->append(SkRasterPipeline::mix_3_floats, slots);
+            }},
+        {4, [&](SkRasterPipeline* p, SkArenaAlloc* alloc) {
+                p->append(SkRasterPipeline::mix_4_floats, slots);
+            }},
+        {5, [&](SkRasterPipeline* p, SkArenaAlloc* alloc) {
+                auto* ctx = alloc->make<SkRasterPipeline_TernaryOpCtx>();
+                ctx->dst = &slots[0];
+                ctx->src0 = &slots[5 * N];
+                ctx->src1 = &slots[10 * N];
+                p->append(SkRasterPipeline::mix_n_floats, ctx);
+            }},
+    };
+
+    for (const MixOp& op : kMixOps) {
+        // Initialize the values to 1,2,3...
+        std::iota(&slots[0], &slots[15 * N], 1.0f);
+
+        float fromValue   = slots[0];
+        float toValue     = slots[1 * op.numSlotsAffected * N];
+        float weightValue = slots[2 * op.numSlotsAffected * N];
+
+        // The third group of values (the weight) must be between zero and one.
+        for (int idx = 2 * op.numSlotsAffected * N; idx < 3 * op.numSlotsAffected * N; ++idx) {
+            slots[idx] = to_mix_weight(slots[idx]);
+        }
+
+        // Run the mix op over our data.
+        SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+        SkRasterPipeline p(&alloc);
+        op.append(&p, &alloc);
+        p.run(0,0,1,1);
+
+        // Verify that the affected slots now equal mix({1,2...}, {3,4...}, {0.25, 0.3125...).
+        float* destPtr = &slots[0];
+        for (int checkSlot = 0; checkSlot < op.numSlotsAffected; ++checkSlot) {
+            for (int checkLane = 0; checkLane < N; ++checkLane) {
+                float checkValue = (toValue - fromValue) * to_mix_weight(weightValue) + fromValue;
+                REPORTER_ASSERT(r, *destPtr == checkValue);
+
+                ++destPtr;
+                fromValue += 1.0f;
+                toValue += 1.0f;
+                weightValue += 1.0f;
+            }
         }
     }
 }

@@ -13,14 +13,15 @@
 #include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/gpu/graphite/ImageProvider.h"
 #include "include/gpu/graphite/Recording.h"
+
 #include "src/core/SkConvertPixels.h"
 #include "src/gpu/AtlasTypes.h"
+#include "src/gpu/graphite/BufferManager.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/CopyTask.h"
 #include "src/gpu/graphite/Device.h"
-#include "src/gpu/graphite/DrawBufferManager.h"
 #include "src/gpu/graphite/GlobalCache.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/PipelineData.h"
@@ -99,11 +100,10 @@ Recorder::Recorder(sk_sp<SharedContext> sharedContext,
     }
 
     fResourceProvider = fSharedContext->makeResourceProvider(this->singleOwner());
-    fDrawBufferManager.reset(
-            new DrawBufferManager(fResourceProvider.get(),
-                                  fSharedContext->caps()->requiredUniformBufferAlignment(),
-                                  fSharedContext->caps()->requiredStorageBufferAlignment()));
-    fUploadBufferManager.reset(new UploadBufferManager(fResourceProvider.get()));
+    fDrawBufferManager.reset( new DrawBufferManager(fResourceProvider.get(),
+                                                    fSharedContext->caps()));
+    fUploadBufferManager.reset(new UploadBufferManager(fResourceProvider.get(),
+                                                       fSharedContext->caps()));
     SkASSERT(fResourceProvider);
 }
 
@@ -152,10 +152,8 @@ std::unique_ptr<Recording> Recorder::snap() {
     if (!fGraph->prepareResources(fResourceProvider.get(), fRuntimeEffectDict.get())) {
         // Leaving 'fTrackedDevices' alone since they were flushed earlier and could still be
         // attached to extant SkSurfaces.
-        fDrawBufferManager.reset(
-                new DrawBufferManager(fResourceProvider.get(),
-                                      fSharedContext->caps()->requiredUniformBufferAlignment(),
-                                      fSharedContext->caps()->requiredStorageBufferAlignment()));
+        fDrawBufferManager.reset(new DrawBufferManager(fResourceProvider.get(),
+                                                       fSharedContext->caps()));
         fTextureDataCache = std::make_unique<TextureDataCache>();
         // We leave the UniformDataCache alone
         fGraph->reset();

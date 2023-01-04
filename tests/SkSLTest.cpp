@@ -10,7 +10,6 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImageInfo.h"
-#include "include/core/SkM44.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
@@ -23,8 +22,11 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLProgramKind.h"
+#include "include/private/SkTArray.h"
 #include "include/sksl/DSLCore.h"
 #include "include/sksl/SkSLVersion.h"
+#include "src/core/SkArenaAlloc.h"
+#include "src/core/SkRasterPipeline.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
@@ -32,14 +34,18 @@
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
+#include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
+#include "src/sksl/codegen/SkSLRasterPipelineCodeGenerator.h"
+#include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLProgram.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
 
-#include <array>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct GrContextOptions;
@@ -75,47 +81,56 @@ static constexpr bool is_strict_es2(int flags) {
     return !(flags & SkSLTestFlags::GPU_ES3);
 }
 
-template <typename T>
-static void set_uniform(SkRuntimeShaderBuilder* builder, const char* name, const T& value) {
-    SkRuntimeShaderBuilder::BuilderUniform uniform = builder->uniform(name);
-    if (uniform.fVar) {
-        uniform = value;
-    }
-}
+struct UniformData {
+    std::string_view    name;
+    SkSpan<const float> span;
+};
 
-template <typename T>
-static void set_uniform_array(SkRuntimeShaderBuilder* builder, const char* name, SkSpan<T> values) {
-    SkRuntimeShaderBuilder::BuilderUniform uniform = builder->uniform(name);
-    if (uniform.fVar) {
-        uniform.set(values.data(), values.size());
-    }
-}
+static constexpr float kUniformColorBlack[]    = {0.0f, 0.0f, 0.0f, 1.0f};
+static constexpr float kUniformColorRed  []    = {1.0f, 0.0f, 0.0f, 1.0f};
+static constexpr float kUniformColorGreen[]    = {0.0f, 1.0f, 0.0f, 1.0f};
+static constexpr float kUniformColorBlue []    = {0.0f, 0.0f, 1.0f, 1.0f};
+static constexpr float kUniformColorWhite[]    = {1.0f, 1.0f, 1.0f, 1.0f};
+static constexpr float kUniformTestInputs[]    = {-1.25f, 0.0f, 0.75f, 2.25f};
+static constexpr float kUniformUnknownInput[]  = {1.0f};
+static constexpr float kUniformTestMatrix2x2[] = {1.0f, 2.0f,
+                                                  3.0f, 4.0f};
+static constexpr float kUniformTestMatrix3x3[] = {1.0f, 2.0f, 3.0f,
+                                                  4.0f, 5.0f, 6.0f,
+                                                  7.0f, 8.0f, 9.0f};
+static constexpr float kUniformTestMatrix4x4[] = {1.0f,  2.0f,  3.0f,  4.0f,
+                                                  5.0f,  6.0f,  7.0f,  8.0f,
+                                                  9.0f,  10.0f, 11.0f, 12.0f,
+                                                  13.0f, 14.0f, 15.0f, 16.0f};
+static constexpr float kUniformTestArray[] = {1, 2, 3, 4, 5};
+static constexpr float kUniformTestArrayNegative[] = {-1, -2, -3, -4, -5};
+
+static constexpr UniformData kUniformData[] = {
+        {"colorBlack", kUniformColorBlack},
+        {"colorRed", kUniformColorRed},
+        {"colorGreen", kUniformColorGreen},
+        {"colorBlue", kUniformColorBlue},
+        {"colorWhite", kUniformColorWhite},
+        {"testInputs", kUniformTestInputs},
+        {"unknownInput", kUniformUnknownInput},
+        {"testMatrix2x2", kUniformTestMatrix2x2},
+        {"testMatrix3x3", kUniformTestMatrix3x3},
+        {"testMatrix4x4", kUniformTestMatrix4x4},
+        {"testArray", kUniformTestArray},
+        {"testArrayNegative", kUniformTestArrayNegative},
+};
 
 static SkBitmap bitmap_from_shader(skiatest::Reporter* r,
                                    SkSurface* surface,
                                    sk_sp<SkRuntimeEffect> effect) {
-    static constexpr float kArray[5] = {1, 2, 3, 4, 5};
-    static constexpr float kArrayNegative[5] = {-1, -2, -3, -4, -5};
 
     SkRuntimeShaderBuilder builder(effect);
-    set_uniform(&builder, "colorBlack",       SkV4{0, 0, 0, 1});
-    set_uniform(&builder, "colorRed",         SkV4{1, 0, 0, 1});
-    set_uniform(&builder, "colorGreen",       SkV4{0, 1, 0, 1});
-    set_uniform(&builder, "colorBlue",        SkV4{0, 0, 1, 1});
-    set_uniform(&builder, "colorWhite",       SkV4{1, 1, 1, 1});
-    set_uniform(&builder, "testInputs",       SkV4{-1.25, 0, 0.75, 2.25});
-    set_uniform(&builder, "unknownInput",     1.0f);
-    set_uniform(&builder, "testMatrix2x2",    std::array<float,4>{1, 2,
-                                                                  3, 4});
-    set_uniform(&builder, "testMatrix3x3",    std::array<float,9>{1, 2, 3,
-                                                                  4, 5, 6,
-                                                                  7, 8, 9});
-    set_uniform(&builder, "testMatrix4x4",    std::array<float,16>{1,  2,  3,  4,
-                                                                   5,  6,  7,  8,
-                                                                   9,  10, 11, 12,
-                                                                   13, 14, 15, 16});
-    set_uniform_array(&builder, "testArray",  SkSpan(kArray));
-    set_uniform_array(&builder, "testArrayNegative", SkSpan(kArrayNegative));
+    for (const UniformData& data : kUniformData) {
+        SkRuntimeShaderBuilder::BuilderUniform uniform = builder.uniform(data.name);
+        if (uniform.fVar) {
+            uniform.set(data.span.data(), data.span.size());
+        }
+    }
 
     sk_sp<SkShader> shader = builder.makeShader();
     if (!shader) {
@@ -314,13 +329,142 @@ static void test_clone(skiatest::Reporter* r, const char* testFile, int flags) {
     SkSL::dsl::End();
 }
 
+// These debugging toggles enable extra logging in `test_raster_pipeline`.
+//#define REPORT_RP_PASS_FAIL 1
+//#define DUMP_RP_PROGRAMS 1
+
+#if defined(DUMP_RP_PROGRAMS)
+#include "src/core/SkStreamPriv.h"
+#endif
+
+static void test_raster_pipeline(skiatest::Reporter* r, const char* testFile, int flags) {
+#if defined(REPORT_RP_PASS_FAIL)
+    static int sRPTestsPassed = 0;
+    static int sRPTestsFailed = 0;
+#endif
+
+    SkString shaderString = load_source(r, testFile, "");
+    if (shaderString.isEmpty()) {
+        return;
+    }
+
+    // In Raster Pipeline, we can compile and run test shaders directly, without involving a surface
+    // at all.
+    SkSL::Compiler compiler(SkSL::ShaderCapsFactory::Default());
+    SkSL::ProgramSettings settings;
+    settings.fMaxVersionAllowed = SkSL::Version::k300;
+    std::unique_ptr<SkSL::Program> program = compiler.convertProgram(
+            SkSL::ProgramKind::kRuntimeShader, shaderString.c_str(), settings);
+    if (!program) {
+        ERRORF(r, "%s: Unexpected compilation error\n%s", testFile, compiler.errorText().c_str());
+        return;
+    }
+    const SkSL::FunctionDeclaration* main = program->getFunction("main");
+    if (!main) {
+        ERRORF(r, "%s: Program must have a 'main' function", testFile);
+        return;
+    }
+
+    // Match up uniforms from the program against our list of test uniforms, and build up a data
+    // buffer of uniform floats. TODO: this approach doesn't work for complex types (arrays and
+    // structs), but the RP backend doesn't support those yet regardless.
+    std::unique_ptr<SkSL::UniformInfo> uniformInfo = program->getUniformInfo();
+    SkTArray<float> uniformValues;
+    for (const SkSL::UniformInfo::Uniform& programUniform : uniformInfo->fUniforms) {
+        bool foundMatch = false;
+        for (const UniformData& data : kUniformData) {
+            if (data.name == programUniform.fName) {
+                SkASSERT((int)data.span.size() == programUniform.fColumns * programUniform.fRows);
+                foundMatch = true;
+                uniformValues.push_back_n(data.span.size(), data.span.data());
+                break;
+            }
+        }
+        if (!foundMatch) {
+#if defined(REPORT_RP_PASS_FAIL)
+            ++sRPTestsFailed;
+            SkDebugf("%d/%d: FAIL %s (unsupported uniform '%s')\n",
+                     sRPTestsPassed, sRPTestsPassed + sRPTestsFailed, testFile,
+                     programUniform.fName.c_str());
+#endif
+            return;
+        }
+    }
+
+    // Compile our program.
+    SkArenaAlloc alloc(/*firstHeapAllocation=*/1000);
+    SkRasterPipeline pipeline(&alloc);
+    std::unique_ptr<SkSL::RP::Program> rasterProg =
+            SkSL::MakeRasterPipelineProgram(*program,
+                                            *main->definition(),
+                                            /*debugTrace=*/nullptr);
+    if (!rasterProg) {
+#if defined(REPORT_RP_PASS_FAIL)
+        ++sRPTestsFailed;
+        SkDebugf("%d/%d: FAIL %s (code is not supported)\n",
+                 sRPTestsPassed, sRPTestsPassed + sRPTestsFailed, testFile);
+#endif
+        return;
+    }
+
+#if defined(DUMP_RP_PROGRAMS)
+    // Dump the program instructions via SkDebugf.
+    SkDebugf("----- %s -----\n\n", testFile);
+    SkDebugfStream stream;
+    rasterProg->dump(&stream);
+    SkDebugf("\n-----\n\n");
+#endif
+
+    // Append the SkSL program to the raster pipeline.
+    pipeline.append_constant_color(&alloc, SkColors::kTransparent);
+    rasterProg->appendStages(&pipeline, &alloc, SkSpan(uniformValues));
+
+    // Move the float values from RGBA into an 8888 memory buffer.
+    uint32_t out[SkRasterPipeline_kMaxStride_highp] = {};
+    SkRasterPipeline_MemoryCtx outCtx{/*pixels=*/out, /*stride=*/SkRasterPipeline_kMaxStride_highp};
+    pipeline.append(SkRasterPipeline::store_8888, &outCtx);
+    pipeline.run(0, 0, 1, 1);
+
+    // Make sure the first pixel (exclusively) of `out` is green. If the program compiled
+    // successfully, we expect it to run without error, and will assert if it doesn't.
+    uint32_t expected = 0xFF00FF00;
+    if (out[0] != expected) {
+#if defined(REPORT_RP_PASS_FAIL)
+        ++sRPTestsFailed;
+        SkDebugf("%d/%d: FAIL %s (expected solid green, got ARGB:%02X%02X%02X%02X)\n",
+                 sRPTestsPassed, sRPTestsPassed + sRPTestsFailed, testFile,
+                 (out[0] >> 24) & 0xFF,
+                 (out[0] >> 16) & 0xFF,
+                 (out[0] >> 8) & 0xFF,
+                 out[0] & 0xFF);
+#endif
+        ERRORF(r, "%s: Raster Pipeline failed. Expected solid green, got ARGB:%02X%02X%02X%02X",
+                  testFile,
+                  (out[0] >> 24) & 0xFF,
+                  (out[0] >> 16) & 0xFF,
+                  (out[0] >> 8) & 0xFF,
+                  out[0] & 0xFF);
+        return;
+    }
+
+    // Success!
+#if defined(REPORT_RP_PASS_FAIL)
+    ++sRPTestsPassed;
+    SkDebugf("%d/%d: PASS %s\n", sRPTestsPassed, sRPTestsPassed + sRPTestsFailed, testFile);
+#endif
+}
+
+#undef DUMP_RP_PROGRAMS
+#undef REPORT_RP_PASS_FAIL
+
 #define SKSL_TEST(flags, ctsEnforcement, name, path)                                       \
     DEF_CONDITIONAL_TEST(SkSL##name##_CPU, r, is_cpu(flags)) { test_cpu(r, path, flags); } \
     DEF_CONDITIONAL_GANESH_TEST_FOR_RENDERING_CONTEXTS(                                    \
             SkSL##name##_GPU, r, ctxInfo, is_gpu(flags), ctsEnforcement) {                 \
         test_gpu(r, ctxInfo.directContext(), path, flags);                                 \
     }                                                                                      \
-    DEF_TEST(SkSL##name##_Clone, r) { test_clone(r, path, flags); }
+    DEF_TEST(SkSL##name##_Clone, r) { test_clone(r, path, flags); }                        \
+    DEF_TEST(SkSL##name##_RP, r) { test_raster_pipeline(r, path, flags); }
 
 /**
  * Test flags:
@@ -420,8 +564,10 @@ SKSL_TEST(CPU + GPU, kApiLevel_T, IntrinsicMatrixCompMultES2,      "intrinsics/M
 SKSL_TEST(GPU_ES3,   kNever,      IntrinsicMatrixCompMultES3,      "intrinsics/MatrixCompMultES3.sksl")
 SKSL_TEST(CPU + GPU, kApiLevel_T, IntrinsicMaxFloat,               "intrinsics/MaxFloat.sksl")
 SKSL_TEST(GPU_ES3,   kNever,      IntrinsicMaxInt,                 "intrinsics/MaxInt.sksl")
+SKSL_TEST(GPU_ES3,   kNever,      IntrinsicMaxUint,                "intrinsics/MaxUint.sksl")
 SKSL_TEST(CPU + GPU, kApiLevel_T, IntrinsicMinFloat,               "intrinsics/MinFloat.sksl")
 SKSL_TEST(GPU_ES3,   kNever,      IntrinsicMinInt,                 "intrinsics/MinInt.sksl")
+SKSL_TEST(GPU_ES3,   kNever,      IntrinsicMinUint,                "intrinsics/MinUint.sksl")
 SKSL_TEST(CPU + GPU, kApiLevel_T, IntrinsicMixFloat,               "intrinsics/MixFloat.sksl")
 SKSL_TEST(GPU_ES3,   kNever,      IntrinsicModf,                   "intrinsics/Modf.sksl")
 SKSL_TEST(GPU_ES3,   kNever,      IntrinsicOuterProduct,           "intrinsics/OuterProduct.sksl")
@@ -429,6 +575,7 @@ SKSL_TEST(GPU_ES3,   kNever,      IntrinsicOuterProduct,           "intrinsics/O
 // SKSL_TEST(GPU_ES3,   kNever,      IntrinsicPackUnorm2x16,          "intrinsics/PackUnorm2x16.sksl")
 SKSL_TEST(GPU_ES3,   kNever,      IntrinsicRound,                  "intrinsics/Round.sksl")
 SKSL_TEST(GPU_ES3,   kNever,      IntrinsicRoundEven,              "intrinsics/RoundEven.sksl")
+SKSL_TEST(CPU + GPU, kNever,      IntrinsicSaturate,               "intrinsics/Saturate.sksl")
 SKSL_TEST(CPU + GPU, kApiLevel_T, IntrinsicSignFloat,              "intrinsics/SignFloat.sksl")
 SKSL_TEST(GPU_ES3,   kNever,      IntrinsicSignInt,                "intrinsics/SignInt.sksl")
 SKSL_TEST(CPU + GPU, kApiLevel_T, IntrinsicStep,                   "intrinsics/Step.sksl")
