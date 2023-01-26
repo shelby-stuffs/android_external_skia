@@ -425,6 +425,7 @@ func GenTasks(cfg *Config) {
 			"skia/resources",
 			"skia/package.json",
 			"skia/package-lock.json",
+			"skia/DEPS", // needed to check generation
 			// Needed to run bazel
 			"skia/.bazelrc",
 			"skia/.bazelversion",
@@ -857,6 +858,7 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 				"Pixel4XL":        {"coral", "QD1A.190821.011.C4"},
 				"Pixel5":          {"redfin", "RD1A.200810.022.A4"},
 				"Pixel6":          {"oriole", "SD1A.210817.037"},
+				"Pixel7":          {"cheetah", "TD1A.221105.002"},
 				"TecnoSpark3Pro":  {"TECNO-KB8", "PPR1.180610.011"},
 				"Wembley":         {"wembley", "SP2A.220505.008"},
 			}[b.parts["model"]]
@@ -1026,7 +1028,7 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 				}
 			} else if b.os("ChromeOS") {
 				version, ok := map[string]string{
-					"IntelUHDGraphics605": "14233.0.0",
+					"IntelUHDGraphics605": "15236.2.0",
 					"RadeonVega3":         "14233.0.0",
 					"Adreno618":           "14150.39.0",
 					"MaliT860":            "14092.77.0",

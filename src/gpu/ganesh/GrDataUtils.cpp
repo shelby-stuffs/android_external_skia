@@ -285,7 +285,7 @@ void GrTwoColorBC1Compress(const SkPixmap& pixmap, SkColor otherColor, char* dst
 
 size_t GrComputeTightCombinedBufferSize(size_t bytesPerPixel, SkISize baseDimensions,
                                         SkTArray<size_t>* individualMipOffsets, int mipLevelCount) {
-    SkASSERT(individualMipOffsets && !individualMipOffsets->count());
+    SkASSERT(individualMipOffsets && !individualMipOffsets->size());
     SkASSERT(mipLevelCount >= 1);
 
     individualMipOffsets->push_back(0);
@@ -314,7 +314,7 @@ size_t GrComputeTightCombinedBufferSize(size_t bytesPerPixel, SkISize baseDimens
         combinedBufferSize += trimmedSize;
     }
 
-    SkASSERT(individualMipOffsets->count() == mipLevelCount);
+    SkASSERT(individualMipOffsets->size() == mipLevelCount);
     return combinedBufferSize;
 }
 
@@ -612,21 +612,12 @@ bool GrConvertPixels(const GrPixmap& dst, const GrCPixmap& src, bool flipY) {
                                                   &dstIsNormalized,
                                                   &dstIsSRGB);
 
-    bool clampGamut = false;
     SkTLazy<SkColorSpaceXformSteps> steps;
     skgpu::Swizzle loadStoreSwizzle;
     if (alphaOrCSConversion) {
         steps.init(src.colorSpace(), src.alphaType(), dst.colorSpace(), dst.alphaType());
-#if defined(SK_USE_LEGACY_GAMUT_CLAMP)
-        clampGamut = dstIsNormalized && dst.alphaType() == kPremul_SkAlphaType;
-#endif
     } else {
-#if defined(SK_USE_LEGACY_GAMUT_CLAMP)
-        clampGamut = dstIsNormalized && !srcIsNormalized && dst.alphaType() == kPremul_SkAlphaType;
-#endif
-        if (!clampGamut) {
-            loadStoreSwizzle = skgpu::Swizzle::Concat(loadSwizzle, storeSwizzle);
-        }
+        loadStoreSwizzle = skgpu::Swizzle::Concat(loadSwizzle, storeSwizzle);
     }
     int cnt = 1;
     int height = src.height();
@@ -644,7 +635,7 @@ bool GrConvertPixels(const GrPixmap& dst, const GrCPixmap& src, bool flipY) {
         std::swap(cnt, height);
     }
 
-    bool hasConversion = alphaOrCSConversion || clampGamut || lumMode != LumMode::kNone;
+    bool hasConversion = alphaOrCSConversion || lumMode != LumMode::kNone;
 
     if (srcIsSRGB && dstIsSRGB && !hasConversion) {
         // No need to convert from srgb if we are just going to immediately convert it back.
@@ -662,9 +653,6 @@ bool GrConvertPixels(const GrPixmap& dst, const GrCPixmap& src, bool flipY) {
         }
         if (alphaOrCSConversion) {
             steps->apply(&pipeline);
-        }
-        if (clampGamut) {
-            pipeline.append(SkRasterPipeline::clamp_gamut);  // TODO(skia:13715): Remove this?
         }
         switch (lumMode) {
             case LumMode::kNone:

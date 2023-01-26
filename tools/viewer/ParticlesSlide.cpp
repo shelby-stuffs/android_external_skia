@@ -15,6 +15,7 @@
 #include "modules/skresources/include/SkResources.h"
 #include "src/core/SkOSFile.h"
 #include "src/sksl/codegen/SkSLVMCodeGenerator.h"
+#include "src/sksl/ir/SkSLProgram.h"
 #include "src/utils/SkOSPath.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
@@ -337,7 +338,7 @@ void ParticlesSlide::draw(SkCanvas* canvas) {
         }
 
         SkGuiVisitor gui;
-        for (int i = 0; i < fLoaded.count(); ++i) {
+        for (int i = 0; i < fLoaded.size(); ++i) {
             ImGui::PushID(i);
             if (fAnimated && ImGui::Button("Play")) {
                 sk_sp<SkParticleEffect> effect(new SkParticleEffect(fLoaded[i].fParams));
@@ -369,7 +370,7 @@ void ParticlesSlide::draw(SkCanvas* canvas) {
 
     // Another window to show all the running effects
     if (ImGui::Begin("Running")) {
-        for (int i = 0; i < fRunning.count(); ++i) {
+        for (int i = 0; i < fRunning.size(); ++i) {
             SkParticleEffect* effect = fRunning[i].fEffect.get();
             ImGui::PushID(effect);
 

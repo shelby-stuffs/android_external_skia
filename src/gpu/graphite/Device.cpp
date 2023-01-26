@@ -54,7 +54,7 @@
 #include <unordered_map>
 #include <vector>
 
-// TODO: This will be removed once the AnalyticRRectRenderStep is finished being developed.
+// TODO: This will be removed once the AnalyticRectRenderStep is finished being developed.
 #define ENABLE_ANALYTIC_RRECT_RENDERER 0
 
 using RescaleGamma       = SkImage::RescaleGamma;
@@ -228,6 +228,15 @@ sk_sp<Device> Device::Make(Recorder* recorder,
                            const SkColorInfo& colorInfo,
                            const SkSurfaceProps& props,
                            bool addInitialClear) {
+    return Make(recorder, target, target->dimensions(), colorInfo, props, addInitialClear);
+}
+
+sk_sp<Device> Device::Make(Recorder* recorder,
+                           sk_sp<TextureProxy> target,
+                           SkISize deviceSize,
+                           const SkColorInfo& colorInfo,
+                           const SkSurfaceProps& props,
+                           bool addInitialClear) {
     if (!recorder) {
         return nullptr;
     }
@@ -235,7 +244,7 @@ sk_sp<Device> Device::Make(Recorder* recorder,
         return nullptr;
     }
 
-    sk_sp<DrawContext> dc = DrawContext::Make(std::move(target), colorInfo, props);
+    sk_sp<DrawContext> dc = DrawContext::Make(std::move(target), deviceSize, colorInfo, props);
     if (!dc) {
         return nullptr;
     }
@@ -359,17 +368,6 @@ bool Device::onReadPixels(const SkPixmap& pm, int srcX, int srcY) {
 #endif
     // We have no access to a context to do a read pixels here.
     return false;
-}
-
-// TODO: remove this?
-bool Device::readPixels(Context* context,
-                        Recorder* recorder,
-                        const SkPixmap& pm,
-                        int srcX,
-                        int srcY) {
-    this->flushPendingWorkToRecorder();
-    return context->priv().readPixels(recorder, pm, fDC->target(), this->imageInfo(),
-                                      srcX, srcY);
 }
 
 void Device::asyncRescaleAndReadPixels(const SkImageInfo& info,
@@ -633,9 +631,9 @@ void Device::drawPoints(SkCanvas::PointMode mode, size_t count,
         // Force the style to be a stroke, using the radius and cap from the paint
         SkStrokeRec stroke(paint, SkPaint::kStroke_Style);
         size_t inc = (mode == SkCanvas::kLines_PointMode) ? 2 : 1;
-        for (size_t i = 0; i < count; i += inc) {
+        for (size_t i = 0; i < count-1; i += inc) {
             this->drawGeometry(this->localToDeviceTransform(),
-                               Geometry(Shape(points[i], points[(i + 1) % count])),
+                               Geometry(Shape(points[i], points[i + 1])),
                                paint, stroke);
         }
     }
