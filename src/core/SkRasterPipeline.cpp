@@ -5,15 +5,20 @@
  * found in the LICENSE file.
  */
 
+#include "src/core/SkRasterPipeline.h"
+
+#include "include/core/SkColorType.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
 #include "include/private/SkImageInfoPriv.h"
 #include "include/private/SkTemplates.h"
 #include "include/private/SkVx.h"
 #include "modules/skcms/skcms.h"
-#include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkOpts.h"
-#include "src/core/SkRasterPipeline.h"
 
 #include <algorithm>
+#include <cstring>
+#include <vector>
 
 bool gForceHighPrecisionRasterPipeline;
 
@@ -139,112 +144,6 @@ void SkRasterPipeline::append_constant_color(SkArenaAlloc* alloc, const float rg
             this->unchecked_append(unbounded_uniform_color, ctx);
         }
     }
-}
-
-void SkRasterPipeline::append_copy_slots_masked(SkArenaAlloc* alloc,
-                                                float* dst,
-                                                float* src,
-                                                int numSlots) {
-    SkASSERT(numSlots >= 0);
-    while (numSlots > 4) {
-        this->append_copy_slots_masked(alloc, dst, src, /*numSlots=*/4);
-        dst += 4 * SkOpts::raster_pipeline_highp_stride;
-        src += 4 * SkOpts::raster_pipeline_highp_stride;
-        numSlots -= 4;
-    }
-
-    SkRasterPipeline::Stage stage;
-    switch (numSlots) {
-        case 0:  return;
-        case 1:  stage = SkRasterPipeline::copy_slot_masked;     break;
-        case 2:  stage = SkRasterPipeline::copy_2_slots_masked;  break;
-        case 3:  stage = SkRasterPipeline::copy_3_slots_masked;  break;
-        case 4:  stage = SkRasterPipeline::copy_4_slots_masked;  break;
-        default: SkUNREACHABLE;
-    }
-
-    auto ctx = alloc->make<SkRasterPipeline_CopySlotsCtx>();
-    ctx->dst = dst;
-    ctx->src = src;
-    this->unchecked_append(stage, ctx);
-}
-
-void SkRasterPipeline::append_copy_slots_unmasked(SkArenaAlloc* alloc,
-                                                  float* dst,
-                                                  float* src,
-                                                  int numSlots) {
-    SkASSERT(numSlots >= 0);
-    while (numSlots > 4) {
-        this->append_copy_slots_unmasked(alloc, dst, src, /*numSlots=*/4);
-        dst += 4 * SkOpts::raster_pipeline_highp_stride;
-        src += 4 * SkOpts::raster_pipeline_highp_stride;
-        numSlots -= 4;
-    }
-
-    SkRasterPipeline::Stage stage;
-    switch (numSlots) {
-        case 0:  return;
-        case 1:  stage = SkRasterPipeline::copy_slot_unmasked;     break;
-        case 2:  stage = SkRasterPipeline::copy_2_slots_unmasked;  break;
-        case 3:  stage = SkRasterPipeline::copy_3_slots_unmasked;  break;
-        case 4:  stage = SkRasterPipeline::copy_4_slots_unmasked;  break;
-        default: SkUNREACHABLE;
-    }
-
-    auto ctx = alloc->make<SkRasterPipeline_CopySlotsCtx>();
-    ctx->dst = dst;
-    ctx->src = src;
-    this->unchecked_append(stage, ctx);
-}
-
-void SkRasterPipeline::append_zero_slots_unmasked(float* dst, int numSlots) {
-    SkASSERT(numSlots >= 0);
-    while (numSlots > 4) {
-        this->append_zero_slots_unmasked(dst, /*numSlots=*/4);
-        dst += 4 * SkOpts::raster_pipeline_highp_stride;
-        numSlots -= 4;
-    }
-
-    SkRasterPipeline::Stage stage;
-    switch (numSlots) {
-        case 0:  return;
-        case 1:  stage = SkRasterPipeline::zero_slot_unmasked;     break;
-        case 2:  stage = SkRasterPipeline::zero_2_slots_unmasked;  break;
-        case 3:  stage = SkRasterPipeline::zero_3_slots_unmasked;  break;
-        case 4:  stage = SkRasterPipeline::zero_4_slots_unmasked;  break;
-        default: SkUNREACHABLE;
-    }
-
-    this->unchecked_append(stage, dst);
-}
-
-void SkRasterPipeline::append_adjacent_multi_slot_op(SkArenaAlloc* alloc,
-                                                     SkRasterPipeline::Stage baseStage,
-                                                     float* dst,
-                                                     float* src,
-                                                     int numSlots) {
-    // The source and destination must be directly next to one another.
-    SkASSERT(numSlots >= 0);
-    SkASSERT((dst + SkOpts::raster_pipeline_highp_stride * numSlots) == src);
-
-    if (numSlots > 4) {
-        auto ctx = alloc->make<SkRasterPipeline_CopySlotsCtx>();
-        ctx->dst = dst;
-        ctx->src = src;
-        this->unchecked_append(baseStage, ctx);
-        return;
-    } else if (numSlots > 0) {
-        auto specializedStage = (SkRasterPipeline::Stage)(baseStage + numSlots);
-        this->unchecked_append(specializedStage, dst);
-    }
-}
-
-void SkRasterPipeline::append_adjacent_single_slot_op(SkRasterPipeline::Stage stage,
-                                                      float* dst,
-                                                      float* src) {
-    // The source and destination must be directly next to one another.
-    SkASSERT((dst + SkOpts::raster_pipeline_highp_stride) == src);
-    this->unchecked_append(stage, dst);
 }
 
 void SkRasterPipeline::append_matrix(SkArenaAlloc* alloc, const SkMatrix& matrix) {
@@ -445,19 +344,19 @@ void SkRasterPipeline::append_store(SkColorType ct, const SkRasterPipeline_Memor
 
 void SkRasterPipeline::append_transfer_function(const skcms_TransferFunction& tf) {
     void* ctx = const_cast<void*>(static_cast<const void*>(&tf));
-    switch (classify_transfer_fn(tf)) {
-        case Bad_TF: SkASSERT(false); break;
+    switch (skcms_TransferFunction_getType(&tf)) {
+        case skcms_TFType_Invalid: SkASSERT(false); break;
 
-        case TFKind::sRGBish_TF:
+        case skcms_TFType_sRGBish:
             if (tf.a == 1 && tf.b == 0 && tf.c == 0 && tf.d == 0 && tf.e == 0 && tf.f == 0) {
                 this->unchecked_append(gamma_, ctx);
             } else {
                 this->unchecked_append(parametric, ctx);
             }
             break;
-        case PQish_TF:     this->unchecked_append(PQish,     ctx); break;
-        case HLGish_TF:    this->unchecked_append(HLGish,    ctx); break;
-        case HLGinvish_TF: this->unchecked_append(HLGinvish, ctx); break;
+        case skcms_TFType_PQish:     this->unchecked_append(PQish,     ctx); break;
+        case skcms_TFType_HLGish:    this->unchecked_append(HLGish,    ctx); break;
+        case skcms_TFType_HLGinvish: this->unchecked_append(HLGinvish, ctx); break;
     }
 }
 

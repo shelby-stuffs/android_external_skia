@@ -33,6 +33,7 @@ skia_filegroup(
 skia_filegroup(
     name = "private_hdrs",
     srcs = [
+        "SkAlignedStorage.h",
         "SkBitmaskEnum.h",
         "SkChecksum.h",
         "SkColorData.h",
@@ -68,7 +69,7 @@ skia_filegroup(
         "SkThreadAnnotations.h",
         "SkThreadID.h",
         "SkTo.h",
-        "SkUniquePaintParamsID.h",
+        "SkTypeTraits.h",
         "SkVx.h",
         "SkWeakRefCnt.h",
         ":shared_gpu_private_hdrs",

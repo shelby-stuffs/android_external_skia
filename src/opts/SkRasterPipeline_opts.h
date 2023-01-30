@@ -1351,6 +1351,13 @@ SI F clamp(F v, F limit) {
     return min(max(0, v), inclusive);
 }
 
+// clamp to (0,limit).
+SI F clamp_ex(F v, F limit) {
+    const F inclusiveZ = std::numeric_limits<float>::min(),
+            inclusiveL = sk_bit_cast<F>( sk_bit_cast<U32>(limit) - 1 );
+    return min(max(inclusiveZ, v), inclusiveL);
+}
+
 // Bhaskara I's sine approximation
 // 16x(pi - x) / (5*pi^2 - 4x(pi - x)
 // ... divide by 4
@@ -1422,8 +1429,17 @@ SI F tan_(F x) {
 // Used by gather_ stages to calculate the base pointer and a vector of indices to load.
 template <typename T>
 SI U32 ix_and_ptr(T** ptr, const SkRasterPipeline_GatherCtx* ctx, F x, F y) {
-    x = clamp(sk_bit_cast<F>(sk_bit_cast<U32>(x) + ctx->coordBiasInULPs), ctx->width );
-    y = clamp(sk_bit_cast<F>(sk_bit_cast<U32>(y) + ctx->coordBiasInULPs), ctx->height);
+#ifdef SK_DISABLE_RASTER_PIPELINE_SAMPLING_FIXES
+    x = clamp(sk_bit_cast<F>(sk_bit_cast<U32>(x) - (uint32_t)ctx->roundDownAtInteger), ctx->width );
+    y = clamp(sk_bit_cast<F>(sk_bit_cast<U32>(y) - (uint32_t)ctx->roundDownAtInteger), ctx->height);
+#else
+    // We use exclusive clamp so that our min value is > 0 because ULP subtraction using U32 would
+    // produce a NaN if applied to +0.f.
+    x = clamp_ex(x, ctx->width );
+    y = clamp_ex(y, ctx->height);
+    x = sk_bit_cast<F>(sk_bit_cast<U32>(x) - (uint32_t)ctx->roundDownAtInteger);
+    y = sk_bit_cast<F>(sk_bit_cast<U32>(y) - (uint32_t)ctx->roundDownAtInteger);
+#endif
     *ptr = (const T*)ctx->pixels;
     return trunc_(y)*ctx->stride + trunc_(x);
 }
@@ -2583,7 +2599,22 @@ SI F exclusive_repeat(F v, const SkRasterPipeline_TileCtx* ctx) {
 SI F exclusive_mirror(F v, const SkRasterPipeline_TileCtx* ctx) {
     auto limit = ctx->scale;
     auto invLimit = ctx->invScale;
-    return abs_( (v-limit) - (limit+limit)*floor_((v-limit)*(invLimit*0.5f)) - limit );
+
+    // This is "repeat" over the range 0..2*limit
+    auto u = v - floor_(v*invLimit*0.5f)*2*limit;
+    // s will be 0 when moving forward (e.g. [0, limit)) and 1 when moving backward (e.g.
+    // [limit, 2*limit)).
+    auto s = floor_(u*invLimit);
+    // This is the mirror result.
+    auto m = u - 2*s*(u - limit);
+    // Apply a bias to m if moving backwards so that we snap consistently at exact integer coords in
+    // the logical infinite image. This is tested by mirror_tile GM. Note that all values
+    // that have a non-zero bias applied are > 0.
+    auto biasInUlps = trunc_(s);
+#ifdef SK_DISABLE_RASTER_PIPELINE_SAMPLING_FIXES
+    biasInUlps = 0;
+#endif
+    return sk_bit_cast<F>(sk_bit_cast<U32>(m) + ctx->mirrorBiasDir*biasInUlps);
 }
 // Tile x or y to [0,limit) == [0,limit - 1 ulp] (think, sampling from images).
 // The gather stages will hard clamp the output of these stages to [0,limit)...
@@ -2605,17 +2636,33 @@ STAGE(mirror_x_1, NoCtx) { r = clamp_01_(abs_( (r-1.0f) - two(floor_((r-1.0f)*0.
 
 STAGE(decal_x, SkRasterPipeline_DecalTileCtx* ctx) {
     auto w = ctx->limit_x;
-    sk_unaligned_store(ctx->mask, cond_to_mask((0 <= r) & (r < w)));
+    auto e = ctx->inclusiveEdge_x;
+#ifdef SK_DISABLE_RASTER_PIPELINE_SAMPLING_FIXES
+    e = 0;
+#endif
+    auto cond = ((0 < r) & (r < w)) | (r == e);
+    sk_unaligned_store(ctx->mask, cond_to_mask(cond));
 }
 STAGE(decal_y, SkRasterPipeline_DecalTileCtx* ctx) {
     auto h = ctx->limit_y;
-    sk_unaligned_store(ctx->mask, cond_to_mask((0 <= g) & (g < h)));
+    auto e = ctx->inclusiveEdge_y;
+#ifdef SK_DISABLE_RASTER_PIPELINE_SAMPLING_FIXES
+    e = 0;
+#endif
+    auto cond = ((0 < g) & (g < h)) | (g == e);
+    sk_unaligned_store(ctx->mask, cond_to_mask(cond));
 }
 STAGE(decal_x_and_y, SkRasterPipeline_DecalTileCtx* ctx) {
     auto w = ctx->limit_x;
     auto h = ctx->limit_y;
-    sk_unaligned_store(ctx->mask,
-                    cond_to_mask((0 <= r) & (r < w) & (0 <= g) & (g < h)));
+    auto ex = ctx->inclusiveEdge_x;
+    auto ey = ctx->inclusiveEdge_y;
+#ifdef SK_DISABLE_RASTER_PIPELINE_SAMPLING_FIXES
+    ex = ey = 0;
+#endif
+    auto cond = (((0 < r) & (r < w)) | (r == ex))
+              & (((0 < g) & (g < h)) | (g == ey));
+    sk_unaligned_store(ctx->mask, cond_to_mask(cond));
 }
 STAGE(check_decal_mask, SkRasterPipeline_DecalTileCtx* ctx) {
     auto mask = sk_unaligned_load<U32>(ctx->mask);
@@ -3021,16 +3068,51 @@ STAGE(store_condition_mask, F* ctx) {
     sk_unaligned_store(ctx, dr);
 }
 
-STAGE(combine_condition_mask, I32* stack) {
-    // Store off the current condition-mask in the following stack slot.
-    stack[1] = sk_bit_cast<I32>(dr);
-
-    // Intersect the current condition-mask with the condition-mask on the stack.
-    dr = sk_bit_cast<F>(stack[0] & stack[1]);
+STAGE(merge_condition_mask, I32* ptr) {
+    // Set the condition-mask to the intersection of two adjacent masks at the pointer.
+    dr = sk_bit_cast<F>(ptr[0] & ptr[1]);
     update_execution_mask();
 }
 
-STAGE(update_return_mask, NoCtx) {
+STAGE(load_loop_mask, F* ctx) {
+    dg = sk_unaligned_load<F>(ctx);
+    update_execution_mask();
+}
+
+STAGE(store_loop_mask, F* ctx) {
+    sk_unaligned_store(ctx, dg);
+}
+
+STAGE(mask_off_loop_mask, NoCtx) {
+    // We encountered a break statement. If a lane was active, it should be masked off now, and stay
+    // masked-off until the termination of the loop.
+    dg = sk_bit_cast<F>(sk_bit_cast<I32>(dg) & ~execution_mask());
+    update_execution_mask();
+}
+
+STAGE(reenable_loop_mask, I32* ptr) {
+    // Set the loop-mask to the union of the current loop-mask with the mask at the pointer.
+    dg = sk_bit_cast<F>(sk_bit_cast<I32>(dg) | ptr[0]);
+    update_execution_mask();
+}
+
+STAGE(merge_loop_mask, I32* ptr) {
+    // Set the loop-mask to the intersection of the current loop-mask with the mask at the pointer.
+    // (Note: this behavior subtly differs from merge_condition_mask!)
+    dg = sk_bit_cast<F>(sk_bit_cast<I32>(dg) & ptr[0]);
+    update_execution_mask();
+}
+
+STAGE(load_return_mask, F* ctx) {
+    db = sk_unaligned_load<F>(ctx);
+    update_execution_mask();
+}
+
+STAGE(store_return_mask, F* ctx) {
+    sk_unaligned_store(ctx, db);
+}
+
+STAGE(mask_off_return_mask, NoCtx) {
     // We encountered a return statement. If a lane was active, it should be masked off now, and
     // stay masked-off until the end of the function.
     db = sk_bit_cast<F>(sk_bit_cast<I32>(db) & ~execution_mask());
@@ -3038,11 +3120,11 @@ STAGE(update_return_mask, NoCtx) {
 }
 
 STAGE_BRANCH(branch_if_any_active_lanes, int* offset) {
-    return any(sk_bit_cast<I32>(da)) ? *offset : 1;
+    return any(execution_mask()) ? *offset : 1;
 }
 
 STAGE_BRANCH(branch_if_no_active_lanes, int* offset) {
-    return any(sk_bit_cast<I32>(da)) ? 1 : *offset;
+    return any(execution_mask()) ? 1 : *offset;
 }
 
 STAGE_BRANCH(jump, int* offset) {
@@ -3067,6 +3149,33 @@ STAGE(zero_3_slots_unmasked, F* dst) {
 }
 STAGE(zero_4_slots_unmasked, F* dst) {
     sk_bzero(dst, sizeof(F) * 4);
+}
+
+STAGE(copy_constant, SkRasterPipeline_CopySlotsCtx* ctx) {
+    float* src = ctx->src;
+    F* dst = (F*)ctx->dst;
+    dst[0] = src[0];
+}
+STAGE(copy_2_constants, SkRasterPipeline_CopySlotsCtx* ctx) {
+    float* src = ctx->src;
+    F* dst = (F*)ctx->dst;
+    dst[0] = src[0];
+    dst[1] = src[1];
+}
+STAGE(copy_3_constants, SkRasterPipeline_CopySlotsCtx* ctx) {
+    float* src = ctx->src;
+    F* dst = (F*)ctx->dst;
+    dst[0] = src[0];
+    dst[1] = src[1];
+    dst[2] = src[2];
+}
+STAGE(copy_4_constants, SkRasterPipeline_CopySlotsCtx* ctx) {
+    float* src = ctx->src;
+    F* dst = (F*)ctx->dst;
+    dst[0] = src[0];
+    dst[1] = src[1];
+    dst[2] = src[2];
+    dst[3] = src[3];
 }
 
 STAGE(copy_slot_unmasked, SkRasterPipeline_CopySlotsCtx* ctx) {
@@ -3112,6 +3221,29 @@ STAGE(copy_4_slots_masked, SkRasterPipeline_CopySlotsCtx* ctx) {
     copy_n_slots_masked_fn<4>(ctx, execution_mask());
 }
 
+template <int NumSlots>
+SI void swizzle_fn(SkRasterPipeline_SwizzleCtx* ctx) {
+    F scratch[NumSlots];
+    std::byte* ptr = (std::byte*)ctx->ptr;
+    for (int count = 0; count < NumSlots; ++count) {
+        scratch[count] = *(F*)(ptr + ctx->offsets[count]);
+    }
+    memcpy(ptr, scratch, sizeof(F) * NumSlots);
+}
+
+STAGE(swizzle_1, SkRasterPipeline_SwizzleCtx* ctx) {
+    swizzle_fn<1>(ctx);
+}
+STAGE(swizzle_2, SkRasterPipeline_SwizzleCtx* ctx) {
+    swizzle_fn<2>(ctx);
+}
+STAGE(swizzle_3, SkRasterPipeline_SwizzleCtx* ctx) {
+    swizzle_fn<3>(ctx);
+}
+STAGE(swizzle_4, SkRasterPipeline_SwizzleCtx* ctx) {
+    swizzle_fn<4>(ctx);
+}
+
 STAGE(bitwise_and, I32* dst) {
     dst[0] &= dst[1];
 }
@@ -3138,6 +3270,21 @@ SI void apply_to_adjacent(T* dst, T* src) {
 template <typename T>
 SI void add_fn(T* dst, T* src) {
     *dst += *src;
+}
+
+template <typename T>
+SI void sub_fn(T* dst, T* src) {
+    *dst -= *src;
+}
+
+template <typename T>
+SI void mul_fn(T* dst, T* src) {
+    *dst *= *src;
+}
+
+template <typename T>
+SI void div_fn(T* dst, T* src) {
+    *dst /= *src;
 }
 
 template <typename T>
@@ -3185,6 +3332,9 @@ SI void cmpne_fn(T* dst, T* src) {
     }
 
 DECLARE_BINARY_STAGES(add)
+DECLARE_BINARY_STAGES(sub)
+DECLARE_BINARY_STAGES(mul)
+DECLARE_BINARY_STAGES(div)
 DECLARE_BINARY_STAGES(cmplt)
 DECLARE_BINARY_STAGES(cmple)
 DECLARE_BINARY_STAGES(cmpeq)
@@ -3897,8 +4047,18 @@ SI U32 ix_and_ptr(T** ptr, const SkRasterPipeline_GatherCtx* ctx, F x, F y) {
     const F w = sk_bit_cast<float>( sk_bit_cast<uint32_t>(ctx->width ) - 1),
             h = sk_bit_cast<float>( sk_bit_cast<uint32_t>(ctx->height) - 1);
 
-    x = min(max(0, sk_bit_cast<F>(sk_bit_cast<U32>(x) + ctx->coordBiasInULPs)), w);
-    y = min(max(0, sk_bit_cast<F>(sk_bit_cast<U32>(y) + ctx->coordBiasInULPs)), h);
+#ifdef SK_DISABLE_RASTER_PIPELINE_SAMPLING_FIXES
+    x = min(max(0, sk_bit_cast<F>(sk_bit_cast<U32>(x) - (uint32_t)ctx->roundDownAtInteger)), w);
+    y = min(max(0, sk_bit_cast<F>(sk_bit_cast<U32>(y) - (uint32_t)ctx->roundDownAtInteger)), h);
+#else
+    const F z = std::numeric_limits<float>::min();
+
+    x = min(max(z, x), w);
+    y = min(max(z, y), h);
+
+    x = sk_bit_cast<F>(sk_bit_cast<U32>(x) - (uint32_t)ctx->roundDownAtInteger);
+    y = sk_bit_cast<F>(sk_bit_cast<U32>(y) - (uint32_t)ctx->roundDownAtInteger);
+#endif
 
     *ptr = (const T*)ctx->pixels;
     return trunc_(y)*ctx->stride + trunc_(x);
@@ -3906,7 +4066,8 @@ SI U32 ix_and_ptr(T** ptr, const SkRasterPipeline_GatherCtx* ctx, F x, F y) {
 
 template <typename T>
 SI U32 ix_and_ptr(T** ptr, const SkRasterPipeline_GatherCtx* ctx, I32 x, I32 y) {
-    SkASSERT(ctx->coordBiasInULPs == 0);
+    // This flag doesn't make sense when the coords are integers.
+    SkASSERT(ctx->roundDownAtInteger == 0);
     // Exclusive -> inclusive.
     const I32 w =  ctx->width - 1,
               h = ctx->height - 1;

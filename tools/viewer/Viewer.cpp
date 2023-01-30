@@ -87,8 +87,8 @@ public:
     }
 
     void reset() {
-        fShaders.reset();
-        fErrors.reset();
+        fShaders.clear();
+        fErrors.clear();
     }
 
     SkTArray<SkString> fShaders;
@@ -923,7 +923,7 @@ void Viewer::initSlides() {
                 fSlides.push_back(
                     sk_make_sp<SlideDir>(SkStringPrintf("%s[%s]", info.fDirName, flag.c_str()),
                                          std::move(dirSlides)));
-                dirSlides.reset();  // NOLINT(bugprone-use-after-move)
+                dirSlides.clear();  // NOLINT(bugprone-use-after-move)
             }
         }
     }
@@ -1271,7 +1271,7 @@ SkMatrix Viewer::computeMatrix() {
 
 void Viewer::setBackend(sk_app::Window::BackendType backendType) {
     fPersistentCache.reset();
-    fCachedShaders.reset();
+    fCachedShaders.clear();
     fBackendType = backendType;
 
     // The active context is going away in 'detach'
@@ -1813,15 +1813,12 @@ bool Viewer::onPinch(skui::InputState state, float scale, float x, float y) {
         case skui::InputState::kDown:
             fGesture.startZoom();
             return true;
-            break;
         case skui::InputState::kMove:
             fGesture.updateZoom(scale, x, y, x, y);
             return true;
-            break;
         case skui::InputState::kUp:
             fGesture.endZoom();
             return true;
-            break;
         default:
             SkASSERT(false);
             break;
@@ -2542,7 +2539,7 @@ void Viewer::drawImGui() {
                                                                     entry.fInputs,
                                                                     kGrShaderTypeCount);
                     };
-                    fCachedShaders.reset();
+                    fCachedShaders.clear();
                     fPersistentCache.foreach(collectShaders);
                     gLoadPending = false;
 
