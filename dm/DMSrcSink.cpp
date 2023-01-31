@@ -83,7 +83,6 @@
 #endif
 
 #ifdef SK_GRAPHITE_ENABLED
-#include "include/gpu/graphite/CombinationBuilder.h"
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
@@ -1625,6 +1624,26 @@ Result GPUSerializeSlugSink::draw(
 
     return onDraw(src, dst, write, log, grOptions, nullptr,
                   [&](SkCanvas* canvas){
+                      testCanvas.init(canvas);
+                      return testCanvas.get();
+                  });
+}
+
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+GPURemoteSlugSink::GPURemoteSlugSink(
+        const SkCommandLineConfigGpu* config, const GrContextOptions& options)
+        : GPUSink(config, options) {}
+
+Result GPURemoteSlugSink::draw(
+        const Src& src, SkBitmap* dst, SkWStream* write, SkString* log) const {
+    GrContextOptions grOptions = this->baseContextOptions();
+    // Force padded atlas entries for slug drawing.
+    grOptions.fSupportBilerpFromGlyphAtlas |= true;
+
+    SkTLazy<SkTestCanvas<SkSerializeSlugTestKey>> testCanvas;
+
+    return onDraw(src, dst, write, log, grOptions, nullptr,
+                  [&](SkCanvas* canvas) {
                       testCanvas.init(canvas);
                       return testCanvas.get();
                   });

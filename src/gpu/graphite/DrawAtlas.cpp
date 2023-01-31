@@ -73,7 +73,7 @@ DrawAtlas::DrawAtlas(SkColorType colorType, size_t bpp, int width, int height,
         , fLabel(label)
         , fGenerationCounter(generationCounter)
         , fAtlasGeneration(fGenerationCounter->next())
-        , fPrevFlushToken(DrawToken::AlreadyFlushedToken())
+        , fPrevFlushToken(AtlasToken::InvalidToken())
         , fFlushesSinceLastUse(0)
         , fMaxPages(AllowMultitexturing::kYes == allowMultitexturing ?
                             PlotLocator::kMaxMultitexturePages : 1)
@@ -142,7 +142,8 @@ bool DrawAtlas::recordUploads(DrawContext* dc, Recorder* recorder) {
                 std::vector<MipLevel> levels;
                 levels.push_back({dataPtr, fBytesPerPixel*fPlotWidth});
 
-                if (!dc->recordUpload(recorder, sk_ref_sp(proxy), fColorType, levels, dstRect)) {
+                if (!dc->recordUpload(recorder, sk_ref_sp(proxy), fColorType, levels, dstRect,
+                                      nullptr)) {
                     return false;
                 }
             }
@@ -185,7 +186,7 @@ DrawAtlas::ErrorCode DrawAtlas::addToAtlas(Recorder* recorder,
         for (unsigned int pageIdx = 0; pageIdx < fNumActivePages; ++pageIdx) {
             Plot* plot = fPages[pageIdx].fPlotList.tail();
             SkASSERT(plot);
-            if (plot->lastUseToken() < recorder->priv().tokenTracker()->nextTokenToFlush()) {
+            if (plot->lastUseToken() < recorder->priv().tokenTracker()->nextFlushToken()) {
                 this->processEvictionAndResetRects(plot);
                 SkDEBUGCODE(bool verify = )plot->addSubImage(width, height, image, atlasLocator);
                 SkASSERT(verify);
@@ -221,7 +222,7 @@ DrawAtlas::ErrorCode DrawAtlas::addToAtlas(Recorder* recorder,
     return ErrorCode::kTryAgain;
 }
 
-void DrawAtlas::compact(DrawToken startTokenForNextFlush) {
+void DrawAtlas::compact(AtlasToken startTokenForNextFlush) {
     if (fNumActivePages < 1) {
         fPrevFlushToken = startTokenForNextFlush;
         return;
@@ -313,7 +314,7 @@ void DrawAtlas::compact(DrawToken startTokenForNextFlush) {
             // If this plot was used recently
             if (plot->flushesSinceLastUsed() <= kPlotRecentlyUsedCount) {
                 usedPlots++;
-            } else if (plot->lastUseToken() != DrawToken::AlreadyFlushedToken()) {
+            } else if (plot->lastUseToken() != AtlasToken::InvalidToken()) {
                 // otherwise if aged out just evict it.
                 this->processEvictionAndResetRects(plot);
             }

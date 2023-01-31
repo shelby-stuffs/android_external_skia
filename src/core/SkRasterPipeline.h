@@ -9,15 +9,17 @@
 #define SkRasterPipeline_DEFINED
 
 #include "include/core/SkColor.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTArray.h"
+#include "include/private/SkMacros.h"
 #include "src/core/SkArenaAlloc.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 
+class SkMatrix;
+enum SkColorType : int;
+struct SkImageInfo;
 struct skcms_TransferFunction;
 
 /**
@@ -122,28 +124,37 @@ struct skcms_TransferFunction;
     M(alter_2pt_conical_unswap)                                    \
     M(mask_2pt_conical_nan)                                        \
     M(mask_2pt_conical_degenerates) M(apply_vector_mask)           \
-    /* Dedicated SkSL stages begin here: */                                                \
-    M(init_lane_masks) M(store_src_rg) M(immediate_f)                                      \
-    M(load_unmasked) M(store_unmasked) M(store_masked)                                     \
-    M(load_condition_mask) M(store_condition_mask) M(combine_condition_mask)               \
-    M(update_return_mask)                                                                  \
-    M(branch_if_any_active_lanes) M(branch_if_no_active_lanes) M(jump)                     \
-    M(bitwise_and) M(bitwise_or) M(bitwise_xor) M(bitwise_not)                             \
-    M(copy_slot_masked)    M(copy_2_slots_masked)                                          \
-    M(copy_3_slots_masked) M(copy_4_slots_masked)                                          \
-    M(copy_slot_unmasked)    M(copy_2_slots_unmasked)                                      \
-    M(copy_3_slots_unmasked) M(copy_4_slots_unmasked)                                      \
-    M(zero_slot_unmasked)    M(zero_2_slots_unmasked)                                      \
-    M(zero_3_slots_unmasked) M(zero_4_slots_unmasked)                                      \
-    M(add_n_floats) M(add_float) M(add_2_floats) M(add_3_floats) M(add_4_floats)           \
-    M(add_n_ints)   M(add_int)   M(add_2_ints)   M(add_3_ints)   M(add_4_ints)             \
-    M(cmplt_n_floats) M(cmplt_float) M(cmplt_2_floats) M(cmplt_3_floats) M(cmplt_4_floats) \
-    M(cmplt_n_ints)   M(cmplt_int)   M(cmplt_2_ints)   M(cmplt_3_ints)   M(cmplt_4_ints)   \
-    M(cmple_n_floats) M(cmple_float) M(cmple_2_floats) M(cmple_3_floats) M(cmple_4_floats) \
-    M(cmple_n_ints)   M(cmple_int)   M(cmple_2_ints)   M(cmple_3_ints)   M(cmple_4_ints)   \
-    M(cmpeq_n_floats) M(cmpeq_float) M(cmpeq_2_floats) M(cmpeq_3_floats) M(cmpeq_4_floats) \
-    M(cmpeq_n_ints)   M(cmpeq_int)   M(cmpeq_2_ints)   M(cmpeq_3_ints)   M(cmpeq_4_ints)   \
-    M(cmpne_n_floats) M(cmpne_float) M(cmpne_2_floats) M(cmpne_3_floats) M(cmpne_4_floats) \
+    /* Dedicated SkSL stages begin here: */                                                   \
+    M(init_lane_masks) M(store_src_rg) M(immediate_f)                                         \
+    M(load_unmasked) M(store_unmasked) M(store_masked)                                        \
+    M(load_condition_mask) M(store_condition_mask) M(merge_condition_mask)                    \
+    M(load_loop_mask)      M(store_loop_mask)      M(mask_off_loop_mask)                      \
+    M(reenable_loop_mask)  M(merge_loop_mask)                                                 \
+    M(load_return_mask)    M(store_return_mask)    M(mask_off_return_mask)                    \
+    M(branch_if_any_active_lanes) M(branch_if_no_active_lanes) M(jump)                        \
+    M(bitwise_and) M(bitwise_or) M(bitwise_xor) M(bitwise_not)                                \
+    M(copy_constant)    M(copy_2_constants)    M(copy_3_constants)    M(copy_4_constants)     \
+    M(copy_slot_masked) M(copy_2_slots_masked) M(copy_3_slots_masked) M(copy_4_slots_masked)  \
+    M(copy_slot_unmasked)    M(copy_2_slots_unmasked)                                         \
+    M(copy_3_slots_unmasked) M(copy_4_slots_unmasked)                                         \
+    M(zero_slot_unmasked)    M(zero_2_slots_unmasked)                                         \
+    M(zero_3_slots_unmasked) M(zero_4_slots_unmasked)                                         \
+    M(swizzle_1) M(swizzle_2) M(swizzle_3) M(swizzle_4)                                       \
+    M(add_n_floats) M(add_float) M(add_2_floats) M(add_3_floats) M(add_4_floats)              \
+    M(add_n_ints)   M(add_int)   M(add_2_ints)   M(add_3_ints)   M(add_4_ints)                \
+    M(sub_n_floats) M(sub_float) M(sub_2_floats) M(sub_3_floats) M(sub_4_floats)              \
+    M(sub_n_ints)   M(sub_int)   M(sub_2_ints)   M(sub_3_ints)   M(sub_4_ints)                \
+    M(mul_n_floats) M(mul_float) M(mul_2_floats) M(mul_3_floats) M(mul_4_floats)              \
+    M(mul_n_ints)   M(mul_int)   M(mul_2_ints)   M(mul_3_ints)   M(mul_4_ints)                \
+    M(div_n_floats) M(div_float) M(div_2_floats) M(div_3_floats) M(div_4_floats)              \
+    M(div_n_ints)   M(div_int)   M(div_2_ints)   M(div_3_ints)   M(div_4_ints)                \
+    M(cmplt_n_floats) M(cmplt_float) M(cmplt_2_floats) M(cmplt_3_floats) M(cmplt_4_floats)    \
+    M(cmplt_n_ints)   M(cmplt_int)   M(cmplt_2_ints)   M(cmplt_3_ints)   M(cmplt_4_ints)      \
+    M(cmple_n_floats) M(cmple_float) M(cmple_2_floats) M(cmple_3_floats) M(cmple_4_floats)    \
+    M(cmple_n_ints)   M(cmple_int)   M(cmple_2_ints)   M(cmple_3_ints)   M(cmple_4_ints)      \
+    M(cmpeq_n_floats) M(cmpeq_float) M(cmpeq_2_floats) M(cmpeq_3_floats) M(cmpeq_4_floats)    \
+    M(cmpeq_n_ints)   M(cmpeq_int)   M(cmpeq_2_ints)   M(cmpeq_3_ints)   M(cmpeq_4_ints)      \
+    M(cmpne_n_floats) M(cmpne_float) M(cmpne_2_floats) M(cmpne_3_floats) M(cmpne_4_floats)    \
     M(cmpne_n_ints)   M(cmpne_int)   M(cmpne_2_ints)   M(cmpne_3_ints)   M(cmpne_4_ints)
 
 // The combined list of all stages:
@@ -184,7 +195,8 @@ struct SkRasterPipeline_GatherCtx {
     float       width;
     float       height;
     float       weights[16];  // for bicubic and bicubic_clamp_8888
-    int         coordBiasInULPs = 0;
+    // Controls whether pixel i-1 or i is selected when floating point sample position is exactly i.
+    bool        roundDownAtInteger = false;
 };
 
 // State shared by save_xy, accumulate, and bilinear_* / bicubic_*.
@@ -205,12 +217,22 @@ struct SkRasterPipeline_SamplerCtx {
 struct SkRasterPipeline_TileCtx {
     float scale;
     float invScale; // cache of 1/scale
+    // When in the reflection portion of mirror tiling we need to snap the opposite direction
+    // at integer sample points than when in the forward direction. This controls which way we bias
+    // in the reflection. It should be 1 if SkRasterPipeline_GatherCtx::roundDownAtInteger is true
+    // and otherwise -1.
+    int   mirrorBiasDir = -1;
 };
 
 struct SkRasterPipeline_DecalTileCtx {
     uint32_t mask[SkRasterPipeline_kMaxStride];
     float    limit_x;
     float    limit_y;
+    // These control which edge of the interval is included (i.e. closed interval at 0 or at limit).
+    // They should be set to limit_x and limit_y if SkRasterPipeline_GatherCtx::roundDownAtInteger
+    // is true and otherwise zero.
+    float    inclusiveEdge_x = 0;
+    float    inclusiveEdge_y = 0;
 };
 
 struct SkRasterPipeline_CallbackCtx {
@@ -270,6 +292,11 @@ struct SkRasterPipeline_TablesCtx {
 
 struct SkRasterPipeline_CopySlotsCtx {
     float *dst, *src;
+};
+
+struct SkRasterPipeline_SwizzleCtx {
+    float *ptr;
+    uint16_t offsets[4];  // values must be byte offsets (4 * highp-stride * component-index)
 };
 
 class SkRasterPipeline {
@@ -340,28 +367,6 @@ public:
     void append_set_rgb(SkArenaAlloc* alloc, const SkColor4f& color) {
         this->append_set_rgb(alloc, color.vec());
     }
-
-    // Appends one or more `copy_n_slots_[un]masked` stages, based on `numSlots`.
-    void append_copy_slots_masked(SkArenaAlloc* alloc, float* dst, float* src, int numSlots);
-    void append_copy_slots_unmasked(SkArenaAlloc* alloc, float* dst, float* src, int numSlots);
-
-    // Appends one or more `zero_n_slots_unmasked` stages, based on `numSlots`.
-    void append_zero_slots_unmasked(float* dst, int numSlots);
-
-    // Appends a multi-slot math operation. `src` must be _immediately_ after `dst` in memory.
-    // `baseStage` must refer to an unbounded "apply_to_n_slots" stage, which must be immediately
-    // followed by specializations for 1-4 slots. For instance, {`add_n_floats`, `add_float`,
-    // `add_2_floats`, `add_3_floats`, `add_4_floats`} must be contiguous ops in the stage list,
-    // listed in that order; pass `add_n_floats` and we pick the appropriate op based on `numSlots`.
-    void append_adjacent_multi_slot_op(SkArenaAlloc* alloc,
-                                       SkRasterPipeline::Stage baseStage,
-                                       float* dst,
-                                       float* src,
-                                       int numSlots);
-
-    // Appends a math operation with two inputs (dst op src) and one output (dst).
-    // `src` must be _immediately_ after `dst` in memory.
-    void append_adjacent_single_slot_op(SkRasterPipeline::Stage stage, float* dst, float* src);
 
     void append_load    (SkColorType, const SkRasterPipeline_MemoryCtx*);
     void append_load_dst(SkColorType, const SkRasterPipeline_MemoryCtx*);
