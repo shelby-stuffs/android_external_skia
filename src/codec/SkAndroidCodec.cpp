@@ -6,6 +6,7 @@
  */
 
 #include "include/codec/SkAndroidCodec.h"
+
 #include "include/codec/SkCodec.h"
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkColorType.h"
@@ -15,6 +16,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkStream.h"
+#include "include/private/SkTemplates.h"
 #include "modules/skcms/skcms.h"
 #include "src/codec/SkCodecPriv.h"
 #include "src/codec/SkSampledCodec.h"
@@ -29,6 +31,7 @@
 #include <utility>
 
 class SkPngChunkReader;
+struct SkGainmapInfo;
 
 static bool is_valid_sample_size(int sampleSize) {
     // FIXME: As Leon has mentioned elsewhere, surely there is also a maximum sampleSize?
@@ -117,6 +120,9 @@ std::unique_ptr<SkAndroidCodec> SkAndroidCodec::MakeFromCodec(std::unique_ptr<Sk
 #ifdef SK_CODEC_DECODES_AVIF
         case SkEncodedImageFormat::kAVIF:
 #endif
+#ifdef SK_CODEC_DECODES_JPEGR
+        case SkEncodedImageFormat::kJPEGR:
+#endif
 #if defined(SK_CODEC_DECODES_WEBP) || defined(SK_CODEC_DECODES_RAW) || \
         defined(SK_HAS_WUFFS_LIBRARY) || defined(SK_CODEC_DECODES_AVIF)
             return std::make_unique<SkAndroidCodecAdapter>(codec.release());
@@ -168,6 +174,15 @@ SkColorType SkAndroidCodec::computeOutputColorType(SkColorType requestedColorTyp
         default:
             break;
     }
+
+#ifdef SK_CODEC_DECODES_JPEGR
+    if (fCodec->getEncodedFormat() == SkEncodedImageFormat::kJPEGR) {
+        if (requestedColorType == kRGBA_8888_SkColorType ||
+            requestedColorType == kBGRA_8888_SkColorType) {
+            return requestedColorType;
+        }
+    }
+#endif
 
     // F16 is the Android default for high precision images.
     return highPrecision ? kRGBA_F16_SkColorType :
@@ -395,4 +410,9 @@ SkCodec::Result SkAndroidCodec::getAndroidPixels(const SkImageInfo& requestInfo,
 SkCodec::Result SkAndroidCodec::getAndroidPixels(const SkImageInfo& info, void* pixels,
         size_t rowBytes) {
     return this->getAndroidPixels(info, pixels, rowBytes, nullptr);
+}
+
+bool SkAndroidCodec::getAndroidGainmap(SkGainmapInfo* info,
+                                       std::unique_ptr<SkStream>* outGainmapImageStream) {
+    return fCodec->onGetGainmapInfo(info, outGainmapImageStream);
 }

@@ -18,9 +18,10 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkTypes.h"
 #include "include/core/SkYUVAInfo.h"
-#include "include/private/SkMalloc.h"
 #include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTo.h"
 #include "modules/skcms/skcms.h"
 #include "src/codec/SkCodecPriv.h"
 #include "src/codec/SkJpegDecoderMgr.h"
@@ -28,12 +29,17 @@
 #include "src/codec/SkParseEncodedOrigin.h"
 #include "src/codec/SkSwizzler.h"
 
+#ifdef SK_CODEC_DECODES_JPEG_GAINMAPS
+#include "src/codec/SkJpegGainmap.h"
+#endif  // SK_CODEC_DECODES_JPEG_GAINMAPS
+
 #include <array>
 #include <csetjmp>
 #include <cstring>
 #include <utility>
 
 class SkSampler;
+struct SkGainmapInfo;
 
 // This warning triggers false postives way too often in here.
 #if defined(__GNUC__) && !defined(__clang__)
@@ -46,19 +52,14 @@ extern "C" {
 }
 
 bool SkJpegCodec::IsJpeg(const void* buffer, size_t bytesRead) {
-    constexpr uint8_t jpegSig[] = { 0xFF, 0xD8, 0xFF };
-    return bytesRead >= 3 && !memcmp(buffer, jpegSig, sizeof(jpegSig));
+    return bytesRead >= sizeof(kJpegSig) && !memcmp(buffer, kJpegSig, sizeof(kJpegSig));
 }
-
-const uint32_t kExifHeaderSize = 14;
-const uint32_t kExifMarker = JPEG_APP0 + 1;
 
 static bool is_orientation_marker(jpeg_marker_struct* marker, SkEncodedOrigin* orientation) {
     if (kExifMarker != marker->marker || marker->data_length < kExifHeaderSize) {
         return false;
     }
 
-    constexpr uint8_t kExifSig[] { 'E', 'x', 'i', 'f', '\0' };
     if (0 != memcmp(marker->data, kExifSig, sizeof(kExifSig))) {
         return false;
     }
@@ -158,6 +159,30 @@ static std::unique_ptr<SkEncodedInfo::ICCProfile> read_color_profile(jpeg_decomp
     return SkEncodedInfo::ICCProfile::Make(std::move(iccData));
 }
 
+/*
+ * Helper function to extract XMP and MPF metadata. Searches for a matching
+ * marker that begins with the specified signature, and returns an SkData that
+ * directly references the remainder of the segment (after the signature).
+ */
+
+sk_sp<const SkData> read_metadata_marker(jpeg_decompress_struct* dinfo,
+                                         const uint32_t target_marker,
+                                         const uint8_t* signature,
+                                         size_t signature_size) {
+    for (jpeg_marker_struct* marker = dinfo->marker_list; marker; marker = marker->next) {
+        if (target_marker == marker->marker && marker->data_length > signature_size &&
+            !memcmp(marker->data, signature, signature_size)) {
+            return SkData::MakeWithoutCopy(marker->data + signature_size,
+                                           marker->data_length - signature_size);
+        }
+    }
+    return nullptr;
+}
+
+sk_sp<const SkData> read_xmp_metadata(jpeg_decompress_struct* dinfo) {
+    return read_metadata_marker(dinfo, kXMPMarker, kXMPSig, sizeof(kXMPSig));
+}
+
 SkCodec::Result SkJpegCodec::ReadHeader(SkStream* stream, SkCodec** codecOut,
         JpegDecoderMgr** decoderMgrOut,
         std::unique_ptr<SkEncodedInfo::ICCProfile> defaultColorProfile) {
@@ -181,6 +206,7 @@ SkCodec::Result SkJpegCodec::ReadHeader(SkStream* stream, SkCodec** codecOut,
     if (codecOut) {
         jpeg_save_markers(dinfo, kExifMarker, 0xFFFF);
         jpeg_save_markers(dinfo, kICCMarker, 0xFFFF);
+        jpeg_save_markers(dinfo, kMpfMarker, 0xFFFF);
     }
 
     // Read the jpeg header
@@ -201,6 +227,7 @@ SkCodec::Result SkJpegCodec::ReadHeader(SkStream* stream, SkCodec** codecOut,
         }
 
         SkEncodedOrigin orientation = get_exif_orientation(dinfo);
+        auto xmpMetadata = read_xmp_metadata(dinfo);
         auto profile = read_color_profile(dinfo);
         if (profile) {
             auto type = profile->profile()->data_color_space;
@@ -233,8 +260,11 @@ SkCodec::Result SkJpegCodec::ReadHeader(SkStream* stream, SkCodec** codecOut,
                                                  color, SkEncodedInfo::kOpaque_Alpha, 8,
                                                  std::move(profile));
 
-        SkJpegCodec* codec = new SkJpegCodec(std::move(info), std::unique_ptr<SkStream>(stream),
-                                             decoderMgr.release(), orientation);
+        SkJpegCodec* codec = new SkJpegCodec(std::move(info),
+                                             std::unique_ptr<SkStream>(stream),
+                                             decoderMgr.release(),
+                                             orientation,
+                                             std::move(xmpMetadata));
         *codecOut = codec;
     } else {
         SkASSERT(nullptr != decoderMgrOut);
@@ -261,15 +291,18 @@ std::unique_ptr<SkCodec> SkJpegCodec::MakeFromStream(std::unique_ptr<SkStream> s
     return nullptr;
 }
 
-SkJpegCodec::SkJpegCodec(SkEncodedInfo&& info, std::unique_ptr<SkStream> stream,
-                         JpegDecoderMgr* decoderMgr, SkEncodedOrigin origin)
-    : INHERITED(std::move(info), skcms_PixelFormat_RGBA_8888, std::move(stream), origin)
-    , fDecoderMgr(decoderMgr)
-    , fReadyState(decoderMgr->dinfo()->global_state)
-    , fSwizzleSrcRow(nullptr)
-    , fColorXformSrcRow(nullptr)
-    , fSwizzlerSubset(SkIRect::MakeEmpty())
-{}
+SkJpegCodec::SkJpegCodec(SkEncodedInfo&& info,
+                         std::unique_ptr<SkStream> stream,
+                         JpegDecoderMgr* decoderMgr,
+                         SkEncodedOrigin origin,
+                         sk_sp<const SkData> xmpMetadata)
+        : INHERITED(std::move(info),
+                    skcms_PixelFormat_RGBA_8888,
+                    std::move(stream),
+                    origin,
+                    std::move(xmpMetadata))
+        , fDecoderMgr(decoderMgr)
+        , fReadyState(decoderMgr->dinfo()->global_state) {}
 SkJpegCodec::~SkJpegCodec() = default;
 
 /*
@@ -992,6 +1025,7 @@ bool SkGetJpegInfo(const void* data, size_t len,
     jpeg_decompress_struct* dinfo = decoderMgr.dinfo();
     jpeg_save_markers(dinfo, kExifMarker, 0xFFFF);
     jpeg_save_markers(dinfo, kICCMarker, 0xFFFF);
+    jpeg_save_markers(dinfo, kMpfMarker, 0xFFFF);
     if (JPEG_HEADER_OK != jpeg_read_header(dinfo, true)) {
         return false;
     }
@@ -1009,6 +1043,19 @@ bool SkGetJpegInfo(const void* data, size_t len,
         *size = {SkToS32(dinfo->image_width), SkToS32(dinfo->image_height)};
     }
     return true;
+}
+
+bool SkJpegCodec::onGetGainmapInfo(SkGainmapInfo* info,
+                                   std::unique_ptr<SkStream>* gainmapImageStream) {
+#ifdef SK_CODEC_DECODES_JPEG_GAINMAPS
+    // Attempt to extract Multi-Picture Format gainmap formats.
+    auto mpfMetadata =
+            read_metadata_marker(fDecoderMgr->dinfo(), kMpfMarker, kMpfSig, sizeof(kMpfSig));
+    if (SkJpegGetMultiPictureGainmap(mpfMetadata, stream(), info, gainmapImageStream)) {
+        return true;
+    }
+#endif  // SK_CODEC_DECODES_JPEG_GAINMAPS
+    return false;
 }
 
 #endif // SK_CODEC_DECODES_JPEG

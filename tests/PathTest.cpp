@@ -33,9 +33,10 @@
 #include "include/private/SkFloatBits.h"
 #include "include/private/SkFloatingPoint.h"
 #include "include/private/SkIDChangeListener.h"
-#include "include/private/SkMalloc.h"
+#include "include/private/SkPathEnums.h"
 #include "include/private/SkPathRef.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTo.h"
 #include "include/utils/SkNullCanvas.h"
 #include "include/utils/SkParse.h"
 #include "include/utils/SkParsePath.h"
@@ -3988,7 +3989,6 @@ static void test_arcTo(skiatest::Reporter* reporter) {
     p.arcTo(noOvalHeight, 0, 360, false);
     REPORTER_ASSERT(reporter, p.isEmpty());
 
-#ifndef SK_LEGACY_PATH_ARCTO_ENDPOINT
     // Inspired by http://code.google.com/p/chromium/issues/detail?id=1001768
     {
       p.reset();
@@ -4000,7 +4000,6 @@ static void test_arcTo(skiatest::Reporter* reporter) {
       int n = p.countPoints();
       REPORTER_ASSERT(reporter, p.getPoint(0) == p.getPoint(n - 1));
     }
-#endif
 
     // This test, if improperly handled, can create an infinite loop in angles_to_unit_vectors
     p.reset();

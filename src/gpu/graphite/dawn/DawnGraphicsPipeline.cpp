@@ -12,10 +12,11 @@
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
 #include "src/gpu/graphite/Log.h"
+#include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/UniformManager.h"
 #include "src/gpu/graphite/dawn/DawnResourceProvider.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
-#include "src/gpu/graphite/dawn/DawnUtils.h"
+#include "src/gpu/graphite/dawn/DawnUtilsPriv.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLProgram.h"
 
@@ -222,6 +223,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
     SkSL::ProgramSettings settings;
 
     settings.fForceNoRTFlip = true;
+    settings.fSPIRVDawnCompatMode = true;
 
     ShaderErrorHandler* errorHandler = sharedContext->caps()->shaderErrorHandler();
 
@@ -239,8 +241,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
 
     // Some steps just render depth buffer but not color buffer, so the fragment
     // shader is null.
-    auto fsSKSL = GetSkSLFS(sharedContext->caps()->uniformBufferLayout(),
-                            sharedContext->caps()->storageBufferLayout(),
+    auto fsSKSL = GetSkSLFS(sharedContext->caps()->resourceBindingRequirements(),
                             sharedContext->shaderCodeDictionary(),
                             runtimeDict,
                             step,
@@ -268,7 +269,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
     }
 
     if (!SkSLToSPIRV(compiler,
-                     GetSkSLVS(sharedContext->caps()->uniformBufferLayout(),
+                     GetSkSLVS(sharedContext->caps()->resourceBindingRequirements(),
                                step,
                                useShadingSsboIndex,
                                localCoordsNeeded),

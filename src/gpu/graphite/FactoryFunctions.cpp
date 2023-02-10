@@ -5,10 +5,6 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTypes.h"
-
-#ifdef SK_ENABLE_PRECOMPILE
-
 #include "src/gpu/graphite/FactoryFunctions.h"
 
 #include "src/core/SkRuntimeEffectPriv.h"
@@ -428,6 +424,29 @@ sk_sp<PrecompileMaskFilter> PrecompileMaskFilters::Blur() {
 }
 
 //--------------------------------------------------------------------------------------------------
+class PrecompileBlendColorFilter : public PrecompileColorFilter {
+public:
+    PrecompileBlendColorFilter() {}
+
+private:
+    void addToKey(const KeyContext& keyContext,
+                  int desiredCombination,
+                  PaintParamsKeyBuilder* builder) const override {
+        SkASSERT(desiredCombination == 0);
+
+        BlendColorFilterBlock::BeginBlock(keyContext,
+                                          builder,
+                                          /* gatherer= */ nullptr,
+                                          /* blendCFData= */ nullptr);
+        builder->endBlock();
+    }
+};
+
+sk_sp<PrecompileColorFilter> PrecompileColorFilters::Blend() {
+    return sk_make_sp<PrecompileBlendColorFilter>();
+}
+
+//--------------------------------------------------------------------------------------------------
 class PrecompileMatrixColorFilter : public PrecompileColorFilter {
 public:
     PrecompileMatrixColorFilter() {}
@@ -446,6 +465,10 @@ private:
 };
 
 sk_sp<PrecompileColorFilter> PrecompileColorFilters::Matrix() {
+    return sk_make_sp<PrecompileMatrixColorFilter>();
+}
+
+sk_sp<PrecompileColorFilter> PrecompileColorFilters::HSLAMatrix() {
     return sk_make_sp<PrecompileMatrixColorFilter>();
 }
 
@@ -677,5 +700,3 @@ sk_sp<PrecompileBlender> MakePrecompileBlender(
 } // namespace skgpu::graphite
 
 //--------------------------------------------------------------------------------------------------
-
-#endif // SK_ENABLE_PRECOMPILE

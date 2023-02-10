@@ -7,10 +7,11 @@
 
 #include "src/core/SkRecorder.h"
 
+#include "include/core/SkBlender.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkSurface.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
 #include "include/private/chromium/Slug.h"
 #include "src/core/SkBigPicture.h"
 #include "src/core/SkCanvasPriv.h"
@@ -245,6 +246,12 @@ void SkRecorder::onDrawVerticesObject(const SkVertices* vertices, SkBlendMode bm
                                           sk_ref_sp(const_cast<SkVertices*>(vertices)),
                                           bmode);
 }
+
+#ifdef SK_ENABLE_SKSL
+void SkRecorder::onDrawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPaint& paint) {
+    this->append<SkRecords::DrawMesh>(paint, mesh, std::move(blender));
+}
+#endif
 
 void SkRecorder::onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
                              const SkPoint texCoords[4], SkBlendMode bmode,

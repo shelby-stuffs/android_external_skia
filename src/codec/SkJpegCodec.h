@@ -12,6 +12,7 @@
 #include "include/codec/SkEncodedOrigin.h"
 #include "include/core/SkEncodedImageFormat.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkTypes.h"
 #include "include/core/SkYUVAPixmaps.h"
@@ -23,9 +24,11 @@
 #include <memory>
 
 class JpegDecoderMgr;
+class SkData;
 class SkSampler;
 class SkStream;
 class SkSwizzler;
+struct SkGainmapInfo;
 struct SkImageInfo;
 
 /*
@@ -73,6 +76,9 @@ protected:
 
     bool conversionSupported(const SkImageInfo&, bool, bool) override;
 
+    bool onGetGainmapInfo(SkGainmapInfo* info,
+                          std::unique_ptr<SkStream>* gainmapImageStream) override;
+
 private:
     /*
      * Allows SkRawCodec to communicate the color profile from the exif data.
@@ -114,9 +120,14 @@ private:
      * @param stream the encoded image data
      * @param decoderMgr holds decompress struct, src manager, and error manager
      *                   takes ownership
+     * @param origin indicates the image orientation as specified in Exif metadata.
+     * @param xmpMetadata holds the XMP metadata included in the image, if any.
      */
-    SkJpegCodec(SkEncodedInfo&& info, std::unique_ptr<SkStream> stream,
-            JpegDecoderMgr* decoderMgr, SkEncodedOrigin origin);
+    SkJpegCodec(SkEncodedInfo&& info,
+                std::unique_ptr<SkStream> stream,
+                JpegDecoderMgr* decoderMgr,
+                SkEncodedOrigin origin,
+                sk_sp<const SkData> xmpMetadata);
 
     void initializeSwizzler(const SkImageInfo& dstInfo, const Options& options,
                             bool needsCMYKToRGB);
@@ -140,13 +151,13 @@ private:
 
 
     SkAutoTMalloc<uint8_t>             fStorage;
-    uint8_t*                           fSwizzleSrcRow;
-    uint32_t*                          fColorXformSrcRow;
+    uint8_t* fSwizzleSrcRow = nullptr;
+    uint32_t* fColorXformSrcRow = nullptr;
 
     // libjpeg-turbo provides some subsetting.  In the case that libjpeg-turbo
     // cannot take the exact the subset that we need, we will use the swizzler
     // to further subset the output from libjpeg-turbo.
-    SkIRect                            fSwizzlerSubset;
+    SkIRect fSwizzlerSubset = SkIRect::MakeEmpty();
 
     std::unique_ptr<SkSwizzler>        fSwizzler;
 

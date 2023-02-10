@@ -21,7 +21,7 @@
 #include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
 #include "include/utils/SkNoDrawCanvas.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkBitmapDevice.h"
@@ -1215,12 +1215,12 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
     fQuickRejectBounds = this->computeDeviceClipBounds();
 }
 
-int SkCanvas::saveLayerAlpha(const SkRect* bounds, U8CPU alpha) {
-    if (0xFF == alpha) {
+int SkCanvas::saveLayerAlphaf(const SkRect* bounds, float alpha) {
+    if (alpha >= 1.0f) {
         return this->saveLayer(bounds, nullptr);
     } else {
         SkPaint tmpPaint;
-        tmpPaint.setAlpha(alpha);
+        tmpPaint.setAlphaf(alpha);
         return this->saveLayer(bounds, &tmpPaint);
     }
 }
@@ -3024,7 +3024,8 @@ void SkTestCanvas<SkSerializeSlugTestKey>::onDrawGlyphRunList(
     }
 }
 
-class HandleManager : public SkStrikeServer::DiscardableHandleManager {
+// A do nothing handle manager for the remote strike server.
+class ServerHandleManager : public SkStrikeServer::DiscardableHandleManager {
 public:
     SkDiscardableHandleId createHandle() override {
         return 0;
@@ -3039,10 +3040,45 @@ public:
     }
 };
 
+// Lock the strikes into the cache for the length of the test. This handler is tied to the lifetime
+// of the canvas used to render the entire test.
+class ClientHandleManager : public SkStrikeClient::DiscardableHandleManager {
+public:
+    bool deleteHandle(SkDiscardableHandleId id) override {
+        return fIsLocked;
+    }
+
+    void assertHandleValid(SkDiscardableHandleId id) override {
+        DiscardableHandleManager::assertHandleValid(id);
+    }
+
+    void notifyCacheMiss(SkStrikeClient::CacheMissType type, int fontSize) override {
+
+    }
+
+    void notifyReadFailure(const ReadFailureData& data) override {
+        DiscardableHandleManager::notifyReadFailure(data);
+    }
+
+    void unlock() {
+        fIsLocked = true;
+    }
+
+private:
+    bool fIsLocked{false};
+};
+
 SkTestCanvas<SkRemoteSlugTestKey>::SkTestCanvas(SkCanvas* canvas)
         : SkCanvas(sk_ref_sp(canvas->baseDevice()))
-        , fHandleManager(new HandleManager{})
-        , fStrikeServer(fHandleManager.get()) {}
+        , fServerHandleManager(new ServerHandleManager{})
+        , fClientHandleManager(new ClientHandleManager{})
+        , fStrikeServer(fServerHandleManager.get())
+        , fStrikeClient(fClientHandleManager) {}
+
+// Allow the strikes to be freed from the strike cache after the test has been drawn.
+SkTestCanvas<SkRemoteSlugTestKey>::~SkTestCanvas() {
+    static_cast<ClientHandleManager*>(fClientHandleManager.get())->unlock();
+}
 
 void SkTestCanvas<SkRemoteSlugTestKey>::onDrawGlyphRunList(
         const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
@@ -3055,7 +3091,8 @@ void SkTestCanvas<SkRemoteSlugTestKey>::onDrawGlyphRunList(
         if (glyphRunList.hasRSXForm()) {
             this->SkCanvas::onDrawGlyphRunList(glyphRunList, layer->paint());
         } else {
-            sk_sp<SkData> bytes;
+            sk_sp<SkData> slugBytes;
+            std::vector<uint8_t> glyphBytes;
             {
                 auto analysisCanvas = fStrikeServer.makeAnalysisCanvas(
                         this->topDevice()->width(),
@@ -3063,16 +3100,26 @@ void SkTestCanvas<SkRemoteSlugTestKey>::onDrawGlyphRunList(
                         this->fProps,
                         this->topDevice()->imageInfo().refColorSpace(),
                         // TODO: Where should we get this value from?
-                        true);
+                        /*DFTSupport=*/ true);
+
+                // TODO: Move the analysis canvas processing up to the via to handle a whole
+                //  document at a time. This is not the correct way to handle the CTM; it doesn't
+                //  work for layers.
+                analysisCanvas->setMatrix(this->getLocalToDevice());
                 auto slug = analysisCanvas->onConvertGlyphRunListToSlug(glyphRunList,
                                                                         layer->paint());
                 if (slug != nullptr) {
-                    bytes = slug->serialize();
+                    slugBytes = slug->serialize();
                 }
+                fStrikeServer.writeStrikeData(&glyphBytes);
             }
             {
-                if (bytes != nullptr) {
-                    auto slug = Slug::Deserialize(bytes->data(), bytes->size());
+                if (!glyphBytes.empty()) {
+                    fStrikeClient.readStrikeData(glyphBytes.data(), glyphBytes.size());
+                }
+                if (slugBytes != nullptr) {
+                    auto slug = Slug::Deserialize(
+                            slugBytes->data(), slugBytes->size(), &fStrikeClient);
                     this->drawSlug(slug.get());
                 }
             }

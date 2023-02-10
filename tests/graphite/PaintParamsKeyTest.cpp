@@ -10,9 +10,13 @@
 #ifdef SK_GRAPHITE_ENABLED
 
 #include "include/core/SkBitmap.h"
+#include "include/core/SkCanvas.h"
 #include "include/core/SkM44.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkShader.h"
+#include "include/core/SkTextBlob.h"
+#include "include/core/SkVertices.h"
 #include "include/effects/SkColorMatrix.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkRuntimeEffect.h"
@@ -28,11 +32,14 @@
 #include "src/gpu/graphite/PaintParams.h"
 #include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/Precompile.h"
+#include "src/gpu/graphite/PublicPrecompile.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/ResourceProvider.h"
+#include "src/gpu/graphite/RuntimeEffectDictionary.h"
 #include "src/gpu/graphite/ShaderCodeDictionary.h"
 #include "src/gpu/graphite/UniquePaintParamsID.h"
 #include "src/shaders/SkImageShader.h"
+#include "tools/ToolUtils.h"
 
 using namespace skgpu::graphite;
 
@@ -73,16 +80,87 @@ static constexpr int kBlenderTypeCount = static_cast<int>(BlenderType::kLast) + 
 
 enum class ColorFilterType {
     kNone,
+    kBlend,
     kMatrix,
+    kHSLAMatrix,
     // TODO: add more color filters
 
-    kLast = kMatrix
+    kLast = kHSLAMatrix
 };
 
 static constexpr int kColorFilterTypeCount = static_cast<int>(ColorFilterType::kLast) + 1;
 
+static constexpr skcms_TransferFunction gTransferFunctions[] = {
+    SkNamedTransferFn::kSRGB,
+    SkNamedTransferFn::k2Dot2,
+    SkNamedTransferFn::kLinear,
+    SkNamedTransferFn::kRec2020,
+    SkNamedTransferFn::kPQ,
+    SkNamedTransferFn::kHLG,
+};
+
+static constexpr int kTransferFunctionCount = std::size(gTransferFunctions);
+
+static constexpr skcms_Matrix3x3 gGamuts[] = {
+    SkNamedGamut::kSRGB,
+    SkNamedGamut::kAdobeRGB,
+    SkNamedGamut::kDisplayP3,
+    SkNamedGamut::kRec2020,
+    SkNamedGamut::kXYZ,
+};
+
+static constexpr int kGamutCount = std::size(gGamuts);
+
+enum class ColorSpaceType {
+    kNone,
+    kSRGB,
+    kSRGBLinear,
+    kRGB,
+
+    kLast = kRGB
+};
+
+static constexpr int kColorSpaceTypeCount = static_cast<int>(ColorSpaceType::kLast) + 1;
+
+ColorSpaceType random_colorspacetype(SkRandom* rand) {
+    return static_cast<ColorSpaceType>(rand->nextULessThan(kColorSpaceTypeCount));
+}
+
+sk_sp<SkColorSpace> random_colorspace(SkRandom* rand) {
+    ColorSpaceType cs = random_colorspacetype(rand);
+
+    switch (cs) {
+        case ColorSpaceType::kNone:
+            return nullptr;
+        case ColorSpaceType::kSRGB:
+            return SkColorSpace::MakeSRGB();
+        case ColorSpaceType::kSRGBLinear:
+            return SkColorSpace::MakeSRGBLinear();
+        case ColorSpaceType::kRGB:
+            return SkColorSpace::MakeRGB(
+                    gTransferFunctions[rand->nextULessThan(kTransferFunctionCount)],
+                    gGamuts[rand->nextULessThan(kGamutCount)]);
+    }
+
+    SkUNREACHABLE;
+}
+
+
 SkColor random_opaque_color(SkRandom* rand) {
     return 0xff000000 | rand->nextU();
+}
+
+SkColor4f random_color(SkRandom* rand) {
+    SkColor4f result = { rand->nextRangeF(0.0f, 1.0f),
+                         rand->nextRangeF(0.0f, 1.0f),
+                         rand->nextRangeF(0.0f, 1.0f),
+                         rand->nextRangeF(0.0f, 1.0f) };
+
+    if (rand->nextBool()) {
+        result.fA = 1.0f;
+    }
+
+    return result;
 }
 
 SkTileMode random_tilemode(SkRandom* rand) {
@@ -103,6 +181,10 @@ SkBlendMode random_complex_bm(SkRandom* rand) {
                                                      (unsigned int) SkBlendMode::kLastMode));
 }
 
+SkBlendMode random_blend_mode(SkRandom* rand) {
+    return static_cast<SkBlendMode>(rand->nextULessThan(kSkBlendModeCount));
+}
+
 BlenderType random_blendertype(SkRandom* rand) {
     return static_cast<BlenderType>(rand->nextULessThan(kBlenderTypeCount));
 }
@@ -112,8 +194,11 @@ ColorFilterType random_colorfiltertype(SkRandom* rand) {
 }
 
 sk_sp<SkImage> make_image(SkRandom* rand, Recorder* recorder) {
-    SkImageInfo info = SkImageInfo::Make(32, 32, SkColorType::kRGBA_8888_SkColorType,
-                                         kPremul_SkAlphaType);
+    // TODO: add alpha-only images too
+    SkImageInfo info = SkImageInfo::Make(32, 32,
+                                         SkColorType::kRGBA_8888_SkColorType,
+                                         kPremul_SkAlphaType,
+                                         random_colorspace(rand));
 
     SkBitmap bitmap;
     bitmap.allocPixels(info);
@@ -121,7 +206,8 @@ sk_sp<SkImage> make_image(SkRandom* rand, Recorder* recorder) {
 
     sk_sp<SkImage> img = bitmap.asImage();
 
-    return img->makeTextureImage(recorder);
+    // TODO: fuzz mipmappedness
+    return img->makeTextureImage(recorder, { Mipmapped::kNo });
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -366,10 +452,36 @@ std::pair<sk_sp<SkBlender>, sk_sp<PrecompileBlender>> create_random_blender(SkRa
 }
 
 //--------------------------------------------------------------------------------------------------
+std::pair<sk_sp<SkColorFilter>, sk_sp<PrecompileColorFilter>> create_blend_colorfilter(
+        SkRandom* rand) {
+
+    sk_sp<SkColorFilter> cf;
+
+    // SkColorFilters::Blend is clever and can weed out noop color filters. Loop until we get
+    // a valid color filter.
+    while (!cf) {
+        cf = SkColorFilters::Blend(random_color(rand),
+                                   random_colorspace(rand),
+                                   random_blend_mode(rand));
+    }
+
+    sk_sp<PrecompileColorFilter> o = PrecompileColorFilters::Blend();
+
+    return { cf, o };
+}
+
 std::pair<sk_sp<SkColorFilter>, sk_sp<PrecompileColorFilter>> create_matrix_colorfilter() {
     sk_sp<SkColorFilter> cf = SkColorFilters::Matrix(
             SkColorMatrix::RGBtoYUV(SkYUVColorSpace::kJPEG_Full_SkYUVColorSpace));
     sk_sp<PrecompileColorFilter> o = PrecompileColorFilters::Matrix();
+
+    return { cf, o };
+}
+
+std::pair<sk_sp<SkColorFilter>, sk_sp<PrecompileColorFilter>> create_hsla_matrix_colorfilter() {
+    sk_sp<SkColorFilter> cf = SkColorFilters::HSLAMatrix(
+            SkColorMatrix::RGBtoYUV(SkYUVColorSpace::kJPEG_Full_SkYUVColorSpace));
+    sk_sp<PrecompileColorFilter> o = PrecompileColorFilters::HSLAMatrix();
 
     return { cf, o };
 }
@@ -381,8 +493,12 @@ std::pair<sk_sp<SkColorFilter>, sk_sp<PrecompileColorFilter>> create_colorfilter
     switch (type) {
         case ColorFilterType::kNone:
             return { nullptr, nullptr };
+        case ColorFilterType::kBlend:
+            return create_blend_colorfilter(rand);
         case ColorFilterType::kMatrix:
             return create_matrix_colorfilter();
+        case ColorFilterType::kHSLAMatrix:
+            return create_hsla_matrix_colorfilter();
     }
 
     SkUNREACHABLE;
@@ -444,6 +560,71 @@ void dump(ShaderCodeDictionary* dict, UniquePaintParamsID id) {
 }
 #endif
 
+SkPath make_path() {
+    SkPathBuilder path;
+    path.moveTo(0, 0);
+    path.lineTo(8, 2);
+    path.lineTo(16, 0);
+    path.lineTo(14, 8);
+    path.lineTo(16, 16);
+    path.lineTo(8, 14);
+    path.lineTo(0, 16);
+    path.lineTo(2, 8);
+    path.close();
+    return path.detach();
+}
+
+struct DrawData {
+    SkPath fPath;
+    sk_sp<SkTextBlob> fBlob;
+    sk_sp<SkVertices> fVerts;
+};
+
+void check_draw(skiatest::Reporter* reporter,
+                Context* context,
+                Recorder* recorder,
+                const SkPaint& paint,
+                DrawTypeFlags dt,
+                const DrawData& drawData) {
+    int before = context->priv().globalCache()->numGraphicsPipelines();
+
+    {
+        // TODO: vary the colorType of the target surface too
+        SkImageInfo ii = SkImageInfo::Make(16, 16,
+                                           kRGBA_8888_SkColorType,
+                                           kPremul_SkAlphaType);
+
+        sk_sp<SkSurface> surf = SkSurface::MakeGraphite(recorder, ii);
+        SkCanvas* canvas = surf->getCanvas();
+
+        switch (dt) {
+            case DrawTypeFlags::kShape:
+                canvas->drawRect(SkRect::MakeWH(16, 16), paint);
+                canvas->drawPath(drawData.fPath, paint);
+                break;
+            case DrawTypeFlags::kText:
+                canvas->drawTextBlob(drawData.fBlob, 0, 16, paint);
+                break;
+            case DrawTypeFlags::kDrawVertices:
+                canvas->drawVertices(drawData.fVerts, SkBlendMode::kDst, paint);
+                break;
+            default:
+                SkASSERT(false);
+                break;
+        }
+
+        std::unique_ptr<skgpu::graphite::Recording> recording = recorder->snap();
+        context->insertRecording({ recording.get() });
+        context->submit(SyncToCpu::kYes);
+    }
+
+    int after = context->priv().globalCache()->numGraphicsPipelines();
+
+    // Actually using the SkPaint with the specified type of draw shouldn't have caused
+    // any additional compilation
+    REPORTER_ASSERT(reporter, before == after);
+}
+
 } // anonymous namespace
 
 // This is intended to be a smoke test for the agreement between the two ways of creating a
@@ -454,8 +635,32 @@ void dump(ShaderCodeDictionary* dict, UniquePaintParamsID id) {
 // TODO: keep this as a smoke test but add a fuzzer that reuses all the helpers
 DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(PaintParamsKeyTest, reporter, context) {
     auto recorder = context->makeRecorder();
-    KeyContext keyContext(recorder.get(), {});
-    auto dict = keyContext.dict();
+    ShaderCodeDictionary* dict = context->priv().shaderCodeDictionary();
+
+    SkColorInfo ci = SkColorInfo(kRGBA_8888_SkColorType, kPremul_SkAlphaType,
+                                 SkColorSpace::MakeSRGB());
+
+    KeyContext extractPaintKeyContext(recorder.get(), {}, ci);
+
+    std::unique_ptr<RuntimeEffectDictionary> rtDict = std::make_unique<RuntimeEffectDictionary>();
+    KeyContext precompileKeyContext(dict, rtDict.get(), ci);
+
+    SkFont font(ToolUtils::create_portable_typeface(), 16);
+    const char text[] = "hambur";
+
+    // TODO: add a drawVertices call w/o colors. That impacts whether the RenderSteps emit
+    // a primitive color blender
+    constexpr int kNumVerts = 4;
+    constexpr SkPoint kPositions[kNumVerts] { {0,0}, {0,16}, {16,16}, {16,0} };
+    constexpr SkColor kColors[kNumVerts] = { SK_ColorBLUE, SK_ColorGREEN,
+                                             SK_ColorCYAN, SK_ColorYELLOW };
+
+    DrawData drawData = {
+            make_path(),
+            SkTextBlob::MakeFromText(text, strlen(text), font),
+            SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode, kNumVerts,
+                                 kPositions, kPositions, kColors),
+    };
 
     SkRandom rand;
 
@@ -476,69 +681,74 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(PaintParamsKeyTest, reporter, context) {
                          BlenderType::kShaderBased,
                          BlenderType::kRuntime }) {
             for (auto cf : { ColorFilterType::kNone,
-                             ColorFilterType::kMatrix }) {
-                context->priv().globalCache()->resetGraphicsPipelines();
+                             ColorFilterType::kBlend,
+                             ColorFilterType::kMatrix,
+                             ColorFilterType::kHSLAMatrix }) {
 
                 auto [paint, paintOptions] = create_paint(&rand, recorder.get(), s, bm, cf);
 
-                auto [paintID, uData, tData] = ExtractPaintData(
-                        recorder.get(), &gatherer, &builder, Layout::kMetal, {},
-                        PaintParams(paint));
+                for (auto dt : { DrawTypeFlags::kShape,
+                                 DrawTypeFlags::kText,
+                                 DrawTypeFlags::kDrawVertices }) {
 
-                std::vector<UniquePaintParamsID> precompileIDs;
-                paintOptions.priv().buildCombinations(keyContext,
-                                                      [&](UniquePaintParamsID id) {
-                                                          precompileIDs.push_back(id);
-                                                      });
+                    for (bool withPrimitiveBlender : { false, true }) {
 
-                // The specific key generated by ExtractPaintData should be one of the combinations
-                // generated by the combination system.
-                auto result = std::find(precompileIDs.begin(), precompileIDs.end(), paintID);
+                        sk_sp<SkBlender> primitiveBlender;
+                        if (withPrimitiveBlender) {
+                            if (dt != DrawTypeFlags::kDrawVertices) {
+                                // Only drawVertices calls need a primitive blender
+                                continue;
+                            }
+
+                            primitiveBlender = SkBlender::Mode(SkBlendMode::kSrcOver);
+                        }
+
+                        auto [paintID, uData, tData] = ExtractPaintData(
+                                recorder.get(), &gatherer, &builder, Layout::kMetal, {},
+                                PaintParams(paint,
+                                            std::move(primitiveBlender),
+                                            /* skipColorXform= */ false),
+                                extractPaintKeyContext.dstColorInfo());
+
+                        std::vector<UniquePaintParamsID> precompileIDs;
+                        paintOptions.priv().buildCombinations(precompileKeyContext,
+                                                              withPrimitiveBlender,
+                                                              [&](UniquePaintParamsID id) {
+                                                                  precompileIDs.push_back(id);
+                                                              });
+
+                        // The specific key generated by ExtractPaintData should be one of the
+                        // combinations generated by the combination system.
+                        auto result = std::find(precompileIDs.begin(), precompileIDs.end(),
+                                                paintID);
 
 #ifdef SK_DEBUG
-                if (result == precompileIDs.end()) {
-                    SkDebugf("From paint: ");
-                    dump(dict, paintID);
+                        if (result == precompileIDs.end()) {
+                            SkDebugf("From paint: ");
+                            dump(dict, paintID);
 
-                    SkDebugf("From combination builder:");
-                    for (auto iter : precompileIDs) {
-                        dump(dict, iter);
-                    }
-                }
+                            SkDebugf("From combination builder:");
+                            for (auto iter : precompileIDs) {
+                                dump(dict, iter);
+                            }
+                        }
 #endif
 
-                REPORTER_ASSERT(reporter, result != precompileIDs.end());
-                {
-                    int before = context->priv().globalCache()->numGraphicsPipelines();
-                    context->precompile(paintOptions);
-                    int after = context->priv().globalCache()->numGraphicsPipelines();
+                        REPORTER_ASSERT(reporter, result != precompileIDs.end());
 
-                    REPORTER_ASSERT(reporter, before == 0);
-                    REPORTER_ASSERT(reporter, after > before);
-                }
+                        {
+                            context->priv().globalCache()->resetGraphicsPipelines();
 
-                {
-                    int before = context->priv().globalCache()->numGraphicsPipelines();
+                            int before = context->priv().globalCache()->numGraphicsPipelines();
+                            Precompile(context, paintOptions, dt);
+                            int after = context->priv().globalCache()->numGraphicsPipelines();
 
-                    {
-                        SkImageInfo ii = SkImageInfo::Make(16, 16,
-                                                           kRGBA_8888_SkColorType,
-                                                           kPremul_SkAlphaType);
+                            REPORTER_ASSERT(reporter, before == 0);
+                            REPORTER_ASSERT(reporter, after > before);
 
-                        sk_sp<SkSurface> surf = SkSurface::MakeGraphite(recorder.get(), ii);
-                        SkCanvas* canvas = surf->getCanvas();
-
-                        canvas->drawRect(SkRect::MakeWH(16, 16), paint);
-
-                        std::unique_ptr<skgpu::graphite::Recording> recording = recorder->snap();
-                        context->insertRecording({ recording.get() });
-                        context->submit(SyncToCpu::kYes);
+                            check_draw(reporter, context, recorder.get(), paint, dt, drawData);
+                        }
                     }
-
-                    int after = context->priv().globalCache()->numGraphicsPipelines();
-
-                    // Actually using the SkPaint shouldn't have caused any additional compilation
-                    REPORTER_ASSERT(reporter, before == after);
                 }
             }
         }
