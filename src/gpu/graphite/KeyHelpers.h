@@ -151,6 +151,8 @@ struct ImageShaderBlock {
         SkTileMode fTileModes[2];
         SkRect fSubset;
 
+        SkColorSpaceXformSteps fSteps;
+
         // TODO: Currently this is only filled in when we're generating the key from an actual
         // SkImageShader. In the pre-compile case we will need to create a Graphite promise
         // image which holds the appropriate data.
@@ -237,7 +239,7 @@ struct BlendColorFilterBlock {
     static void BeginBlock(const KeyContext&,
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*,
-                           const BlendColorFilterData&);
+                           const BlendColorFilterData*);
 };
 
 struct ComposeColorFilterBlock {

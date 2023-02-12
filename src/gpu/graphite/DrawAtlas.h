@@ -14,13 +14,14 @@
 #include <vector>
 
 #include "src/core/SkIPoint16.h"
+#include "src/core/SkTHash.h"
 #include "src/gpu/AtlasTypes.h"
 #include "src/gpu/RectanizerSkyline.h"
 
 namespace skgpu::graphite {
 
-class DrawContext;
 class Recorder;
+class UploadList;
 class TextureProxy;
 
 /**
@@ -76,8 +77,6 @@ public:
                                            std::string_view label);
 
     /**
-     * TODO: the process described here is tentative, and this comment revised once locked down.
-     *
      * Adds a width x height subimage to the atlas. Upon success it returns 'kSucceeded' and returns
      * the ID and the subimage's coordinates in the backing texture. 'kTryAgain' is returned if
      * the subimage cannot fit in the atlas without overwriting texels that will be read in the
@@ -88,7 +87,9 @@ public:
      *
      * This tracking does not generate UploadTasks per se. Instead, when the RenderPassTask is
      * ready to be snapped, recordUploads() will be called by the Device and that will generate the
-     * necessary UploadTasks.
+     * necessary UploadTasks. If the useCachedUploads argument in recordUploads() is true, this
+     * will generate uploads for the entire area of each Plot that has changed since the last
+     * eviction. Otherwise it will only generate uploads for newly added changes.
      *
      * NOTE: When a draw that reads from the atlas is added to the DrawList, the client using this
      * DrawAtlas must immediately call 'setLastUseToken' with the currentToken from the Recorder,
@@ -103,10 +104,11 @@ public:
     };
 
     ErrorCode addToAtlas(Recorder*, int width, int height, const void* image, AtlasLocator*);
-    bool recordUploads(DrawContext*, Recorder*);
+    bool recordUploads(UploadList*, Recorder*, bool useCachedUploads);
 
     const sk_sp<TextureProxy>* getProxies() const { return fProxies; }
 
+    uint32_t atlasID() const { return fAtlasID; }
     uint64_t atlasGeneration() const { return fAtlasGeneration; }
 
     bool hasID(const PlotLocator& plotLocator) {
@@ -200,6 +202,7 @@ private:
     int                   fPlotHeight;
     unsigned int          fNumPlots;
     const std::string     fLabel;
+    uint32_t              fAtlasID;   // unique identifier for this atlas
 
     // A counter to track the atlas eviction state for Glyphs. Each Glyph has a PlotLocator
     // which contains its current generation. When the atlas evicts a plot, it increases
@@ -258,6 +261,26 @@ private:
 
     SkISize fARGBDimensions;
     int     fMaxTextureSize;
+};
+
+// For tracking when Plots have been uploaded for Recording replay
+class PlotUploadTracker {
+public:
+    PlotUploadTracker() = default;
+
+    bool needsUpload(PlotLocator plotLocator, AtlasToken uploadToken, uint32_t atlasID);
+
+private:
+    struct PlotAgeData {
+        uint64_t genID;
+        AtlasToken uploadToken;
+    };
+
+    // mapping from page+plot pair to PlotAgeData
+    using PlotAgeHashMap = SkTHashMap<uint32_t, PlotAgeData>;
+
+    // mapping from atlasID to PlotAgeHashMap for that atlas
+    SkTHashMap<uint32_t, PlotAgeHashMap> fAtlasData;
 };
 
 }  // namespace skgpu::graphite

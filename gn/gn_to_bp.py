@@ -246,6 +246,9 @@ cc_defaults {
             "libvulkan",
             "libnativewindow",
         ],
+        static_libs: [
+            "libperfetto_client_experimental",
+        ],
         export_shared_lib_headers: [
             "libvulkan",
         ],
@@ -263,7 +266,6 @@ cc_defaults {
         "libexpat",
         "libft2",
         // Required by Skottie
-        "libicu",
         "libharfbuzz_ng",
     ],
     // Required by Skottie
@@ -280,7 +282,27 @@ cc_defaults {
     target: {
       android: {
         shared_libs: [
+            "libandroidicu",
             "libheif",
+            "libimage_io",
+        ],
+        static_libs: [
+            "libjpegrecoverymap",
+            "libjpegdecoder",
+            "libjpegencoder",
+        ],
+        export_shared_lib_headers: [
+            "libandroidicu",
+        ],
+      },
+      host: {
+        shared_libs: [
+            "libicui18n",
+            "libicuuc",
+        ],
+        export_shared_lib_headers: [
+            "libicui18n",
+            "libicuuc",
         ],
       },
       darwin: {
@@ -504,12 +526,17 @@ def generate_args(target_os, enable_gpu, renderengine = False):
     'skia_include_multiframe_procs':        'false',
     # Required for some SKSL tests
     'skia_enable_sksl_tracing':             'true',
-    'skia_use_perfetto':                    'false'
+    # The two Perfetto integrations are currently mutually exclusive due to
+    # complexity.
+    'skia_use_perfetto':                    'false',
   }
   d['target_os'] = target_os
   if target_os == '"android"':
     d['skia_enable_tools'] = 'true'
     d['skia_include_multiframe_procs'] = 'true'
+    # Only enable for actual Android framework builds targeting Android devices.
+    # (E.g. disabled for host builds and SkQP)
+    d['skia_android_framework_use_perfetto'] = 'true'
 
   if enable_gpu:
     d['skia_use_vulkan']   = 'true'
@@ -530,8 +557,11 @@ def generate_args(target_os, enable_gpu, renderengine = False):
 
   if target_os == '"android"' and not renderengine:
     d['skia_use_libheif']  = 'true'
+    d['skia_use_jpegr'] = 'true'
+    d['skia_use_jpeg_gainmaps'] = 'true'
   else:
     d['skia_use_libheif']  = 'false'
+    d['skia_use_jpegr'] = 'false'
 
   if renderengine:
     d['skia_use_libpng_decode'] = 'false'
@@ -691,6 +721,7 @@ gn_to_bp_utils.GrabDependentValues(js_skqp, '//:libskqp_app', 'defines',
 skqp_defines.add("SK_ENABLE_DUMP_GPU")
 skqp_defines.add("SK_BUILD_FOR_SKQP")
 skqp_defines.add("SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1")
+skqp_defines.remove("SK_USE_PERFETTO")
 
 skqp_srcs = strip_headers(skqp_srcs)
 skqp_cflags = gn_to_bp_utils.CleanupCFlags(skqp_cflags)

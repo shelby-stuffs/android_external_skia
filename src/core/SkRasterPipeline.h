@@ -22,6 +22,12 @@ enum SkColorType : int;
 struct SkImageInfo;
 struct skcms_TransferFunction;
 
+#if __has_cpp_attribute(clang::musttail) && !defined(__EMSCRIPTEN__) && !defined(SK_CPU_ARM32)
+    #define SK_HAS_MUSTTAIL 1
+#else
+    #define SK_HAS_MUSTTAIL 0
+#endif
+
 /**
  * SkRasterPipeline provides a cheap way to chain together a pixel processing pipeline.
  *
@@ -132,14 +138,32 @@ struct skcms_TransferFunction;
     M(reenable_loop_mask)  M(merge_loop_mask)                                                 \
     M(load_return_mask)    M(store_return_mask)    M(mask_off_return_mask)                    \
     M(branch_if_any_active_lanes) M(branch_if_no_active_lanes) M(jump)                        \
-    M(bitwise_and) M(bitwise_or) M(bitwise_xor) M(bitwise_not)                                \
+    M(bitwise_and_n_ints)                                                                     \
+    M(bitwise_and_int) M(bitwise_and_2_ints) M(bitwise_and_3_ints) M(bitwise_and_4_ints)      \
+    M(bitwise_or_n_ints)                                                                      \
+    M(bitwise_or_int)  M(bitwise_or_2_ints)  M(bitwise_or_3_ints)  M(bitwise_or_4_ints)       \
+    M(bitwise_xor_n_ints)                                                                     \
+    M(bitwise_xor_int) M(bitwise_xor_2_ints) M(bitwise_xor_3_ints) M(bitwise_xor_4_ints)      \
+    M(bitwise_not_int) M(bitwise_not_2_ints) M(bitwise_not_3_ints) M(bitwise_not_4_ints)      \
+    M(cast_to_float_from_int)     M(cast_to_float_from_2_ints)                                \
+    M(cast_to_float_from_3_ints)  M(cast_to_float_from_4_ints)                                \
+    M(cast_to_float_from_uint)    M(cast_to_float_from_2_uints)                               \
+    M(cast_to_float_from_3_uints) M(cast_to_float_from_4_uints)                               \
+    M(cast_to_int_from_float)     M(cast_to_int_from_2_floats)                                \
+    M(cast_to_int_from_3_floats)  M(cast_to_int_from_4_floats)                                \
+    M(cast_to_uint_from_float)    M(cast_to_uint_from_2_floats)                               \
+    M(cast_to_uint_from_3_floats) M(cast_to_uint_from_4_floats)                               \
+    M(abs_float)        M(abs_2_floats)        M(abs_3_floats)        M(abs_4_floats)         \
+    M(abs_int)          M(abs_2_ints)          M(abs_3_ints)          M(abs_4_ints)           \
+    M(floor_float)      M(floor_2_floats)      M(floor_3_floats)      M(floor_4_floats)       \
+    M(ceil_float)       M(ceil_2_floats)       M(ceil_3_floats)       M(ceil_4_floats)        \
     M(copy_constant)    M(copy_2_constants)    M(copy_3_constants)    M(copy_4_constants)     \
     M(copy_slot_masked) M(copy_2_slots_masked) M(copy_3_slots_masked) M(copy_4_slots_masked)  \
     M(copy_slot_unmasked)    M(copy_2_slots_unmasked)                                         \
     M(copy_3_slots_unmasked) M(copy_4_slots_unmasked)                                         \
     M(zero_slot_unmasked)    M(zero_2_slots_unmasked)                                         \
     M(zero_3_slots_unmasked) M(zero_4_slots_unmasked)                                         \
-    M(swizzle_1) M(swizzle_2) M(swizzle_3) M(swizzle_4)                                       \
+    M(swizzle_1) M(swizzle_2) M(swizzle_3) M(swizzle_4) M(transpose)                          \
     M(add_n_floats) M(add_float) M(add_2_floats) M(add_3_floats) M(add_4_floats)              \
     M(add_n_ints)   M(add_int)   M(add_2_ints)   M(add_3_ints)   M(add_4_ints)                \
     M(sub_n_floats) M(sub_float) M(sub_2_floats) M(sub_3_floats) M(sub_4_floats)              \
@@ -148,10 +172,20 @@ struct skcms_TransferFunction;
     M(mul_n_ints)   M(mul_int)   M(mul_2_ints)   M(mul_3_ints)   M(mul_4_ints)                \
     M(div_n_floats) M(div_float) M(div_2_floats) M(div_3_floats) M(div_4_floats)              \
     M(div_n_ints)   M(div_int)   M(div_2_ints)   M(div_3_ints)   M(div_4_ints)                \
+    M(div_n_uints)  M(div_uint)  M(div_2_uints)  M(div_3_uints)  M(div_4_uints)               \
+    M(max_n_floats) M(max_float) M(max_2_floats) M(max_3_floats) M(max_4_floats)              \
+    M(max_n_ints)   M(max_int)   M(max_2_ints)   M(max_3_ints)   M(max_4_ints)                \
+    M(max_n_uints)  M(max_uint)  M(max_2_uints)  M(max_3_uints)  M(max_4_uints)               \
+    M(min_n_floats) M(min_float) M(min_2_floats) M(min_3_floats) M(min_4_floats)              \
+    M(min_n_ints)   M(min_int)   M(min_2_ints)   M(min_3_ints)   M(min_4_ints)                \
+    M(min_n_uints)  M(min_uint)  M(min_2_uints)  M(min_3_uints)  M(min_4_uints)               \
+    M(mix_n_floats) M(mix_float) M(mix_2_floats) M(mix_3_floats) M(mix_4_floats)              \
     M(cmplt_n_floats) M(cmplt_float) M(cmplt_2_floats) M(cmplt_3_floats) M(cmplt_4_floats)    \
     M(cmplt_n_ints)   M(cmplt_int)   M(cmplt_2_ints)   M(cmplt_3_ints)   M(cmplt_4_ints)      \
+    M(cmplt_n_uints)  M(cmplt_uint)  M(cmplt_2_uints)  M(cmplt_3_uints)  M(cmplt_4_uints)     \
     M(cmple_n_floats) M(cmple_float) M(cmple_2_floats) M(cmple_3_floats) M(cmple_4_floats)    \
     M(cmple_n_ints)   M(cmple_int)   M(cmple_2_ints)   M(cmple_3_ints)   M(cmple_4_ints)      \
+    M(cmple_n_uints)  M(cmple_uint)  M(cmple_2_uints)  M(cmple_3_uints)  M(cmple_4_uints)     \
     M(cmpeq_n_floats) M(cmpeq_float) M(cmpeq_2_floats) M(cmpeq_3_floats) M(cmpeq_4_floats)    \
     M(cmpeq_n_ints)   M(cmpeq_int)   M(cmpeq_2_ints)   M(cmpeq_3_ints)   M(cmpeq_4_ints)      \
     M(cmpne_n_floats) M(cmpne_float) M(cmpne_2_floats) M(cmpne_3_floats) M(cmpne_4_floats)    \
@@ -290,13 +324,26 @@ struct SkRasterPipeline_TablesCtx {
     const uint8_t *r, *g, *b, *a;
 };
 
-struct SkRasterPipeline_CopySlotsCtx {
-    float *dst, *src;
+struct SkRasterPipeline_BinaryOpCtx {
+    float *dst;
+    const float *src;
+};
+
+struct SkRasterPipeline_TernaryOpCtx {
+    float *dst;
+    const float *src0;
+    const float *src1;
 };
 
 struct SkRasterPipeline_SwizzleCtx {
     float *ptr;
     uint16_t offsets[4];  // values must be byte offsets (4 * highp-stride * component-index)
+};
+
+struct SkRasterPipeline_TransposeCtx {
+    float *ptr;
+    int count;
+    uint16_t offsets[16];  // values must be byte offsets (4 * highp-stride * component-index)
 };
 
 class SkRasterPipeline {

@@ -7,10 +7,10 @@
 
 #include "src/shaders/SkImageShader.h"
 
-#include "include/private/SkImageInfoPriv.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
+#include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkMipmapAccessor.h"
@@ -393,6 +393,15 @@ void SkImageShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
     using namespace skgpu::graphite;
 
     ImageShaderBlock::ImageData imgData(fSampling, fTileModeX, fTileModeY, fSubset);
+
+    if (!fRaw) {
+        imgData.fSteps = SkColorSpaceXformSteps(fImage->colorSpace(),
+                                                fImage->alphaType(),
+                                                keyContext.dstColorInfo().colorSpace(),
+                                                keyContext.dstColorInfo().alphaType());
+
+        // TODO: add alpha-only image handling here
+    }
 
     auto [ imageToDraw, newSampling ] = skgpu::graphite::GetGraphiteBacked(keyContext.recorder(),
                                                                            fImage.get(),

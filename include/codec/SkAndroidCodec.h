@@ -10,6 +10,7 @@
 
 #include "include/codec/SkCodec.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkData.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
@@ -26,9 +27,9 @@
 #include <cstddef>
 #include <memory>
 
-class SkData;
 class SkPngChunkReader;
 class SkStream;
+struct SkGainmapInfo;
 struct SkIRect;
 
 /**
@@ -89,6 +90,11 @@ public:
     const skcms_ICCProfile* getICCProfile() const {
         return fCodec->getEncodedInfo().profile();
     }
+
+    /**
+     * Return the XMP metadata from the image.
+     */
+    sk_sp<const SkData> getXmpMetadata() const { return fCodec->fXmpMetadata; }
 
     /**
      *  Format of the encoded data.
@@ -263,6 +269,23 @@ public:
     }
 
     SkCodec* codec() const { return fCodec.get(); }
+
+    /**
+     *  Retrieve the gainmap for an image.
+     *
+     *  @param outInfo                On success, this is populated with the parameters for
+     *                                rendering this gainmap. This parameter must be non-nullptr.
+     *
+     *  @param outGainmapImageStream  On success, this is populated with a stream from which the
+     *                                gainmap image may be decoded. This parameter is optional, and
+     *                                may be set to nullptr.
+     *
+     *  @return                       If this has a gainmap image and that gainmap image was
+     *                                successfully extracted then return true. Otherwise return
+     *                                false.
+     */
+    bool getAndroidGainmap(SkGainmapInfo* outInfo,
+                           std::unique_ptr<SkStream>* outGainmapImageStream);
 
 protected:
     SkAndroidCodec(SkCodec*);

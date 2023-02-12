@@ -18,11 +18,11 @@
 #include "include/private/SkChecksum.h"
 #include "include/private/SkHalf.h"
 #include "include/private/SkSpinlock.h"
-#include "include/private/SkTHash.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkLeanWindows.h"
 #include "src/core/SkMD5.h"
 #include "src/core/SkOSFile.h"
+#include "src/core/SkTHash.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/utils/SkOSPath.h"
 #include "tests/Test.h"
@@ -980,6 +980,8 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
                 return new GPUSlugSink(gpuConfig, grCtxOptions);
             } else if (gpuConfig->getSerializedSlug()) {
                 return new GPUSerializeSlugSink(gpuConfig, grCtxOptions);
+            } else if (gpuConfig->getRemoteSlug()) {
+                return new GPURemoteSlugSink(gpuConfig, grCtxOptions);
             } else {
                 return new GPUSink(gpuConfig, grCtxOptions);
             }

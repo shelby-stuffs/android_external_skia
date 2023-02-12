@@ -8,7 +8,7 @@
 #include "include/core/SkImageInfo.h"
 
 #include "include/core/SkColorSpace.h"
-#include "include/private/SkImageInfoPriv.h"
+#include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkSafeMath.h"
 #include "src/core/SkWriteBuffer.h"
@@ -126,7 +126,7 @@ SkImageInfo SkImageInfo::Make(int width, int height, SkColorType ct, SkAlphaType
 }
 
 SkImageInfo SkImageInfo::Make(int width, int height, SkColorType ct, SkAlphaType at,
-                        sk_sp<SkColorSpace> cs) {
+                              sk_sp<SkColorSpace> cs) {
     return SkImageInfo({width, height}, {ct, at, std::move(cs)});
 }
 

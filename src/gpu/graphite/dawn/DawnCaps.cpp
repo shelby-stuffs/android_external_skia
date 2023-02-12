@@ -15,8 +15,8 @@
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
 #include "src/gpu/graphite/GraphiteResourceKey.h"
 #include "src/gpu/graphite/UniformManager.h"
-#include "src/gpu/graphite/dawn/DawnUtils.h"
-
+#include "src/gpu/graphite/dawn/DawnUtilsPriv.h"
+#include "src/sksl/SkSLUtil.h"
 
 namespace {
 
@@ -38,6 +38,7 @@ namespace skgpu::graphite {
 DawnCaps::DawnCaps(const wgpu::Device& device, const ContextOptions& options)
     : Caps() {
     this->initCaps(device);
+    this->initShaderCaps();
     this->initFormatTable(device);
     this->finishInitialization(options);
 }
@@ -147,10 +148,6 @@ const Caps::ColorTypeInfo* DawnCaps::getColorTypeInfo(SkColorType colorType,
     return nullptr;
 }
 
-size_t DawnCaps::getTransferBufferAlignment(size_t bytesPerPixel) const {
-    return std::max(bytesPerPixel, this->getMinBufferAlignment());
-}
-
 bool DawnCaps::supportsWritePixels(const TextureInfo& textureInfo) const {
     const auto& spec = textureInfo.dawnTextureSpec();
     return spec.fUsage & wgpu::TextureUsage::CopyDst;
@@ -182,11 +179,16 @@ void DawnCaps::initCaps(const wgpu::Device& device) {
     }
     fMaxTextureSize = limits.limits.maxTextureDimension2D;
 
+    fRequiredTransferBufferAlignment = 4;
     fRequiredUniformBufferAlignment = 256;
     fRequiredStorageBufferAlignment = fRequiredUniformBufferAlignment;
 
-    fUniformBufferLayout = Layout::kStd140;
-    fStorageBufferLayout = Layout::kStd430;
+    // Dawn requires 256 bytes per row alignment for buffer texture copies.
+    fTextureDataRowBytesAlignment = 256;
+
+    fResourceBindingReqs.fUniformBufferLayout = Layout::kStd140;
+    fResourceBindingReqs.fStorageBufferLayout = Layout::kStd430;
+    fResourceBindingReqs.fSeparateTextureAndSamplerBinding = true;
 
     // TODO: support storage buffer
     fStorageBufferSupport = false;
@@ -196,6 +198,14 @@ void DawnCaps::initCaps(const wgpu::Device& device) {
 
     // TODO: support clamp to border.
     fClampToBorderSupport = false;
+}
+
+void DawnCaps::initShaderCaps() {
+    SkSL::ShaderCaps* shaderCaps = fShaderCaps.get();
+
+    // WGSL does not support infinities regardless of hardware support. There are discussions around
+    // enabling it using an extension in the future.
+    shaderCaps->fInfinitySupport = false;
 }
 
 void DawnCaps::initFormatTable(const wgpu::Device& device) {
@@ -431,4 +441,3 @@ void DawnCaps::buildKeyForTexture(SkISize dimensions,
 }
 
 } // namespace skgpu::graphite
-

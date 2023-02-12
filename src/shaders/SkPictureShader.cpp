@@ -10,8 +10,8 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkImage.h"
-#include "include/private/SkImageInfoPriv.h"
 #include "src/core/SkArenaAlloc.h"
+#include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkImagePriv.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkMatrixProvider.h"
@@ -423,7 +423,7 @@ std::unique_ptr<GrFragmentProcessor> SkPictureShader::asFragmentProcessor(
         const int msaaSampleCount = 0;
         const bool createWithMips = false;
         auto image = info.makeImage(SkSurface::MakeRenderTarget(ctx,
-                                                                SkBudgeted::kYes,
+                                                                skgpu::Budgeted::kYes,
                                                                 info.imageInfo,
                                                                 msaaSampleCount,
                                                                 kTopLeft_GrSurfaceOrigin,

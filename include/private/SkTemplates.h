@@ -9,8 +9,9 @@
 #define SkTemplates_DEFINED
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkMalloc.h"
 #include "include/private/SkTLogic.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkMalloc.h"
 
 #include <array>
 #include <cstddef>
@@ -32,6 +33,17 @@
  *  Note that this does *not* prevent the local variable from being optimized away.
  */
 template<typename T> inline void sk_ignore_unused_variable(const T&) { }
+
+/**
+ * This is a general purpose absolute-value function.
+ * See SkAbs32 in (SkSafe32.h) for a 32-bit int specific version that asserts.
+ */
+template <typename T> static inline T SkTAbs(T value) {
+    if (value < 0) {
+        value = -value;
+    }
+    return value;
+}
 
 /**
  *  Returns a pointer to a D which comes immediately after S[count].

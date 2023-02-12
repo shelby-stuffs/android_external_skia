@@ -11,10 +11,10 @@
 #include "include/core/SkData.h"
 #include "include/core/SkPixelRef.h"
 #include "include/core/SkSurface.h"
-#include "include/private/SkImageInfoPriv.h"
 #include "src/codec/SkColorTable.h"
 #include "src/core/SkCompressedDataUtils.h"
 #include "src/core/SkConvertPixels.h"
+#include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkImagePriv.h"
 #include "src/core/SkTLazy.h"
 #include "src/image/SkImage_Base.h"
@@ -475,8 +475,8 @@ std::tuple<GrSurfaceProxyView, GrColorType> SkImage_Raster::onAsView(
                                            mipmapped);
     }
     auto budgeted = (policy == GrImageTexGenPolicy::kNew_Uncached_Unbudgeted)
-            ? SkBudgeted::kNo
-            : SkBudgeted::kYes;
+                            ? skgpu::Budgeted::kNo
+                            : skgpu::Budgeted::kYes;
     return GrMakeUncachedBitmapProxyView(rContext,
                                          fBitmap,
                                          mipmapped,
@@ -510,7 +510,7 @@ sk_sp<SkImage> SkImage_Raster::onMakeTextureImage(skgpu::graphite::Recorder* rec
                                            this->imageInfo().colorInfo(),
                                            fBitmap,
                                            this->refMips(),
-                                           SkBudgeted::kNo,
+                                           skgpu::Budgeted::kNo,
                                            requiredProps);
 }
 #endif

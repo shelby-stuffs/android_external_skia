@@ -17,7 +17,7 @@
 #include "src/gpu/graphite/dawn/DawnSampler.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
 #include "src/gpu/graphite/dawn/DawnTexture.h"
-#include "src/gpu/graphite/dawn/DawnUtils.h"
+#include "src/gpu/graphite/dawn/DawnUtilsPriv.h"
 
 namespace skgpu::graphite {
 
@@ -668,6 +668,16 @@ bool DawnCommandBuffer::onCopyTextureToTexture(const Texture* src,
 }
 
 bool DawnCommandBuffer::onSynchronizeBufferToCpu(const Buffer* buffer, bool* outDidResultInWork) {
+    return true;
+}
+
+bool DawnCommandBuffer::onClearBuffer(const Buffer* buffer, size_t offset, size_t size) {
+    SkASSERT(!fActiveRenderPassEncoder);
+    SkASSERT(!fActiveComputePassEncoder);
+
+    auto& wgpuBuffer = static_cast<const DawnBuffer*>(buffer)->dawnBuffer();
+    fCommandEncoder.ClearBuffer(wgpuBuffer, offset, size);
+
     return true;
 }
 
