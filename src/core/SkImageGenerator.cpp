@@ -10,6 +10,10 @@
 #include "include/core/SkImage.h"
 #include "src/core/SkNextID.h"
 
+#if SK_SUPPORT_GPU
+#include "include/gpu/GrRecordingContext.h"
+#endif
+
 SkImageGenerator::SkImageGenerator(const SkImageInfo& info, uint32_t uniqueID)
     : fInfo(info)
     , fUniqueID(kNeedNewImageUniqueID == uniqueID ? SkNextID::ImageID() : uniqueID)
@@ -50,6 +54,10 @@ GrSurfaceProxyView SkImageGenerator::generateTexture(GrRecordingContext* ctx,
                                                      GrMipmapped mipmapped,
                                                      GrImageTexGenPolicy texGenPolicy) {
     SkASSERT_RELEASE(fInfo.dimensions() == info.dimensions());
+
+    if (!ctx || ctx->abandoned()) {
+        return {};
+    }
 
     return this->onGenerateTexture(ctx, info, mipmapped, texGenPolicy);
 }

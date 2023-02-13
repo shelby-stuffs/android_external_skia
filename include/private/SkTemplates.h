@@ -90,14 +90,16 @@ public:
     operator T*() const { return this->get(); }
 };
 
+
+namespace skia_private {
 /** Allocate an array of T elements, and free the array in the destructor
  */
-template <typename T> class SkAutoTArray  {
+template <typename T> class AutoTArray  {
 public:
-    SkAutoTArray() {}
+    AutoTArray() {}
     /** Allocate count number of T elements
      */
-    explicit SkAutoTArray(int count) {
+    explicit AutoTArray(int count) {
         SkASSERT(count >= 0);
         if (count) {
             fArray.reset(new T[count]);
@@ -105,10 +107,10 @@ public:
         SkDEBUGCODE(fCount = count;)
     }
 
-    SkAutoTArray(SkAutoTArray&& other) : fArray(std::move(other.fArray)) {
+    AutoTArray(AutoTArray&& other) : fArray(std::move(other.fArray)) {
         SkDEBUGCODE(fCount = other.fCount; other.fCount = 0;)
     }
-    SkAutoTArray& operator=(SkAutoTArray&& other) {
+    AutoTArray& operator=(AutoTArray&& other) {
         if (this != &other) {
             fArray = std::move(other.fArray);
             SkDEBUGCODE(fCount = other.fCount; other.fCount = 0;)
@@ -118,7 +120,7 @@ public:
 
     /** Reallocates given a new count. Reallocation occurs even if new count equals old count.
      */
-    void reset(int count = 0) { *this = SkAutoTArray(count); }
+    void reset(int count = 0) { *this = AutoTArray(count); }
 
     /** Return the array of T elements. Will be NULL if count == 0
      */
@@ -139,8 +141,9 @@ private:
     std::unique_ptr<T[]> fArray;
     SkDEBUGCODE(int fCount = 0;)
 };
+}  // namespace skia_private
 
-/** Wraps SkAutoTArray, with room for kCountRequested elements preallocated.
+/** Wraps AutoTArray, with room for kCountRequested elements preallocated.
  */
 template <int kCountRequested, typename T> class SkAutoSTArray {
 public:
@@ -231,8 +234,8 @@ public:
 
 private:
 #if defined(SK_BUILD_FOR_GOOGLE3)
-    // Stack frame size is limited for SK_BUILD_FOR_GOOGLE3. 4k is less than the actual max, but some functions
-    // have multiple large stack allocations.
+    // Stack frame size is limited for SK_BUILD_FOR_GOOGLE3. 4k is less than the actual max,
+    // but some functions have multiple large stack allocations.
     static const int kMaxBytes = 4 * 1024;
     static const int kCount = kCountRequested * sizeof(T) > kMaxBytes
         ? kMaxBytes / sizeof(T)
@@ -241,29 +244,29 @@ private:
     static const int kCount = kCountRequested;
 #endif
 
-    int     fCount;
-    T*      fArray;
-    // since we come right after fArray, fStorage should be properly aligned
-    char    fStorage[kCount * sizeof(T)];
+    int fCount;
+    T* fArray;
+    alignas(T) char fStorage[kCount * sizeof(T)];
 };
 
+namespace skia_private {
 /** Manages an array of T elements, freeing the array in the destructor.
  *  Does NOT call any constructors/destructors on T (T must be POD).
  */
 template <typename T,
           typename = std::enable_if_t<std::is_trivially_default_constructible<T>::value &&
                                       std::is_trivially_destructible<T>::value>>
-class SkAutoTMalloc  {
+class AutoTMalloc  {
 public:
     /** Takes ownership of the ptr. The ptr must be a value which can be passed to sk_free. */
-    explicit SkAutoTMalloc(T* ptr = nullptr) : fPtr(ptr) {}
+    explicit AutoTMalloc(T* ptr = nullptr) : fPtr(ptr) {}
 
     /** Allocates space for 'count' Ts. */
-    explicit SkAutoTMalloc(size_t count)
+    explicit AutoTMalloc(size_t count)
         : fPtr(count ? (T*)sk_malloc_throw(count, sizeof(T)) : nullptr) {}
 
-    SkAutoTMalloc(SkAutoTMalloc&&) = default;
-    SkAutoTMalloc& operator=(SkAutoTMalloc&&) = default;
+    AutoTMalloc(AutoTMalloc&&) = default;
+    AutoTMalloc& operator=(AutoTMalloc&&) = default;
 
     /** Resize the memory area pointed to by the current ptr preserving contents. */
     void realloc(size_t count) {
@@ -305,11 +308,11 @@ template <size_t kCountRequested,
           typename T,
           typename = std::enable_if_t<std::is_trivially_default_constructible<T>::value &&
                                       std::is_trivially_destructible<T>::value>>
-class SkAutoSTMalloc {
+class AutoSTMalloc {
 public:
-    SkAutoSTMalloc() : fPtr(fTStorage) {}
+    AutoSTMalloc() : fPtr(fTStorage) {}
 
-    SkAutoSTMalloc(size_t count) {
+    AutoSTMalloc(size_t count) {
         if (count > kCount) {
             fPtr = (T*)sk_malloc_throw(count, sizeof(T));
         } else if (count) {
@@ -319,12 +322,12 @@ public:
         }
     }
 
-    SkAutoSTMalloc(SkAutoSTMalloc&&) = delete;
-    SkAutoSTMalloc(const SkAutoSTMalloc&) = delete;
-    SkAutoSTMalloc& operator=(SkAutoSTMalloc&&) = delete;
-    SkAutoSTMalloc& operator=(const SkAutoSTMalloc&) = delete;
+    AutoSTMalloc(AutoSTMalloc&&) = delete;
+    AutoSTMalloc(const AutoSTMalloc&) = delete;
+    AutoSTMalloc& operator=(AutoSTMalloc&&) = delete;
+    AutoSTMalloc& operator=(const AutoSTMalloc&) = delete;
 
-    ~SkAutoSTMalloc() {
+    ~AutoSTMalloc() {
         if (fPtr != fTStorage) {
             sk_free(fPtr);
         }
@@ -405,6 +408,12 @@ private:
         T           fTStorage[1];   // do NOT want to invoke T::T()
     };
 };
+
+}  // namespace skia_private
+
+// TODO remove after all external client uses are removed.
+template <size_t size, typename T>
+using SkAutoSTMalloc = skia_private::AutoSTMalloc<size, T>;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 

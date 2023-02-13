@@ -922,6 +922,12 @@ if (skia_compile_sksl_tests) {
     lang = "--hlsl"
     settings = "--settings"
   }
+  compile_sksl("skrp_tests") {
+    sources = sksl_skrp_tests_sources
+    outExtensions = [ ".skrp" ]
+    lang = "--skrp"
+    settings = "--settings"
+  }
   compile_sksl("skvm_tests") {
     sources = sksl_skvm_tests_sources
     outExtensions = [ ".skvm" ]
@@ -954,6 +960,8 @@ if (skia_compile_sksl_tests) {
   group("compile_sksl_metal_tests") {
   }
   group("compile_sksl_hlsl_tests") {
+  }
+  group("compile_sksl_skrp_tests") {
   }
   group("compile_sksl_skvm_tests") {
   }
@@ -1039,6 +1047,7 @@ optional("gpu") {
     ":compile_sksl_glsl_nosettings_tests",
     ":compile_sksl_glsl_tests",
     ":compile_sksl_metal_tests",
+    ":compile_sksl_skrp_tests",
     ":compile_sksl_skvm_tests",
     ":compile_sksl_spirv_tests",
     ":gpu_shared",
@@ -1143,6 +1152,7 @@ optional("gpu") {
     public_defines += [ "SK_METAL" ]
     public += skia_gpu_metal_public
     sources += skia_gpu_metal_private
+    sources += skia_gpu_metal_cpp
     if (skia_enable_metal_debug_info) {
       public_defines += [ "SK_ENABLE_MTL_DEBUG_INFO" ]
     }
@@ -1663,9 +1673,9 @@ skia_static_library("pathkit") {
   sources += skia_pathops_sources
   sources += skia_pathops_public
   sources += [
+    "src/base/SkContainers.cpp",
     "src/core/SkAnalyticEdge.cpp",
     "src/core/SkArenaAlloc.cpp",
-    "src/core/SkContainers.cpp",
     "src/core/SkContourMeasure.cpp",
     "src/core/SkCubicMap.cpp",
     "src/core/SkEdge.cpp",
@@ -3043,6 +3053,8 @@ if (skia_enable_tools) {
         "tools/viewer/SkSLSlide.h",
         "tools/viewer/SkottieSlide.cpp",
         "tools/viewer/SkottieSlide.h",
+        "tools/viewer/SkottieTextEditor.cpp",
+        "tools/viewer/SkottieTextEditor.h",
         "tools/viewer/Slide.h",
         "tools/viewer/SlideDir.cpp",
         "tools/viewer/SlideDir.h",

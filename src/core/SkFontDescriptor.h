@@ -72,8 +72,8 @@ private:
     int fPaletteIndex;
     int fAxisCount;
     int fPaletteOverrideCount;
-    SkAutoSTMalloc<4, SkFixed> fAxis;
-    SkAutoSTMalloc<4, SkFontArguments::Palette::Override> fPaletteOverrides;
+    skia_private::AutoSTMalloc<4, SkFixed> fAxis;
+    skia_private::AutoSTMalloc<4, SkFontArguments::Palette::Override> fPaletteOverrides;
 };
 
 class SkFontDescriptor : SkNoncopyable {
@@ -131,12 +131,13 @@ private:
 
     std::unique_ptr<SkStreamAsset> fStream;
     int fCollectionIndex = 0;
-    using Coordinates = SkAutoSTMalloc<4, SkFontArguments::VariationPosition::Coordinate>;
+    using Coordinates =
+            skia_private::AutoSTMalloc<4, SkFontArguments::VariationPosition::Coordinate>;
     int fCoordinateCount = 0;
     Coordinates fVariation;
     int fPaletteIndex = 0;
     int fPaletteEntryOverrideCount = 0;
-    SkAutoTMalloc<SkFontArguments::Palette::Override> fPaletteEntryOverrides;
+    skia_private::AutoTMalloc<SkFontArguments::Palette::Override> fPaletteEntryOverrides;
 };
 
 #endif // SkFontDescriptor_DEFINED

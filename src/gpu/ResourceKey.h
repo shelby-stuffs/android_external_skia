@@ -10,9 +10,9 @@
 
 #include "include/core/SkData.h"
 #include "include/core/SkString.h"
-#include "include/private/SkAlignedStorage.h"
 #include "include/private/SkTemplates.h"
 #include "include/private/base/SkAlign.h"
+#include "include/private/base/SkAlignedStorage.h"
 #include "include/private/base/SkOnce.h"
 #include "include/private/base/SkTo.h"
 
@@ -165,7 +165,7 @@ private:
     friend class ::TestResource;  // For unit test to access kMetaDataCnt.
 
     // bmp textures require 5 uint32_t values.
-    SkAutoSTMalloc<kMetaDataCnt + 5, uint32_t> fKey;
+    skia_private::AutoSTMalloc<kMetaDataCnt + 5, uint32_t> fKey;
 };
 
 /**

@@ -11,7 +11,7 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkVx.h"
+#include "include/private/base/SkVx.h"
 
 #include <cstring>
 
@@ -536,7 +536,7 @@ private:
         kQuadCount = 8, // should handle most conics
         kPointCount = 1 + 2 * kQuadCount,
     };
-    SkAutoSTMalloc<kPointCount, SkPoint> fStorage;
+    skia_private::AutoSTMalloc<kPointCount, SkPoint> fStorage;
     int fQuadCount; // #quads for current usage
 };
 
