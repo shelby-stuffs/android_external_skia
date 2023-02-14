@@ -21,6 +21,8 @@
 #include <memory>
 #include <new>
 
+using namespace skia_private;
+
 SkDrawableList::~SkDrawableList() {
     for(SkDrawable* p : fArray) {
         p->unref();
@@ -33,7 +35,7 @@ SkBigPicture::SnapshotArray* SkDrawableList::newDrawableSnapshot() {
     if (0 == count) {
         return nullptr;
     }
-    SkAutoTMalloc<const SkPicture*> pics(count);
+    AutoTMalloc<const SkPicture*> pics(count);
     for (int i = 0; i < count; ++i) {
         pics[i] = fArray[i]->newPictureSnapshot();
     }
@@ -299,7 +301,7 @@ void SkRecorder::onDrawEdgeAAImageSet2(const ImageSetEntry set[], int count,
     int totalDstClipCount, totalMatrixCount;
     SkCanvasPriv::GetDstClipAndMatrixCounts(set, count, &totalDstClipCount, &totalMatrixCount);
 
-    SkAutoTArray<ImageSetEntry> setCopy(count);
+    AutoTArray<ImageSetEntry> setCopy(count);
     for (int i = 0; i < count; ++i) {
         setCopy[i] = set[i];
     }

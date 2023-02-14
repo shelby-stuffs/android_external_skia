@@ -36,7 +36,7 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkVertices.h"
 #include "include/pathops/SkPathOps.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 #include "include/private/base/SkTo.h"
 #include "src/core/SkDraw.h"
 #include "src/core/SkEndian.h"
@@ -57,6 +57,8 @@
 #include "src/utils/win/SkIStream.h"
 #include "src/utils/win/SkTScopedComPtr.h"
 #include "src/xps/SkXPSDevice.h"
+
+using namespace skia_private;
 
 //Windows defines a FLOAT type,
 //make it clear when converting a scalar that this is what is wanted.
@@ -356,7 +358,7 @@ static HRESULT subset_typeface(const SkXPSDevice::TypefaceUse& current) {
         sk_realloc_throw,
         sk_free,
         nullptr);
-    SkAutoTMalloc<unsigned char> fontPackageBuffer(fontPackageBufferRaw);
+    AutoTMalloc<unsigned char> fontPackageBuffer(fontPackageBufferRaw);
     if (result != NO_ERROR) {
         SkDEBUGF("CreateFontPackage Error %lu", result);
         return E_UNEXPECTED;
@@ -998,8 +1000,8 @@ HRESULT SkXPSDevice::createXpsBrush(const SkPaint& skPaint,
         }
 
         SkMatrix localMatrix;
-        SkAutoTArray<SkColor> colors(info.fColorCount);
-        SkAutoTArray<SkScalar> colorOffsets(info.fColorCount);
+        AutoTArray<SkColor> colors(info.fColorCount);
+        AutoTArray<SkScalar> colorOffsets(info.fColorCount);
         info.fColors = colors.get();
         info.fColorOffsets = colorOffsets.get();
         as_SB(shader)->asGradient(&info, &localMatrix);
@@ -1921,7 +1923,7 @@ void SkXPSDevice::onDrawGlyphRunList(SkCanvas*,
         // Advance width and offsets for glyphs measured in hundredths of the font em size
         // (XPS Spec 5.1.3).
         FLOAT centemPerUnit = 100.0f / SkScalarToFLOAT(font.getSize());
-        SkAutoSTMalloc<32, XPS_GLYPH_INDEX> xpsGlyphs(glyphCount);
+        AutoSTMalloc<32, XPS_GLYPH_INDEX> xpsGlyphs(glyphCount);
         size_t numGlyphs = typeface->glyphsUsed.size();
         size_t actualGlyphCount = 0;
 

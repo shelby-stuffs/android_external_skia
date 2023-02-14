@@ -64,7 +64,6 @@ skia_filegroup(
         "SkM44.h",
         "SkMallocPixelRef.h",
         "SkMaskFilter.h",
-        "SkMath.h",
         "SkMatrix.h",
         "SkMesh.h",
         "SkMilestone.h",

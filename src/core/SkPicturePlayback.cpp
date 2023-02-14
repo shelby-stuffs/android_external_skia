@@ -9,7 +9,7 @@
 #include "include/core/SkRSXform.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 #include "include/private/chromium/Slug.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkDrawShadowInfo.h"
@@ -24,6 +24,8 @@
 #include "src/core/SkSamplingPriv.h"
 #include "src/core/SkVerticesPriv.h"
 #include "src/utils/SkPatchUtils.h"
+
+using namespace skia_private;
 
 static const SkRect* get_rect_ptr(SkReadBuffer* reader, SkRect* storage) {
     if (reader->readBool()) {
@@ -348,7 +350,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             // the entries.
             int expectedClips = 0;
             int maxMatrixIndex = -1;
-            SkAutoTArray<SkCanvas::ImageSetEntry> set(cnt);
+            AutoTArray<SkCanvas::ImageSetEntry> set(cnt);
             for (int i = 0; i < cnt && reader->isValid(); ++i) {
                 set[i].fImage = sk_ref_sp(fPictureData->getImage(reader));
                 reader->readRect(&set[i].fSrcRect);

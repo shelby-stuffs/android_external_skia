@@ -10,7 +10,7 @@
 #define SkJpegPriv_DEFINED
 
 #include "include/core/SkStream.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 
 #include <setjmp.h>
 // stdio is needed for jpeglib
@@ -25,6 +25,7 @@ static constexpr uint8_t kJpegSig[] = {0xFF, 0xD8, 0xFF};
 
 static constexpr uint32_t kICCMarker = JPEG_APP0 + 2;
 static constexpr uint32_t kICCMarkerHeaderSize = 14;
+static constexpr uint32_t kICCMarkerIndexSize = 1;
 static constexpr uint8_t kICCSig[] = {
         'I', 'C', 'C', '_', 'P', 'R', 'O', 'F', 'I', 'L', 'E', '\0',
 };
