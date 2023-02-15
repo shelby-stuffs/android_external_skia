@@ -365,8 +365,8 @@ void ArenaData_LocalMatrix::beginBlock(const KeyContext& keyContext,
                                        PaintParamsKeyBuilder* builder) const {
     SkASSERT(intrinsicCombination == 0);
 
-    LocalMatrixShaderBlock::BeginBlock(keyContext, builder, /*gatherer=*/nullptr,
-                                       { SkMatrix::I() });
+    LocalMatrixShaderBlock::BeginBlock(keyContext, builder, /* gatherer= */nullptr,
+                                       /* lmShaderData= */ nullptr);
 }
 
 // Split out due to constructor work
@@ -403,11 +403,8 @@ void ArenaData_Image::beginBlock(const KeyContext& keyContext,
                                  PaintParamsKeyBuilder* builder) const {
     SkASSERT(intrinsicCombination < this->numIntrinsicCombinationsDerived());
 
-    ImageShaderBlock::BeginBlock(keyContext, builder, /*gatherer=*/nullptr,
-                                 // none of the ImageData is used
-                                 { SkSamplingOptions(),
-                                   SkTileMode::kClamp, SkTileMode::kClamp,
-                                   SkRect::MakeEmpty()});
+    ImageShaderBlock::BeginBlock(keyContext, builder,
+                                 /* gatherer= */ nullptr, /* imgData= */ nullptr);
 }
 
 CREATE_ARENA_OBJECT(PorterDuffBlendShader, /* numChildSlots */ 2)

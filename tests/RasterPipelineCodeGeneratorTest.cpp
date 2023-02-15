@@ -17,11 +17,17 @@
 #include "src/sksl/codegen/SkSLRasterPipelineCodeGenerator.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/tracing/SkRPDebugTrace.h"
 #include "tests/Test.h"
 
 #include <memory>
 #include <optional>
 #include <string>
+
+//#define DUMP_PROGRAMS 1
+#if defined(DUMP_PROGRAMS)
+#include "src/core/SkStreamPriv.h"
+#endif
 
 static void test(skiatest::Reporter* r,
                  const char* src,
@@ -41,8 +47,9 @@ static void test(skiatest::Reporter* r,
     }
     SkArenaAlloc alloc(/*firstHeapAllocation=*/1000);
     SkRasterPipeline pipeline(&alloc);
+    SkSL::SkRPDebugTrace debugTrace;
     std::unique_ptr<SkSL::RP::Program> rasterProg =
-            SkSL::MakeRasterPipelineProgram(*program, *main->definition());
+            SkSL::MakeRasterPipelineProgram(*program, *main->definition(), &debugTrace);
     if (!rasterProg && !color.has_value()) {
         // We didn't get a program, as expected. Test passes.
         return;
@@ -55,6 +62,14 @@ static void test(skiatest::Reporter* r,
         ERRORF(r, "MakeRasterPipelineProgram should have failed, but didn't");
         return;
     }
+
+#if defined(DUMP_PROGRAMS)
+    // Dump the program instructions via SkDebugf.
+    SkDebugf("-----\n\n");
+    SkDebugfStream stream;
+    rasterProg->dump(&stream);
+    SkDebugf("\n-----\n\n");
+#endif
 
     // Append the SkSL program to the raster pipeline.
     rasterProg->appendStages(&pipeline, &alloc);
@@ -116,14 +131,93 @@ DEF_TEST(SkSLRasterPipelineCodeGeneratorTransparentGrayTest, r) {
          SkColor4f{0.499f, 0.499f, 0.499f, 0.499f});
 }
 
-DEF_TEST(SkSLRasterPipelineCodeGeneratorVarDeclGreenTest, r) {
+DEF_TEST(SkSLRasterPipelineCodeGeneratorVariableGreenTest, r) {
     // Add in your SkSL here.
     test(r,
          R"__SkSL__(
              half4 main(float2 coords) {
                  half _1 = 1, _0 = 0;
-                 half2 _0_1 = half2(_0, _1);
+                 half2 _0_1;
+                 _0_1 = half2(_0, _1);
                  return half4(_0, _1, _0_1);
+             }
+         )__SkSL__",
+         SkColor4f{0.0f, 1.0f, 0.0f, 1.0f});
+}
+
+DEF_TEST(SkSLRasterPipelineCodeGeneratorAdditionTest, r) {
+    // Add in your SkSL here.
+    test(r,
+         R"__SkSL__(
+             half4 main(float2 coords) {
+                 half4 x = half4(0, 1, 0, -1);
+                 half4 y = half4(0, 0, 0,  1);
+                 half4 z = x;
+                 z += y;
+                 return y + z;
+             }
+         )__SkSL__",
+         SkColor4f{0.0f, 1.0f, 0.0f, 1.0f});
+}
+
+DEF_TEST(SkSLRasterPipelineCodeGeneratorIfElseTest, r) {
+    // Add in your SkSL here.
+    test(r,
+         R"__SkSL__(
+             half4 main(float2 coords) {
+                 half4 colorBlue  = half4(0,0,1,1),
+                       colorGreen = half4(0,1,0,1),
+                       colorRed   = half4(1,0,0,1),
+                       colorWhite = half4(1);
+                 half4 result = half4(0);
+                 if (colorWhite != colorBlue) {    // TRUE
+                     if (colorGreen == colorRed) { // FALSE
+                         result = colorRed;
+                     } else {
+                         result = colorGreen;
+                     }
+                 } else {
+                     if (colorRed != colorGreen) { // TRUE, but in a false branch
+                         result = colorBlue;
+                     } else {                      // FALSE, and in a false branch
+                         result = colorWhite;
+                     }
+                 }
+                 if (colorRed == colorBlue) { // FALSE
+                     return colorWhite;
+                 }
+                 if (colorRed != colorGreen) { // TRUE
+                     return result;
+                 }
+                 if (colorRed == colorWhite) { // FALSE
+                     return colorBlue;
+                 }
+                 return colorRed;
+             }
+         )__SkSL__",
+         SkColor4f{0.0f, 1.0f, 0.0f, 1.0f});
+}
+
+DEF_TEST(SkSLRasterPipelineCodeGeneratorTernaryTest, r) {
+    // Add in your SkSL here.
+    test(r,
+         R"__SkSL__(
+             half4 main(float2 coords) {
+                 half4 colorBlue  = half4(0,0,1,1),
+                       colorGreen = half4(0,1,0,1),
+                       colorRed   = half4(1,0,0,1),
+                       colorWhite = half4(1);
+                 // This ternary matches the initial if-else block inside IfElseTest.
+                 half4 result;
+                 result = (colorWhite != colorBlue)                              // TRUE
+                            ? (colorGreen == colorRed ? colorRed : colorGreen)   // FALSE
+                            : (colorRed != colorGreen ? colorBlue : colorWhite); // in false branch
+
+                 // This ternary matches the second portion of IfElseTest.
+                 return colorRed == colorBlue  ? colorWhite :
+                        colorRed != colorGreen ? result :     // TRUE
+                        colorRed == colorWhite ? colorBlue :
+                                                 colorRed;
              }
          )__SkSL__",
          SkColor4f{0.0f, 1.0f, 0.0f, 1.0f});
