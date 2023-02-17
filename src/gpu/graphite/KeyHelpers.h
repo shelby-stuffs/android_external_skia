@@ -82,7 +82,7 @@ struct GradientShaderBlocks {
                      float bias, float scale,
                      SkTileMode,
                      int numStops,
-                     SkColor4f* colors,
+                     const SkPMColor4f* colors,
                      float* offsets);
 
         bool operator==(const GradientData& rhs) const {
@@ -95,7 +95,7 @@ struct GradientShaderBlocks {
                    fScale == rhs.fScale &&
                    fTM == rhs.fTM &&
                    fNumStops == rhs.fNumStops &&
-                   !memcmp(fColor4fs, rhs.fColor4fs, sizeof(fColor4fs)) &&
+                   !memcmp(fColors, rhs.fColors, sizeof(fColors)) &&
                    !memcmp(fOffsets, rhs.fOffsets, sizeof(fOffsets));
         }
         bool operator!=(const GradientData& rhs) const { return !(*this == rhs); }
@@ -111,7 +111,7 @@ struct GradientShaderBlocks {
 
         SkTileMode             fTM;
         int                    fNumStops;
-        SkColor4f              fColor4fs[kMaxStops];
+        SkPMColor4f            fColors[kMaxStops];
         float                  fOffsets[kMaxStops];
     };
 
@@ -150,6 +150,8 @@ struct ImageShaderBlock {
         SkSamplingOptions fSampling;
         SkTileMode fTileModes[2];
         SkRect fSubset;
+
+        SkColorSpaceXformSteps fSteps;
 
         // TODO: Currently this is only filled in when we're generating the key from an actual
         // SkImageShader. In the pre-compile case we will need to create a Graphite promise
@@ -204,13 +206,13 @@ struct MatrixColorFilterBlock {
                           matrix[ 5], matrix[ 6], matrix[ 7], matrix[ 8],
                           matrix[10], matrix[11], matrix[12], matrix[13],
                           matrix[15], matrix[16], matrix[17], matrix[18])
-                , fTranslate(matrix[4], matrix[9], matrix[14], matrix[19])
+                , fTranslate{matrix[4], matrix[9], matrix[14], matrix[19]}
                 , fInHSLA(inHSLA) {
         }
 
-        SkM44        fMatrix;
-        skvx::float4 fTranslate;
-        bool         fInHSLA;
+        SkM44 fMatrix;
+        SkV4  fTranslate;
+        bool  fInHSLA;
     };
 
     // The gatherer and matrixCFData should be null or non-null together

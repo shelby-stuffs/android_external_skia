@@ -26,7 +26,7 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "include/gpu/GrTypes.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrPixmap.h"
 #include "src/image/SkImage_Base.h"
@@ -248,7 +248,8 @@ private:
         SkASSERT(kNumLabels == fLabels.size());
     }
 
-    DrawResult onGpuSetup(GrDirectContext* dContext, SkString* errorMsg) override {
+    DrawResult onGpuSetup(SkCanvas* canvas, SkString* errorMsg) override {
+        auto dContext = GrAsDirectContext(canvas->recordingContext());
         if (!dContext || dContext->abandoned()) {
             *errorMsg = "DirectContext required to create reference images";
             return DrawResult::kSkip;

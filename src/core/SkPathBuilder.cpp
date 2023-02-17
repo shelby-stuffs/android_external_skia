@@ -9,10 +9,10 @@
 
 #include "include/core/SkMatrix.h"
 #include "include/core/SkRRect.h"
-#include "include/private/SkPathEnums.h"
 #include "include/private/SkPathRef.h"
-#include "include/private/SkSafe32.h"
-#include "include/private/SkVx.h"
+#include "include/private/base/SkPathEnums.h"
+#include "include/private/base/SkSafe32.h"
+#include "src/base/SkVx.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkPathPriv.h"
 
@@ -579,11 +579,9 @@ SkPathBuilder& SkPathBuilder::arcTo(SkPoint rad, SkScalar angle, SkPathBuilder::
         startTheta = endTheta;
     }
 
-#ifndef SK_LEGACY_PATH_ARCTO_ENDPOINT
     // The final point should match the input point (by definition); replace it to
     // ensure that rounding errors in the above math don't cause any problems.
     fPts.back() = endPt;
-#endif
     return *this;
 }
 

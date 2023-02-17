@@ -19,11 +19,12 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -51,6 +52,8 @@
 #include <initializer_list>
 #include <memory>
 #include <utility>
+
+using namespace skia_private;
 
 struct GrContextOptions;
 
@@ -81,7 +84,7 @@ static void test_clear(skiatest::Reporter* reporter, GrDirectContext* dContext,
         int w = sfc->width();
         int h = sfc->height();
         int pixelCnt = w * h;
-        SkAutoTMalloc<uint32_t> expectedPixels(pixelCnt);
+        AutoTMalloc<uint32_t> expectedPixels(pixelCnt);
 
         // The clear color is a GrColor, our readback is to kRGBA_8888, which may be different.
         uint32_t expectedColor0 = 0;
@@ -122,7 +125,7 @@ static void test_copy_to_surface(skiatest::Reporter* reporter,
                                  const char* testName) {
 
     int pixelCnt = dstContext->width() * dstContext->height();
-    SkAutoTMalloc<uint32_t> pixels(pixelCnt);
+    AutoTMalloc<uint32_t> pixels(pixelCnt);
     for (int y = 0; y < dstContext->width(); ++y) {
         for (int x = 0; x < dstContext->height(); ++x) {
             pixels.get()[y * dstContext->width() + x] =

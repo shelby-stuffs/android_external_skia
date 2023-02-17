@@ -20,7 +20,7 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/vk/GrVkBackendContext.h"
 #include "include/gpu/vk/VulkanExtensions.h"
-#include "src/core/SkAutoMalloc.h"
+#include "src/base/SkAutoMalloc.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
@@ -1260,10 +1260,8 @@ void run_test(skiatest::Reporter* reporter, const GrContextOptions& options,
     SkImageInfo imageInfo = SkImageInfo::Make(DEV_W, DEV_H, kRGBA_8888_SkColorType,
                                               kPremul_SkAlphaType, nullptr);
 
-    sk_sp<SkSurface> dstSurf = SkSurface::MakeRenderTarget(direct,
-                                                           SkBudgeted::kNo, imageInfo, 0,
-                                                           kTopLeft_GrSurfaceOrigin,
-                                                           nullptr, false);
+    sk_sp<SkSurface> dstSurf = SkSurface::MakeRenderTarget(
+            direct, skgpu::Budgeted::kNo, imageInfo, 0, kTopLeft_GrSurfaceOrigin, nullptr, false);
     if (!dstSurf.get()) {
         ERRORF(reporter, "Failed to create destination SkSurface");
         wrappedImage.reset();

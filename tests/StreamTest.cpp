@@ -10,11 +10,11 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
-#include "include/utils/SkRandom.h"
-#include "src/core/SkAutoMalloc.h"
-#include "src/core/SkBuffer.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkAutoMalloc.h"
+#include "src/base/SkBuffer.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkStreamPriv.h"
 #include "src/utils/SkOSPath.h"
@@ -30,6 +30,8 @@
 #include <limits>
 #include <memory>
 #include <string>
+
+using namespace skia_private;
 
 #ifdef SK_ENABLE_ANDROID_UTILS
 #include "client_utils/android/FrontBufferedStream.h"
@@ -499,7 +501,7 @@ DEF_TEST(DynamicMemoryWStream_detachAsData, r) {
 DEF_TEST(StreamCopy, reporter) {
     SkRandom random(123456);
     static const int N = 10000;
-    SkAutoTMalloc<uint8_t> src((size_t)N);
+    AutoTMalloc<uint8_t> src((size_t)N);
     for (int j = 0; j < N; ++j) {
         src[j] = random.nextU() & 0xff;
     }
@@ -554,11 +556,11 @@ DEF_TEST(FILEStreamWithOffset, r) {
     SkFILEStream stream2(file);
 
     const size_t remaining = size - middle;
-    SkAutoTMalloc<uint8_t> expected(remaining);
+    AutoTMalloc<uint8_t> expected(remaining);
     REPORTER_ASSERT(r, stream1.read(expected.get(), remaining) == remaining);
 
     auto test_full_read = [&r, &expected, remaining](SkStream* stream) {
-        SkAutoTMalloc<uint8_t> actual(remaining);
+        AutoTMalloc<uint8_t> actual(remaining);
         REPORTER_ASSERT(r, stream->read(actual.get(), remaining) == remaining);
         REPORTER_ASSERT(r, !memcmp(expected.get(), actual.get(), remaining));
 
@@ -570,7 +572,7 @@ DEF_TEST(FILEStreamWithOffset, r) {
         // Rewind goes back to original offset.
         REPORTER_ASSERT(r, stream->rewind());
         REPORTER_ASSERT(r, stream->getPosition() == 0);
-        SkAutoTMalloc<uint8_t> actual(remaining);
+        AutoTMalloc<uint8_t> actual(remaining);
         REPORTER_ASSERT(r, stream->read(actual.get(), remaining) == remaining);
         REPORTER_ASSERT(r, !memcmp(expected.get(), actual.get(), remaining));
     };
@@ -583,7 +585,7 @@ DEF_TEST(FILEStreamWithOffset, r) {
         REPORTER_ASSERT(r, stream->move(std::numeric_limits<long>::min()));
         REPORTER_ASSERT(r, stream->getPosition() == 0);
 
-        SkAutoTMalloc<uint8_t> actual(remaining);
+        AutoTMalloc<uint8_t> actual(remaining);
         REPORTER_ASSERT(r, stream->read(actual.get(), remaining) == remaining);
         REPORTER_ASSERT(r, !memcmp(expected.get(), actual.get(), remaining));
 
@@ -602,7 +604,7 @@ DEF_TEST(FILEStreamWithOffset, r) {
         REPORTER_ASSERT(r, stream->seek(arbitrary));
         REPORTER_ASSERT(r, stream->getPosition() == arbitrary);
         const size_t miniRemaining = remaining - arbitrary;
-        SkAutoTMalloc<uint8_t> actual(miniRemaining);
+        AutoTMalloc<uint8_t> actual(miniRemaining);
         REPORTER_ASSERT(r, stream->read(actual.get(), miniRemaining) == miniRemaining);
         REPORTER_ASSERT(r, !memcmp(expected.get() + arbitrary, actual.get(), miniRemaining));
     };
@@ -611,7 +613,7 @@ DEF_TEST(FILEStreamWithOffset, r) {
         // Seek to the beginning.
         REPORTER_ASSERT(r, stream->seek(0));
         REPORTER_ASSERT(r, stream->getPosition() == 0);
-        SkAutoTMalloc<uint8_t> actual(remaining);
+        AutoTMalloc<uint8_t> actual(remaining);
         REPORTER_ASSERT(r, stream->read(actual.get(), remaining) == remaining);
         REPORTER_ASSERT(r, !memcmp(expected.get(), actual.get(), remaining));
     };

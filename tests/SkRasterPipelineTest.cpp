@@ -5,11 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkHalf.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkHalf.h"
+#include "src/base/SkUtils.h"
 #include "src/core/SkOpts.h"
 #include "src/core/SkRasterPipeline.h"
-#include "src/core/SkUtils.h"
 #include "src/gpu/Swizzle.h"
 #include "tests/Test.h"
 
@@ -28,10 +28,10 @@ DEF_TEST(SkRasterPipeline, r) {
                                store_ctx  = { &result, 0 };
 
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::load_f16,     &load_s_ctx);
-    p.append(SkRasterPipeline::load_f16_dst, &load_d_ctx);
-    p.append(SkRasterPipeline::srcover);
-    p.append(SkRasterPipeline::store_f16, &store_ctx);
+    p.append(SkRasterPipelineOp::load_f16,     &load_s_ctx);
+    p.append(SkRasterPipelineOp::load_f16_dst, &load_d_ctx);
+    p.append(SkRasterPipelineOp::srcover);
+    p.append(SkRasterPipelineOp::store_f16, &store_ctx);
     p.run(0,0,1,1);
 
     // We should see half-intensity magenta.
@@ -39,87 +39,6 @@ DEF_TEST(SkRasterPipeline, r) {
     REPORTER_ASSERT(r, ((result >> 16) & 0xffff) == 0x0000);
     REPORTER_ASSERT(r, ((result >> 32) & 0xffff) == 0x3800);
     REPORTER_ASSERT(r, ((result >> 48) & 0xffff) == 0x3c00);
-}
-
-DEF_TEST(SkRasterPipeline_ImmediateStoreUnmasked, r) {
-    alignas(64) float val[SkRasterPipeline_kMaxStride_highp + 1] = {};
-
-    float immVal = 123.0f;
-    const void* immValCtx = nullptr;
-    memcpy(&immValCtx, &immVal, sizeof(float));
-
-    SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::immediate_f, immValCtx);
-    p.append(SkRasterPipeline::store_unmasked, val);
-    p.run(0,0,1,1);
-
-    // `val` should be populated with `123.0` in the frontmost positions
-    // (depending on the architecture that SkRasterPipeline is targeting).
-    size_t index = 0;
-    for (; index < SkOpts::raster_pipeline_highp_stride; ++index) {
-        REPORTER_ASSERT(r, val[index] == immVal);
-    }
-
-    // The remaining slots should have been left alone.
-    for (; index < std::size(val); ++index) {
-        REPORTER_ASSERT(r, val[index] == 0.0f);
-    }
-}
-
-DEF_TEST(SkRasterPipeline_LoadStoreUnmasked, r) {
-    alignas(64) float val[SkRasterPipeline_kMaxStride_highp] = {};
-    alignas(64) float data[] = {123.0f, 456.0f, 789.0f, -876.0f, -543.0f, -210.0f, 12.0f, -3.0f};
-    static_assert(std::size(data) == SkRasterPipeline_kMaxStride_highp);
-
-    SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::load_unmasked, data);
-    p.append(SkRasterPipeline::store_unmasked, val);
-    p.run(0,0,1,1);
-
-    // `val` should be populated with `data` in the frontmost positions
-    // (depending on the architecture that SkRasterPipeline is targeting).
-    size_t index = 0;
-    for (; index < SkOpts::raster_pipeline_highp_stride; ++index) {
-        REPORTER_ASSERT(r, val[index] == data[index]);
-    }
-
-    // The remaining slots should have been left alone.
-    for (; index < std::size(val); ++index) {
-        REPORTER_ASSERT(r, val[index] == 0.0f);
-    }
-}
-
-DEF_TEST(SkRasterPipeline_LoadStoreMasked, r) {
-    for (size_t width = 0; width < SkOpts::raster_pipeline_highp_stride; ++width) {
-        alignas(64) float val[] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
-        alignas(64) float data[] = {2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f};
-        alignas(64) const int32_t mask[] = {0, ~0, ~0, ~0, ~0, ~0, 0, ~0};
-        static_assert(std::size(val) == SkRasterPipeline_kMaxStride_highp);
-        static_assert(std::size(data) == SkRasterPipeline_kMaxStride_highp);
-        static_assert(std::size(mask) == SkRasterPipeline_kMaxStride_highp);
-
-        SkRasterPipeline_<256> p;
-        p.append(SkRasterPipeline::init_lane_masks);
-        p.append(SkRasterPipeline::load_condition_mask, mask);
-        p.append(SkRasterPipeline::load_unmasked, data);
-        p.append(SkRasterPipeline::store_masked, val);
-        p.run(0, 0, width, 1);
-
-        // Where the mask is set, and the width is sufficient, `val` should be populated.
-        size_t index = 0;
-        for (; index < width; ++index) {
-            if (mask[index]) {
-                REPORTER_ASSERT(r, val[index] == 2.0f);
-            } else {
-                REPORTER_ASSERT(r, val[index] == 1.0f);
-            }
-        }
-
-        // The remaining slots should have been left alone.
-        for (; index < std::size(val); ++index) {
-            REPORTER_ASSERT(r, val[index] == 1.0f);
-        }
-    }
 }
 
 DEF_TEST(SkRasterPipeline_LoadStoreConditionMask, r) {
@@ -130,10 +49,10 @@ DEF_TEST(SkRasterPipeline_LoadStoreConditionMask, r) {
     static_assert(std::size(mask) == SkRasterPipeline_kMaxStride_highp);
 
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::init_lane_masks);
-    p.append(SkRasterPipeline::load_condition_mask, mask);
-    p.append(SkRasterPipeline::store_condition_mask, maskCopy);
-    p.append(SkRasterPipeline::store_dst, dst);
+    p.append(SkRasterPipelineOp::init_lane_masks);
+    p.append(SkRasterPipelineOp::load_condition_mask, mask);
+    p.append(SkRasterPipelineOp::store_condition_mask, maskCopy);
+    p.append(SkRasterPipelineOp::store_dst, dst);
     p.run(0,0,SkOpts::raster_pipeline_highp_stride,1);
 
     {
@@ -173,10 +92,10 @@ DEF_TEST(SkRasterPipeline_LoadStoreLoopMask, r) {
     static_assert(std::size(mask) == SkRasterPipeline_kMaxStride_highp);
 
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::init_lane_masks);
-    p.append(SkRasterPipeline::load_loop_mask, mask);
-    p.append(SkRasterPipeline::store_loop_mask, maskCopy);
-    p.append(SkRasterPipeline::store_dst, dst);
+    p.append(SkRasterPipelineOp::init_lane_masks);
+    p.append(SkRasterPipelineOp::load_loop_mask, mask);
+    p.append(SkRasterPipelineOp::store_loop_mask, maskCopy);
+    p.append(SkRasterPipelineOp::store_dst, dst);
     p.run(0,0,SkOpts::raster_pipeline_highp_stride,1);
 
     {
@@ -216,10 +135,10 @@ DEF_TEST(SkRasterPipeline_LoadStoreReturnMask, r) {
     static_assert(std::size(mask) == SkRasterPipeline_kMaxStride_highp);
 
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::init_lane_masks);
-    p.append(SkRasterPipeline::load_return_mask, mask);
-    p.append(SkRasterPipeline::store_return_mask, maskCopy);
-    p.append(SkRasterPipeline::store_dst, dst);
+    p.append(SkRasterPipelineOp::init_lane_masks);
+    p.append(SkRasterPipelineOp::load_return_mask, mask);
+    p.append(SkRasterPipelineOp::store_return_mask, maskCopy);
+    p.append(SkRasterPipelineOp::store_dst, dst);
     p.run(0,0,SkOpts::raster_pipeline_highp_stride,1);
 
     {
@@ -258,9 +177,9 @@ DEF_TEST(SkRasterPipeline_MergeConditionMask, r) {
     static_assert(std::size(mask) == (2 * SkRasterPipeline_kMaxStride_highp));
 
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::init_lane_masks);
-    p.append(SkRasterPipeline::merge_condition_mask, mask);
-    p.append(SkRasterPipeline::store_dst, dst);
+    p.append(SkRasterPipelineOp::init_lane_masks);
+    p.append(SkRasterPipelineOp::merge_condition_mask, mask);
+    p.append(SkRasterPipelineOp::store_dst, dst);
     p.run(0,0,SkOpts::raster_pipeline_highp_stride,1);
 
     // `dr` and `da` should be populated with `mask[x] & mask[y]` in the frontmost positions.
@@ -288,9 +207,9 @@ DEF_TEST(SkRasterPipeline_MergeLoopMask, r) {
     static_assert(std::size(initial) == (4 * SkRasterPipeline_kMaxStride_highp));
 
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::load_dst, initial);
-    p.append(SkRasterPipeline::merge_loop_mask, mask);
-    p.append(SkRasterPipeline::store_dst, dst);
+    p.append(SkRasterPipelineOp::load_dst, initial);
+    p.append(SkRasterPipelineOp::merge_loop_mask, mask);
+    p.append(SkRasterPipelineOp::store_dst, dst);
     p.run(0,0,SkOpts::raster_pipeline_highp_stride,1);
 
     const int dr = 0 * SkOpts::raster_pipeline_highp_stride;
@@ -320,9 +239,9 @@ DEF_TEST(SkRasterPipeline_ReenableLoopMask, r) {
     static_assert(std::size(initial) == (4 * SkRasterPipeline_kMaxStride_highp));
 
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::load_dst, initial);
-    p.append(SkRasterPipeline::reenable_loop_mask, mask);
-    p.append(SkRasterPipeline::store_dst, dst);
+    p.append(SkRasterPipelineOp::load_dst, initial);
+    p.append(SkRasterPipelineOp::reenable_loop_mask, mask);
+    p.append(SkRasterPipelineOp::store_dst, dst);
     p.run(0,0,SkOpts::raster_pipeline_highp_stride,1);
 
     const int dr = 0 * SkOpts::raster_pipeline_highp_stride;
@@ -351,9 +270,9 @@ DEF_TEST(SkRasterPipeline_MaskOffLoopMask, r) {
     static_assert(std::size(initial) == (4 * SkRasterPipeline_kMaxStride_highp));
 
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::load_dst, initial);
-    p.append(SkRasterPipeline::mask_off_loop_mask);
-    p.append(SkRasterPipeline::store_dst, dst);
+    p.append(SkRasterPipelineOp::load_dst, initial);
+    p.append(SkRasterPipelineOp::mask_off_loop_mask);
+    p.append(SkRasterPipelineOp::store_dst, dst);
     p.run(0,0,SkOpts::raster_pipeline_highp_stride,1);
 
     const int dr = 0 * SkOpts::raster_pipeline_highp_stride;
@@ -380,9 +299,9 @@ DEF_TEST(SkRasterPipeline_MaskOffReturnMask, r) {
     static_assert(std::size(initial) == (4 * SkRasterPipeline_kMaxStride_highp));
 
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::load_dst, initial);
-    p.append(SkRasterPipeline::mask_off_return_mask);
-    p.append(SkRasterPipeline::store_dst, dst);
+    p.append(SkRasterPipelineOp::load_dst, initial);
+    p.append(SkRasterPipelineOp::mask_off_return_mask);
+    p.append(SkRasterPipelineOp::store_dst, dst);
     p.run(0,0,SkOpts::raster_pipeline_highp_stride,1);
 
     const int dr = 0 * SkOpts::raster_pipeline_highp_stride;
@@ -410,14 +329,14 @@ DEF_TEST(SkRasterPipeline_InitLaneMasks, r) {
         uniformCtx.r = 0.25f;
         uniformCtx.g = 0.50f;
         uniformCtx.b = 0.75f;
-        p.append(SkRasterPipeline::uniform_color_dst, &uniformCtx);
+        p.append(SkRasterPipelineOp::uniform_color_dst, &uniformCtx);
 
         // Overwrite dRGB with lane masks up to the tail width.
-        p.append(SkRasterPipeline::init_lane_masks);
+        p.append(SkRasterPipelineOp::init_lane_masks);
 
         // Use the store_dst command to write out dRGBA for inspection.
         alignas(64) int32_t dRGBA[4 * SkRasterPipeline_kMaxStride_highp] = {};
-        p.append(SkRasterPipeline::store_dst, dRGBA);
+        p.append(SkRasterPipelineOp::store_dst, dRGBA);
 
         // Execute our program.
         p.run(0,0,width,1);
@@ -452,15 +371,15 @@ DEF_TEST(SkRasterPipeline_CopySlotsMasked, r) {
     const int srcIndex = 0, dstIndex = 5;
 
     struct CopySlotsOp {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         int numSlotsAffected;
     };
 
     static const CopySlotsOp kCopyOps[] = {
-        {SkRasterPipeline::Stage::copy_slot_masked,    1},
-        {SkRasterPipeline::Stage::copy_2_slots_masked, 2},
-        {SkRasterPipeline::Stage::copy_3_slots_masked, 3},
-        {SkRasterPipeline::Stage::copy_4_slots_masked, 4},
+        {SkRasterPipelineOp::copy_slot_masked,    1},
+        {SkRasterPipelineOp::copy_2_slots_masked, 2},
+        {SkRasterPipelineOp::copy_3_slots_masked, 3},
+        {SkRasterPipelineOp::copy_4_slots_masked, 4},
     };
 
     static_assert(SkRasterPipeline_kMaxStride_highp == 8);
@@ -484,8 +403,8 @@ DEF_TEST(SkRasterPipeline_CopySlotsMasked, r) {
             ctx->dst = &slots[N * dstIndex];
             ctx->src = &slots[N * srcIndex];
 
-            p.append(SkRasterPipeline::init_lane_masks);
-            p.append(SkRasterPipeline::load_condition_mask, mask);
+            p.append(SkRasterPipelineOp::init_lane_masks);
+            p.append(SkRasterPipelineOp::load_condition_mask, mask);
             p.append(op.stage, ctx);
             p.run(0,0,N,1);
 
@@ -517,15 +436,15 @@ DEF_TEST(SkRasterPipeline_CopySlotsUnmasked, r) {
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct CopySlotsOp {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         int numSlotsAffected;
     };
 
     static const CopySlotsOp kCopyOps[] = {
-        {SkRasterPipeline::Stage::copy_slot_unmasked,    1},
-        {SkRasterPipeline::Stage::copy_2_slots_unmasked, 2},
-        {SkRasterPipeline::Stage::copy_3_slots_unmasked, 3},
-        {SkRasterPipeline::Stage::copy_4_slots_unmasked, 4},
+        {SkRasterPipelineOp::copy_slot_unmasked,    1},
+        {SkRasterPipelineOp::copy_2_slots_unmasked, 2},
+        {SkRasterPipelineOp::copy_3_slots_unmasked, 3},
+        {SkRasterPipelineOp::copy_4_slots_unmasked, 4},
     };
 
     for (const CopySlotsOp& op : kCopyOps) {
@@ -567,15 +486,15 @@ DEF_TEST(SkRasterPipeline_ZeroSlotsUnmasked, r) {
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct ZeroSlotsOp {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         int numSlotsAffected;
     };
 
     static const ZeroSlotsOp kZeroOps[] = {
-        {SkRasterPipeline::Stage::zero_slot_unmasked,    1},
-        {SkRasterPipeline::Stage::zero_2_slots_unmasked, 2},
-        {SkRasterPipeline::Stage::zero_3_slots_unmasked, 3},
-        {SkRasterPipeline::Stage::zero_4_slots_unmasked, 4},
+        {SkRasterPipelineOp::zero_slot_unmasked,    1},
+        {SkRasterPipelineOp::zero_2_slots_unmasked, 2},
+        {SkRasterPipelineOp::zero_3_slots_unmasked, 3},
+        {SkRasterPipelineOp::zero_4_slots_unmasked, 4},
     };
 
     for (const ZeroSlotsOp& op : kZeroOps) {
@@ -613,15 +532,15 @@ DEF_TEST(SkRasterPipeline_CopyConstants, r) {
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct CopySlotsOp {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         int numSlotsAffected;
     };
 
     static const CopySlotsOp kCopyOps[] = {
-        {SkRasterPipeline::Stage::copy_constant,    1},
-        {SkRasterPipeline::Stage::copy_2_constants, 2},
-        {SkRasterPipeline::Stage::copy_3_constants, 3},
-        {SkRasterPipeline::Stage::copy_4_constants, 4},
+        {SkRasterPipelineOp::copy_constant,    1},
+        {SkRasterPipelineOp::copy_2_constants, 2},
+        {SkRasterPipelineOp::copy_3_constants, 3},
+        {SkRasterPipelineOp::copy_4_constants, 4},
     };
 
     for (const CopySlotsOp& op : kCopyOps) {
@@ -665,15 +584,15 @@ DEF_TEST(SkRasterPipeline_Swizzle, r) {
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct TestPattern {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         uint16_t swizzle[4];
         uint16_t expectation[4];
     };
     static const TestPattern kPatterns[] = {
-            {SkRasterPipeline::swizzle_1, {3},          {3, 1, 2, 3}}, // (1,2,3,4).w    = (4)
-            {SkRasterPipeline::swizzle_2, {1, 0},       {1, 0, 2, 3}}, // (1,2,3,4).yx   = (2,1)
-            {SkRasterPipeline::swizzle_3, {2, 2, 2},    {2, 2, 2, 3}}, // (1,2,3,4).zzz  = (3,3,3)
-            {SkRasterPipeline::swizzle_4, {0, 0, 1, 2}, {0, 0, 1, 2}}, // (1,2,3,4).xxyz = (1,1,2,3)
+        {SkRasterPipelineOp::swizzle_1, {3},          {3, 1, 2, 3}}, // (1,2,3,4).w    = (4)
+        {SkRasterPipelineOp::swizzle_2, {1, 0},       {1, 0, 2, 3}}, // (1,2,3,4).yx   = (2,1)
+        {SkRasterPipelineOp::swizzle_3, {2, 2, 2},    {2, 2, 2, 3}}, // (1,2,3,4).zzz  = (3,3,3)
+        {SkRasterPipelineOp::swizzle_4, {0, 0, 1, 2}, {0, 0, 1, 2}}, // (1,2,3,4).xxyz = (1,1,2,3)
     };
     static_assert(sizeof(TestPattern::swizzle) == sizeof(SkRasterPipeline_SwizzleCtx::offsets));
 
@@ -706,21 +625,79 @@ DEF_TEST(SkRasterPipeline_Swizzle, r) {
     }
 }
 
+DEF_TEST(SkRasterPipeline_Shuffle, r) {
+    // Allocate space for 16 dest slots.
+    alignas(64) float slots[16 * SkRasterPipeline_kMaxStride_highp];
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    struct TestPattern {
+        int count;
+        uint16_t shuffle[16];
+        uint16_t expectation[16];
+    };
+    static const TestPattern kPatterns[] = {
+        {9,  { 0,  3,  6,
+               1,  4,  7,
+               2,  5,  8, /* past end: */  0,  0,  0,  0,  0,  0,  0},
+             { 0,  3,  6,
+               1,  4,  7,
+               2,  5,  8, /* unchanged: */ 9, 10, 11, 12, 13, 14, 15}},
+        {16, { 0,  4,  8, 12,
+               1,  5,  9, 13,
+               2,  6, 10, 14,
+               3,  7, 11, 15},
+             { 0,  4,  8, 12,
+               1,  5,  9, 13,
+               2,  6, 10, 14,
+               3,  7, 11, 15}},
+    };
+    static_assert(sizeof(TestPattern::shuffle) == sizeof(SkRasterPipeline_ShuffleCtx::offsets));
+
+    for (const TestPattern& pattern : kPatterns) {
+        // Initialize the destination slots to 1,2,3...
+        std::iota(&slots[0], &slots[16 * N], 1.0f);
+
+        // Apply the shuffle.
+        SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+        SkRasterPipeline p(&alloc);
+        SkRasterPipeline_ShuffleCtx ctx;
+        ctx.ptr = slots;
+        ctx.count = pattern.count;
+        for (size_t index = 0; index < std::size(ctx.offsets); ++index) {
+            ctx.offsets[index] = pattern.shuffle[index] * N * sizeof(float);
+        }
+        p.append(SkRasterPipelineOp::shuffle, &ctx);
+        p.run(0,0,1,1);
+
+        // Verify that the shuffle has been applied in each slot.
+        float* destPtr = &slots[0];
+        for (int checkSlot = 0; checkSlot < 16; ++checkSlot) {
+            float expected = pattern.expectation[checkSlot] * N + 1;
+            for (int checkLane = 0; checkLane < N; ++checkLane) {
+                REPORTER_ASSERT(r, *destPtr == expected);
+
+                ++destPtr;
+                expected += 1.0f;
+            }
+        }
+    }
+}
+
 DEF_TEST(SkRasterPipeline_FloatArithmeticWithNSlots, r) {
     // Allocate space for 5 dest and 5 source slots.
     alignas(64) float slots[10 * SkRasterPipeline_kMaxStride_highp];
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct ArithmeticOp {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         std::function<float(float, float)> verify;
     };
 
     static const ArithmeticOp kArithmeticOps[] = {
-        {SkRasterPipeline::Stage::add_n_floats, [](float a, float b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_n_floats, [](float a, float b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_n_floats, [](float a, float b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_n_floats, [](float a, float b) { return a / b; }},
+        {SkRasterPipelineOp::add_n_floats, [](float a, float b) { return a + b; }},
+        {SkRasterPipelineOp::sub_n_floats, [](float a, float b) { return a - b; }},
+        {SkRasterPipelineOp::mul_n_floats, [](float a, float b) { return a * b; }},
+        {SkRasterPipelineOp::div_n_floats, [](float a, float b) { return a / b; }},
     };
 
     for (const ArithmeticOp& op : kArithmeticOps) {
@@ -764,31 +741,31 @@ DEF_TEST(SkRasterPipeline_FloatArithmeticWithHardcodedSlots, r) {
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct ArithmeticOp {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         int numSlotsAffected;
         std::function<float(float, float)> verify;
     };
 
     static const ArithmeticOp kArithmeticOps[] = {
-        {SkRasterPipeline::Stage::add_float,    1, [](float a, float b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_float,    1, [](float a, float b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_float,    1, [](float a, float b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_float,    1, [](float a, float b) { return a / b; }},
+        {SkRasterPipelineOp::add_float,    1, [](float a, float b) { return a + b; }},
+        {SkRasterPipelineOp::sub_float,    1, [](float a, float b) { return a - b; }},
+        {SkRasterPipelineOp::mul_float,    1, [](float a, float b) { return a * b; }},
+        {SkRasterPipelineOp::div_float,    1, [](float a, float b) { return a / b; }},
 
-        {SkRasterPipeline::Stage::add_2_floats, 2, [](float a, float b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_2_floats, 2, [](float a, float b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_2_floats, 2, [](float a, float b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_2_floats, 2, [](float a, float b) { return a / b; }},
+        {SkRasterPipelineOp::add_2_floats, 2, [](float a, float b) { return a + b; }},
+        {SkRasterPipelineOp::sub_2_floats, 2, [](float a, float b) { return a - b; }},
+        {SkRasterPipelineOp::mul_2_floats, 2, [](float a, float b) { return a * b; }},
+        {SkRasterPipelineOp::div_2_floats, 2, [](float a, float b) { return a / b; }},
 
-        {SkRasterPipeline::Stage::add_3_floats, 3, [](float a, float b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_3_floats, 3, [](float a, float b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_3_floats, 3, [](float a, float b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_3_floats, 3, [](float a, float b) { return a / b; }},
+        {SkRasterPipelineOp::add_3_floats, 3, [](float a, float b) { return a + b; }},
+        {SkRasterPipelineOp::sub_3_floats, 3, [](float a, float b) { return a - b; }},
+        {SkRasterPipelineOp::mul_3_floats, 3, [](float a, float b) { return a * b; }},
+        {SkRasterPipelineOp::div_3_floats, 3, [](float a, float b) { return a / b; }},
 
-        {SkRasterPipeline::Stage::add_4_floats, 4, [](float a, float b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_4_floats, 4, [](float a, float b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_4_floats, 4, [](float a, float b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_4_floats, 4, [](float a, float b) { return a / b; }},
+        {SkRasterPipelineOp::add_4_floats, 4, [](float a, float b) { return a + b; }},
+        {SkRasterPipelineOp::sub_4_floats, 4, [](float a, float b) { return a - b; }},
+        {SkRasterPipelineOp::mul_4_floats, 4, [](float a, float b) { return a * b; }},
+        {SkRasterPipelineOp::div_4_floats, 4, [](float a, float b) { return a / b; }},
     };
 
     for (const ArithmeticOp& op : kArithmeticOps) {
@@ -831,23 +808,23 @@ DEF_TEST(SkRasterPipeline_IntArithmeticWithNSlots, r) {
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct ArithmeticOp {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         std::function<int(int, int)> verify;
     };
 
     static const ArithmeticOp kArithmeticOps[] = {
-        {SkRasterPipeline::Stage::add_n_ints,         [](int a, int b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_n_ints,         [](int a, int b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_n_ints,         [](int a, int b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_n_ints,         [](int a, int b) { return a / b; }},
-        {SkRasterPipeline::Stage::div_n_uints,        divide_unsigned},
-        {SkRasterPipeline::Stage::bitwise_and_n_ints, [](int a, int b) { return a & b; }},
-        {SkRasterPipeline::Stage::bitwise_or_n_ints,  [](int a, int b) { return a | b; }},
-        {SkRasterPipeline::Stage::bitwise_xor_n_ints, [](int a, int b) { return a ^ b; }},
-        {SkRasterPipeline::Stage::min_n_ints,         [](int a, int b) { return a < b ? a : b; }},
-        {SkRasterPipeline::Stage::min_n_uints,        min_unsigned},
-        {SkRasterPipeline::Stage::max_n_ints,         [](int a, int b) { return a > b ? a : b; }},
-        {SkRasterPipeline::Stage::max_n_uints,        max_unsigned},
+        {SkRasterPipelineOp::add_n_ints,         [](int a, int b) { return a + b; }},
+        {SkRasterPipelineOp::sub_n_ints,         [](int a, int b) { return a - b; }},
+        {SkRasterPipelineOp::mul_n_ints,         [](int a, int b) { return a * b; }},
+        {SkRasterPipelineOp::div_n_ints,         [](int a, int b) { return a / b; }},
+        {SkRasterPipelineOp::div_n_uints,        divide_unsigned},
+        {SkRasterPipelineOp::bitwise_and_n_ints, [](int a, int b) { return a & b; }},
+        {SkRasterPipelineOp::bitwise_or_n_ints,  [](int a, int b) { return a | b; }},
+        {SkRasterPipelineOp::bitwise_xor_n_ints, [](int a, int b) { return a ^ b; }},
+        {SkRasterPipelineOp::min_n_ints,         [](int a, int b) { return a < b ? a : b; }},
+        {SkRasterPipelineOp::min_n_uints,        min_unsigned},
+        {SkRasterPipelineOp::max_n_ints,         [](int a, int b) { return a > b ? a : b; }},
+        {SkRasterPipelineOp::max_n_uints,        max_unsigned},
     };
 
     for (const ArithmeticOp& op : kArithmeticOps) {
@@ -891,63 +868,63 @@ DEF_TEST(SkRasterPipeline_IntArithmeticWithHardcodedSlots, r) {
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct ArithmeticOp {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         int numSlotsAffected;
         std::function<int(int, int)> verify;
     };
 
     static const ArithmeticOp kArithmeticOps[] = {
-        {SkRasterPipeline::Stage::add_int,            1, [](int a, int b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_int,            1, [](int a, int b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_int,            1, [](int a, int b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_int,            1, [](int a, int b) { return a / b; }},
-        {SkRasterPipeline::Stage::div_uint,           1, divide_unsigned},
-        {SkRasterPipeline::Stage::bitwise_and_int,    1, [](int a, int b) { return a & b; }},
-        {SkRasterPipeline::Stage::bitwise_or_int,     1, [](int a, int b) { return a | b; }},
-        {SkRasterPipeline::Stage::bitwise_xor_int,    1, [](int a, int b) { return a ^ b; }},
-        {SkRasterPipeline::Stage::min_int,            1, [](int a, int b) { return a < b ? a: b; }},
-        {SkRasterPipeline::Stage::min_uint,           1, min_unsigned},
-        {SkRasterPipeline::Stage::max_int,            1, [](int a, int b) { return a > b ? a: b; }},
-        {SkRasterPipeline::Stage::max_uint,           1, max_unsigned},
+        {SkRasterPipelineOp::add_int,            1, [](int a, int b) { return a + b; }},
+        {SkRasterPipelineOp::sub_int,            1, [](int a, int b) { return a - b; }},
+        {SkRasterPipelineOp::mul_int,            1, [](int a, int b) { return a * b; }},
+        {SkRasterPipelineOp::div_int,            1, [](int a, int b) { return a / b; }},
+        {SkRasterPipelineOp::div_uint,           1, divide_unsigned},
+        {SkRasterPipelineOp::bitwise_and_int,    1, [](int a, int b) { return a & b; }},
+        {SkRasterPipelineOp::bitwise_or_int,     1, [](int a, int b) { return a | b; }},
+        {SkRasterPipelineOp::bitwise_xor_int,    1, [](int a, int b) { return a ^ b; }},
+        {SkRasterPipelineOp::min_int,            1, [](int a, int b) { return a < b ? a: b; }},
+        {SkRasterPipelineOp::min_uint,           1, min_unsigned},
+        {SkRasterPipelineOp::max_int,            1, [](int a, int b) { return a > b ? a: b; }},
+        {SkRasterPipelineOp::max_uint,           1, max_unsigned},
 
-        {SkRasterPipeline::Stage::add_2_ints,         2, [](int a, int b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_2_ints,         2, [](int a, int b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_2_ints,         2, [](int a, int b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_2_ints,         2, [](int a, int b) { return a / b; }},
-        {SkRasterPipeline::Stage::div_2_uints,        2, divide_unsigned},
-        {SkRasterPipeline::Stage::bitwise_and_2_ints, 2, [](int a, int b) { return a & b; }},
-        {SkRasterPipeline::Stage::bitwise_or_2_ints,  2, [](int a, int b) { return a | b; }},
-        {SkRasterPipeline::Stage::bitwise_xor_2_ints, 2, [](int a, int b) { return a ^ b; }},
-        {SkRasterPipeline::Stage::min_2_ints,         2, [](int a, int b) { return a < b ? a: b; }},
-        {SkRasterPipeline::Stage::min_2_uints,        2, min_unsigned},
-        {SkRasterPipeline::Stage::max_2_ints,         2, [](int a, int b) { return a > b ? a: b; }},
-        {SkRasterPipeline::Stage::max_2_uints,        2, max_unsigned},
+        {SkRasterPipelineOp::add_2_ints,         2, [](int a, int b) { return a + b; }},
+        {SkRasterPipelineOp::sub_2_ints,         2, [](int a, int b) { return a - b; }},
+        {SkRasterPipelineOp::mul_2_ints,         2, [](int a, int b) { return a * b; }},
+        {SkRasterPipelineOp::div_2_ints,         2, [](int a, int b) { return a / b; }},
+        {SkRasterPipelineOp::div_2_uints,        2, divide_unsigned},
+        {SkRasterPipelineOp::bitwise_and_2_ints, 2, [](int a, int b) { return a & b; }},
+        {SkRasterPipelineOp::bitwise_or_2_ints,  2, [](int a, int b) { return a | b; }},
+        {SkRasterPipelineOp::bitwise_xor_2_ints, 2, [](int a, int b) { return a ^ b; }},
+        {SkRasterPipelineOp::min_2_ints,         2, [](int a, int b) { return a < b ? a: b; }},
+        {SkRasterPipelineOp::min_2_uints,        2, min_unsigned},
+        {SkRasterPipelineOp::max_2_ints,         2, [](int a, int b) { return a > b ? a: b; }},
+        {SkRasterPipelineOp::max_2_uints,        2, max_unsigned},
 
-        {SkRasterPipeline::Stage::add_3_ints,         3, [](int a, int b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_3_ints,         3, [](int a, int b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_3_ints,         3, [](int a, int b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_3_ints,         3, [](int a, int b) { return a / b; }},
-        {SkRasterPipeline::Stage::div_3_uints,        3, divide_unsigned},
-        {SkRasterPipeline::Stage::bitwise_and_3_ints, 3, [](int a, int b) { return a & b; }},
-        {SkRasterPipeline::Stage::bitwise_or_3_ints,  3, [](int a, int b) { return a | b; }},
-        {SkRasterPipeline::Stage::bitwise_xor_3_ints, 3, [](int a, int b) { return a ^ b; }},
-        {SkRasterPipeline::Stage::min_3_ints,         3, [](int a, int b) { return a < b ? a: b; }},
-        {SkRasterPipeline::Stage::min_3_uints,        3, min_unsigned},
-        {SkRasterPipeline::Stage::max_3_ints,         3, [](int a, int b) { return a > b ? a: b; }},
-        {SkRasterPipeline::Stage::max_3_uints,        3, max_unsigned},
+        {SkRasterPipelineOp::add_3_ints,         3, [](int a, int b) { return a + b; }},
+        {SkRasterPipelineOp::sub_3_ints,         3, [](int a, int b) { return a - b; }},
+        {SkRasterPipelineOp::mul_3_ints,         3, [](int a, int b) { return a * b; }},
+        {SkRasterPipelineOp::div_3_ints,         3, [](int a, int b) { return a / b; }},
+        {SkRasterPipelineOp::div_3_uints,        3, divide_unsigned},
+        {SkRasterPipelineOp::bitwise_and_3_ints, 3, [](int a, int b) { return a & b; }},
+        {SkRasterPipelineOp::bitwise_or_3_ints,  3, [](int a, int b) { return a | b; }},
+        {SkRasterPipelineOp::bitwise_xor_3_ints, 3, [](int a, int b) { return a ^ b; }},
+        {SkRasterPipelineOp::min_3_ints,         3, [](int a, int b) { return a < b ? a: b; }},
+        {SkRasterPipelineOp::min_3_uints,        3, min_unsigned},
+        {SkRasterPipelineOp::max_3_ints,         3, [](int a, int b) { return a > b ? a: b; }},
+        {SkRasterPipelineOp::max_3_uints,        3, max_unsigned},
 
-        {SkRasterPipeline::Stage::add_4_ints,         4, [](int a, int b) { return a + b; }},
-        {SkRasterPipeline::Stage::sub_4_ints,         4, [](int a, int b) { return a - b; }},
-        {SkRasterPipeline::Stage::mul_4_ints,         4, [](int a, int b) { return a * b; }},
-        {SkRasterPipeline::Stage::div_4_ints,         4, [](int a, int b) { return a / b; }},
-        {SkRasterPipeline::Stage::div_4_uints,        4, divide_unsigned},
-        {SkRasterPipeline::Stage::bitwise_and_4_ints, 4, [](int a, int b) { return a & b; }},
-        {SkRasterPipeline::Stage::bitwise_or_4_ints,  4, [](int a, int b) { return a | b; }},
-        {SkRasterPipeline::Stage::bitwise_xor_4_ints, 4, [](int a, int b) { return a ^ b; }},
-        {SkRasterPipeline::Stage::min_4_ints,         4, [](int a, int b) { return a < b ? a: b; }},
-        {SkRasterPipeline::Stage::min_4_uints,        4, min_unsigned},
-        {SkRasterPipeline::Stage::max_4_ints,         4, [](int a, int b) { return a > b ? a: b; }},
-        {SkRasterPipeline::Stage::max_4_uints,        4, max_unsigned},
+        {SkRasterPipelineOp::add_4_ints,         4, [](int a, int b) { return a + b; }},
+        {SkRasterPipelineOp::sub_4_ints,         4, [](int a, int b) { return a - b; }},
+        {SkRasterPipelineOp::mul_4_ints,         4, [](int a, int b) { return a * b; }},
+        {SkRasterPipelineOp::div_4_ints,         4, [](int a, int b) { return a / b; }},
+        {SkRasterPipelineOp::div_4_uints,        4, divide_unsigned},
+        {SkRasterPipelineOp::bitwise_and_4_ints, 4, [](int a, int b) { return a & b; }},
+        {SkRasterPipelineOp::bitwise_or_4_ints,  4, [](int a, int b) { return a | b; }},
+        {SkRasterPipelineOp::bitwise_xor_4_ints, 4, [](int a, int b) { return a ^ b; }},
+        {SkRasterPipelineOp::min_4_ints,         4, [](int a, int b) { return a < b ? a: b; }},
+        {SkRasterPipelineOp::min_4_uints,        4, min_unsigned},
+        {SkRasterPipelineOp::max_4_ints,         4, [](int a, int b) { return a > b ? a: b; }},
+        {SkRasterPipelineOp::max_4_uints,        4, max_unsigned},
     };
 
     for (const ArithmeticOp& op : kArithmeticOps) {
@@ -986,15 +963,15 @@ DEF_TEST(SkRasterPipeline_CompareFloatsWithNSlots, r) {
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct CompareOp {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         std::function<bool(float, float)> verify;
     };
 
     static const CompareOp kCompareOps[] = {
-        {SkRasterPipeline::Stage::cmpeq_n_floats, [](float a, float b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_n_floats, [](float a, float b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_n_floats, [](float a, float b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_n_floats, [](float a, float b) { return a <= b; }},
+        {SkRasterPipelineOp::cmpeq_n_floats, [](float a, float b) { return a == b; }},
+        {SkRasterPipelineOp::cmpne_n_floats, [](float a, float b) { return a != b; }},
+        {SkRasterPipelineOp::cmplt_n_floats, [](float a, float b) { return a <  b; }},
+        {SkRasterPipelineOp::cmple_n_floats, [](float a, float b) { return a <= b; }},
     };
 
     for (const CompareOp& op : kCompareOps) {
@@ -1042,31 +1019,31 @@ DEF_TEST(SkRasterPipeline_CompareFloatsWithHardcodedSlots, r) {
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct CompareOp {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         int numSlotsAffected;
         std::function<bool(float, float)> verify;
     };
 
     static const CompareOp kCompareOps[] = {
-        {SkRasterPipeline::Stage::cmpeq_float,    1, [](float a, float b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_float,    1, [](float a, float b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_float,    1, [](float a, float b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_float,    1, [](float a, float b) { return a <= b; }},
+        {SkRasterPipelineOp::cmpeq_float,    1, [](float a, float b) { return a == b; }},
+        {SkRasterPipelineOp::cmpne_float,    1, [](float a, float b) { return a != b; }},
+        {SkRasterPipelineOp::cmplt_float,    1, [](float a, float b) { return a <  b; }},
+        {SkRasterPipelineOp::cmple_float,    1, [](float a, float b) { return a <= b; }},
 
-        {SkRasterPipeline::Stage::cmpeq_2_floats, 2, [](float a, float b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_2_floats, 2, [](float a, float b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_2_floats, 2, [](float a, float b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_2_floats, 2, [](float a, float b) { return a <= b; }},
+        {SkRasterPipelineOp::cmpeq_2_floats, 2, [](float a, float b) { return a == b; }},
+        {SkRasterPipelineOp::cmpne_2_floats, 2, [](float a, float b) { return a != b; }},
+        {SkRasterPipelineOp::cmplt_2_floats, 2, [](float a, float b) { return a <  b; }},
+        {SkRasterPipelineOp::cmple_2_floats, 2, [](float a, float b) { return a <= b; }},
 
-        {SkRasterPipeline::Stage::cmpeq_3_floats, 3, [](float a, float b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_3_floats, 3, [](float a, float b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_3_floats, 3, [](float a, float b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_3_floats, 3, [](float a, float b) { return a <= b; }},
+        {SkRasterPipelineOp::cmpeq_3_floats, 3, [](float a, float b) { return a == b; }},
+        {SkRasterPipelineOp::cmpne_3_floats, 3, [](float a, float b) { return a != b; }},
+        {SkRasterPipelineOp::cmplt_3_floats, 3, [](float a, float b) { return a <  b; }},
+        {SkRasterPipelineOp::cmple_3_floats, 3, [](float a, float b) { return a <= b; }},
 
-        {SkRasterPipeline::Stage::cmpeq_4_floats, 4, [](float a, float b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_4_floats, 4, [](float a, float b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_4_floats, 4, [](float a, float b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_4_floats, 4, [](float a, float b) { return a <= b; }},
+        {SkRasterPipelineOp::cmpeq_4_floats, 4, [](float a, float b) { return a == b; }},
+        {SkRasterPipelineOp::cmpne_4_floats, 4, [](float a, float b) { return a != b; }},
+        {SkRasterPipelineOp::cmplt_4_floats, 4, [](float a, float b) { return a <  b; }},
+        {SkRasterPipelineOp::cmple_4_floats, 4, [](float a, float b) { return a <= b; }},
     };
 
     for (const CompareOp& op : kCompareOps) {
@@ -1112,17 +1089,17 @@ DEF_TEST(SkRasterPipeline_CompareIntsWithNSlots, r) {
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct CompareOp {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         std::function<bool(int, int)> verify;
     };
 
     static const CompareOp kCompareOps[] = {
-        {SkRasterPipeline::Stage::cmpeq_n_ints,  [](int a, int b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_n_ints,  [](int a, int b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_n_ints,  [](int a, int b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_n_ints,  [](int a, int b) { return a <= b; }},
-        {SkRasterPipeline::Stage::cmplt_n_uints, compare_lt_uint},
-        {SkRasterPipeline::Stage::cmple_n_uints, compare_lteq_uint},
+        {SkRasterPipelineOp::cmpeq_n_ints,  [](int a, int b) { return a == b; }},
+        {SkRasterPipelineOp::cmpne_n_ints,  [](int a, int b) { return a != b; }},
+        {SkRasterPipelineOp::cmplt_n_ints,  [](int a, int b) { return a <  b; }},
+        {SkRasterPipelineOp::cmple_n_ints,  [](int a, int b) { return a <= b; }},
+        {SkRasterPipelineOp::cmplt_n_uints, compare_lt_uint},
+        {SkRasterPipelineOp::cmple_n_uints, compare_lteq_uint},
     };
 
     for (const CompareOp& op : kCompareOps) {
@@ -1174,39 +1151,39 @@ DEF_TEST(SkRasterPipeline_CompareIntsWithHardcodedSlots, r) {
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct CompareOp {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         int numSlotsAffected;
         std::function<bool(int, int)> verify;
     };
 
     static const CompareOp kCompareOps[] = {
-        {SkRasterPipeline::Stage::cmpeq_int,     1, [](int a, int b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_int,     1, [](int a, int b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_int,     1, [](int a, int b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_int,     1, [](int a, int b) { return a <= b; }},
-        {SkRasterPipeline::Stage::cmplt_uint,    1, compare_lt_uint},
-        {SkRasterPipeline::Stage::cmple_uint,    1, compare_lteq_uint},
+        {SkRasterPipelineOp::cmpeq_int,     1, [](int a, int b) { return a == b; }},
+        {SkRasterPipelineOp::cmpne_int,     1, [](int a, int b) { return a != b; }},
+        {SkRasterPipelineOp::cmplt_int,     1, [](int a, int b) { return a <  b; }},
+        {SkRasterPipelineOp::cmple_int,     1, [](int a, int b) { return a <= b; }},
+        {SkRasterPipelineOp::cmplt_uint,    1, compare_lt_uint},
+        {SkRasterPipelineOp::cmple_uint,    1, compare_lteq_uint},
 
-        {SkRasterPipeline::Stage::cmpeq_2_ints,  2, [](int a, int b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_2_ints,  2, [](int a, int b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_2_ints,  2, [](int a, int b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_2_ints,  2, [](int a, int b) { return a <= b; }},
-        {SkRasterPipeline::Stage::cmplt_2_uints, 2, compare_lt_uint},
-        {SkRasterPipeline::Stage::cmple_2_uints, 2, compare_lteq_uint},
+        {SkRasterPipelineOp::cmpeq_2_ints,  2, [](int a, int b) { return a == b; }},
+        {SkRasterPipelineOp::cmpne_2_ints,  2, [](int a, int b) { return a != b; }},
+        {SkRasterPipelineOp::cmplt_2_ints,  2, [](int a, int b) { return a <  b; }},
+        {SkRasterPipelineOp::cmple_2_ints,  2, [](int a, int b) { return a <= b; }},
+        {SkRasterPipelineOp::cmplt_2_uints, 2, compare_lt_uint},
+        {SkRasterPipelineOp::cmple_2_uints, 2, compare_lteq_uint},
 
-        {SkRasterPipeline::Stage::cmpeq_3_ints,  3, [](int a, int b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_3_ints,  3, [](int a, int b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_3_ints,  3, [](int a, int b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_3_ints,  3, [](int a, int b) { return a <= b; }},
-        {SkRasterPipeline::Stage::cmplt_3_uints, 3, compare_lt_uint},
-        {SkRasterPipeline::Stage::cmple_3_uints, 3, compare_lteq_uint},
+        {SkRasterPipelineOp::cmpeq_3_ints,  3, [](int a, int b) { return a == b; }},
+        {SkRasterPipelineOp::cmpne_3_ints,  3, [](int a, int b) { return a != b; }},
+        {SkRasterPipelineOp::cmplt_3_ints,  3, [](int a, int b) { return a <  b; }},
+        {SkRasterPipelineOp::cmple_3_ints,  3, [](int a, int b) { return a <= b; }},
+        {SkRasterPipelineOp::cmplt_3_uints, 3, compare_lt_uint},
+        {SkRasterPipelineOp::cmple_3_uints, 3, compare_lteq_uint},
 
-        {SkRasterPipeline::Stage::cmpeq_4_ints,  4, [](int a, int b) { return a == b; }},
-        {SkRasterPipeline::Stage::cmpne_4_ints,  4, [](int a, int b) { return a != b; }},
-        {SkRasterPipeline::Stage::cmplt_4_ints,  4, [](int a, int b) { return a <  b; }},
-        {SkRasterPipeline::Stage::cmple_4_ints,  4, [](int a, int b) { return a <= b; }},
-        {SkRasterPipeline::Stage::cmplt_4_uints, 4, compare_lt_uint},
-        {SkRasterPipeline::Stage::cmple_4_uints, 4, compare_lteq_uint},
+        {SkRasterPipelineOp::cmpeq_4_ints,  4, [](int a, int b) { return a == b; }},
+        {SkRasterPipelineOp::cmpne_4_ints,  4, [](int a, int b) { return a != b; }},
+        {SkRasterPipelineOp::cmplt_4_ints,  4, [](int a, int b) { return a <  b; }},
+        {SkRasterPipelineOp::cmple_4_ints,  4, [](int a, int b) { return a <= b; }},
+        {SkRasterPipelineOp::cmplt_4_uints, 4, compare_lt_uint},
+        {SkRasterPipelineOp::cmple_4_uints, 4, compare_lteq_uint},
     };
 
     for (const CompareOp& op : kCompareOps) {
@@ -1255,26 +1232,26 @@ DEF_TEST(SkRasterPipeline_UnaryIntOps, r) {
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct UnaryOp {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         int numSlotsAffected;
         std::function<int(int)> verify;
     };
 
     static const UnaryOp kUnaryOps[] = {
-        {SkRasterPipeline::Stage::bitwise_not_int,    1, [](int a) { return ~a; }},
-        {SkRasterPipeline::Stage::bitwise_not_2_ints, 2, [](int a) { return ~a; }},
-        {SkRasterPipeline::Stage::bitwise_not_3_ints, 3, [](int a) { return ~a; }},
-        {SkRasterPipeline::Stage::bitwise_not_4_ints, 4, [](int a) { return ~a; }},
+        {SkRasterPipelineOp::bitwise_not_int,    1, [](int a) { return ~a; }},
+        {SkRasterPipelineOp::bitwise_not_2_ints, 2, [](int a) { return ~a; }},
+        {SkRasterPipelineOp::bitwise_not_3_ints, 3, [](int a) { return ~a; }},
+        {SkRasterPipelineOp::bitwise_not_4_ints, 4, [](int a) { return ~a; }},
 
-        {SkRasterPipeline::Stage::cast_to_float_from_int,    1, to_float},
-        {SkRasterPipeline::Stage::cast_to_float_from_2_ints, 2, to_float},
-        {SkRasterPipeline::Stage::cast_to_float_from_3_ints, 3, to_float},
-        {SkRasterPipeline::Stage::cast_to_float_from_4_ints, 4, to_float},
+        {SkRasterPipelineOp::cast_to_float_from_int,    1, to_float},
+        {SkRasterPipelineOp::cast_to_float_from_2_ints, 2, to_float},
+        {SkRasterPipelineOp::cast_to_float_from_3_ints, 3, to_float},
+        {SkRasterPipelineOp::cast_to_float_from_4_ints, 4, to_float},
 
-        {SkRasterPipeline::Stage::abs_int,    1, [](int a) { return a < 0 ? -a : a; }},
-        {SkRasterPipeline::Stage::abs_2_ints, 2, [](int a) { return a < 0 ? -a : a; }},
-        {SkRasterPipeline::Stage::abs_3_ints, 3, [](int a) { return a < 0 ? -a : a; }},
-        {SkRasterPipeline::Stage::abs_4_ints, 4, [](int a) { return a < 0 ? -a : a; }},
+        {SkRasterPipelineOp::abs_int,    1, [](int a) { return a < 0 ? -a : a; }},
+        {SkRasterPipelineOp::abs_2_ints, 2, [](int a) { return a < 0 ? -a : a; }},
+        {SkRasterPipelineOp::abs_3_ints, 3, [](int a) { return a < 0 ? -a : a; }},
+        {SkRasterPipelineOp::abs_4_ints, 4, [](int a) { return a < 0 ? -a : a; }},
     };
 
     for (const UnaryOp& op : kUnaryOps) {
@@ -1315,38 +1292,48 @@ DEF_TEST(SkRasterPipeline_UnaryFloatOps, r) {
     const int N = SkOpts::raster_pipeline_highp_stride;
 
     struct UnaryOp {
-        SkRasterPipeline::Stage stage;
+        SkRasterPipelineOp stage;
         int numSlotsAffected;
         std::function<float(float)> verify;
     };
 
     static const UnaryOp kUnaryOps[] = {
-        {SkRasterPipeline::Stage::cast_to_int_from_float,    1, to_int},
-        {SkRasterPipeline::Stage::cast_to_int_from_2_floats, 2, to_int},
-        {SkRasterPipeline::Stage::cast_to_int_from_3_floats, 3, to_int},
-        {SkRasterPipeline::Stage::cast_to_int_from_4_floats, 4, to_int},
+        {SkRasterPipelineOp::cast_to_int_from_float,    1, to_int},
+        {SkRasterPipelineOp::cast_to_int_from_2_floats, 2, to_int},
+        {SkRasterPipelineOp::cast_to_int_from_3_floats, 3, to_int},
+        {SkRasterPipelineOp::cast_to_int_from_4_floats, 4, to_int},
 
-        {SkRasterPipeline::Stage::cast_to_uint_from_float,    1, to_uint},
-        {SkRasterPipeline::Stage::cast_to_uint_from_2_floats, 2, to_uint},
-        {SkRasterPipeline::Stage::cast_to_uint_from_3_floats, 3, to_uint},
-        {SkRasterPipeline::Stage::cast_to_uint_from_4_floats, 4, to_uint},
+        {SkRasterPipelineOp::cast_to_uint_from_float,    1, to_uint},
+        {SkRasterPipelineOp::cast_to_uint_from_2_floats, 2, to_uint},
+        {SkRasterPipelineOp::cast_to_uint_from_3_floats, 3, to_uint},
+        {SkRasterPipelineOp::cast_to_uint_from_4_floats, 4, to_uint},
 
-        {SkRasterPipeline::Stage::abs_float,    1, [](float a) { return a < 0 ? -a : a; }},
-        {SkRasterPipeline::Stage::abs_2_floats, 2, [](float a) { return a < 0 ? -a : a; }},
-        {SkRasterPipeline::Stage::abs_3_floats, 3, [](float a) { return a < 0 ? -a : a; }},
-        {SkRasterPipeline::Stage::abs_4_floats, 4, [](float a) { return a < 0 ? -a : a; }},
+        {SkRasterPipelineOp::abs_float,    1, [](float a) { return a < 0 ? -a : a; }},
+        {SkRasterPipelineOp::abs_2_floats, 2, [](float a) { return a < 0 ? -a : a; }},
+        {SkRasterPipelineOp::abs_3_floats, 3, [](float a) { return a < 0 ? -a : a; }},
+        {SkRasterPipelineOp::abs_4_floats, 4, [](float a) { return a < 0 ? -a : a; }},
+
+        {SkRasterPipelineOp::floor_float,    1, [](float a) { return floorf(a); }},
+        {SkRasterPipelineOp::floor_2_floats, 2, [](float a) { return floorf(a); }},
+        {SkRasterPipelineOp::floor_3_floats, 3, [](float a) { return floorf(a); }},
+        {SkRasterPipelineOp::floor_4_floats, 4, [](float a) { return floorf(a); }},
+
+        {SkRasterPipelineOp::ceil_float,    1, [](float a) { return ceilf(a); }},
+        {SkRasterPipelineOp::ceil_2_floats, 2, [](float a) { return ceilf(a); }},
+        {SkRasterPipelineOp::ceil_3_floats, 3, [](float a) { return ceilf(a); }},
+        {SkRasterPipelineOp::ceil_4_floats, 4, [](float a) { return ceilf(a); }},
     };
 
     for (const UnaryOp& op : kUnaryOps) {
         // The result of some ops are undefined with negative inputs, so only test positive values.
-        bool positiveOnly = (op.stage == SkRasterPipeline::Stage::cast_to_uint_from_float ||
-                             op.stage == SkRasterPipeline::Stage::cast_to_uint_from_2_floats ||
-                             op.stage == SkRasterPipeline::Stage::cast_to_uint_from_3_floats ||
-                             op.stage == SkRasterPipeline::Stage::cast_to_uint_from_4_floats);
+        bool positiveOnly = (op.stage == SkRasterPipelineOp::cast_to_uint_from_float ||
+                             op.stage == SkRasterPipelineOp::cast_to_uint_from_2_floats ||
+                             op.stage == SkRasterPipelineOp::cast_to_uint_from_3_floats ||
+                             op.stage == SkRasterPipelineOp::cast_to_uint_from_4_floats);
 
-        float iotaStart = positiveOnly ? 1.0f : -10.0f;
+        float iotaStart = positiveOnly ? 1.0f : -9.75f;
         std::iota(&slots[0], &slots[5 * N], iotaStart);
-        int inputValue = slots[0];
+        float inputValue = slots[0];
 
         // Run the unary op over our data.
         SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
@@ -1360,7 +1347,14 @@ DEF_TEST(SkRasterPipeline_UnaryFloatOps, r) {
             for (int checkLane = 0; checkLane < N; ++checkLane) {
                 if (checkSlot < op.numSlotsAffected) {
                     float expected = op.verify(inputValue);
-                    REPORTER_ASSERT(r, 0 == memcmp(destPtr, &expected, sizeof(float)));
+                    // The casting tests can generate NaN, depending on the input value, so a value
+                    // match (via ==) might not succeed.
+                    // The ceil tests can generate negative zeros _sometimes_, depending on the
+                    // exact implementation of ceil(), so a bitwise match might not succeed.
+                    // Because of this, we allow either a value match or a bitwise match.
+                    bool bitwiseMatch = (0 == memcmp(destPtr, &expected, sizeof(float)));
+                    bool valueMatch   = (*destPtr == expected);
+                    REPORTER_ASSERT(r, valueMatch || bitwiseMatch);
                 } else {
                     REPORTER_ASSERT(r, *destPtr == inputValue);
                 }
@@ -1390,23 +1384,23 @@ DEF_TEST(SkRasterPipeline_MixTest, r) {
 
     static const MixOp kMixOps[] = {
         {1, [&](SkRasterPipeline* p, SkArenaAlloc* alloc) {
-                p->append(SkRasterPipeline::mix_float, slots);
+                p->append(SkRasterPipelineOp::mix_float, slots);
             }},
         {2, [&](SkRasterPipeline* p, SkArenaAlloc* alloc) {
-                p->append(SkRasterPipeline::mix_2_floats, slots);
+                p->append(SkRasterPipelineOp::mix_2_floats, slots);
             }},
         {3, [&](SkRasterPipeline* p, SkArenaAlloc* alloc) {
-                p->append(SkRasterPipeline::mix_3_floats, slots);
+                p->append(SkRasterPipelineOp::mix_3_floats, slots);
             }},
         {4, [&](SkRasterPipeline* p, SkArenaAlloc* alloc) {
-                p->append(SkRasterPipeline::mix_4_floats, slots);
+                p->append(SkRasterPipelineOp::mix_4_floats, slots);
             }},
         {5, [&](SkRasterPipeline* p, SkArenaAlloc* alloc) {
                 auto* ctx = alloc->make<SkRasterPipeline_TernaryOpCtx>();
                 ctx->dst = &slots[0];
                 ctx->src0 = &slots[5 * N];
                 ctx->src1 = &slots[10 * N];
-                p->append(SkRasterPipeline::mix_n_floats, ctx);
+                p->append(SkRasterPipelineOp::mix_n_floats, ctx);
             }},
     };
 
@@ -1414,12 +1408,12 @@ DEF_TEST(SkRasterPipeline_MixTest, r) {
         // Initialize the values to 1,2,3...
         std::iota(&slots[0], &slots[15 * N], 1.0f);
 
-        float fromValue   = slots[0];
-        float toValue     = slots[1 * op.numSlotsAffected * N];
-        float weightValue = slots[2 * op.numSlotsAffected * N];
+        float weightValue = slots[0];
+        float fromValue   = slots[1 * op.numSlotsAffected * N];
+        float toValue     = slots[2 * op.numSlotsAffected * N];
 
-        // The third group of values (the weight) must be between zero and one.
-        for (int idx = 2 * op.numSlotsAffected * N; idx < 3 * op.numSlotsAffected * N; ++idx) {
+        // The first group of values (the weights) must be between zero and one.
+        for (int idx = 0; idx < 1 * op.numSlotsAffected * N; ++idx) {
             slots[idx] = to_mix_weight(slots[idx]);
         }
 
@@ -1429,7 +1423,7 @@ DEF_TEST(SkRasterPipeline_MixTest, r) {
         op.append(&p, &alloc);
         p.run(0,0,1,1);
 
-        // Verify that the affected slots now equal mix({1,2...}, {3,4...}, {0.25, 0.3125...).
+        // Verify that the affected slots now equal mix({0.25, 0.3125...}, {3,4...}, {5,6...}, ).
         float* destPtr = &slots[0];
         for (int checkSlot = 0; checkSlot < op.numSlotsAffected; ++checkSlot) {
             for (int checkLane = 0; checkLane < N; ++checkLane) {
@@ -1457,10 +1451,10 @@ DEF_TEST(SkRasterPipeline_Jump, r) {
     // Make a program which jumps over an append_constant_color op.
     SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
     SkRasterPipeline p(&alloc);
-    p.append_constant_color(&alloc, kColorGreen);    // assign green
-    p.append(SkRasterPipeline::jump, &offset);       // jump over the dark-red color assignment
-    p.append_constant_color(&alloc, kColorDarkRed);  // (not executed)
-    p.append(SkRasterPipeline::store_src, slots);    // store the result so we can check it
+    p.append_constant_color(&alloc, kColorGreen);      // assign green
+    p.append(SkRasterPipelineOp::jump, &offset);       // jump over the dark-red color assignment
+    p.append_constant_color(&alloc, kColorDarkRed);    // (not executed)
+    p.append(SkRasterPipelineOp::store_src, slots);    // store the result so we can check it
     p.run(0,0,1,1);
 
     // Verify that the slots contain green.
@@ -1480,7 +1474,8 @@ DEF_TEST(SkRasterPipeline_BranchIfAnyActiveLanes, r) {
 
     alignas(64) static constexpr float kColorDarkRed[4] = {0.5f, 0.0f, 0.0f, 0.75f};
     alignas(64) static constexpr float kColorGreen[4]   = {0.0f, 1.0f, 0.0f, 1.0f};
-    const int offset = 2;
+    SkRasterPipeline_BranchCtx ctx;
+    ctx.offset = 2;
 
     // An array of all zeros.
     alignas(64) static constexpr int32_t kNoLanesActive[4 * SkRasterPipeline_kMaxStride_highp] = {};
@@ -1492,17 +1487,17 @@ DEF_TEST(SkRasterPipeline_BranchIfAnyActiveLanes, r) {
     // Make a program which conditionally branches past two append_constant_color ops.
     SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
     SkRasterPipeline p(&alloc);
-    p.append_constant_color(&alloc, kColorDarkRed);                  // set the color to dark red
-    p.append(SkRasterPipeline::load_dst, kNoLanesActive);            // make no lanes active
-    p.append(SkRasterPipeline::branch_if_any_active_lanes, &offset); // do not skip past next line
-    p.append_constant_color(&alloc, kColorGreen);                    // set the color to green
-    p.append(SkRasterPipeline::load_dst, oneLaneActive);             // set one lane active
-    p.append(SkRasterPipeline::branch_if_any_active_lanes, &offset); // skip past next line
-    p.append_constant_color(&alloc, kColorDarkRed);                  // (not executed)
-    p.append(SkRasterPipeline::init_lane_masks);                     // set all lanes active
-    p.append(SkRasterPipeline::branch_if_any_active_lanes, &offset); // skip past next line
-    p.append_constant_color(&alloc, kColorDarkRed);                  // (not executed)
-    p.append(SkRasterPipeline::store_src, slots);                    // store final color
+    p.append_constant_color(&alloc, kColorDarkRed);                    // set the color to dark red
+    p.append(SkRasterPipelineOp::load_dst, kNoLanesActive);            // make no lanes active
+    p.append(SkRasterPipelineOp::branch_if_any_active_lanes, &ctx);    // do not skip past next line
+    p.append_constant_color(&alloc, kColorGreen);                      // set the color to green
+    p.append(SkRasterPipelineOp::load_dst, oneLaneActive);             // set one lane active
+    p.append(SkRasterPipelineOp::branch_if_any_active_lanes, &ctx);    // skip past next line
+    p.append_constant_color(&alloc, kColorDarkRed);                    // (not executed)
+    p.append(SkRasterPipelineOp::init_lane_masks);                     // set all lanes active
+    p.append(SkRasterPipelineOp::branch_if_any_active_lanes, &ctx);    // skip past next line
+    p.append_constant_color(&alloc, kColorDarkRed);                    // (not executed)
+    p.append(SkRasterPipelineOp::store_src, slots);                    // store final color
     p.run(0,0,1,1);
 
     // Verify that the slots contain green.
@@ -1523,7 +1518,8 @@ DEF_TEST(SkRasterPipeline_BranchIfNoActiveLanes, r) {
     alignas(64) static constexpr float kColorBlack[4]   = {0.0f, 0.0f, 0.0f, 0.0f};
     alignas(64) static constexpr float kColorRed[4]     = {1.0f, 0.0f, 0.0f, 1.0f};
     alignas(64) static constexpr float kColorBlue[4]    = {0.0f, 0.0f, 1.0f, 1.0f};
-    const int offset = 2;
+    SkRasterPipeline_BranchCtx ctx;
+    ctx.offset = 2;
 
     // An array of all zeros.
     alignas(64) static constexpr int32_t kNoLanesActive[4 * SkRasterPipeline_kMaxStride_highp] = {};
@@ -1535,17 +1531,17 @@ DEF_TEST(SkRasterPipeline_BranchIfNoActiveLanes, r) {
     // Make a program which conditionally branches past a append_constant_color op.
     SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
     SkRasterPipeline p(&alloc);
-    p.append_constant_color(&alloc, kColorBlack);                    // set the color to black
-    p.append(SkRasterPipeline::init_lane_masks);                     // set all lanes active
-    p.append(SkRasterPipeline::branch_if_no_active_lanes, &offset);  // do not skip past next line
-    p.append_constant_color(&alloc, kColorRed);                      // sets the color to red
-    p.append(SkRasterPipeline::load_dst, oneLaneActive);             // set one lane active
-    p.append(SkRasterPipeline::branch_if_no_active_lanes, &offset);  // do not skip past next line
-    p.append(SkRasterPipeline::swap_rb);                             // swap R and B (making blue)
-    p.append(SkRasterPipeline::load_dst, kNoLanesActive);            // make no lanes active
-    p.append(SkRasterPipeline::branch_if_no_active_lanes, &offset);  // skip past next line
-    p.append_constant_color(&alloc, kColorBlack);                    // (not executed)
-    p.append(SkRasterPipeline::store_src, slots);                    // store final blue color
+    p.append_constant_color(&alloc, kColorBlack);                      // set the color to black
+    p.append(SkRasterPipelineOp::init_lane_masks);                     // set all lanes active
+    p.append(SkRasterPipelineOp::branch_if_no_active_lanes, &ctx);     // do not skip past next line
+    p.append_constant_color(&alloc, kColorRed);                        // sets the color to red
+    p.append(SkRasterPipelineOp::load_dst, oneLaneActive);             // set one lane active
+    p.append(SkRasterPipelineOp::branch_if_no_active_lanes, &ctx);     // do not skip past next line
+    p.append(SkRasterPipelineOp::swap_rb);                             // swap R and B (making blue)
+    p.append(SkRasterPipelineOp::load_dst, kNoLanesActive);            // make no lanes active
+    p.append(SkRasterPipelineOp::branch_if_no_active_lanes, &ctx);     // skip past next line
+    p.append_constant_color(&alloc, kColorBlack);                      // (not executed)
+    p.append(SkRasterPipelineOp::store_src, slots);                    // store final blue color
     p.run(0,0,1,1);
 
     // Verify that the slots contain blue.
@@ -1553,6 +1549,63 @@ DEF_TEST(SkRasterPipeline_BranchIfNoActiveLanes, r) {
     for (int checkSlot = 0; checkSlot < 4; ++checkSlot) {
         for (int checkLane = 0; checkLane < N; ++checkLane) {
             REPORTER_ASSERT(r, *destPtr == kColorBlue[checkSlot]);
+            ++destPtr;
+        }
+    }
+}
+
+DEF_TEST(SkRasterPipeline_BranchIfActiveLanesEqual, r) {
+    // Allocate space for 4 slots.
+    alignas(64) float slots[4 * SkRasterPipeline_kMaxStride_highp] = {};
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    alignas(64) static constexpr float kColorBlack[4]   = {0.0f, 0.0f, 0.0f, 0.0f};
+    alignas(64) static constexpr float kColorRed[4]     = {1.0f, 0.0f, 0.0f, 1.0f};
+
+    // An array of all 6s.
+    alignas(64) int allSixes[SkRasterPipeline_kMaxStride_highp] = {};
+    std::fill(std::begin(allSixes), std::end(allSixes), 6);
+
+    // An array of all 6s, except for a single 5 in one lane.
+    alignas(64) int mostlySixesWithOneFive[SkRasterPipeline_kMaxStride_highp] = {};
+    std::fill(std::begin(mostlySixesWithOneFive), std::end(mostlySixesWithOneFive), 6);
+    mostlySixesWithOneFive[N - 1] = 5;
+
+    // A condition mask with all lanes on except for the six-lane.
+    alignas(64) int mask[SkRasterPipeline_kMaxStride_highp] = {};
+    std::fill(std::begin(mask), std::end(mask), ~0);
+    mask[N - 1] = 0;
+
+    SkRasterPipeline_BranchIfEqualCtx matching; // comparing all-six vs five will match
+    matching.offset = 2;
+    matching.value = 5;
+    matching.ptr = allSixes;
+
+    SkRasterPipeline_BranchIfEqualCtx nonmatching;  // comparing mostly-six vs five won't match
+    nonmatching.offset = 2;
+    nonmatching.value = 5;
+    nonmatching.ptr = mostlySixesWithOneFive;
+
+    // Make a program which conditionally branches past a swap_rb op.
+    SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+    SkRasterPipeline p(&alloc);
+    p.append_constant_color(&alloc, kColorBlack);                          // set the color to black
+    p.append(SkRasterPipelineOp::init_lane_masks);                         // set all lanes active
+    p.append(SkRasterPipelineOp::branch_if_no_active_lanes_eq, &nonmatching);// don't skip next line
+    p.append_constant_color(&alloc, kColorRed);                            // set the color to red
+    p.append(SkRasterPipelineOp::branch_if_no_active_lanes_eq, &matching); // do skip next line
+    p.append(SkRasterPipelineOp::swap_rb);                                 // swap R and B (= blue)
+    p.append(SkRasterPipelineOp::load_condition_mask, mask);               // mask off the six
+    p.append(SkRasterPipelineOp::branch_if_no_active_lanes_eq, &nonmatching);// do skip next line
+    p.append(SkRasterPipelineOp::white_color);                             // set the color to white
+    p.append(SkRasterPipelineOp::store_src, slots);                        // store final red color
+    p.run(0,0,SkOpts::raster_pipeline_highp_stride,1);
+
+    // Verify that the slots contain red.
+    float* destPtr = &slots[0];
+    for (int checkSlot = 0; checkSlot < 4; ++checkSlot) {
+        for (int checkLane = 0; checkLane < N; ++checkLane) {
+            REPORTER_ASSERT(r, *destPtr == kColorRed[checkSlot]);
             ++destPtr;
         }
     }
@@ -1568,7 +1621,7 @@ DEF_TEST(SkRasterPipeline_nonsense, r) {
     // No asserts... just a test that this is safe to run and terminates.
     // srcover() calls st->next(); this makes sure we've always got something there to call.
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::srcover);
+    p.append(SkRasterPipelineOp::srcover);
     p.run(0,0,20,1);
 }
 
@@ -1589,8 +1642,8 @@ DEF_TEST(SkRasterPipeline_JIT, r) {
 
     // Copy buf[x] to buf[x+36] for x in [15,35).
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline:: load_8888, &src);
-    p.append(SkRasterPipeline::store_8888, &dst);
+    p.append(SkRasterPipelineOp::load_8888,  &src);
+    p.append(SkRasterPipelineOp::store_8888, &dst);
     p.run(15,0, 20,1);
 
     for (int i = 0; i < 36; i++) {
@@ -1633,8 +1686,8 @@ DEF_TEST(SkRasterPipeline_tail, r) {
         for (unsigned i = 1; i <= 4; i++) {
             memset(buffer, 0xff, sizeof(buffer));
             SkRasterPipeline_<256> p;
-            p.append(SkRasterPipeline::load_f32, &src);
-            p.append(SkRasterPipeline::store_f32, &dst);
+            p.append(SkRasterPipelineOp::load_f32, &src);
+            p.append(SkRasterPipelineOp::store_f32, &dst);
             p.run(0,0, i,1);
             for (unsigned j = 0; j < i; j++) {
                 for (unsigned k = 0; k < 4; k++) {
@@ -1667,8 +1720,8 @@ DEF_TEST(SkRasterPipeline_tail, r) {
         for (unsigned i = 1; i <= 4; i++) {
             memset(buffer, 0xff, sizeof(buffer));
             SkRasterPipeline_<256> p;
-            p.append(SkRasterPipeline::load_rgf32, &src);
-            p.append(SkRasterPipeline::store_f32, &dst);
+            p.append(SkRasterPipelineOp::load_rgf32, &src);
+            p.append(SkRasterPipelineOp::store_f32, &dst);
             p.run(0,0, i,1);
             for (unsigned j = 0; j < i; j++) {
                 for (unsigned k = 0; k < 2; k++) {
@@ -1707,8 +1760,8 @@ DEF_TEST(SkRasterPipeline_tail, r) {
         for (unsigned i = 1; i <= 4; i++) {
             memset(buffer, 0xff, sizeof(buffer));
             SkRasterPipeline_<256> p;
-            p.append(SkRasterPipeline::load_f32, &src);
-            p.append(SkRasterPipeline::store_rgf32, &dst);
+            p.append(SkRasterPipelineOp::load_f32, &src);
+            p.append(SkRasterPipelineOp::store_rgf32, &dst);
             p.run(0,0, i,1);
             for (unsigned j = 0; j < i; j++) {
                 for (unsigned k = 0; k < 2; k++) {
@@ -1739,8 +1792,8 @@ DEF_TEST(SkRasterPipeline_tail, r) {
         for (unsigned i = 1; i <= 4; i++) {
             memset(buffer, 0xff, sizeof(buffer));
             SkRasterPipeline_<256> p;
-            p.append(SkRasterPipeline::load_f16, &src);
-            p.append(SkRasterPipeline::store_f16, &dst);
+            p.append(SkRasterPipelineOp::load_f16, &src);
+            p.append(SkRasterPipelineOp::store_f16, &dst);
             p.run(0,0, i,1);
             for (unsigned j = 0; j < i; j++) {
                 for (int k = 0; k < 4; k++) {
@@ -1769,8 +1822,8 @@ DEF_TEST(SkRasterPipeline_tail, r) {
         for (unsigned i = 1; i <= 4; i++) {
             memset(buffer, 0xff, sizeof(buffer));
             SkRasterPipeline_<256> p;
-            p.append(SkRasterPipeline::load_af16, &src);
-            p.append(SkRasterPipeline::store_f16, &dst);
+            p.append(SkRasterPipelineOp::load_af16, &src);
+            p.append(SkRasterPipelineOp::store_f16, &dst);
             p.run(0,0, i,1);
             for (unsigned j = 0; j < i; j++) {
                 uint16_t expected[] = {0, 0, 0, data[j]};
@@ -1798,8 +1851,8 @@ DEF_TEST(SkRasterPipeline_tail, r) {
         for (unsigned i = 1; i <= 4; i++) {
             memset(buffer, 0xff, sizeof(buffer));
             SkRasterPipeline_<256> p;
-            p.append(SkRasterPipeline::load_f16, &src);
-            p.append(SkRasterPipeline::store_af16, &dst);
+            p.append(SkRasterPipelineOp::load_f16, &src);
+            p.append(SkRasterPipelineOp::store_af16, &dst);
             p.run(0,0, i,1);
             for (unsigned j = 0; j < i; j++) {
                 REPORTER_ASSERT(r, !memcmp(&data[j][3], &buffer[j], sizeof(buffer[j])));
@@ -1824,8 +1877,8 @@ DEF_TEST(SkRasterPipeline_tail, r) {
         for (unsigned i = 1; i <= 4; i++) {
             memset(buffer, 0xff, sizeof(buffer));
             SkRasterPipeline_<256> p;
-            p.append(SkRasterPipeline::load_f16, &src);
-            p.append(SkRasterPipeline::store_rgf16, &dst);
+            p.append(SkRasterPipelineOp::load_f16, &src);
+            p.append(SkRasterPipelineOp::store_rgf16, &dst);
             p.run(0,0, i,1);
             for (unsigned j = 0; j < i; j++) {
                 REPORTER_ASSERT(r, !memcmp(&buffer[j], &data[j], 2 * sizeof(uint16_t)));
@@ -1852,8 +1905,8 @@ DEF_TEST(SkRasterPipeline_tail, r) {
         for (unsigned i = 1; i <= 4; i++) {
             memset(buffer, 0xff, sizeof(buffer));
             SkRasterPipeline_<256> p;
-            p.append(SkRasterPipeline::load_rgf16, &src);
-            p.append(SkRasterPipeline::store_f16, &dst);
+            p.append(SkRasterPipelineOp::load_rgf16, &src);
+            p.append(SkRasterPipelineOp::store_f16, &dst);
             p.run(0,0, i,1);
             for (unsigned j = 0; j < i; j++) {
                 uint16_t expected[] = {data[j][0], data[j][1], h(0), h(1)};
@@ -1883,8 +1936,8 @@ DEF_TEST(SkRasterPipeline_u16, r) {
         for (unsigned i = 1; i <= 4; i++) {
             memset(buffer, 0xab, sizeof(buffer));
             SkRasterPipeline_<256> p;
-            p.append(SkRasterPipeline::load_rg1616, &src);
-            p.append(SkRasterPipeline::store_8888, &dst);
+            p.append(SkRasterPipelineOp::load_rg1616, &src);
+            p.append(SkRasterPipelineOp::store_8888, &dst);
             p.run(0,0, i,1);
             for (unsigned j = 0; j < i; j++) {
                 uint8_t expected[] = {
@@ -1917,8 +1970,8 @@ DEF_TEST(SkRasterPipeline_u16, r) {
         for (unsigned i = 1; i <= 4; i++) {
             memset(buffer, 0xff, sizeof(buffer));
             SkRasterPipeline_<256> p;
-            p.append(SkRasterPipeline::load_a16, &src);
-            p.append(SkRasterPipeline::store_8888, &dst);
+            p.append(SkRasterPipelineOp::load_a16, &src);
+            p.append(SkRasterPipelineOp::store_8888, &dst);
             p.run(0,0, i,1);
             for (unsigned j = 0; j < i; j++) {
                 uint8_t expected[] = {0x00, 0x00, 0x00, SkToU8(data[j] >> 8)};
@@ -1946,8 +1999,8 @@ DEF_TEST(SkRasterPipeline_u16, r) {
         for (unsigned i = 1; i <= 4; i++) {
             memset(buffer, 0xff, sizeof(buffer));
             SkRasterPipeline_<256> p;
-            p.append(SkRasterPipeline::load_8888, &src);
-            p.append(SkRasterPipeline::store_a16, &dst);
+            p.append(SkRasterPipelineOp::load_8888, &src);
+            p.append(SkRasterPipelineOp::store_a16, &dst);
             p.run(0,0, i,1);
             for (unsigned j = 0; j < i; j++) {
                 uint16_t expected = (data[j][3] << 8) | data[j][3];
@@ -1973,9 +2026,9 @@ DEF_TEST(SkRasterPipeline_u16, r) {
         for (unsigned i = 1; i <= 4; i++) {
             memset(buffer, 0xff, sizeof(buffer));
             SkRasterPipeline_<256> p;
-            p.append(SkRasterPipeline::load_16161616, &src);
-            p.append(SkRasterPipeline::swap_rb);
-            p.append(SkRasterPipeline::store_16161616, &dst);
+            p.append(SkRasterPipelineOp::load_16161616, &src);
+            p.append(SkRasterPipelineOp::swap_rb);
+            p.append(SkRasterPipelineOp::store_16161616, &dst);
             p.run(0,0, i,1);
             for (unsigned j = 0; j < i; j++) {
                 uint16_t expected[4] = {data[j][2], data[j][1], data[j][0], data[j][3]};
@@ -2001,9 +2054,9 @@ DEF_TEST(SkRasterPipeline_lowp, r) {
     SkRasterPipeline_MemoryCtx ptr = { rgba, 0 };
 
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::load_8888,  &ptr);
-    p.append(SkRasterPipeline::swap_rb);
-    p.append(SkRasterPipeline::store_8888, &ptr);
+    p.append(SkRasterPipelineOp::load_8888,  &ptr);
+    p.append(SkRasterPipelineOp::swap_rb);
+    p.append(SkRasterPipelineOp::store_8888, &ptr);
     p.run(0,0,64,1);
 
     for (int i = 0; i < 64; i++) {
@@ -2030,9 +2083,9 @@ DEF_TEST(SkRasterPipeline_swizzle, r) {
 
         SkRasterPipeline_MemoryCtx ptr = { rg, 0 };
         SkRasterPipeline_<256> p;
-        p.append(SkRasterPipeline::load_rg88,  &ptr);
+        p.append(SkRasterPipelineOp::load_rg88,  &ptr);
         swizzle.apply(&p);
-        p.append(SkRasterPipeline::store_rg88, &ptr);
+        p.append(SkRasterPipelineOp::store_rg88, &ptr);
         p.run(0,0,64,1);
 
         for (int i = 0; i < 64; i++) {
@@ -2057,9 +2110,9 @@ DEF_TEST(SkRasterPipeline_swizzle, r) {
         SkRasterPipeline_MemoryCtx src = { rg,     0 },
                                    dst = { buffer, 0};
         SkRasterPipeline_<256> p;
-        p.append(SkRasterPipeline::load_rgf32,  &src);
+        p.append(SkRasterPipelineOp::load_rgf32,  &src);
         swizzle.apply(&p);
-        p.append(SkRasterPipeline::store_f16, &dst);
+        p.append(SkRasterPipelineOp::store_f16, &dst);
         p.run(0,0,64,1);
 
         for (int i = 0; i < 64; i++) {
@@ -2083,10 +2136,10 @@ DEF_TEST(SkRasterPipeline_lowp_clamp01, r) {
     SkRasterPipeline_MemoryCtx ptr = { &rgba, 0 };
 
     SkRasterPipeline_<256> p;
-    p.append(SkRasterPipeline::load_8888,  &ptr);
-    p.append(SkRasterPipeline::swap_rb);
-    p.append(SkRasterPipeline::clamp_01);
-    p.append(SkRasterPipeline::store_8888, &ptr);
+    p.append(SkRasterPipelineOp::load_8888,  &ptr);
+    p.append(SkRasterPipelineOp::swap_rb);
+    p.append(SkRasterPipelineOp::clamp_01);
+    p.append(SkRasterPipelineOp::store_8888, &ptr);
     p.run(0,0,1,1);
 }
 
@@ -2161,12 +2214,12 @@ DEF_TEST(SkRasterPipeline_stack_rewind, r) {
         SkRasterPipeline_MemoryCtx ptr = { &rgba, 0 };
 
         SkRasterPipeline_<256> p;
-        p.append(SkRasterPipeline::callback, stack.expectBaseline());
-        p.append(SkRasterPipeline::load_8888,  &ptr);
-        p.append(SkRasterPipeline::callback, stack.expectGrowth());
-        p.append(SkRasterPipeline::swap_rb);
-        p.append(SkRasterPipeline::callback, stack.expectGrowth());
-        p.append(SkRasterPipeline::store_8888, &ptr);
+        p.append(SkRasterPipelineOp::callback, stack.expectBaseline());
+        p.append(SkRasterPipelineOp::load_8888,  &ptr);
+        p.append(SkRasterPipelineOp::callback, stack.expectGrowth());
+        p.append(SkRasterPipelineOp::swap_rb);
+        p.append(SkRasterPipelineOp::callback, stack.expectGrowth());
+        p.append(SkRasterPipelineOp::store_8888, &ptr);
         p.run(0,0,1,1);
 
         REPORTER_ASSERT(r, rgba == 0xffff0000); // Ensure the pipeline worked
@@ -2180,16 +2233,16 @@ DEF_TEST(SkRasterPipeline_stack_rewind, r) {
         SkRasterPipeline_MemoryCtx ptr = { &rgba, 0 };
 
         SkRasterPipeline_<256> p;
-        p.append(SkRasterPipeline::callback, stack.expectBaseline());
-        p.append(SkRasterPipeline::load_8888,  &ptr);
-        p.append(SkRasterPipeline::callback, stack.expectGrowth());
+        p.append(SkRasterPipelineOp::callback, stack.expectBaseline());
+        p.append(SkRasterPipelineOp::load_8888,  &ptr);
+        p.append(SkRasterPipelineOp::callback, stack.expectGrowth());
         p.append_stack_rewind();
-        p.append(SkRasterPipeline::callback, stack.expectBaseline());
-        p.append(SkRasterPipeline::swap_rb);
-        p.append(SkRasterPipeline::callback, stack.expectGrowth());
+        p.append(SkRasterPipelineOp::callback, stack.expectBaseline());
+        p.append(SkRasterPipelineOp::swap_rb);
+        p.append(SkRasterPipelineOp::callback, stack.expectGrowth());
         p.append_stack_rewind();
-        p.append(SkRasterPipeline::callback, stack.expectBaseline());
-        p.append(SkRasterPipeline::store_8888, &ptr);
+        p.append(SkRasterPipelineOp::callback, stack.expectBaseline());
+        p.append(SkRasterPipelineOp::store_8888, &ptr);
         p.run(0,0,1,1);
 
         REPORTER_ASSERT(r, rgba == 0xffff0000); // Ensure the pipeline worked

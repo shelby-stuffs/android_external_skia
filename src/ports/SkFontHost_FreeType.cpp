@@ -17,11 +17,12 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkMalloc.h"
-#include "include/private/SkMutex.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkMutex.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkTSearch.h"
 #include "src/core/SkAdvancedTypefaceMetrics.h"
 #include "src/core/SkDescriptor.h"
 #include "src/core/SkFDot6.h"
@@ -30,7 +31,6 @@
 #include "src/core/SkMask.h"
 #include "src/core/SkMaskGamma.h"
 #include "src/core/SkScalerContext.h"
-#include "src/core/SkTSearch.h"
 #include "src/ports/SkFontHost_FreeType_common.h"
 #include "src/sfnt/SkOTUtils.h"
 #include "src/sfnt/SkSFNTHeader.h"
@@ -60,6 +60,7 @@
 #include <freetype/t1tables.h>
 #include <freetype/ftfntfmt.h>
 
+using namespace skia_private;
 
 namespace {
 [[maybe_unused]] static inline const constexpr bool kSkShowTextBlitCoverage = false;
@@ -144,14 +145,6 @@ public:
         }
         FT_Add_Default_Modules(fLibrary);
         FT_Set_Default_Properties(fLibrary);
-
-#ifdef TT_SUPPORT_COLRV1
-        if (SkGraphics::GetVariableColrV1Enabled()) {
-            FT_Bool variableColrV1Enabled = true;
-            FT_Property_Set(
-                    fLibrary, "truetype", "TEMPORARY-enable-variable-colrv1", &variableColrV1Enabled);
-        }
-#endif
 
         // Subpixel anti-aliasing may be unfiltered until the LCD filter is set.
         // Newer versions may still need this, so this test with side effects must come first.
@@ -304,7 +297,7 @@ void SkTypeface_FreeType::FaceRec::setupAxes(const SkFontData& data) {
                      rec->fFace->family_name);
             return;
         }
-        SkAutoFree autoFreeVariations(variations);
+        UniqueVoidPtr autoFreeVariations(variations);
 
         if (static_cast<FT_UInt>(data.getAxisCount()) != variations->num_axis) {
             LOG_INFO("INFO: font %s has %d variations, but %d were specified.\n",
@@ -313,7 +306,7 @@ void SkTypeface_FreeType::FaceRec::setupAxes(const SkFontData& data) {
         }
     )
 
-    SkAutoSTMalloc<4, FT_Fixed> coords(data.getAxisCount());
+    AutoSTMalloc<4, FT_Fixed> coords(data.getAxisCount());
     for (int i = 0; i < data.getAxisCount(); ++i) {
         coords[i] = data.getAxis()[i];
     }
@@ -718,13 +711,13 @@ static int GetVariationDesignPosition(AutoFTAccess& fta,
     if (FT_Get_MM_Var(face, &variations)) {
         return -1;
     }
-    SkAutoFree autoFreeVariations(variations);
+    UniqueVoidPtr autoFreeVariations(variations);
 
     if (!coordinates || coordinateCount < SkToInt(variations->num_axis)) {
         return variations->num_axis;
     }
 
-    SkAutoSTMalloc<4, FT_Fixed> coords(variations->num_axis);
+    AutoSTMalloc<4, FT_Fixed> coords(variations->num_axis);
     if (FT_Get_Var_Design_Coordinates(face, variations->num_axis, coords.get())) {
         return -1;
     }
@@ -749,11 +742,11 @@ std::unique_ptr<SkFontData> SkTypeface_FreeType::cloneFontData(const SkFontArgum
     }
     int axisCount = axisDefinitions.size();
 
-    SkAutoSTMalloc<4, SkFontArguments::VariationPosition::Coordinate> currentPosition(axisCount);
+    AutoSTMalloc<4, SkFontArguments::VariationPosition::Coordinate> currentPosition(axisCount);
     int currentAxisCount = GetVariationDesignPosition(fta, currentPosition, axisCount);
 
     SkString name;
-    SkAutoSTMalloc<4, SkFixed> axisValues(axisCount);
+    AutoSTMalloc<4, SkFixed> axisValues(axisCount);
     Scanner::computeAxisValues(axisDefinitions, args.getVariationDesignPosition(), axisValues, name,
                                currentAxisCount == axisCount ? currentPosition.get() : nullptr);
 
@@ -1460,7 +1453,6 @@ sk_sp<SkDrawable> SkScalerContext_FreeType::generateDrawable(const SkGlyph& glyp
     SkAutoMutexExclusive  ac(f_t_mutex());
 
     if (this->setupSize()) {
-        sk_bzero(glyph.fImage, glyph.imageSize());
         return nullptr;
     }
 
@@ -1739,7 +1731,7 @@ void SkScalerContext_FreeType::emboldenIfNeeded(FT_Face face, FT_GlyphSlot glyph
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#include "src/core/SkUtils.h"
+#include "src/base/SkUtils.h"
 
 SkTypeface_FreeType::SkTypeface_FreeType(const SkFontStyle& style, bool isFixedPitch)
     : INHERITED(style, isFixedPitch)
@@ -1857,7 +1849,7 @@ int SkTypeface_FreeType::onGetVariationDesignParameters(
     if (FT_Get_MM_Var(face, &variations)) {
         return -1;
     }
-    SkAutoFree autoFreeVariations(variations);
+    UniqueVoidPtr autoFreeVariations(variations);
 
     if (!parameters || parameterCount < SkToInt(variations->num_axis)) {
         return variations->num_axis;
@@ -2121,7 +2113,7 @@ bool SkTypeface_FreeType::Scanner::scanFont(
           if (axisDefinitions[i].fTag == slntTag)
             slntIndex = i;
         }
-        SkAutoSTMalloc<4, FT_Fixed> coords(numAxes);
+        AutoSTMalloc<4, FT_Fixed> coords(numAxes);
         if ((wghtIndex || wdthIndex || slntIndex) &&
             !FT_Get_Var_Design_Coordinates(face.get(), numAxes, coords.get())) {
             if (wghtIndex) {
@@ -2214,7 +2206,7 @@ bool SkTypeface_FreeType::Scanner::GetAxes(FT_Face face, AxisDefinitions* axes) 
                      face->family_name);
             return false;
         }
-        SkAutoFree autoFreeVariations(variations);
+        UniqueVoidPtr autoFreeVariations(variations);
 
         axes->reset(variations->num_axis);
         for (FT_UInt i = 0; i < variations->num_axis; ++i) {

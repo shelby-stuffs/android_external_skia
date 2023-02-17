@@ -10,9 +10,10 @@
 
 #include "include/core/SkData.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkMalloc.h"
+#include "include/private/base/SkMalloc.h"
 #include "modules/skcms/skcms.h"
-#include "src/core/SkUtils.h"  // unaligned_{load,store}
+#include "src/base/SkUtils.h"  // unaligned_{load,store}
+#include "src/core/SkRasterPipeline.h"
 #include <cstdint>
 
 // Every function in this file should be marked static and inline using SI.
@@ -110,6 +111,7 @@ namespace SK_OPTS_NS {
     SI F   abs_  (F v)          { return fabsf(v); }
     SI I32 abs_  (I32 v)        { return v < 0 ? -v : v; }
     SI F   floor_(F v)          { return floorf(v); }
+    SI F    ceil_(F v)          { return ceilf(v); }
     SI F   rcp_fast(F v)        { return 1.0f / v; }
     SI F   rsqrt (F v)          { return 1.0f / sqrtf(v); }
     SI F   sqrt_ (F v)          { return sqrtf(v); }
@@ -208,6 +210,7 @@ namespace SK_OPTS_NS {
 
         SI F     mad(F f, F m, F a) { return vfmaq_f32(a,f,m); }
         SI F  floor_(F v) { return vrndmq_f32(v); }
+        SI F   ceil_(F v) { return vrndpq_f32(v); }
         SI F   sqrt_(F v) { return vsqrtq_f32(v); }
         SI U32 round(F v, F scale) { return vcvtnq_u32_f32(v*scale); }
     #else
@@ -218,6 +221,11 @@ namespace SK_OPTS_NS {
         SI F floor_(F v) {
             F roundtrip = vcvtq_f32_s32(vcvtq_s32_f32(v));
             return roundtrip - if_then_else(roundtrip > v, 1, 0);
+        }
+
+        SI F ceil_(F v) {
+            F roundtrip = vcvtq_f32_s32(vcvtq_s32_f32(v));
+            return roundtrip + if_then_else(roundtrip < v, 1, 0);
         }
 
         SI F sqrt_(F v) {
@@ -366,8 +374,9 @@ namespace SK_OPTS_NS {
     SI U32 max(U32 a, U32 b) { return _mm256_max_epu32(a,b); }
 
     SI F   abs_  (F v)   { return _mm256_and_ps(v, 0-v); }
-    SI I32 abs_  (I32 v) { return _mm256_abs_epi32(v); }
+    SI I32 abs_  (I32 v) { return _mm256_abs_epi32(v);   }
     SI F   floor_(F v)   { return _mm256_floor_ps(v);    }
+    SI F   ceil_(F v)    { return _mm256_ceil_ps(v);     }
     SI F   rcp_fast(F v) { return _mm256_rcp_ps  (v);    }
     SI F   rsqrt (F v)   { return _mm256_rsqrt_ps(v);    }
     SI F   sqrt_ (F v)   { return _mm256_sqrt_ps (v);    }
@@ -715,7 +724,7 @@ template <typename T> using V = T __attribute__((ext_vector_type(4)));
     SI I32 min(I32 a, I32 b) { return _mm_min_epi32(a,b); }
     SI U32 min(U32 a, U32 b) { return _mm_min_epu32(a,b); }
     SI I32 max(I32 a, I32 b) { return _mm_max_epi32(a,b); }
-    SI U32 max(U32 a, U32 b) { return _mm_min_epu32(a,b); }
+    SI U32 max(U32 a, U32 b) { return _mm_max_epu32(a,b); }
 #else
     SI I32 min(I32 a, I32 b) {
         return sk_bit_cast<I32>(if_then_else(a < b, sk_bit_cast<F>(a), sk_bit_cast<F>(b)));
@@ -771,6 +780,15 @@ template <typename T> using V = T __attribute__((ext_vector_type(4)));
     #else
         F roundtrip = _mm_cvtepi32_ps(_mm_cvttps_epi32(v));
         return roundtrip - if_then_else(roundtrip > v, 1, 0);
+    #endif
+    }
+
+    SI F ceil_(F v) {
+    #if defined(JUMPER_IS_SSE41) || defined(JUMPER_IS_AVX)
+        return _mm_ceil_ps(v);
+    #else
+        F roundtrip = _mm_cvtepi32_ps(_mm_cvttps_epi32(v));
+        return roundtrip + if_then_else(roundtrip < v, 1, 0);
     #endif
     }
 
@@ -1484,20 +1502,67 @@ SI F tan_(F x) {
     return x;
 }
 
+/*  Use 4th order polynomial approximation from https://arachnoid.com/polysolve/
+        with 129 values of x,atan(x) for x:[0...1]
+    This only works for 0 <= x <= 1
+ */
+SI F approx_atan_unit(F x) {
+    // y =   0.14130025741326729 x⁴
+    //     - 0.34312835980675116 x³
+    //     - 0.016172900528248768 x²
+    //     + 1.00376969762003850 x
+    //     - 0.00014758242182738969
+    return x * (x * (x * (x * 0.14130025741326729f - 0.34312835980675116f)
+                                                   - 0.016172900528248768f)
+                                                   + 1.0037696976200385f)
+                                                   - 0.00014758242182738969f;
+}
+
+// Use identity atan(x) = pi/2 - atan(1/x) for x > 1
+SI F atan_(F x) {
+    I32 neg = (x < 0.0f);
+    x = if_then_else(neg, -x, x);
+    I32 flip = (x > 1.0f);
+    x = if_then_else(flip, 1/x, x);
+    x = approx_atan_unit(x);
+    x = if_then_else(flip, SK_ScalarPI/2 - x, x);
+    x = if_then_else(neg, -x, x);
+    return x;
+}
+
+/*  Use identity atan(x) = pi/2 - atan(1/x) for x > 1
+    By swapping y,x to ensure the ratio is <= 1, we can safely call atan_unit()
+    which avoids a 2nd divide instruction if we had instead called atan().
+ */
+SI F atan2_(F y0, F x0) {
+    I32 flip = (abs_(y0) > abs_(x0));
+    F   y = if_then_else(flip, x0, y0);
+    F   x = if_then_else(flip, y0, x0);
+    F   arg = y/x;
+
+    I32 neg = (arg < 0.0f);
+    arg = if_then_else(neg, -arg, arg);
+
+    F r = approx_atan_unit(arg);
+    r = if_then_else(flip, SK_ScalarPI/2 - r, r);
+    r = if_then_else(neg, -r, r);
+
+    // handle quadrant distinctions
+    r = if_then_else((y0 >= 0) & (x0  < 0), r + SK_ScalarPI, r);
+    r = if_then_else((y0  < 0) & (x0 <= 0), r - SK_ScalarPI, r);
+    // Note: we don't try to handle 0,0 or infinities
+    return r;
+}
+
 // Used by gather_ stages to calculate the base pointer and a vector of indices to load.
 template <typename T>
 SI U32 ix_and_ptr(T** ptr, const SkRasterPipeline_GatherCtx* ctx, F x, F y) {
-#ifdef SK_DISABLE_RASTER_PIPELINE_SAMPLING_FIXES
-    x = clamp(sk_bit_cast<F>(sk_bit_cast<U32>(x) - (uint32_t)ctx->roundDownAtInteger), ctx->width );
-    y = clamp(sk_bit_cast<F>(sk_bit_cast<U32>(y) - (uint32_t)ctx->roundDownAtInteger), ctx->height);
-#else
     // We use exclusive clamp so that our min value is > 0 because ULP subtraction using U32 would
     // produce a NaN if applied to +0.f.
     x = clamp_ex(x, ctx->width );
     y = clamp_ex(y, ctx->height);
     x = sk_bit_cast<F>(sk_bit_cast<U32>(x) - (uint32_t)ctx->roundDownAtInteger);
     y = sk_bit_cast<F>(sk_bit_cast<U32>(y) - (uint32_t)ctx->roundDownAtInteger);
-#endif
     *ptr = (const T*)ctx->pixels;
     return trunc_(y)*ctx->stride + trunc_(x);
 }
@@ -1528,7 +1593,7 @@ SI I32 cond_to_mask(I32 cond) {
 // Now finally, normal Stages!
 
 STAGE(seed_shader, NoCtx) {
-    static const float iota[] = {
+    static constexpr float iota[] = {
         0.5f, 1.5f, 2.5f, 3.5f, 4.5f, 5.5f, 6.5f, 7.5f,
         8.5f, 9.5f,10.5f,11.5f,12.5f,13.5f,14.5f,15.5f,
     };
@@ -1537,9 +1602,21 @@ STAGE(seed_shader, NoCtx) {
     // On Intel this breaks a data dependency on previous loop iterations' registers.
     r = cast(dx) + sk_unaligned_load<F>(iota);
     g = cast(dy) + 0.5f;
-    b = 1.0f;
+    b = 1.0f;  // This is w=1 for matrix multiplies by the device coords.
     a = 0;
-    dr = dg = db = da = 0;
+}
+
+STAGE(store_device_xy01, F* dst) {
+    // This is very similar to `seed_shader + store_src`, but b/a are backwards.
+    // (sk_FragCoord actually puts w=1 in the w slot.)
+    static constexpr float iota[] = {
+        0.5f, 1.5f, 2.5f, 3.5f, 4.5f, 5.5f, 6.5f, 7.5f,
+        8.5f, 9.5f,10.5f,11.5f,12.5f,13.5f,14.5f,15.5f,
+    };
+    dst[0] = cast(dx) + sk_unaligned_load<F>(iota);
+    dst[1] = cast(dy) + 0.5f;
+    dst[2] = 0.0f;
+    dst[3] = 1.0f;
 }
 
 STAGE(dither, const float* rate) {
@@ -1624,6 +1701,11 @@ STAGE(store_src, float* ptr) {
 STAGE(store_src_rg, float* ptr) {
     sk_unaligned_store(ptr + 0*N, r);
     sk_unaligned_store(ptr + 1*N, g);
+}
+// load registers r,g from context
+STAGE(load_src_rg, float* ptr) {
+    r = sk_unaligned_load<F>(ptr + 0*N);
+    g = sk_unaligned_load<F>(ptr + 1*N);
 }
 // store register a into context
 STAGE(store_src_a, float* ptr) {
@@ -2669,9 +2751,6 @@ SI F exclusive_mirror(F v, const SkRasterPipeline_TileCtx* ctx) {
     // the logical infinite image. This is tested by mirror_tile GM. Note that all values
     // that have a non-zero bias applied are > 0.
     auto biasInUlps = trunc_(s);
-#ifdef SK_DISABLE_RASTER_PIPELINE_SAMPLING_FIXES
-    biasInUlps = 0;
-#endif
     return sk_bit_cast<F>(sk_bit_cast<U32>(m) + ctx->mirrorBiasDir*biasInUlps);
 }
 // Tile x or y to [0,limit) == [0,limit - 1 ulp] (think, sampling from images).
@@ -2686,6 +2765,11 @@ STAGE( clamp_x_1, NoCtx) { r = clamp_01_(r); }
 STAGE(repeat_x_1, NoCtx) { r = clamp_01_(r - floor_(r)); }
 STAGE(mirror_x_1, NoCtx) { r = clamp_01_(abs_( (r-1.0f) - two(floor_((r-1.0f)*0.5f)) - 1.0f )); }
 
+STAGE(clamp_x_and_y, const SkRasterPipeline_CoordClampCtx* ctx) {
+    r = min(ctx->max_x, max(ctx->min_x, r));
+    g = min(ctx->max_y, max(ctx->min_y, g));
+}
+
 // Decal stores a 32bit mask after checking the coordinate (x and/or y) against its domain:
 //      mask == 0x00000000 if the coordinate(s) are out of bounds
 //      mask == 0xFFFFFFFF if the coordinate(s) are in bounds
@@ -2695,18 +2779,12 @@ STAGE(mirror_x_1, NoCtx) { r = clamp_01_(abs_( (r-1.0f) - two(floor_((r-1.0f)*0.
 STAGE(decal_x, SkRasterPipeline_DecalTileCtx* ctx) {
     auto w = ctx->limit_x;
     auto e = ctx->inclusiveEdge_x;
-#ifdef SK_DISABLE_RASTER_PIPELINE_SAMPLING_FIXES
-    e = 0;
-#endif
     auto cond = ((0 < r) & (r < w)) | (r == e);
     sk_unaligned_store(ctx->mask, cond_to_mask(cond));
 }
 STAGE(decal_y, SkRasterPipeline_DecalTileCtx* ctx) {
     auto h = ctx->limit_y;
     auto e = ctx->inclusiveEdge_y;
-#ifdef SK_DISABLE_RASTER_PIPELINE_SAMPLING_FIXES
-    e = 0;
-#endif
     auto cond = ((0 < g) & (g < h)) | (g == e);
     sk_unaligned_store(ctx->mask, cond_to_mask(cond));
 }
@@ -2715,9 +2793,6 @@ STAGE(decal_x_and_y, SkRasterPipeline_DecalTileCtx* ctx) {
     auto h = ctx->limit_y;
     auto ex = ctx->inclusiveEdge_x;
     auto ey = ctx->inclusiveEdge_y;
-#ifdef SK_DISABLE_RASTER_PIPELINE_SAMPLING_FIXES
-    ex = ey = 0;
-#endif
     auto cond = (((0 < r) & (r < w)) | (r == ex))
               & (((0 < g) & (g < h)) | (g == ey));
     sk_unaligned_store(ctx->mask, cond_to_mask(cond));
@@ -2964,16 +3039,16 @@ STAGE(apply_vector_mask, const uint32_t* ctx) {
     a = sk_bit_cast<F>(sk_bit_cast<U32>(a) & mask);
 }
 
-STAGE(save_xy, SkRasterPipeline_SamplerCtx* c) {
+SI void save_xy(F* r, F* g, SkRasterPipeline_SamplerCtx* c) {
     // Whether bilinear or bicubic, all sample points are at the same fractional offset (fx,fy).
     // They're either the 4 corners of a logical 1x1 pixel or the 16 corners of a 3x3 grid
     // surrounding (x,y) at (0.5,0.5) off-center.
-    F fx = fract(r + 0.5f),
-      fy = fract(g + 0.5f);
+    F fx = fract(*r + 0.5f),
+      fy = fract(*g + 0.5f);
 
     // Samplers will need to load x and fx, or y and fy.
-    sk_unaligned_store(c->x,  r);
-    sk_unaligned_store(c->y,  g);
+    sk_unaligned_store(c->x,  *r);
+    sk_unaligned_store(c->y,  *g);
     sk_unaligned_store(c->fx, fx);
     sk_unaligned_store(c->fy, fy);
 }
@@ -3013,6 +3088,12 @@ SI void bilinear_y(SkRasterPipeline_SamplerCtx* ctx, F* y) {
     if (kScale == -1) { scaley = 1.0f - fy; }
     if (kScale == +1) { scaley =        fy; }
     sk_unaligned_store(ctx->scaley, scaley);
+}
+
+STAGE(bilinear_setup, SkRasterPipeline_SamplerCtx* ctx) {
+    save_xy(&r, &g, ctx);
+    // Init for accumulate
+    dr = dg = db = da = 0;
 }
 
 STAGE(bilinear_nx, SkRasterPipeline_SamplerCtx* ctx) { bilinear_x<-1>(ctx, &r); }
@@ -3055,6 +3136,8 @@ SI void bicubic_y(SkRasterPipeline_SamplerCtx* ctx, F* y) {
 }
 
 STAGE(bicubic_setup, SkRasterPipeline_SamplerCtx* ctx) {
+    save_xy(&r, &g, ctx);
+
     const float* w = ctx->weights;
 
     F fx = sk_unaligned_load<F>(ctx->fx);
@@ -3068,6 +3151,9 @@ STAGE(bicubic_setup, SkRasterPipeline_SamplerCtx* ctx) {
     sk_unaligned_store(ctx->wy[1], bicubic_wts(fy, w[1], w[5], w[ 9], w[13]));
     sk_unaligned_store(ctx->wy[2], bicubic_wts(fy, w[2], w[6], w[10], w[14]));
     sk_unaligned_store(ctx->wy[3], bicubic_wts(fy, w[3], w[7], w[11], w[15]));
+
+    // Init for accumulate
+    dr = dg = db = da = 0;
 }
 
 STAGE(bicubic_n3x, SkRasterPipeline_SamplerCtx* ctx) { bicubic_x<-3>(ctx, &r); }
@@ -3079,6 +3165,28 @@ STAGE(bicubic_n3y, SkRasterPipeline_SamplerCtx* ctx) { bicubic_y<-3>(ctx, &g); }
 STAGE(bicubic_n1y, SkRasterPipeline_SamplerCtx* ctx) { bicubic_y<-1>(ctx, &g); }
 STAGE(bicubic_p1y, SkRasterPipeline_SamplerCtx* ctx) { bicubic_y<+1>(ctx, &g); }
 STAGE(bicubic_p3y, SkRasterPipeline_SamplerCtx* ctx) { bicubic_y<+3>(ctx, &g); }
+
+STAGE(mipmap_linear_init, SkRasterPipeline_MipmapCtx* ctx) {
+    sk_unaligned_store(ctx->x, r);
+    sk_unaligned_store(ctx->y, g);
+}
+
+STAGE(mipmap_linear_update, SkRasterPipeline_MipmapCtx* ctx) {
+    sk_unaligned_store(ctx->r, r);
+    sk_unaligned_store(ctx->g, g);
+    sk_unaligned_store(ctx->b, b);
+    sk_unaligned_store(ctx->a, a);
+
+    r = sk_unaligned_load<F>(ctx->x) * ctx->scaleX;
+    g = sk_unaligned_load<F>(ctx->y) * ctx->scaleY;
+}
+
+STAGE(mipmap_linear_finish, SkRasterPipeline_MipmapCtx* ctx) {
+    r = lerp(sk_unaligned_load<F>(ctx->r), r, ctx->lowerWeight);
+    g = lerp(sk_unaligned_load<F>(ctx->g), g, ctx->lowerWeight);
+    b = lerp(sk_unaligned_load<F>(ctx->b), b, ctx->lowerWeight);
+    a = lerp(sk_unaligned_load<F>(ctx->a), a, ctx->lowerWeight);
+}
 
 STAGE(callback, SkRasterPipeline_CallbackCtx* c) {
     store4(c->rgba,0, r,g,b,a);
@@ -3101,20 +3209,6 @@ STAGE_TAIL(init_lane_masks, NoCtx) {
     uint32_t iota[] = {0,1,2,3,4,5,6,7};
     I32 mask = tail ? cond_to_mask(sk_unaligned_load<U32>(iota) < tail) : I32(~0);
     dr = dg = db = da = sk_bit_cast<F>(mask);
-}
-
-STAGE_TAIL(load_unmasked, float* ctx) {
-    r = sk_unaligned_load<F>(ctx);
-}
-
-STAGE_TAIL(store_unmasked, float* ctx) {
-    sk_unaligned_store(ctx, r);
-}
-
-STAGE_TAIL(store_masked, float* ctx) {
-    // We should probably dedicate a register (da?) to holding "dr & dg & db" so we don't need to
-    // recompute this bitmask every time we perform a masked operation.
-    sk_unaligned_store(ctx, if_then_else(execution_mask(), r, sk_unaligned_load<F>(ctx)));
 }
 
 STAGE_TAIL(load_condition_mask, F* ctx) {
@@ -3177,22 +3271,25 @@ STAGE_TAIL(mask_off_return_mask, NoCtx) {
     update_execution_mask();
 }
 
-STAGE_BRANCH(branch_if_any_active_lanes, int* offset) {
-    return any(execution_mask()) ? *offset : 1;
+STAGE_BRANCH(branch_if_any_active_lanes, SkRasterPipeline_BranchCtx* ctx) {
+    return any(execution_mask()) ? ctx->offset : 1;
 }
 
-STAGE_BRANCH(branch_if_no_active_lanes, int* offset) {
-    return any(execution_mask()) ? 1 : *offset;
+STAGE_BRANCH(branch_if_no_active_lanes, SkRasterPipeline_BranchCtx* ctx) {
+    return any(execution_mask()) ? 1 : ctx->offset;
 }
 
-STAGE_BRANCH(jump, int* offset) {
-    return *offset;
+STAGE_BRANCH(jump, SkRasterPipeline_BranchCtx* ctx) {
+    return ctx->offset;
 }
 
-STAGE_TAIL(immediate_f, void* ctx) {
-    float val;
-    memcpy(&val, &ctx, sizeof(val));
-    r = F(val);
+STAGE_BRANCH(branch_if_no_active_lanes_eq, SkRasterPipeline_BranchIfEqualCtx* ctx) {
+    // Compare each lane against the expected value...
+    I32 match = cond_to_mask(*(I32*)ctx->ptr == ctx->value);
+    // ... but mask off lanes that aren't executing.
+    match &= execution_mask();
+    // If any lanes matched, don't take the branch.
+    return any(match) ? 1 : ctx->offset;
 }
 
 STAGE_TAIL(zero_slot_unmasked, F* dst) {
@@ -3279,32 +3376,57 @@ STAGE_TAIL(copy_4_slots_masked, SkRasterPipeline_BinaryOpCtx* ctx) {
     copy_n_slots_masked_fn<4>(ctx, execution_mask());
 }
 
-template <int NumSlots>
-SI void swizzle_fn(SkRasterPipeline_SwizzleCtx* ctx) {
-    F scratch[NumSlots];
-    std::byte* ptr = (std::byte*)ctx->ptr;
-    for (int count = 0; count < NumSlots; ++count) {
-        scratch[count] = *(F*)(ptr + ctx->offsets[count]);
+template <int LoopCount>
+SI void shuffle_fn(F* dst, uint16_t* offsets, int numSlots) {
+    F scratch[16];
+    std::byte* src = (std::byte*)dst;
+    for (int count = 0; count < LoopCount; ++count) {
+        scratch[count] = *(F*)(src + offsets[count]);
     }
-    memcpy(ptr, scratch, sizeof(F) * NumSlots);
+    // Surprisingly, this switch generates significantly better code than a memcpy (on x86-64) when
+    // the number of slots is unknown at compile time, and generates roughly identical code when the
+    // number of slots is hardcoded. Using a switch allows `scratch` to live in ymm0-ymm15 instead
+    // of being written out to the stack and then read back in. Also, the intrinsic memcpy assumes
+    // that `numSlots` could be arbitrarily large, and so it emits more code than we need.
+    switch (numSlots) {
+        case 16: dst[15] = scratch[15]; [[fallthrough]];
+        case 15: dst[14] = scratch[14]; [[fallthrough]];
+        case 14: dst[13] = scratch[13]; [[fallthrough]];
+        case 13: dst[12] = scratch[12]; [[fallthrough]];
+        case 12: dst[11] = scratch[11]; [[fallthrough]];
+        case 11: dst[10] = scratch[10]; [[fallthrough]];
+        case 10: dst[ 9] = scratch[ 9]; [[fallthrough]];
+        case  9: dst[ 8] = scratch[ 8]; [[fallthrough]];
+        case  8: dst[ 7] = scratch[ 7]; [[fallthrough]];
+        case  7: dst[ 6] = scratch[ 6]; [[fallthrough]];
+        case  6: dst[ 5] = scratch[ 5]; [[fallthrough]];
+        case  5: dst[ 4] = scratch[ 4]; [[fallthrough]];
+        case  4: dst[ 3] = scratch[ 3]; [[fallthrough]];
+        case  3: dst[ 2] = scratch[ 2]; [[fallthrough]];
+        case  2: dst[ 1] = scratch[ 1]; [[fallthrough]];
+        case  1: dst[ 0] = scratch[ 0];
+    }
 }
 
 STAGE_TAIL(swizzle_1, SkRasterPipeline_SwizzleCtx* ctx) {
-    swizzle_fn<1>(ctx);
+    shuffle_fn<1>((F*)ctx->ptr, ctx->offsets, 1);
 }
 STAGE_TAIL(swizzle_2, SkRasterPipeline_SwizzleCtx* ctx) {
-    swizzle_fn<2>(ctx);
+    shuffle_fn<2>((F*)ctx->ptr, ctx->offsets, 2);
 }
 STAGE_TAIL(swizzle_3, SkRasterPipeline_SwizzleCtx* ctx) {
-    swizzle_fn<3>(ctx);
+    shuffle_fn<3>((F*)ctx->ptr, ctx->offsets, 3);
 }
 STAGE_TAIL(swizzle_4, SkRasterPipeline_SwizzleCtx* ctx) {
-    swizzle_fn<4>(ctx);
+    shuffle_fn<4>((F*)ctx->ptr, ctx->offsets, 4);
+}
+STAGE_TAIL(shuffle, SkRasterPipeline_ShuffleCtx* ctx) {
+    shuffle_fn<16>((F*)ctx->ptr, ctx->offsets, ctx->count);
 }
 
 // Unary operations take a single input, and overwrite it with their output.
-// Unlike binary or ternary operations, we don't provide "n-slot" variations; users can chain
-// together longer sequences manually.
+// Unlike binary or ternary operations, we provide variations of 1-4 slots, but don't provide
+// an arbitrary-width "n-slot" variation; the Builder can chain together longer sequences manually.
 template <typename T, void (*ApplyFn)(T*)>
 SI void apply_adjacent_unary(T* dst, T* end) {
     do {
@@ -3346,6 +3468,14 @@ SI void abs_fn(T* dst) {
     *dst = abs_(*dst);
 }
 
+SI void floor_fn(F* dst) {
+    *dst = floor_(*dst);
+}
+
+SI void ceil_fn(F* dst) {
+    *dst = ceil_(*dst);
+}
+
 #define DECLARE_UNARY_FLOAT(name)                                                              \
     STAGE_TAIL(name##_float, F* dst) { apply_adjacent_unary<F, &name##_fn>(dst, dst + 1); }    \
     STAGE_TAIL(name##_2_floats, F* dst) { apply_adjacent_unary<F, &name##_fn>(dst, dst + 2); } \
@@ -3369,10 +3499,20 @@ DECLARE_UNARY_INT(cast_to_float_from) DECLARE_UNARY_UINT(cast_to_float_from)
 DECLARE_UNARY_FLOAT(cast_to_int_from)
 DECLARE_UNARY_FLOAT(cast_to_uint_from)
 DECLARE_UNARY_FLOAT(abs) DECLARE_UNARY_INT(abs)
+DECLARE_UNARY_FLOAT(floor)
+DECLARE_UNARY_FLOAT(ceil)
 
 #undef DECLARE_UNARY_FLOAT
 #undef DECLARE_UNARY_INT
 #undef DECLARE_UNARY_UINT
+
+// For complex unary ops, we only provide a 1-slot version to reduce code bloat.
+STAGE_TAIL(sin_float, F* dst)  { *dst = sin_(*dst); }
+STAGE_TAIL(cos_float, F* dst)  { *dst = cos_(*dst); }
+STAGE_TAIL(tan_float, F* dst)  { *dst = tan_(*dst); }
+STAGE_TAIL(atan_float, F* dst) { *dst = atan_(*dst); }
+STAGE_TAIL(sqrt_float, F* dst) { *dst = sqrt_(*dst); }
+STAGE_TAIL(exp_float, F* dst)  { *dst = approx_exp(*dst); }
 
 // Binary operations take two adjacent inputs, and write their output in the first position.
 template <typename T, void (*ApplyFn)(T*, T*)>
@@ -3455,13 +3595,29 @@ SI void cmpne_fn(T* dst, T* src) {
     memcpy(dst, &result, sizeof(I32));
 }
 
+SI void atan2_fn(F* dst, F* src) {
+    *dst = atan2_(*dst, *src);
+}
+
+SI void pow_fn(F* dst, F* src) {
+    *dst = approx_powf(*dst, *src);
+}
+
+#define DECLARE_N_WAY_BINARY_FLOAT(name)                                  \
+    STAGE_TAIL(name##_n_floats, SkRasterPipeline_BinaryOpCtx* ctx) {      \
+        apply_adjacent_binary<F, &name##_fn>((F*)ctx->dst, (F*)ctx->src); \
+    }
+
 #define DECLARE_BINARY_FLOAT(name)                                                              \
     STAGE_TAIL(name##_float, F* dst) { apply_adjacent_binary<F, &name##_fn>(dst, dst + 1); }    \
     STAGE_TAIL(name##_2_floats, F* dst) { apply_adjacent_binary<F, &name##_fn>(dst, dst + 2); } \
     STAGE_TAIL(name##_3_floats, F* dst) { apply_adjacent_binary<F, &name##_fn>(dst, dst + 3); } \
     STAGE_TAIL(name##_4_floats, F* dst) { apply_adjacent_binary<F, &name##_fn>(dst, dst + 4); } \
-    STAGE_TAIL(name##_n_floats, SkRasterPipeline_BinaryOpCtx* ctx) {                            \
-        apply_adjacent_binary<F, &name##_fn>((F*)ctx->dst, (F*)ctx->src);                       \
+    DECLARE_N_WAY_BINARY_FLOAT(name)
+
+#define DECLARE_N_WAY_BINARY_INT(name)                                          \
+    STAGE_TAIL(name##_n_ints, SkRasterPipeline_BinaryOpCtx* ctx) {              \
+        apply_adjacent_binary<I32, &name##_fn>((I32*)ctx->dst, (I32*)ctx->src); \
     }
 
 #define DECLARE_BINARY_INT(name)                                                                  \
@@ -3469,8 +3625,11 @@ SI void cmpne_fn(T* dst, T* src) {
     STAGE_TAIL(name##_2_ints, I32* dst) { apply_adjacent_binary<I32, &name##_fn>(dst, dst + 2); } \
     STAGE_TAIL(name##_3_ints, I32* dst) { apply_adjacent_binary<I32, &name##_fn>(dst, dst + 3); } \
     STAGE_TAIL(name##_4_ints, I32* dst) { apply_adjacent_binary<I32, &name##_fn>(dst, dst + 4); } \
-    STAGE_TAIL(name##_n_ints, SkRasterPipeline_BinaryOpCtx* ctx) {                                \
-        apply_adjacent_binary<I32, &name##_fn>((I32*)ctx->dst, (I32*)ctx->src);                   \
+    DECLARE_N_WAY_BINARY_INT(name)
+
+#define DECLARE_N_WAY_BINARY_UINT(name)                                         \
+    STAGE_TAIL(name##_n_uints, SkRasterPipeline_BinaryOpCtx* ctx) {             \
+        apply_adjacent_binary<U32, &name##_fn>((U32*)ctx->dst, (U32*)ctx->src); \
     }
 
 #define DECLARE_BINARY_UINT(name)                                                                  \
@@ -3478,9 +3637,7 @@ SI void cmpne_fn(T* dst, T* src) {
     STAGE_TAIL(name##_2_uints, U32* dst) { apply_adjacent_binary<U32, &name##_fn>(dst, dst + 2); } \
     STAGE_TAIL(name##_3_uints, U32* dst) { apply_adjacent_binary<U32, &name##_fn>(dst, dst + 3); } \
     STAGE_TAIL(name##_4_uints, U32* dst) { apply_adjacent_binary<U32, &name##_fn>(dst, dst + 4); } \
-    STAGE_TAIL(name##_n_uints, SkRasterPipeline_BinaryOpCtx* ctx) {                                \
-        apply_adjacent_binary<U32, &name##_fn>((U32*)ctx->dst, (U32*)ctx->src);                    \
-    }
+    DECLARE_N_WAY_BINARY_UINT(name)
 
 // Many ops reuse the int stages when performing uint arithmetic, since they're equivalent on a
 // two's-complement machine. (Even multiplication is equivalent in the lower 32 bits.)
@@ -3498,9 +3655,37 @@ DECLARE_BINARY_FLOAT(cmple)  DECLARE_BINARY_INT(cmple)  DECLARE_BINARY_UINT(cmpl
 DECLARE_BINARY_FLOAT(cmpeq)  DECLARE_BINARY_INT(cmpeq)
 DECLARE_BINARY_FLOAT(cmpne)  DECLARE_BINARY_INT(cmpne)
 
+// Sufficiently complex ops only provide an N-way version, to avoid code bloat from the dedicated
+// 1-4 slot versions.
+DECLARE_N_WAY_BINARY_FLOAT(atan2)
+DECLARE_N_WAY_BINARY_FLOAT(pow)
+
 #undef DECLARE_BINARY_FLOAT
 #undef DECLARE_BINARY_INT
 #undef DECLARE_BINARY_UINT
+#undef DECLARE_N_WAY_BINARY_FLOAT
+#undef DECLARE_N_WAY_BINARY_INT
+#undef DECLARE_N_WAY_BINARY_UINT
+
+// Dots can be represented with multiply and add ops, but they are so foundational that it's worth
+// having dedicated ops.
+STAGE_TAIL(dot_2_floats, F* dst) {
+    dst[0] = mad(dst[0],  dst[2],
+                 dst[1] * dst[3]);
+}
+
+STAGE_TAIL(dot_3_floats, F* dst) {
+    dst[0] = mad(dst[0],  dst[3],
+             mad(dst[1],  dst[4],
+                 dst[2] * dst[5]));
+}
+
+STAGE_TAIL(dot_4_floats, F* dst) {
+    dst[0] = mad(dst[0],  dst[4],
+             mad(dst[1],  dst[5],
+             mad(dst[2],  dst[6],
+                 dst[3] * dst[7])));
+}
 
 // Ternary operations work like binary ops (see immediately above) but take two source inputs.
 template <typename T, void (*ApplyFn)(T*, T*, T*)>
@@ -3514,23 +3699,39 @@ SI void apply_adjacent_ternary(T* dst, T* src0, T* src1) {
     } while (dst != end);
 }
 
-template <typename T>
-SI void mix_fn(T* a, T* b, T* c) {
-    *a = lerp(*a, *b, *c);
+SI void mix_fn(F* a, F* x, F* y) {
+    // We reorder the arguments here to match lerp's GLSL-style order (interpolation point last).
+    *a = lerp(*x, *y, *a);
 }
 
-#define DECLARE_TERNARY_FLOAT(name)                                                               \
-    STAGE_TAIL(name##_float, F* p) { apply_adjacent_ternary<F, &name##_fn>(p, p + 1, p + 2); }    \
-    STAGE_TAIL(name##_2_floats, F* p) { apply_adjacent_ternary<F, &name##_fn>(p, p + 2, p + 4); } \
-    STAGE_TAIL(name##_3_floats, F* p) { apply_adjacent_ternary<F, &name##_fn>(p, p + 3, p + 6); } \
-    STAGE_TAIL(name##_4_floats, F* p) { apply_adjacent_ternary<F, &name##_fn>(p, p + 4, p + 8); } \
-    STAGE_TAIL(name##_n_floats, SkRasterPipeline_TernaryOpCtx* ctx) {                             \
-        apply_adjacent_ternary<F, &name##_fn>((F*)ctx->dst, (F*)ctx->src0, (F*)ctx->src1);        \
+SI void mix_fn(I32* a, I32* x, I32* y) {
+    // We reorder the arguments here to match if_then_else's expected order (y before x).
+    *a = if_then_else(*a, *y, *x);
+}
+
+#define DECLARE_TERNARY_FLOAT(name)                                                           \
+    STAGE_TAIL(name##_float, F* p) { apply_adjacent_ternary<F, &name##_fn>(p, p+1, p+2); }    \
+    STAGE_TAIL(name##_2_floats, F* p) { apply_adjacent_ternary<F, &name##_fn>(p, p+2, p+4); } \
+    STAGE_TAIL(name##_3_floats, F* p) { apply_adjacent_ternary<F, &name##_fn>(p, p+3, p+6); } \
+    STAGE_TAIL(name##_4_floats, F* p) { apply_adjacent_ternary<F, &name##_fn>(p, p+4, p+8); } \
+    STAGE_TAIL(name##_n_floats, SkRasterPipeline_TernaryOpCtx* ctx) {                         \
+        apply_adjacent_ternary<F, &name##_fn>((F*)ctx->dst, (F*)ctx->src0, (F*)ctx->src1);    \
+    }
+
+#define DECLARE_TERNARY_INT(name)                                                                  \
+    STAGE_TAIL(name##_int, I32* p) { apply_adjacent_ternary<I32, &name##_fn>(p, p+1, p+2); }       \
+    STAGE_TAIL(name##_2_ints, I32* p) { apply_adjacent_ternary<I32, &name##_fn>(p, p+2, p+4); }    \
+    STAGE_TAIL(name##_3_ints, I32* p) { apply_adjacent_ternary<I32, &name##_fn>(p, p+3, p+6); }    \
+    STAGE_TAIL(name##_4_ints, I32* p) { apply_adjacent_ternary<I32, &name##_fn>(p, p+4, p+8); }    \
+    STAGE_TAIL(name##_n_ints, SkRasterPipeline_TernaryOpCtx* ctx) {                                \
+        apply_adjacent_ternary<I32, &name##_fn>((I32*)ctx->dst, (I32*)ctx->src0, (I32*)ctx->src1); \
     }
 
 DECLARE_TERNARY_FLOAT(mix)
+DECLARE_TERNARY_INT(mix)
 
 #undef DECLARE_TERNARY_FLOAT
+#undef DECLARE_TERNARY_INT
 
 STAGE(gauss_a_to_rgba, NoCtx) {
     // x = 1 - x;
@@ -3665,7 +3866,7 @@ namespace lowp {
     // we don't generate lowp stages.  All these nullptrs will tell SkJumper.cpp to always use the
     // highp float pipeline.
     #define M(st) static void (*st)(void) = nullptr;
-        SK_RASTER_PIPELINE_STAGES_LOWP(M)
+        SK_RASTER_PIPELINE_OPS_LOWP(M)
     #undef M
     static void (*just_return)(void) = nullptr;
 
@@ -4056,7 +4257,7 @@ SI F abs_(F x) { return sk_bit_cast<F>( sk_bit_cast<I32>(x) & 0x7fffffff ); }
 // ~~~~~~ Basic / misc. stages ~~~~~~ //
 
 STAGE_GG(seed_shader, NoCtx) {
-    static const float iota[] = {
+    static constexpr float iota[] = {
         0.5f, 1.5f, 2.5f, 3.5f, 4.5f, 5.5f, 6.5f, 7.5f,
         8.5f, 9.5f,10.5f,11.5f,12.5f,13.5f,14.5f,15.5f,
     };
@@ -4237,10 +4438,6 @@ SI U32 ix_and_ptr(T** ptr, const SkRasterPipeline_GatherCtx* ctx, F x, F y) {
     const F w = sk_bit_cast<float>( sk_bit_cast<uint32_t>(ctx->width ) - 1),
             h = sk_bit_cast<float>( sk_bit_cast<uint32_t>(ctx->height) - 1);
 
-#ifdef SK_DISABLE_RASTER_PIPELINE_SAMPLING_FIXES
-    x = min(max(0, sk_bit_cast<F>(sk_bit_cast<U32>(x) - (uint32_t)ctx->roundDownAtInteger)), w);
-    y = min(max(0, sk_bit_cast<F>(sk_bit_cast<U32>(y) - (uint32_t)ctx->roundDownAtInteger)), h);
-#else
     const F z = std::numeric_limits<float>::min();
 
     x = min(max(z, x), w);
@@ -4248,7 +4445,6 @@ SI U32 ix_and_ptr(T** ptr, const SkRasterPipeline_GatherCtx* ctx, F x, F y) {
 
     x = sk_bit_cast<F>(sk_bit_cast<U32>(x) - (uint32_t)ctx->roundDownAtInteger);
     y = sk_bit_cast<F>(sk_bit_cast<U32>(y) - (uint32_t)ctx->roundDownAtInteger);
-#endif
 
     *ptr = (const T*)ctx->pixels;
     return trunc_(y)*ctx->stride + trunc_(x);
@@ -4811,6 +5007,10 @@ STAGE_GG(decal_x_and_y, SkRasterPipeline_DecalTileCtx* ctx) {
     auto w = ctx->limit_x;
     auto h = ctx->limit_y;
     sk_unaligned_store(ctx->mask, cond_to_mask_16((0 <= x) & (x < w) & (0 <= y) & (y < h)));
+}
+STAGE_GG(clamp_x_and_y, SkRasterPipeline_CoordClampCtx* ctx) {
+    x = min(ctx->max_x, max(ctx->min_x, x));
+    y = min(ctx->max_y, max(ctx->min_y, y));
 }
 STAGE_PP(check_decal_mask, SkRasterPipeline_DecalTileCtx* ctx) {
     auto mask = sk_unaligned_load<U16>(ctx->mask);

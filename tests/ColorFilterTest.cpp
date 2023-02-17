@@ -20,9 +20,10 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkColorMatrix.h" // IWYU pragma: keep
 #include "include/effects/SkGradientShader.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/utils/SkRandom.h"
-#include "src/core/SkAutoMalloc.h"
+#include "src/base/SkAutoMalloc.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkColorFilterBase.h"
 #include "src/core/SkColorFilterPriv.h"
 #include "src/core/SkReadBuffer.h"
@@ -156,7 +157,7 @@ struct FailureColorFilter final : public SkColorFilterBase {
         return {};
     }
 
-    bool onAppendStages(const SkStageRec&, bool) const override { return false; }
+    bool appendStages(const SkStageRec&, bool) const override { return false; }
 
     // Only created here, should never be flattened / unflattened.
     Factory getFactory() const override { return nullptr; }
@@ -168,7 +169,7 @@ DEF_GANESH_TEST_FOR_ALL_CONTEXTS(ComposeFailureWithInputElision,
                                  ctxInfo,
                                  CtsEnforcement::kApiLevel_T) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(8, 8);
-    auto surface = SkSurface::MakeRenderTarget(ctxInfo.directContext(), SkBudgeted::kNo, info);
+    auto surface = SkSurface::MakeRenderTarget(ctxInfo.directContext(), skgpu::Budgeted::kNo, info);
     SkPaint paint;
 
     // Install a non-trivial shader, so the color filter isn't just applied to the paint color:

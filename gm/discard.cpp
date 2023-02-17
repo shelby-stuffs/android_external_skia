@@ -18,7 +18,7 @@
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "tools/ToolUtils.h"
 
 namespace skiagm {
@@ -52,7 +52,8 @@ protected:
         size.fWidth /= 10;
         size.fHeight /= 10;
         SkImageInfo info = SkImageInfo::MakeN32Premul(size);
-        sk_sp<SkSurface> surface = SkSurface::MakeRenderTarget(dContext, SkBudgeted::kNo, info);
+        sk_sp<SkSurface> surface =
+                SkSurface::MakeRenderTarget(dContext, skgpu::Budgeted::kNo, info);
         if (nullptr == surface) {
             *errorMsg = "Could not create render target.";
             return DrawResult::kFail;

@@ -38,7 +38,7 @@ class ConditionalUploadContext {
 public:
     virtual ~ConditionalUploadContext() {}
 
-    virtual bool needsUpload(Context*) = 0;
+    virtual bool needsUpload(Context*) const = 0;
 };
 
 /**
@@ -115,7 +115,7 @@ public:
 
     bool prepareResources(ResourceProvider*, const RuntimeEffectDictionary*) override;
 
-    bool addCommands(Context*, CommandBuffer*) override;
+    bool addCommands(Context*, CommandBuffer*, ReplayTargetData) override;
 
 private:
     UploadTask(std::vector<UploadInstance>);

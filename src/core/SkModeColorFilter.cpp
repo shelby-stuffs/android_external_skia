@@ -7,7 +7,7 @@
 
 #include "include/core/SkColorFilter.h"
 #include "include/private/SkColorData.h"
-#include "src/core/SkArenaAlloc.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlitRow.h"
 #include "src/core/SkColorFilterBase.h"
@@ -38,6 +38,8 @@ class SkModeColorFilter final : public SkColorFilterBase {
 public:
     SkModeColorFilter(const SkColor4f& color, SkBlendMode mode);
 
+    bool appendStages(const SkStageRec& rec, bool shaderIsOpaque) const override;
+
     bool onIsAlphaUnchanged() const override;
 
 #if SK_SUPPORT_GPU
@@ -59,7 +61,6 @@ private:
     void flatten(SkWriteBuffer&) const override;
     bool onAsAColorMode(SkColor*, SkBlendMode*) const override;
 
-    bool onAppendStages(const SkStageRec& rec, bool shaderIsOpaque) const override;
     skvm::Color onProgram(skvm::Builder*, skvm::Color,
                           const SkColorInfo&, skvm::Uniforms*, SkArenaAlloc*) const override;
 
@@ -113,8 +114,8 @@ sk_sp<SkFlattenable> SkModeColorFilter::CreateProc(SkReadBuffer& buffer) {
     }
 }
 
-bool SkModeColorFilter::onAppendStages(const SkStageRec& rec, bool shaderIsOpaque) const {
-    rec.fPipeline->append(SkRasterPipeline::move_src_dst);
+bool SkModeColorFilter::appendStages(const SkStageRec& rec, bool shaderIsOpaque) const {
+    rec.fPipeline->append(SkRasterPipelineOp::move_src_dst);
     SkPMColor4f color = map_color(fColor, sk_srgb_singleton(), rec.fDstCS);
     rec.fPipeline->append_constant_color(rec.fAlloc, color.vec());
     SkBlendMode_AppendStages(fMode, rec.fPipeline);

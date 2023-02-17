@@ -13,14 +13,16 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTemplates.h"
 #include "src/core/SkFontDescriptor.h"
 #include "src/ports/SkFontHost_FreeType_common.h"
 #include "src/ports/SkFontMgr_custom.h"
 
 #include <limits>
 #include <memory>
+
+using namespace skia_private;
 
 class SkData;
 
@@ -250,7 +252,7 @@ sk_sp<SkTypeface> SkFontMgr_Custom::onMakeFromStreamArgs(std::unique_ptr<SkStrea
     }
 
     const SkFontArguments::VariationPosition position = args.getVariationDesignPosition();
-    SkAutoSTMalloc<4, SkFixed> axisValues(axisDefinitions.size());
+    AutoSTMalloc<4, SkFixed> axisValues(axisDefinitions.size());
     Scanner::computeAxisValues(axisDefinitions, position, axisValues, name);
 
     auto data = std::make_unique<SkFontData>(

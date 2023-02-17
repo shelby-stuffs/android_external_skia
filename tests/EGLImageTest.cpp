@@ -15,13 +15,15 @@
 #include "include/core/SkColorType.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
 #include "include/gpu/gl/GrGLFunctions.h"
 #include "include/gpu/gl/GrGLInterface.h"
 #include "include/gpu/gl/GrGLTypes.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTemplates.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/Swizzle.h"
@@ -48,6 +50,8 @@
 #include <cstdint>
 #include <memory>
 #include <utility>
+
+using namespace skia_private;
 
 struct GrContextOptions;
 
@@ -158,7 +162,7 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest,
     // Populate the texture using GL context 1. Important to use TexSubImage as TexImage orphans
     // the EGL image. Also, this must be done after creating the EGLImage as the texture
     // contents may not be preserved when the image is created.
-    SkAutoTMalloc<uint32_t> pixels(kSize * kSize);
+    AutoTMalloc<uint32_t> pixels(kSize * kSize);
     for (int i = 0; i < kSize*kSize; ++i) {
         pixels.get()[i] = 0xDDAABBCC;
     }

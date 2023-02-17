@@ -9,15 +9,16 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkBitmaskEnum.h"
-#include "include/private/SkMutex.h"
-#include "include/private/SkOnce.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTFitsIn.h"
-#include "include/private/SkTHash.h"
-#include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkMutex.h"
+#include "include/private/base/SkOnce.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTFitsIn.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTo.h"
 #include "modules/skunicode/include/SkUnicode.h"
-#include "src/utils/SkUTF.h"
+#include "src/base/SkUTF.h"
+#include "src/core/SkTHash.h"
 
 #include <functional>
 #include <string>
@@ -28,6 +29,8 @@
 #if defined(SK_USING_THIRD_PARTY_ICU)
 #include "SkLoadICU.h"
 #endif
+
+using namespace skia_private;
 
 static const SkICULib* ICULib() {
     static const auto gICU = SkLoadICULib();
@@ -219,6 +222,11 @@ class SkIcuBreakIteratorCache {
 };
 
 class SkUnicode_icu : public SkUnicode {
+
+    std::unique_ptr<SkUnicode> copy() override {
+        return std::make_unique<SkUnicode_icu>();
+    }
+
     static bool extractBidi(const char utf8[],
                             int utf8Units,
                             TextDirection dir,
@@ -283,7 +291,7 @@ class SkUnicode_icu : public SkUnicode {
         return true;
     }
 
-    static bool extractWords(uint16_t utf16[], int utf16Units, std::vector<Position>* words) {
+    static bool extractWords(uint16_t utf16[], int utf16Units, const char* locale,  std::vector<Position>* words) {
 
         UErrorCode status = U_ZERO_ERROR;
 
@@ -429,7 +437,7 @@ public:
             return SkString();
         }
 
-        SkAutoSTArray<128, uint16_t> upper16(upper16len);
+        AutoSTArray<128, uint16_t> upper16(upper16len);
         icu_err = U_ZERO_ERROR;
         sk_u_strToUpper((UChar*)(upper16.get()), SkToS32(upper16.size()),
                         (UChar*)(str16.c_str()), str16.size(),
@@ -447,11 +455,11 @@ public:
         return SkUnicode_icu::extractBidi(utf8, utf8Units, dir, results);
     }
 
-    bool getWords(const char utf8[], int utf8Units, std::vector<Position>* results) override {
+    bool getWords(const char utf8[], int utf8Units, const char* locale, std::vector<Position>* results) override {
 
         // Convert to UTF16 since we want the results in utf16
         auto utf16 = convertUtf8ToUtf16(utf8, utf8Units);
-        return SkUnicode_icu::extractWords((uint16_t*)utf16.c_str(), utf16.size(), results);
+        return SkUnicode_icu::extractWords((uint16_t*)utf16.c_str(), utf16.size(), locale, results);
     }
 
     bool computeCodeUnitFlags(char utf8[], int utf8Units, bool replaceTabs,
@@ -561,7 +569,7 @@ public:
     }
 };
 
-std::unique_ptr<SkUnicode> SkUnicode::Make() {
+std::unique_ptr<SkUnicode> SkUnicode::MakeIcuBasedUnicode() {
     #if defined(SK_USING_THIRD_PARTY_ICU)
     if (!SkLoadICU()) {
         static SkOnce once;

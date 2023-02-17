@@ -14,15 +14,15 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
-#include "include/private/SkHalf.h"
 #include "include/private/SkSLProgramKind.h"
-#include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
-#include "src/core/SkAutoMalloc.h"
+#include "src/base/SkHalf.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkAutoMalloc.h"
+#include "src/base/SkScopeExit.h"
 #include "src/core/SkCompressedDataUtils.h"
 #include "src/core/SkLRUCache.h"
 #include "src/core/SkMipmap.h"
-#include "src/core/SkScopeExit.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/SkRenderEngineAbortf.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
@@ -1457,7 +1457,7 @@ sk_sp<GrTexture> GrGLGpu::onCreateTexture(SkISize dimensions,
                                           const GrBackendFormat& format,
                                           GrRenderable renderable,
                                           int renderTargetSampleCnt,
-                                          SkBudgeted budgeted,
+                                          skgpu::Budgeted budgeted,
                                           GrProtected isProtected,
                                           int mipLevelCount,
                                           uint32_t levelClearMask,
@@ -1566,10 +1566,11 @@ sk_sp<GrTexture> GrGLGpu::onCreateTexture(SkISize dimensions,
 
 sk_sp<GrTexture> GrGLGpu::onCreateCompressedTexture(SkISize dimensions,
                                                     const GrBackendFormat& format,
-                                                    SkBudgeted budgeted,
+                                                    skgpu::Budgeted budgeted,
                                                     GrMipmapped mipmapped,
                                                     GrProtected isProtected,
-                                                    const void* data, size_t dataSize) {
+                                                    const void* data,
+                                                    size_t dataSize) {
     // We don't support protected textures in GL.
     if (isProtected == GrProtected::kYes) {
         return nullptr;

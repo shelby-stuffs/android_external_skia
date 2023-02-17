@@ -15,11 +15,11 @@
 #include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLStatement.h"
 #include "include/private/SkSLString.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
 #include "include/sksl/SkSLErrorReporter.h"
 #include "include/sksl/SkSLOperator.h"
 #include "include/sksl/SkSLPosition.h"
-#include "src/core/SkScopeExit.h"
+#include "src/base/SkScopeExit.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
@@ -1849,6 +1849,7 @@ void MetalCodeGenerator::writeBinaryExpression(const BinaryExpression& b,
         this->write(" = ");
         this->writeExpression(left, Precedence::kAssignment);
         this->write(operator_name(op.removeAssignment()));
+        precedence = op.removeAssignment().getBinaryPrecedence();
     } else {
         this->write(operator_name(op));
     }

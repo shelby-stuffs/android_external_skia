@@ -28,17 +28,19 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
 #include "include/ports/SkFontMgr_mac_ct.h"
-#include "include/private/SkFixed.h"
-#include "include/private/SkOnce.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkFixed.h"
+#include "include/private/base/SkOnce.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkUTF.h"
 #include "src/core/SkFontDescriptor.h"
 #include "src/ports/SkTypeface_mac_ct.h"
-#include "src/utils/SkUTF.h"
 
 #include <string.h>
 #include <memory>
+
+using namespace skia_private;
 
 #if (defined(SK_BUILD_FOR_IOS) && defined(__IPHONE_14_0) &&  \
       __IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_14_0) ||  \

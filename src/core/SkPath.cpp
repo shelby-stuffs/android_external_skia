@@ -11,15 +11,16 @@
 #include "include/core/SkRRect.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
-#include "include/private/SkFloatBits.h"
-#include "include/private/SkFloatingPoint.h"
-#include "include/private/SkMalloc.h"
-#include "include/private/SkPathEnums.h"
 #include "include/private/SkPathRef.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTDArray.h"
-#include "include/private/SkTo.h"
-#include "include/private/SkVx.h"
+#include "include/private/base/SkFloatBits.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkPathEnums.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTDArray.h"
+#include "src/base/SkVx.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkTLazy.h"
 #include "src/core/SkCubicClipper.h"
 #include "src/core/SkEdgeClipper.h"
 #include "src/core/SkGeometry.h"
@@ -28,7 +29,6 @@
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkPointPriv.h"
 #include "src/core/SkStringUtils.h"
-#include "src/core/SkTLazy.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1340,11 +1340,9 @@ SkPath& SkPath::arcTo(SkScalar rx, SkScalar ry, SkScalar angle, SkPath::ArcSize 
         startTheta = endTheta;
     }
 
-#ifndef SK_LEGACY_PATH_ARCTO_ENDPOINT
     // The final point should match the input point (by definition); replace it to
     // ensure that rounding errors in the above math don't cause any problems.
     this->setLastPt(x, y);
-#endif
     return *this;
 }
 

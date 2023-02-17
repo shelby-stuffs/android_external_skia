@@ -548,9 +548,11 @@ function paragraphTests(CK: CanvasKit, p?: Paragraph) {
     const g = p.getMaxIntrinsicWidth(); // $ExpectType number
     const h = p.getMaxWidth(); // $ExpectType number
     const i = p.getMinIntrinsicWidth(); // $ExpectType number
-    const j = p.getRectsForPlaceholders(); // $ExpectType Float32Array[]
-    const k = p.getRectsForRange(2, 10, CK.RectHeightStyle.Max,  // $ExpectType Float32Array[]
+    const j = p.getRectsForPlaceholders(); // $ExpectType RectWithDirection[]
+    const k = p.getRectsForRange(2, 10, CK.RectHeightStyle.Max,  // $ExpectType RectWithDirection[]
         CK.RectWidthStyle.Tight);
+    j[0].rect.length === 4;
+    j[0].dir === CK.TextDirection.RTL;
     const l = p.getWordBoundary(10); // $ExpectType URange
     p.layout(300);
     const m = p.getLineMetrics(); // $ExpectType LineMetrics[]
@@ -612,16 +614,11 @@ function paragraphBuilderTests(CK: CanvasKit, fontMgr?: FontMgr, paint?: Paint) 
     builder2.reset();
 
     const text = builder.getText(); // $ExpectType string
-    const mallocedBidis = CK.Malloc(Uint32Array, 3);
-    const mallocedWords = new Uint32Array(10);
-    const mallocedGraphemes =  new Uint32Array(10);
-    const mallocedLineBreaks =  new Uint32Array(10);
-    const paragraph3 = builder.buildWithClientInfo(// $ExpectType Paragraph
-        mallocedBidis,
-        mallocedWords,
-        mallocedGraphemes,
-        mallocedLineBreaks
-    );
+    builder.setBidiRegionsUtf16(CK.Malloc(Uint32Array, 3));
+    builder.setWordsUtf16(new Uint32Array(10));
+    builder.setGraphemeBreaksUtf16(new Uint32Array(10));
+    builder.setLineBreaksUtf16(new Uint32Array(10));
+    const paragraph3 = builder.build(); // $ExpectType Paragraph
 }
 
 function particlesTests(CK: CanvasKit, canvas?: Canvas) {
@@ -949,6 +946,11 @@ function surfaceTests(CK: CanvasKit, gl?: WebGLRenderingContext) {
     const grCtx = CK.MakeGrContext(ctx);
     const surfaceNine = CK.MakeOnScreenGLSurface(grCtx!, 100, 400, // $ExpectType Surface
         CK.ColorSpace.ADOBE_RGB)!;
+
+    var sample = gl.getParameter(gl.SAMPLES);
+    var stencil = gl.getParameter(gl.STENCIL_BITS);
+    const surfaceTen = CK.MakeOnScreenGLSurface(grCtx!, 100, 400, // $ExpectType Surface
+        CK.ColorSpace.ADOBE_RGB, sample, stencil)!;
 
     const rt = CK.MakeRenderTarget(grCtx!, 100, 200); // $ExpectType Surface | null
     const rt2 = CK.MakeRenderTarget(grCtx!, { // $ExpectType Surface | null

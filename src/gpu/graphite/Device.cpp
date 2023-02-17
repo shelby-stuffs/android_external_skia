@@ -56,9 +56,6 @@
 #include <unordered_map>
 #include <vector>
 
-// TODO: This will be removed once the AnalyticRectRenderStep is finished being developed.
-#define ENABLE_ANALYTIC_RRECT_RENDERER 0
-
 using RescaleGamma       = SkImage::RescaleGamma;
 using RescaleMode        = SkImage::RescaleMode;
 using ReadPixelsCallback = SkImage::ReadPixelsCallback;
@@ -105,16 +102,20 @@ bool paint_depends_on_dst(const SkPaint& paint) {
 }
 
 /** If the paint can be reduced to a solid flood-fill, determine the correct color to fill with. */
-std::optional<SkColor4f> extract_paint_color(const SkPaint& paint) {
+std::optional<SkColor4f> extract_paint_color(const SkPaint& paint,
+                                             const SkColorInfo& dstColorInfo) {
     SkASSERT(!paint_depends_on_dst(paint));
     if (paint.getShader()) {
         return std::nullopt;
     }
+
+    SkColor4f dstPaintColor = PaintParams::Color4fPrepForDst(paint.getColor4f(), dstColorInfo);
+
     if (SkColorFilter* filter = paint.getColorFilter()) {
-        // TODO: SkColorSpace support
-        return filter->filterColor4f(paint.getColor4f(), sk_srgb_singleton(), sk_srgb_singleton());
+        SkColorSpace* dstCS = dstColorInfo.colorSpace();
+        return filter->filterColor4f(dstPaintColor, dstCS, dstCS);
     }
-    return paint.getColor4f();
+    return dstPaintColor;
 }
 
 SkIRect rect_to_pixelbounds(const Rect& r) {
@@ -150,16 +151,12 @@ bool create_img_shader_paint(sk_sp<SkImage> image,
 }
 
 bool is_simple_shape(const Shape& shape, SkStrokeRec::Style type) {
-#if ENABLE_ANALYTIC_RRECT_RENDERER
-    // We send regular filled [round] rectangles and quadrilaterals, and stroked [r]rects with
-    // circular corners to a single Renderer that does not trigger MSAA.
+    // We send regular filled and hairline [round] rectangles and quadrilaterals, and stroked
+    // [r]rects with circular corners to a single Renderer that does not trigger MSAA.
     return !shape.inverted() && type != SkStrokeRec::kStrokeAndFill_Style &&
             (shape.isRect() /* || shape.isQuadrilateral()*/ ||
-             (shape.isRRect() && (type == SkStrokeRec::kFill_Style ||
+             (shape.isRRect() && (type != SkStrokeRec::kStroke_Style ||
                                   SkRRectPriv::AllCornersCircular(shape.rrect()))));
-#else
-    return false;
-#endif
 }
 
 } // anonymous namespace
@@ -216,7 +213,7 @@ private:
 
 sk_sp<Device> Device::Make(Recorder* recorder,
                            const SkImageInfo& ii,
-                           SkBudgeted budgeted,
+                           skgpu::Budgeted budgeted,
                            Mipmapped mipmapped,
                            const SkSurfaceProps& props,
                            bool addInitialClear) {
@@ -330,8 +327,13 @@ SkBaseDevice* Device::onCreateDevice(const CreateInfo& info, const SkPaint*) {
     // Skia's convention is to only clear a device if it is non-opaque.
     bool addInitialClear = !info.fInfo.isOpaque();
 
-    return Make(fRecorder, info.fInfo, SkBudgeted::kYes, Mipmapped::kNo,
-                props, addInitialClear).release();
+    return Make(fRecorder,
+                info.fInfo,
+                skgpu::Budgeted::kYes,
+                Mipmapped::kNo,
+                props,
+                addInitialClear)
+            .release();
 }
 
 sk_sp<SkSurface> Device::makeSurface(const SkImageInfo& ii, const SkSurfaceProps& props) {
@@ -347,15 +349,27 @@ TextureProxyView Device::createCopy(const SkIRect* subset, Mipmapped mipmapped) 
     }
 
     SkIRect srcRect = subset ? *subset : SkIRect::MakeSize(this->imageInfo().dimensions());
-    SkASSERT(SkIRect::MakeSize(this->imageInfo().dimensions()).contains(srcRect));
+    return TextureProxyView::Copy(this->recorder(),
+                                  this->imageInfo().colorInfo(),
+                                  srcView,
+                                  srcRect,
+                                  mipmapped);
+}
 
-    sk_sp<TextureProxy> dest = TextureProxy::Make(this->recorder()->priv().caps(),
+TextureProxyView TextureProxyView::Copy(Recorder* recorder,
+                                        const SkColorInfo& srcColorInfo,
+                                        const TextureProxyView& srcView,
+                                        SkIRect srcRect,
+                                        Mipmapped mipmapped) {
+    SkASSERT(SkIRect::MakeSize(srcView.proxy()->dimensions()).contains(srcRect));
+
+    sk_sp<TextureProxy> dest = TextureProxy::Make(recorder->priv().caps(),
                                                   srcRect.size(),
-                                                  this->imageInfo().colorType(),
+                                                  srcColorInfo.colorType(),
                                                   mipmapped,
                                                   srcView.proxy()->textureInfo().isProtected(),
                                                   Renderable::kNo,
-                                                  SkBudgeted::kNo);
+                                                  skgpu::Budgeted::kNo);
     if (!dest) {
         return {};
     }
@@ -368,7 +382,7 @@ TextureProxyView Device::createCopy(const SkIRect* subset, Mipmapped mipmapped) 
         return {};
     }
 
-    this->recorder()->priv().add(std::move(copyTask));
+    recorder->priv().add(std::move(copyTask));
 
     return { std::move(dest), srcView.swizzle() };
 }
@@ -583,7 +597,7 @@ void Device::drawPaint(const SkPaint& paint) {
     // entire final surface.
     if (this->clipIsWideOpen() && !fDC->target()->isFullyLazy()) {
         if (!paint_depends_on_dst(paint)) {
-            if (std::optional<SkColor4f> color = extract_paint_color(paint)) {
+            if (std::optional<SkColor4f> color = extract_paint_color(paint, fDC->colorInfo())) {
                 // do fullscreen clear
                 fDC->clear(*color);
                 return;
@@ -1065,7 +1079,7 @@ void Device::flushPendingWorkToRecorder() {
 
     // push any pending uploads from the atlasmanager
     auto atlasManager = fRecorder->priv().atlasManager();
-    if (!atlasManager->recordUploads(fDC.get())) {
+    if (!fDC->recordTextUploads(atlasManager)) {
         SKGPU_LOG_E("AtlasManager uploads have failed -- may see invalid results.");
     }
 

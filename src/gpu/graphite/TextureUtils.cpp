@@ -32,7 +32,7 @@ std::tuple<TextureProxyView, SkColorType> MakeBitmapProxyView(Recorder* recorder
                                                               const SkBitmap& bitmap,
                                                               sk_sp<SkMipmap> mipmapsIn,
                                                               Mipmapped mipmapped,
-                                                              SkBudgeted budgeted) {
+                                                              skgpu::Budgeted budgeted) {
     // Adjust params based on input and Caps
     const skgpu::graphite::Caps* caps = recorder->priv().caps();
     SkColorType ct = bitmap.info().colorType();
@@ -128,7 +128,7 @@ sk_sp<SkImage> MakeFromBitmap(Recorder* recorder,
                               const SkColorInfo& colorInfo,
                               const SkBitmap& bitmap,
                               sk_sp<SkMipmap> mipmaps,
-                              SkBudgeted budgeted,
+                              skgpu::Budgeted budgeted,
                               SkImage::RequiredImageProperties requiredProps) {
     auto [ view, ct ] = MakeBitmapProxyView(recorder, bitmap, std::move(mipmaps),
                                             requiredProps.fMipmapped, budgeted);
@@ -136,8 +136,8 @@ sk_sp<SkImage> MakeFromBitmap(Recorder* recorder,
         return nullptr;
     }
 
-    SkASSERT(requiredProps.fMipmapped == skgpu::graphite::Mipmapped::kNo ||
-             view.proxy()->mipmapped() == skgpu::graphite::Mipmapped::kYes);
+    SkASSERT(requiredProps.fMipmapped == skgpu::Mipmapped::kNo ||
+             view.proxy()->mipmapped() == skgpu::Mipmapped::kYes);
     return sk_make_sp<skgpu::graphite::Image>(std::move(view),
                                               colorInfo.makeColorType(ct));
 }

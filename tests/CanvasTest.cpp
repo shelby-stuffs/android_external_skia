@@ -33,8 +33,8 @@
 #include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
 #include "include/effects/SkImageFilters.h"
-#include "include/private/SkMalloc.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkMalloc.h"
 #include "include/utils/SkNWayCanvas.h"
 #include "include/utils/SkPaintFilterCanvas.h"
 #include "src/core/SkBigPicture.h"
@@ -49,6 +49,8 @@
 #include <initializer_list>
 #include <memory>
 #include <utility>
+
+using namespace skia_private;
 
 class SkPicture;
 class SkReadBuffer;
@@ -192,7 +194,7 @@ DEF_TEST(CanvasNewRasterTest, reporter) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(10, 10);
     const size_t minRowBytes = info.minRowBytes();
     const size_t size = info.computeByteSize(minRowBytes);
-    SkAutoTMalloc<SkPMColor> storage(size);
+    AutoTMalloc<SkPMColor> storage(size);
     SkPMColor* baseAddr = storage.get();
     sk_bzero(baseAddr, size);
 

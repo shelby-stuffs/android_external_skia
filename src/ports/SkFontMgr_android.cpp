@@ -15,19 +15,21 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/ports/SkFontMgr_android.h"
-#include "include/private/SkFixed.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTDArray.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkFixed.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/base/SkTSearch.h"
 #include "src/core/SkFontDescriptor.h"
 #include "src/core/SkOSFile.h"
-#include "src/core/SkTSearch.h"
 #include "src/core/SkTypefaceCache.h"
 #include "src/ports/SkFontHost_FreeType_common.h"
 #include "src/ports/SkFontMgr_android_parser.h"
 
 #include <algorithm>
 #include <limits>
+
+using namespace skia_private;
 
 class SkData;
 
@@ -228,7 +230,7 @@ public:
                 familyName = *cannonicalFamilyName;
             }
 
-            SkAutoSTMalloc<4, SkFixed> axisValues(axisDefinitions.size());
+            AutoSTMalloc<4, SkFixed> axisValues(axisDefinitions.size());
             SkFontArguments::VariationPosition position = {
                 fontFile.fVariationDesignPosition.begin(),
                 fontFile.fVariationDesignPosition.size()
@@ -471,7 +473,7 @@ protected:
             return nullptr;
         }
 
-        SkAutoSTMalloc<4, SkFixed> axisValues(axisDefinitions.size());
+        AutoSTMalloc<4, SkFixed> axisValues(axisDefinitions.size());
         Scanner::computeAxisValues(axisDefinitions, args.getVariationDesignPosition(),
                                    axisValues, name);
 

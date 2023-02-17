@@ -11,20 +11,19 @@
 // All of these files should be independent of things users can set via the user config file.
 // They should also be able to be included in any order.
 // IWYU pragma: begin_exports
-#include "include/private/base/SkAPI.h"
-#include "include/private/base/SkAttributes.h"
 #include "include/private/base/SkFeatures.h"
 
 // Load and verify defines from the user config file.
 #include "include/private/base/SkLoadUserConfig.h"
 
 // Any includes or defines below can be configured by the user config file.
+#include "include/private/base/SkAPI.h"
 #include "include/private/base/SkAssert.h"
+#include "include/private/base/SkAttributes.h"
 #include "include/private/base/SkDebug.h"
 // IWYU pragma: end_exports
 
 #include <climits>
-#include <cstddef>
 #include <cstdint>
 
 #if !defined(SK_SUPPORT_GPU)
@@ -41,19 +40,6 @@
 #  undef SK_METAL
 #  undef SK_DAWN
 #  undef SK_DIRECT3D
-#endif
-
-#if !defined(SkUNREACHABLE)
-#  if defined(_MSC_VER) && !defined(__clang__)
-#    include <intrin.h>
-#    define FAST_FAIL_INVALID_ARG                 5
-// See https://developercommunity.visualstudio.com/content/problem/1128631/code-flow-doesnt-see-noreturn-with-extern-c.html
-// for why this is wrapped. Hopefully removable after msvc++ 19.27 is no longer supported.
-[[noreturn]] static inline void sk_fast_fail() { __fastfail(FAST_FAIL_INVALID_ARG); }
-#    define SkUNREACHABLE sk_fast_fail()
-#  else
-#    define SkUNREACHABLE __builtin_trap()
-#  endif
 #endif
 
 // If SK_R32_SHIFT is set, we'll use that to choose RGBA or BGRA.
@@ -157,54 +143,30 @@
 #endif
 
 #if defined(SK_BUILD_FOR_LIBFUZZER) || defined(SK_BUILD_FOR_AFL_FUZZ)
+#if !defined(SK_BUILD_FOR_FUZZER)
     #define SK_BUILD_FOR_FUZZER
 #endif
+#endif
 
-////////////////////////////////////////////////////////////////////////////////
+/**
+ *  Gr defines are set to 0 or 1, rather than being undefined or defined
+ */
 
-/** Fast type for unsigned 8 bits. Use for parameter passing and local
-    variables, not for storage
-*/
-typedef unsigned U8CPU;
+#if !defined(GR_CACHE_STATS)
+  #if defined(SK_DEBUG) || defined(SK_DUMP_STATS)
+      #define GR_CACHE_STATS  1
+  #else
+      #define GR_CACHE_STATS  0
+  #endif
+#endif
 
-/** Fast type for unsigned 16 bits. Use for parameter passing and local
-    variables, not for storage
-*/
-typedef unsigned U16CPU;
-
-static constexpr int16_t SK_MaxS16 = INT16_MAX;
-static constexpr int16_t SK_MinS16 = -SK_MaxS16;
-
-static constexpr int32_t SK_MaxS32 = INT32_MAX;
-static constexpr int32_t SK_MinS32 = -SK_MaxS32;
-static constexpr int32_t SK_NaN32  = INT32_MIN;
-
-static constexpr int64_t SK_MaxS64 = INT64_MAX;
-static constexpr int64_t SK_MinS64 = -SK_MaxS64;
-
-static inline constexpr int32_t SkLeftShift(int32_t value, int32_t shift) {
-    return (int32_t) ((uint32_t) value << shift);
-}
-
-static inline constexpr int64_t SkLeftShift(int64_t value, int32_t shift) {
-    return (int64_t) ((uint64_t) value << shift);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-/** @return the number of entries in an array (not a pointer)
-*/
-// The SkArrayCountHelper template returns a type 'char (&)[N]', a reference to an array of
-// char with N elements, where N is deduced using function parameter type deduction. This is then
-// used in the sizeof operator in SK_ARRAY_COUNT. The sizeof operator ignores the reference, and
-// just evaluates the size of the array type.
-//
-// DEPRECATED: use std::size() instead.
-// Note: Rarely, std::size(z) can't deduce the type of z during compile time for static_assert
-// while SK_ARRAY_COUNT can. It can't be deduced because z is part of class, and the class' this
-// pointer is not a valid constexpr expression. Use SkASSERT instead.
-template <typename T, size_t N> char (&SkArrayCountHelper(T (&array)[N]))[N];
-#define SK_ARRAY_COUNT(array) (sizeof(SkArrayCountHelper(array)))
+#if !defined(GR_GPU_STATS)
+  #if defined(SK_DEBUG) || defined(SK_DUMP_STATS) || GR_TEST_UTILS
+      #define GR_GPU_STATS    1
+  #else
+      #define GR_GPU_STATS    0
+  #endif
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -240,21 +202,5 @@ static constexpr uint32_t SK_InvalidGenID = 0;
 */
 static constexpr uint32_t SK_InvalidUniqueID = 0;
 
-////////////////////////////////////////////////////////////////////////////////
-
-/** Indicates whether an allocation should count against a cache budget.
-*/
-enum class SkBudgeted : bool {
-    kNo  = false,
-    kYes = true
-};
-
-/** Indicates whether a backing store needs to be an exact match or can be
-    larger than is strictly necessary
-*/
-enum class SkBackingFit {
-    kApprox,
-    kExact
-};
 
 #endif

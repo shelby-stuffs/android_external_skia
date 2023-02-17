@@ -19,11 +19,12 @@
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSemaphore.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "tests/CtsEnforcement.h"
@@ -56,6 +57,8 @@ namespace skgpu { struct VulkanInterface; }
 #undef CreateSemaphore
 #endif
 #endif
+
+using namespace skia_private;
 
 struct GrContextOptions;
 
@@ -99,9 +102,8 @@ void draw_child(skiatest::Reporter* reporter,
                                                   kPremul_SkAlphaType);
 
     auto childDContext = childInfo.directContext();
-    sk_sp<SkSurface> childSurface(SkSurface::MakeRenderTarget(childDContext, SkBudgeted::kNo,
-                                                              childII, 0, kTopLeft_GrSurfaceOrigin,
-                                                              nullptr));
+    sk_sp<SkSurface> childSurface(SkSurface::MakeRenderTarget(
+            childDContext, skgpu::Budgeted::kNo, childII, 0, kTopLeft_GrSurfaceOrigin, nullptr));
 
     sk_sp<SkImage> childImage = SkImage::MakeFromTexture(childDContext,
                                                          backendTexture,
@@ -147,9 +149,8 @@ void surface_semaphore_test(skiatest::Reporter* reporter,
     const SkImageInfo ii = SkImageInfo::Make(MAIN_W, MAIN_H, kRGBA_8888_SkColorType,
                                              kPremul_SkAlphaType);
 
-    sk_sp<SkSurface> mainSurface(SkSurface::MakeRenderTarget(mainCtx, SkBudgeted::kNo,
-                                                             ii, 0, kTopLeft_GrSurfaceOrigin,
-                                                             nullptr));
+    sk_sp<SkSurface> mainSurface(SkSurface::MakeRenderTarget(
+            mainCtx, skgpu::Budgeted::kNo, ii, 0, kTopLeft_GrSurfaceOrigin, nullptr));
     SkCanvas* mainCanvas = mainSurface->getCanvas();
     auto blueSurface = mainSurface->makeSurface(ii);
     blueSurface->getCanvas()->clear(SK_ColorBLUE);
@@ -157,7 +158,7 @@ void surface_semaphore_test(skiatest::Reporter* reporter,
     blueSurface.reset();
     mainCanvas->drawImage(blueImage, 0, 0);
 
-    SkAutoTArray<GrBackendSemaphore> semaphores(2);
+    AutoTArray<GrBackendSemaphore> semaphores(2);
 #ifdef SK_VULKAN
     if (GrBackendApi::kVulkan == mainInfo.backend()) {
         // Initialize the secondary semaphore instead of having Ganesh create one internally
@@ -264,9 +265,8 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(EmptySurfaceSemaphoreTest,
     const SkImageInfo ii = SkImageInfo::Make(MAIN_W, MAIN_H, kRGBA_8888_SkColorType,
                                              kPremul_SkAlphaType);
 
-    sk_sp<SkSurface> mainSurface(SkSurface::MakeRenderTarget(ctx, SkBudgeted::kNo,
-                                                             ii, 0, kTopLeft_GrSurfaceOrigin,
-                                                             nullptr));
+    sk_sp<SkSurface> mainSurface(SkSurface::MakeRenderTarget(
+            ctx, skgpu::Budgeted::kNo, ii, 0, kTopLeft_GrSurfaceOrigin, nullptr));
 
     // Flush surface once without semaphores to make sure there is no peneding IO for it.
     mainSurface->flushAndSubmit();

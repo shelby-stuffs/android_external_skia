@@ -19,8 +19,9 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
 #include "src/core/SkOpts.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
@@ -33,6 +34,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+
+using namespace skia_private;
 
 struct GrContextOptions;
 
@@ -106,7 +109,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ApplyGamma, reporter, ctxInfo, CtsEnforce
 
     const SkImageInfo ii = SkImageInfo::MakeN32Premul(kBaseSize);
 
-    SkAutoTMalloc<uint32_t> srcPixels(kBaseSize.area());
+    AutoTMalloc<uint32_t> srcPixels(kBaseSize.area());
     for (int y = 0; y < kBaseSize.fHeight; ++y) {
         for (int x = 0; x < kBaseSize.fWidth; ++x) {
             srcPixels.get()[y*kBaseSize.fWidth+x] = SkPreMultiplyARGB(x, y, x, 0xFF);
@@ -117,13 +120,13 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ApplyGamma, reporter, ctxInfo, CtsEnforce
     bm.installPixels(ii, srcPixels.get(), kRowBytes);
     auto img = bm.asImage();
 
-    SkAutoTMalloc<uint32_t> read(kBaseSize.area());
+    AutoTMalloc<uint32_t> read(kBaseSize.area());
 
     // We allow more error on GPUs with lower precision shader variables.
     float error = context->priv().caps()->shaderCaps()->fHalfIs32Bits ? 0.5f : 1.2f;
 
     for (auto toSRGB : { false, true }) {
-        sk_sp<SkSurface> dst(SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, ii));
+        sk_sp<SkSurface> dst(SkSurface::MakeRenderTarget(context, skgpu::Budgeted::kNo, ii));
 
         if (!dst) {
             ERRORF(reporter, "Could not create surfaces for copy surface test.");

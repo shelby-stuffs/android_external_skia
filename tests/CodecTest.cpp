@@ -30,13 +30,14 @@
 #include "include/encode/SkJpegEncoder.h"
 #include "include/encode/SkPngEncoder.h"
 #include "include/encode/SkWebpEncoder.h"
-#include "include/private/SkMalloc.h"
-#include "include/private/SkTemplates.h"
 #include "include/private/base/SkAlign.h"
-#include "include/utils/SkRandom.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkMalloc.h"
 #include "modules/skcms/skcms.h"
+#include "src/base/SkAutoMalloc.h"
+#include "src/base/SkRandom.h"
 #include "src/codec/SkCodecImageGenerator.h"
-#include "src/core/SkAutoMalloc.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkMD5.h"
 #include "src/core/SkStreamPriv.h"
@@ -60,6 +61,8 @@
 #include <memory>
 #include <utility>
 #include <vector>
+
+using namespace skia_private;
 
 #if PNG_LIBPNG_VER_MAJOR == 1 && PNG_LIBPNG_VER_MINOR < 5
     // FIXME (scroggo): Google3 needs to be updated to use a newer version of libpng. In
@@ -650,7 +653,7 @@ static void test_dimensions(skiatest::Reporter* r, const char path[]) {
         // Set up for the decode
         size_t rowBytes = scaledDims.width() * sizeof(SkPMColor);
         size_t totalBytes = scaledInfo.computeByteSize(rowBytes);
-        SkAutoTMalloc<SkPMColor> pixels(totalBytes);
+        AutoTMalloc<SkPMColor> pixels(totalBytes);
 
         SkAndroidCodec::AndroidOptions options;
         options.fSampleSize = sampleSize;

@@ -16,7 +16,7 @@
 #include "src/gpu/graphite/GraphiteResourceKey.h"
 #include "src/gpu/graphite/UniformManager.h"
 #include "src/gpu/graphite/dawn/DawnUtilsPriv.h"
-
+#include "src/sksl/SkSLUtil.h"
 
 namespace {
 
@@ -28,6 +28,11 @@ static constexpr wgpu::TextureFormat kFormats[] = {
     wgpu::TextureFormat::R8Unorm,
     wgpu::TextureFormat::BGRA8Unorm,
     wgpu::TextureFormat::RGBA16Float,
+
+    wgpu::TextureFormat::Stencil8,
+    wgpu::TextureFormat::Depth32Float,
+    wgpu::TextureFormat::Depth32FloatStencil8,
+
     wgpu::TextureFormat::Undefined,
 };
 
@@ -38,6 +43,7 @@ namespace skgpu::graphite {
 DawnCaps::DawnCaps(const wgpu::Device& device, const ContextOptions& options)
     : Caps() {
     this->initCaps(device);
+    this->initShaderCaps();
     this->initFormatTable(device);
     this->finishInitialization(options);
 }
@@ -167,7 +173,14 @@ SkColorType DawnCaps::supportedWritePixelsColorType(SkColorType dstColorType,
 SkColorType DawnCaps::supportedReadPixelsColorType(SkColorType srcColorType,
                                                    const TextureInfo& srcTextureInfo,
                                                    SkColorType dstColorType) const {
-    SkASSERT(false);
+    auto dawnFormat = getFormatFromColorType(srcColorType);
+    const FormatInfo& info = this->getFormatInfo(dawnFormat);
+    for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
+        const auto& ctInfo = info.fColorTypeInfos[i];
+        if (ctInfo.fColorType == srcColorType) {
+            return srcColorType;
+        }
+    }
     return kUnknown_SkColorType;
 }
 
@@ -185,8 +198,9 @@ void DawnCaps::initCaps(const wgpu::Device& device) {
     // Dawn requires 256 bytes per row alignment for buffer texture copies.
     fTextureDataRowBytesAlignment = 256;
 
-    fUniformBufferLayout = Layout::kStd140;
-    fStorageBufferLayout = Layout::kStd430;
+    fResourceBindingReqs.fUniformBufferLayout = Layout::kStd140;
+    fResourceBindingReqs.fStorageBufferLayout = Layout::kStd430;
+    fResourceBindingReqs.fSeparateTextureAndSamplerBinding = true;
 
     // TODO: support storage buffer
     fStorageBufferSupport = false;
@@ -196,6 +210,14 @@ void DawnCaps::initCaps(const wgpu::Device& device) {
 
     // TODO: support clamp to border.
     fClampToBorderSupport = false;
+}
+
+void DawnCaps::initShaderCaps() {
+    SkSL::ShaderCaps* shaderCaps = fShaderCaps.get();
+
+    // WGSL does not support infinities regardless of hardware support. There are discussions around
+    // enabling it using an extension in the future.
+    shaderCaps->fInfinitySupport = false;
 }
 
 void DawnCaps::initFormatTable(const wgpu::Device& device) {
@@ -281,6 +303,31 @@ void DawnCaps::initFormatTable(const wgpu::Device& device) {
             ctInfo.fColorType = kRGBA_F16_SkColorType;
             ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
         }
+    }
+
+    /*
+     * Non-color formats
+     */
+
+    // Format: Stencil8
+    {
+        info = &fFormatTable[GetFormatIndex(wgpu::TextureFormat::Stencil8)];
+        info->fFlags = FormatInfo::kMSAA_Flag;
+        info->fColorTypeInfoCount = 0;
+    }
+
+    // Format: Depth32Float
+    {
+        info = &fFormatTable[GetFormatIndex(wgpu::TextureFormat::Depth32Float)];
+        info->fFlags = FormatInfo::kMSAA_Flag;
+        info->fColorTypeInfoCount = 0;
+    }
+
+    // Format: Depth32Float_Stencil8
+    {
+        info = &fFormatTable[GetFormatIndex(wgpu::TextureFormat::Depth32FloatStencil8)];
+        info->fFlags = FormatInfo::kMSAA_Flag;
+        info->fColorTypeInfoCount = 0;
     }
 
     // Format: Undefined

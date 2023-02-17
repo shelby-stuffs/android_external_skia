@@ -9,8 +9,8 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkString.h"
 #include "include/private/SkSLProgramKind.h"
-#include "include/private/SkTHash.h"
 #include "src/core/SkOSFile.h"
+#include "src/core/SkTHash.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
@@ -21,6 +21,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -91,6 +92,23 @@ static void test_expect_fail(skiatest::Reporter* r, const char* testFile, SkSL::
     // In a size-optimized build, there are a handful of errors which report differently, or not at
     // all. Skip over those tests.
     static const auto* kTestsToSkip = new SkTHashSet<std::string_view>{
+        // These are tests that have been deleted, but which may still show up (and fail) on bots,
+        // because the resources directory isn't properly cleaned up. (skbug.com/12987)
+        "sksl/errors/InvalidThreadgroupRTS.rts",
+        "sksl/errors/StaticIfTest.sksl",
+        "sksl/errors/StaticSwitchConditionalBreak.sksl",
+        "sksl/errors/StaticSwitchTest.sksl",
+        "sksl/errors/StaticSwitchWithConditionalBreak.sksl",
+        "sksl/errors/StaticSwitchWithConditionalContinue.sksl",
+        "sksl/errors/StaticSwitchWithConditionalReturn.sksl",
+
+        "sksl/errors/ComputeUniform.compute",
+        "sksl/errors/DuplicateBinding.compute",
+        "sksl/errors/InvalidThreadgroupCompute.compute",
+        "sksl/errors/UnspecifiedBinding.compute",
+
+        "sksl/runtime_errors/ReservedNameISampler2D.rts",
+
 #ifdef SK_ENABLE_OPTIMIZE_SIZE
         "sksl/errors/ArrayInlinedIndexOutOfRange.sksl",
         "sksl/errors/MatrixInlinedIndexOutOfRange.sksl",
