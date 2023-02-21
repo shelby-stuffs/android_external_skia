@@ -7,12 +7,12 @@
 
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkFlattenable.h"
-#include "src/core/SkArenaAlloc.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/base/SkUtils.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/core/SkUtils.h"
 #include "src/core/SkVM.h"
 #include "src/shaders/SkShaderBase.h"
 
@@ -60,7 +60,7 @@ private:
         return true;
     }
 
-    bool onAppendStages(const SkStageRec&) const override;
+    bool appendStages(const SkStageRec&, const MatrixRec&) const override;
 
     skvm::Color onProgram(skvm::Builder*, skvm::Coord device, skvm::Coord local, skvm::Color paint,
                           const SkMatrixProvider&, const SkMatrix* localM, const SkColorInfo& dst,
@@ -90,7 +90,7 @@ private:
     SK_FLATTENABLE_HOOKS(SkColor4Shader)
 
     void flatten(SkWriteBuffer&) const override;
-    bool onAppendStages(const SkStageRec&) const override;
+    bool appendStages(const SkStageRec&, const MatrixRec&) const override;
 
     skvm::Color onProgram(skvm::Builder*, skvm::Coord device, skvm::Coord local, skvm::Color paint,
                           const SkMatrixProvider&, const SkMatrix* localM, const SkColorInfo& dst,
@@ -156,7 +156,7 @@ void SkColor4Shader::flatten(SkWriteBuffer& buffer) const {
     }
 }
 
-bool SkColorShader::onAppendStages(const SkStageRec& rec) const {
+bool SkColorShader::appendStages(const SkStageRec& rec, const MatrixRec&) const {
     SkColor4f color = SkColor4f::FromColor(fColor);
     SkColorSpaceXformSteps(sk_srgb_singleton(), kUnpremul_SkAlphaType,
                            rec.fDstCS,          kUnpremul_SkAlphaType).apply(color.vec());
@@ -164,7 +164,7 @@ bool SkColorShader::onAppendStages(const SkStageRec& rec) const {
     return true;
 }
 
-bool SkColor4Shader::onAppendStages(const SkStageRec& rec) const {
+bool SkColor4Shader::appendStages(const SkStageRec& rec, const MatrixRec&) const {
     SkColor4f color = fColor;
     SkColorSpaceXformSteps(fColorSpace.get(), kUnpremul_SkAlphaType,
                            rec.fDstCS,        kUnpremul_SkAlphaType).apply(color.vec());

@@ -7,9 +7,9 @@
 
 #include "include/private/SkHalf.h"
 #include "include/private/base/SkTo.h"
+#include "src/base/SkUtils.h"
 #include "src/core/SkOpts.h"
 #include "src/core/SkRasterPipeline.h"
-#include "src/core/SkUtils.h"
 #include "src/gpu/Swizzle.h"
 #include "tests/Test.h"
 
@@ -1532,9 +1532,9 @@ DEF_TEST(SkRasterPipeline_Jump, r) {
     // Make a program which jumps over an append_constant_color op.
     SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
     SkRasterPipeline p(&alloc);
-    p.append_constant_color(&alloc, kColorGreen);    // assign green
+    p.append_constant_color(&alloc, kColorGreen);      // assign green
     p.append(SkRasterPipelineOp::jump, &offset);       // jump over the dark-red color assignment
-    p.append_constant_color(&alloc, kColorDarkRed);  // (not executed)
+    p.append_constant_color(&alloc, kColorDarkRed);    // (not executed)
     p.append(SkRasterPipelineOp::store_src, slots);    // store the result so we can check it
     p.run(0,0,1,1);
 
@@ -1555,7 +1555,8 @@ DEF_TEST(SkRasterPipeline_BranchIfAnyActiveLanes, r) {
 
     alignas(64) static constexpr float kColorDarkRed[4] = {0.5f, 0.0f, 0.0f, 0.75f};
     alignas(64) static constexpr float kColorGreen[4]   = {0.0f, 1.0f, 0.0f, 1.0f};
-    const int offset = 2;
+    SkRasterPipeline_BranchCtx ctx;
+    ctx.offset = 2;
 
     // An array of all zeros.
     alignas(64) static constexpr int32_t kNoLanesActive[4 * SkRasterPipeline_kMaxStride_highp] = {};
@@ -1567,16 +1568,16 @@ DEF_TEST(SkRasterPipeline_BranchIfAnyActiveLanes, r) {
     // Make a program which conditionally branches past two append_constant_color ops.
     SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
     SkRasterPipeline p(&alloc);
-    p.append_constant_color(&alloc, kColorDarkRed);                  // set the color to dark red
+    p.append_constant_color(&alloc, kColorDarkRed);                    // set the color to dark red
     p.append(SkRasterPipelineOp::load_dst, kNoLanesActive);            // make no lanes active
-    p.append(SkRasterPipelineOp::branch_if_any_active_lanes, &offset); // do not skip past next line
-    p.append_constant_color(&alloc, kColorGreen);                    // set the color to green
+    p.append(SkRasterPipelineOp::branch_if_any_active_lanes, &ctx);    // do not skip past next line
+    p.append_constant_color(&alloc, kColorGreen);                      // set the color to green
     p.append(SkRasterPipelineOp::load_dst, oneLaneActive);             // set one lane active
-    p.append(SkRasterPipelineOp::branch_if_any_active_lanes, &offset); // skip past next line
-    p.append_constant_color(&alloc, kColorDarkRed);                  // (not executed)
+    p.append(SkRasterPipelineOp::branch_if_any_active_lanes, &ctx);    // skip past next line
+    p.append_constant_color(&alloc, kColorDarkRed);                    // (not executed)
     p.append(SkRasterPipelineOp::init_lane_masks);                     // set all lanes active
-    p.append(SkRasterPipelineOp::branch_if_any_active_lanes, &offset); // skip past next line
-    p.append_constant_color(&alloc, kColorDarkRed);                  // (not executed)
+    p.append(SkRasterPipelineOp::branch_if_any_active_lanes, &ctx);    // skip past next line
+    p.append_constant_color(&alloc, kColorDarkRed);                    // (not executed)
     p.append(SkRasterPipelineOp::store_src, slots);                    // store final color
     p.run(0,0,1,1);
 
@@ -1598,7 +1599,8 @@ DEF_TEST(SkRasterPipeline_BranchIfNoActiveLanes, r) {
     alignas(64) static constexpr float kColorBlack[4]   = {0.0f, 0.0f, 0.0f, 0.0f};
     alignas(64) static constexpr float kColorRed[4]     = {1.0f, 0.0f, 0.0f, 1.0f};
     alignas(64) static constexpr float kColorBlue[4]    = {0.0f, 0.0f, 1.0f, 1.0f};
-    const int offset = 2;
+    SkRasterPipeline_BranchCtx ctx;
+    ctx.offset = 2;
 
     // An array of all zeros.
     alignas(64) static constexpr int32_t kNoLanesActive[4 * SkRasterPipeline_kMaxStride_highp] = {};
@@ -1610,16 +1612,16 @@ DEF_TEST(SkRasterPipeline_BranchIfNoActiveLanes, r) {
     // Make a program which conditionally branches past a append_constant_color op.
     SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
     SkRasterPipeline p(&alloc);
-    p.append_constant_color(&alloc, kColorBlack);                    // set the color to black
+    p.append_constant_color(&alloc, kColorBlack);                      // set the color to black
     p.append(SkRasterPipelineOp::init_lane_masks);                     // set all lanes active
-    p.append(SkRasterPipelineOp::branch_if_no_active_lanes, &offset);  // do not skip past next line
-    p.append_constant_color(&alloc, kColorRed);                      // sets the color to red
+    p.append(SkRasterPipelineOp::branch_if_no_active_lanes, &ctx);     // do not skip past next line
+    p.append_constant_color(&alloc, kColorRed);                        // sets the color to red
     p.append(SkRasterPipelineOp::load_dst, oneLaneActive);             // set one lane active
-    p.append(SkRasterPipelineOp::branch_if_no_active_lanes, &offset);  // do not skip past next line
+    p.append(SkRasterPipelineOp::branch_if_no_active_lanes, &ctx);     // do not skip past next line
     p.append(SkRasterPipelineOp::swap_rb);                             // swap R and B (making blue)
     p.append(SkRasterPipelineOp::load_dst, kNoLanesActive);            // make no lanes active
-    p.append(SkRasterPipelineOp::branch_if_no_active_lanes, &offset);  // skip past next line
-    p.append_constant_color(&alloc, kColorBlack);                    // (not executed)
+    p.append(SkRasterPipelineOp::branch_if_no_active_lanes, &ctx);     // skip past next line
+    p.append_constant_color(&alloc, kColorBlack);                      // (not executed)
     p.append(SkRasterPipelineOp::store_src, slots);                    // store final blue color
     p.run(0,0,1,1);
 
@@ -1628,6 +1630,63 @@ DEF_TEST(SkRasterPipeline_BranchIfNoActiveLanes, r) {
     for (int checkSlot = 0; checkSlot < 4; ++checkSlot) {
         for (int checkLane = 0; checkLane < N; ++checkLane) {
             REPORTER_ASSERT(r, *destPtr == kColorBlue[checkSlot]);
+            ++destPtr;
+        }
+    }
+}
+
+DEF_TEST(SkRasterPipeline_BranchIfActiveLanesEqual, r) {
+    // Allocate space for 4 slots.
+    alignas(64) float slots[4 * SkRasterPipeline_kMaxStride_highp] = {};
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    alignas(64) static constexpr float kColorBlack[4]   = {0.0f, 0.0f, 0.0f, 0.0f};
+    alignas(64) static constexpr float kColorRed[4]     = {1.0f, 0.0f, 0.0f, 1.0f};
+
+    // An array of all 6s.
+    alignas(64) int allSixes[SkRasterPipeline_kMaxStride_highp] = {};
+    std::fill(std::begin(allSixes), std::end(allSixes), 6);
+
+    // An array of all 6s, except for a single 5 in one lane.
+    alignas(64) int mostlySixesWithOneFive[SkRasterPipeline_kMaxStride_highp] = {};
+    std::fill(std::begin(mostlySixesWithOneFive), std::end(mostlySixesWithOneFive), 6);
+    mostlySixesWithOneFive[N - 1] = 5;
+
+    // A condition mask with all lanes on except for the six-lane.
+    alignas(64) int mask[SkRasterPipeline_kMaxStride_highp] = {};
+    std::fill(std::begin(mask), std::end(mask), ~0);
+    mask[N - 1] = 0;
+
+    SkRasterPipeline_BranchIfEqualCtx matching; // comparing all-six vs five will match
+    matching.offset = 2;
+    matching.value = 5;
+    matching.ptr = allSixes;
+
+    SkRasterPipeline_BranchIfEqualCtx nonmatching;  // comparing mostly-six vs five won't match
+    nonmatching.offset = 2;
+    nonmatching.value = 5;
+    nonmatching.ptr = mostlySixesWithOneFive;
+
+    // Make a program which conditionally branches past a swap_rb op.
+    SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+    SkRasterPipeline p(&alloc);
+    p.append_constant_color(&alloc, kColorBlack);                          // set the color to black
+    p.append(SkRasterPipelineOp::init_lane_masks);                         // set all lanes active
+    p.append(SkRasterPipelineOp::branch_if_no_active_lanes_eq, &nonmatching);// don't skip next line
+    p.append_constant_color(&alloc, kColorRed);                            // set the color to red
+    p.append(SkRasterPipelineOp::branch_if_no_active_lanes_eq, &matching); // do skip next line
+    p.append(SkRasterPipelineOp::swap_rb);                                 // swap R and B (= blue)
+    p.append(SkRasterPipelineOp::load_condition_mask, mask);               // mask off the six
+    p.append(SkRasterPipelineOp::branch_if_no_active_lanes_eq, &nonmatching);// do skip next line
+    p.append(SkRasterPipelineOp::white_color);                             // set the color to white
+    p.append(SkRasterPipelineOp::store_src, slots);                        // store final red color
+    p.run(0,0,SkOpts::raster_pipeline_highp_stride,1);
+
+    // Verify that the slots contain red.
+    float* destPtr = &slots[0];
+    for (int checkSlot = 0; checkSlot < 4; ++checkSlot) {
+        for (int checkLane = 0; checkLane < N; ++checkLane) {
+            REPORTER_ASSERT(r, *destPtr == kColorRed[checkSlot]);
             ++destPtr;
         }
     }

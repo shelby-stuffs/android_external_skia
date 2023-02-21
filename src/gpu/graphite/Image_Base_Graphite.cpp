@@ -24,6 +24,7 @@ sk_sp<SkImage> Image_Base::onMakeSubset(const SkIRect&, GrDirectContext*) const 
 sk_sp<SkImage> Image_Base::onMakeColorTypeAndColorSpace(SkColorType,
                                                         sk_sp<SkColorSpace>,
                                                         GrDirectContext*) const {
+    SKGPU_LOG_W("Cannot convert Graphite-backed image to Ganesh");
     return nullptr;
 }
 
@@ -74,12 +75,6 @@ sk_sp<SkImage> SkImage::makeTextureImage(Recorder* recorder,
         requiredProps.fMipmapped = Mipmapped::kNo;
     }
 
-    if (as_IB(this)->isGraphiteBacked()) {
-        if (requiredProps.fMipmapped == Mipmapped::kNo || this->hasMipmaps()) {
-            const SkImage* image = this;
-            return sk_ref_sp(const_cast<SkImage*>(image));
-        }
-    }
     return as_IB(this)->onMakeTextureImage(recorder, requiredProps);
 }
 
@@ -97,4 +92,3 @@ sk_sp<SkImage> SkImage::makeSubset(const SkIRect& subset,
 
     return as_IB(this)->onMakeSubset(subset, recorder, requiredProps);
 }
-

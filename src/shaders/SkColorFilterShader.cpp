@@ -7,7 +7,7 @@
 
 #include "include/core/SkShader.h"
 #include "include/core/SkString.h"
-#include "src/core/SkArenaAlloc.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkColorFilterBase.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
@@ -55,8 +55,8 @@ void SkColorFilterShader::flatten(SkWriteBuffer& buffer) const {
     buffer.writeFlattenable(fFilter.get());
 }
 
-bool SkColorFilterShader::onAppendStages(const SkStageRec& rec) const {
-    if (!as_SB(fShader)->appendStages(rec)) {
+bool SkColorFilterShader::appendStages(const SkStageRec& rec, const MatrixRec& mRec) const {
+    if (!as_SB(fShader)->appendStages(rec, mRec)) {
         return false;
     }
     if (fAlpha != 1.0f) {

@@ -67,6 +67,7 @@
     M(load_rgf32)                   M(store_rgf32)                 \
     M(load_1010102) M(load_1010102_dst) M(store_1010102) M(gather_1010102) \
     M(store_u16_be)                                                \
+    M(store_src_rg) M(load_src_rg)                                 \
     M(byte_tables)                                                 \
     M(colorburn) M(colordodge) M(softlight)                        \
     M(hue) M(saturation) M(color) M(luminosity)                    \
@@ -96,13 +97,14 @@
     M(mask_2pt_conical_nan)                                        \
     M(mask_2pt_conical_degenerates) M(apply_vector_mask)           \
     /* Dedicated SkSL stages begin here: */                                                   \
-    M(init_lane_masks) M(store_src_rg) M(immediate_f)                                         \
+    M(init_lane_masks) M(immediate_f)                                                         \
     M(load_unmasked) M(store_unmasked) M(store_masked)                                        \
     M(load_condition_mask) M(store_condition_mask) M(merge_condition_mask)                    \
     M(load_loop_mask)      M(store_loop_mask)      M(mask_off_loop_mask)                      \
     M(reenable_loop_mask)  M(merge_loop_mask)                                                 \
     M(load_return_mask)    M(store_return_mask)    M(mask_off_return_mask)                    \
-    M(branch_if_any_active_lanes) M(branch_if_no_active_lanes) M(jump)                        \
+    M(branch_if_any_active_lanes) M(branch_if_no_active_lanes)                                \
+    M(branch_if_no_active_lanes_eq)  M(jump)                                                  \
     M(bitwise_and_n_ints)                                                                     \
     M(bitwise_and_int) M(bitwise_and_2_ints) M(bitwise_and_3_ints) M(bitwise_and_4_ints)      \
     M(bitwise_or_n_ints)                                                                      \
@@ -122,6 +124,8 @@
     M(abs_int)          M(abs_2_ints)          M(abs_3_ints)          M(abs_4_ints)           \
     M(floor_float)      M(floor_2_floats)      M(floor_3_floats)      M(floor_4_floats)       \
     M(ceil_float)       M(ceil_2_floats)       M(ceil_3_floats)       M(ceil_4_floats)        \
+    M(sin_float)        M(cos_float)           M(tan_float)           M(atan_float)           \
+    M(atan2_n_floats)   M(sqrt_float)                                                         \
     M(copy_constant)    M(copy_2_constants)    M(copy_3_constants)    M(copy_4_constants)     \
     M(copy_slot_masked) M(copy_2_slots_masked) M(copy_3_slots_masked) M(copy_4_slots_masked)  \
     M(copy_slot_unmasked)    M(copy_2_slots_unmasked)                                         \

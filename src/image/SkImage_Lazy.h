@@ -8,16 +8,43 @@
 #ifndef SkImage_Lazy_DEFINED
 #define SkImage_Lazy_DEFINED
 
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/private/SkIDChangeListener.h"
 #include "include/private/base/SkMutex.h"
 #include "src/image/SkImage_Base.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <tuple>
+
 #if SK_SUPPORT_GPU
 #include "include/core/SkYUVAPixmaps.h"
 class GrCaps;
+class GrDirectContext;
+class GrFragmentProcessor;
+class GrRecordingContext;
+class GrSurfaceProxyView;
 #endif
 
 class SharedGenerator;
+class SkBitmap;
+class SkCachedData;
+class SkData;
+class SkMatrix;
+class SkPixmap;
+enum SkColorType : int;
+enum class GrColorType;
+enum class GrImageTexGenPolicy : int;
+enum class GrMipmapped : bool;
+enum class SkTileMode;
+namespace skgpu { enum class Budgeted : bool; }
+struct SkIRect;
+struct SkRect;
 
 class SkImage_Lazy : public SkImage_Base {
 public:
@@ -45,8 +72,13 @@ public:
     sk_sp<SkData> onRefEncoded() const override;
     sk_sp<SkImage> onMakeSubset(const SkIRect&, GrDirectContext*) const override;
 #ifdef SK_GRAPHITE_ENABLED
-    sk_sp<SkImage> onMakeSubset(const SkIRect&, skgpu::graphite::Recorder*,
+    sk_sp<SkImage> onMakeSubset(const SkIRect&,
+                                skgpu::graphite::Recorder*,
                                 RequiredImageProperties) const override;
+    sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType targetCT,
+                                                sk_sp<SkColorSpace> targetCS,
+                                                skgpu::graphite::Recorder*,
+                                                RequiredImageProperties) const override;
 #endif
     bool getROPixels(GrDirectContext*, SkBitmap*, CachingHint) const override;
     bool onIsLazyGenerated() const override { return true; }
@@ -111,8 +143,6 @@ private:
     // of the unique ID's demise. This is used to remove cached textures from GrContext.
     mutable SkIDChangeListener::List fUniqueIDListeners;
 #endif
-
-    using INHERITED = SkImage_Base;
 };
 
 #endif

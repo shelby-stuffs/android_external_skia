@@ -7,12 +7,12 @@
 
 #include "include/core/SkString.h"
 
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkTo.h"
-#include "src/core/SkSafeMath.h"
-#include "src/core/SkUtils.h"
-#include "src/utils/SkUTF.h"
+#include "src/base/SkSafeMath.h"
+#include "src/base/SkUTF.h"
+#include "src/base/SkUtils.h"
 
 #include <algorithm>
 #include <cstdio>

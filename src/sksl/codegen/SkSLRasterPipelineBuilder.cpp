@@ -9,7 +9,7 @@
 #include "include/private/SkSLString.h"
 #include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkTo.h"
-#include "src/core/SkArenaAlloc.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkOpts.h"
 #include "src/core/SkRasterPipelineOpContexts.h"
 #include "src/core/SkRasterPipelineOpList.h"
@@ -35,6 +35,13 @@ namespace RP {
 
 using RPOp = SkRasterPipelineOp;
 
+#define ALL_SINGLE_SLOT_UNARY_OP_CASES  \
+         BuilderOp::atan_float:         \
+    case BuilderOp::cos_float:          \
+    case BuilderOp::sin_float:          \
+    case BuilderOp::sqrt_float:         \
+    case BuilderOp::tan_float
+
 #define ALL_MULTI_SLOT_UNARY_OP_CASES        \
          BuilderOp::abs_float:               \
     case BuilderOp::abs_int:                 \
@@ -45,6 +52,9 @@ using RPOp = SkRasterPipelineOp;
     case BuilderOp::cast_to_uint_from_float: \
     case BuilderOp::ceil_float:              \
     case BuilderOp::floor_float              \
+
+#define ALL_N_WAY_BINARY_OP_CASES  \
+         BuilderOp::atan2_n_floats
 
 #define ALL_MULTI_SLOT_BINARY_OP_CASES  \
          BuilderOp::add_n_floats:       \
@@ -81,6 +91,7 @@ using RPOp = SkRasterPipelineOp;
 
 void Builder::unary_op(BuilderOp op, int32_t slots) {
     switch (op) {
+        case ALL_SINGLE_SLOT_UNARY_OP_CASES:
         case ALL_MULTI_SLOT_UNARY_OP_CASES:
             fInstructions.push_back({op, {}, slots});
             break;
@@ -93,6 +104,7 @@ void Builder::unary_op(BuilderOp op, int32_t slots) {
 
 void Builder::binary_op(BuilderOp op, int32_t slots) {
     switch (op) {
+        case ALL_N_WAY_BINARY_OP_CASES:
         case ALL_MULTI_SLOT_BINARY_OP_CASES:
             fInstructions.push_back({op, {}, slots});
             break;
@@ -141,7 +153,7 @@ void Builder::discard_stack(int32_t count) {
                 }
                 continue;
 
-            case BuilderOp::push_literal_f:
+            case BuilderOp::push_literal:
             case BuilderOp::push_condition_mask:
             case BuilderOp::push_loop_mask:
             case BuilderOp::push_return_mask:
@@ -175,6 +187,22 @@ void Builder::push_slots(SlotRange src) {
             lastInstruction.fImmA += src.count;
             return;
         }
+
+        // If the previous instruction was discarding an equal number of slots...
+        if (lastInstruction.fOp == BuilderOp::discard_stack && lastInstruction.fImmA == src.count) {
+            // ... and the instruction before that was copying from the stack to the same slots...
+            Instruction& prevInstruction = fInstructions.fromBack(1);
+            if ((prevInstruction.fOp == BuilderOp::copy_stack_to_slots ||
+                 prevInstruction.fOp == BuilderOp::copy_stack_to_slots_unmasked) &&
+                prevInstruction.fSlotA == src.index &&
+                prevInstruction.fImmA == src.count) {
+                // ... we are emitting `copy stack to X, discard stack, copy X to stack`. This is a
+                // common pattern when multiple operations in a row affect the same variable. We can
+                // eliminate the discard and just leave X on the stack.
+                fInstructions.pop_back();
+                return;
+            }
+        }
     }
 
     if (src.count > 0) {
@@ -202,6 +230,15 @@ void Builder::push_uniform(SlotRange src) {
 }
 
 void Builder::push_duplicates(int count) {
+    if (!fInstructions.empty()) {
+        Instruction& lastInstruction = fInstructions.back();
+
+        // If the previous op is pushing a zero, we can just push more of them.
+        if (lastInstruction.fOp == BuilderOp::push_zeros) {
+            lastInstruction.fImmA += count;
+            return;
+        }
+    }
     SkASSERT(count >= 0);
     if (count >= 3) {
         // Use a swizzle to splat the input into a 4-slot value.
@@ -221,18 +258,69 @@ void Builder::push_duplicates(int count) {
     }
 }
 
-static int pack_nybbles(SkSpan<const int8_t> components) {
-    // Pack up to 8 elements into nybbles, in reverse order.
-    int packed = 0;
-    for (auto iter = components.rbegin(); iter != components.rend(); ++iter) {
-        SkASSERT(*iter >= 0 && *iter <= 0xF);
-        packed <<= 4;
-        packed |= *iter;
+void Builder::pop_slots_unmasked(SlotRange dst) {
+    SkASSERT(dst.count >= 0);
+
+    SkTArray<int32_t> constantsToPush;
+    while (!fInstructions.empty() && dst.count > 0) {
+        Instruction& lastInstruction = fInstructions.back();
+
+        // If the last instructions is pushing a constant, we can save a step by copying those
+        // constants directly into the destination slot.
+        if (lastInstruction.fOp == BuilderOp::push_literal) {
+            int immValue = lastInstruction.fImmA;
+            fInstructions.pop_back();
+
+            // We need to fill the _last_ slot of the passed-in slot range.
+            constantsToPush.push_back(immValue);
+            continue;
+        }
+
+        // If the last instruction is pushing a zero, we can save a step by directly zeroing out
+        // the destination slot.
+        if (lastInstruction.fOp == BuilderOp::push_zeros) {
+            lastInstruction.fImmA--;
+            if (lastInstruction.fImmA == 0) {
+                fInstructions.pop_back();
+            }
+
+            // We need to zero the _last_ slot of the passed-in slot range.
+            constantsToPush.push_back(0);
+            continue;
+        }
+
+        break;
     }
-    return packed;
+
+    if (!constantsToPush.empty()) {
+        // Write constants directly to their destination (avoiding a trip through the stack).
+        dst.count -= constantsToPush.size();
+        Slot constantWriteSlot = dst.index + dst.count;
+
+        for (int index = constantsToPush.size(); index--;) {
+            int constantValue = constantsToPush[index];
+            if (constantValue != 0) {
+                this->copy_constant(constantWriteSlot++, constantValue);
+            } else {
+                this->zero_slots_unmasked({constantWriteSlot++, 1});
+            }
+        }
+    }
+
+    // Copy non-constants from the stack to their destination.
+    if (dst.count > 0) {
+        this->copy_stack_to_slots_unmasked(dst);
+        this->discard_stack(dst.count);
+    }
 }
 
 void Builder::copy_stack_to_slots(SlotRange dst, int offsetFromStackTop) {
+    // If the execution mask is known to be all-true, then we can ignore the write mask.
+    if (!this->executionMaskWritesAreEnabled()) {
+        this->copy_stack_to_slots_unmasked(dst, offsetFromStackTop);
+        return;
+    }
+
     // If the last instruction copied the previous stack slots, just extend it.
     if (!fInstructions.empty()) {
         Instruction& lastInstruction = fInstructions.back();
@@ -251,6 +339,81 @@ void Builder::copy_stack_to_slots(SlotRange dst, int offsetFromStackTop) {
 
     fInstructions.push_back({BuilderOp::copy_stack_to_slots, {dst.index},
                              dst.count, offsetFromStackTop});
+}
+
+void Builder::copy_stack_to_slots_unmasked(SlotRange dst, int offsetFromStackTop) {
+    // If the last instruction copied the previous stack slots, just extend it.
+    if (!fInstructions.empty()) {
+        Instruction& lastInstruction = fInstructions.back();
+
+        // If the last op is copy-stack-to-slots-unmasked...
+        if (lastInstruction.fOp == BuilderOp::copy_stack_to_slots_unmasked &&
+            // and this op's destination is immediately after the last copy-slots-op's destination
+            lastInstruction.fSlotA + lastInstruction.fImmA == dst.index &&
+            // and this op's source is immediately after the last copy-slots-op's source
+            lastInstruction.fImmB - lastInstruction.fImmA == offsetFromStackTop) {
+            // then we can just extend the copy!
+            lastInstruction.fImmA += dst.count;
+            return;
+        }
+    }
+
+    fInstructions.push_back({BuilderOp::copy_stack_to_slots_unmasked, {dst.index},
+                             dst.count, offsetFromStackTop});
+}
+
+void Builder::pop_return_mask() {
+    SkASSERT(this->executionMaskWritesAreEnabled());
+
+    // This instruction is going to overwrite the return mask. If the previous instruction was
+    // masking off the return mask, that's wasted work and it can be eliminated.
+    if (!fInstructions.empty()) {
+        Instruction& lastInstruction = fInstructions.back();
+
+        if (lastInstruction.fOp == BuilderOp::mask_off_return_mask) {
+            fInstructions.pop_back();
+        }
+    }
+
+    fInstructions.push_back({BuilderOp::pop_return_mask, {}});
+}
+
+void Builder::zero_slots_unmasked(SlotRange dst) {
+    if (!fInstructions.empty()) {
+        Instruction& lastInstruction = fInstructions.back();
+
+        if (lastInstruction.fOp == BuilderOp::zero_slot_unmasked) {
+            if (lastInstruction.fSlotA + lastInstruction.fImmA == dst.index) {
+                // The previous instruction was zeroing the range immediately before this range.
+                // Combine the ranges.
+                lastInstruction.fImmA += dst.count;
+                return;
+            }
+        }
+
+        if (lastInstruction.fOp == BuilderOp::zero_slot_unmasked) {
+            if (lastInstruction.fSlotA == dst.index + dst.count) {
+                // The previous instruction was zeroing the range immediately after this range.
+                // Combine the ranges.
+                lastInstruction.fSlotA = dst.index;
+                lastInstruction.fImmA += dst.count;
+                return;
+            }
+        }
+    }
+
+    fInstructions.push_back({BuilderOp::zero_slot_unmasked, {dst.index}, dst.count});
+}
+
+static int pack_nybbles(SkSpan<const int8_t> components) {
+    // Pack up to 8 elements into nybbles, in reverse order.
+    int packed = 0;
+    for (auto iter = components.rbegin(); iter != components.rend(); ++iter) {
+        SkASSERT(*iter >= 0 && *iter <= 0xF);
+        packed <<= 4;
+        packed |= *iter;
+    }
+    return packed;
 }
 
 void Builder::swizzle(int consumedSlots, SkSpan<const int8_t> elementSpan) {
@@ -374,6 +537,9 @@ void Builder::matrix_resize(int origColumns, int origRows, int newColumns, int n
 std::unique_ptr<Program> Builder::finish(int numValueSlots,
                                          int numUniformSlots,
                                          SkRPDebugTrace* debugTrace) {
+    // Verify that calls to enableExecutionMaskWrites and disableExecutionMaskWrites are balanced.
+    SkASSERT(fExecutionMaskWritesEnabled == 0);
+
     return std::make_unique<Program>(std::move(fInstructions), numValueSlots, numUniformSlots,
                                      fNumLabels, fNumBranches, debugTrace);
 }
@@ -384,11 +550,14 @@ void Program::optimize() {
 
 static int stack_usage(const Instruction& inst) {
     switch (inst.fOp) {
-        case BuilderOp::push_literal_f:
+        case BuilderOp::push_literal:
         case BuilderOp::push_condition_mask:
         case BuilderOp::push_loop_mask:
         case BuilderOp::push_return_mask:
             return 1;
+
+        case BuilderOp::push_src_rgba:
+            return 4;
 
         case BuilderOp::push_slots:
         case BuilderOp::push_uniform:
@@ -402,6 +571,14 @@ static int stack_usage(const Instruction& inst) {
         case BuilderOp::pop_return_mask:
             return -1;
 
+        case BuilderOp::pop_src_rg:
+            return -2;
+
+        case BuilderOp::pop_src_rgba:
+        case BuilderOp::pop_dst_rgba:
+            return -4;
+
+        case ALL_N_WAY_BINARY_OP_CASES:
         case ALL_MULTI_SLOT_BINARY_OP_CASES:
         case BuilderOp::discard_stack:
         case BuilderOp::select:
@@ -424,6 +601,7 @@ static int stack_usage(const Instruction& inst) {
             int generated = inst.fImmA & 0xFFFF;
             return generated - consumed;
         }
+        case ALL_SINGLE_SLOT_UNARY_OP_CASES:
         case ALL_MULTI_SLOT_UNARY_OP_CASES:
         default:
             return 0;
@@ -535,6 +713,15 @@ void Program::appendCopyConstants(SkTArray<Stage>* pipeline,
                      numSlots);
 }
 
+void Program::appendSingleSlotUnaryOp(SkTArray<Stage>* pipeline, SkRasterPipelineOp stage,
+                                      float* dst, int numSlots) {
+    SkASSERT(numSlots >= 0);
+    while (numSlots--) {
+        pipeline->push_back({stage, dst});
+        dst += SkOpts::raster_pipeline_highp_stride;
+    }
+}
+
 void Program::appendMultiSlotUnaryOp(SkTArray<Stage>* pipeline, SkRasterPipelineOp baseStage,
                                      float* dst, int numSlots) {
     SkASSERT(numSlots >= 0);
@@ -549,6 +736,22 @@ void Program::appendMultiSlotUnaryOp(SkTArray<Stage>* pipeline, SkRasterPipeline
     pipeline->push_back({stage, dst});
 }
 
+void Program::appendAdjacentNWayBinaryOp(SkTArray<Stage>* pipeline, SkArenaAlloc* alloc,
+                                         SkRasterPipelineOp stage,
+                                         float* dst, const float* src, int numSlots) {
+    // The source and destination must be directly next to one another.
+    SkASSERT(numSlots >= 0);
+    SkASSERT((dst + SkOpts::raster_pipeline_highp_stride * numSlots) == src);
+
+    if (numSlots > 0) {
+        auto ctx = alloc->make<SkRasterPipeline_BinaryOpCtx>();
+        ctx->dst = dst;
+        ctx->src = src;
+        pipeline->push_back({stage, ctx});
+        return;
+    }
+}
+
 void Program::appendAdjacentMultiSlotBinaryOp(SkTArray<Stage>* pipeline, SkArenaAlloc* alloc,
                                               SkRasterPipelineOp baseStage,
                                               float* dst, const float* src, int numSlots) {
@@ -557,10 +760,7 @@ void Program::appendAdjacentMultiSlotBinaryOp(SkTArray<Stage>* pipeline, SkArena
     SkASSERT((dst + SkOpts::raster_pipeline_highp_stride * numSlots) == src);
 
     if (numSlots > 4) {
-        auto ctx = alloc->make<SkRasterPipeline_BinaryOpCtx>();
-        ctx->dst = dst;
-        ctx->src = src;
-        pipeline->push_back({baseStage, ctx});
+        this->appendAdjacentNWayBinaryOp(pipeline, alloc, baseStage, dst, src, numSlots);
         return;
     }
     if (numSlots > 0) {
@@ -649,9 +849,10 @@ void Program::makeStages(SkTArray<Stage>* pipeline,
     int currentStack = 0;
     int mostRecentRewind = 0;
 
-    // Allocate buffers for branch targets (used when running the program) and labels (only needed
-    // during initial program construction).
-    int* branchTargets = alloc->makeArrayDefault<int>(fNumBranches);
+    // Allocate buffers for branch targets and labels; these are needed during initial program
+    // construction, to convert labels into actual offsets into the pipeline and fix up branches.
+    SkTArray<SkRasterPipeline_BranchCtx*> branchTargets;
+    branchTargets.push_back_n(fNumBranches, (SkRasterPipeline_BranchCtx*)nullptr);
     SkTArray<int> labelOffsets;
     labelOffsets.push_back_n(fNumLabels, -1);
     SkTArray<int> branchGoesToLabel;
@@ -678,6 +879,28 @@ void Program::makeStages(SkTArray<Stage>* pipeline,
         auto UniformA = [&]() { return &uniforms[inst.fSlotA]; };
         float*& tempStackPtr = tempStackMap[currentStack];
 
+        auto WriteBranchOp = [&](RPOp op, SkRasterPipeline_BranchCtx* branchCtx) {
+            // If we have already encountered the label associated with this branch, this is a
+            // backwards branch. Add a stack-rewind immediately before the branch to ensure that
+            // long-running loops don't use an unbounded amount of stack space.
+            if (labelOffsets[inst.fImmA] >= 0) {
+                this->appendStackRewind(pipeline);
+                mostRecentRewind = pipeline->size();
+            }
+
+            // Write the absolute pipeline position into the branch targets, because the
+            // associated label might not have been reached yet. We will go back over the branch
+            // targets at the end and fix them up.
+            SkASSERT(inst.fImmA >= 0 && inst.fImmA < fNumLabels);
+            SkASSERT(currentBranchOp >= 0 && currentBranchOp < fNumBranches);
+            branchCtx->offset = pipeline->size();
+
+            branchTargets[currentBranchOp] = branchCtx;
+            branchGoesToLabel[currentBranchOp] = inst.fImmA;
+            pipeline->push_back({op, branchCtx});
+            ++currentBranchOp;
+        };
+
         switch (inst.fOp) {
             case BuilderOp::label:
                 // Write the absolute pipeline position into the label offset list. We will go over
@@ -689,25 +912,16 @@ void Program::makeStages(SkTArray<Stage>* pipeline,
             case BuilderOp::jump:
             case BuilderOp::branch_if_any_active_lanes:
             case BuilderOp::branch_if_no_active_lanes:
-                // If we have already encountered the label associated with this branch, this is a
-                // backwards branch. Add a stack-rewind immediately before the branch to ensure that
-                // long-running loops don't use an unbounded amount of stack space.
-                if (labelOffsets[inst.fImmA] >= 0) {
-                    this->appendStackRewind(pipeline);
-                    mostRecentRewind = pipeline->size();
-                }
-
-                // Write the absolute pipeline position into the branch targets, because the
-                // associated label might not have been reached yet. We will go back over the branch
-                // targets at the end and fix them up.
-                SkASSERT(inst.fImmA >= 0 && inst.fImmA < fNumLabels);
-                SkASSERT(currentBranchOp >= 0 && currentBranchOp < fNumBranches);
-                branchTargets[currentBranchOp] = pipeline->size();
-                branchGoesToLabel[currentBranchOp] = inst.fImmA;
-                pipeline->push_back({(RPOp)inst.fOp, &branchTargets[currentBranchOp]});
-                ++currentBranchOp;
+                WriteBranchOp((RPOp)inst.fOp, alloc->make<SkRasterPipeline_BranchCtx>());
                 break;
 
+            case BuilderOp::branch_if_no_active_lanes_on_stack_top_equal: {
+                auto* ctx = alloc->make<SkRasterPipeline_BranchIfEqualCtx>();
+                ctx->value = inst.fImmB;
+                ctx->ptr = reinterpret_cast<int*>(tempStackPtr - N);
+                WriteBranchOp(RPOp::branch_if_no_active_lanes_eq, ctx);
+                break;
+            }
             case BuilderOp::init_lane_masks:
                 pipeline->push_back({RPOp::init_lane_masks, nullptr});
                 break;
@@ -748,9 +962,21 @@ void Program::makeStages(SkTArray<Stage>* pipeline,
                 pipeline->push_back({RPOp::store_masked, SlotA()});
                 break;
 
+            case ALL_SINGLE_SLOT_UNARY_OP_CASES: {
+                float* dst = tempStackPtr - (inst.fImmA * N);
+                this->appendSingleSlotUnaryOp(pipeline, (RPOp)inst.fOp, dst, inst.fImmA);
+                break;
+            }
             case ALL_MULTI_SLOT_UNARY_OP_CASES: {
                 float* dst = tempStackPtr - (inst.fImmA * N);
                 this->appendMultiSlotUnaryOp(pipeline, (RPOp)inst.fOp, dst, inst.fImmA);
+                break;
+            }
+            case ALL_N_WAY_BINARY_OP_CASES: {
+                float* src = tempStackPtr - (inst.fImmA * N);
+                float* dst = tempStackPtr - (inst.fImmA * 2 * N);
+                this->appendAdjacentNWayBinaryOp(pipeline, alloc, (RPOp)inst.fOp,
+                                                 dst, src, inst.fImmA);
                 break;
             }
             case ALL_MULTI_SLOT_BINARY_OP_CASES: {
@@ -823,6 +1049,26 @@ void Program::makeStages(SkTArray<Stage>* pipeline,
                 pipeline->push_back({RPOp::shuffle, ctx});
                 break;
             }
+            case BuilderOp::push_src_rgba: {
+                float* dst = tempStackPtr;
+                pipeline->push_back({RPOp::store_src, dst});
+                break;
+            }
+            case BuilderOp::pop_src_rg: {
+                float* dst = tempStackPtr - (2 * N);
+                pipeline->push_back({RPOp::load_src_rg, dst});
+                break;
+            }
+            case BuilderOp::pop_src_rgba: {
+                float* dst = tempStackPtr - (4 * N);
+                pipeline->push_back({RPOp::load_src, dst});
+                break;
+            }
+            case BuilderOp::pop_dst_rgba: {
+                float* dst = tempStackPtr - (4 * N);
+                pipeline->push_back({RPOp::load_dst, dst});
+                break;
+            }
             case BuilderOp::push_slots: {
                 float* dst = tempStackPtr;
                 this->appendCopySlotsUnmasked(pipeline, alloc, dst, SlotA(), inst.fImmA);
@@ -890,12 +1136,9 @@ void Program::makeStages(SkTArray<Stage>* pipeline,
                 pipeline->push_back({RPOp::mask_off_return_mask, nullptr});
                 break;
 
-            case BuilderOp::push_literal_f: {
-                float* dst = tempStackPtr;
-                if (inst.fImmA == 0) {
-                    pipeline->push_back({RPOp::zero_slot_unmasked, dst});
-                    break;
-                }
+            case BuilderOp::copy_constant:
+            case BuilderOp::push_literal: {
+                float* dst = (inst.fOp == BuilderOp::push_literal) ? tempStackPtr : SlotA();
                 int* constantPtr;
                 if (int** lookup = constantLookupMap.find(inst.fImmA)) {
                     constantPtr = *lookup;
@@ -959,9 +1202,9 @@ void Program::makeStages(SkTArray<Stage>* pipeline,
 
     // Fix up every branch target.
     for (int index = 0; index < fNumBranches; ++index) {
-        int branchFromIdx = branchTargets[index];
+        int branchFromIdx = branchTargets[index]->offset;
         int branchToIdx = labelOffsets[branchGoesToLabel[index]];
-        branchTargets[index] = branchToIdx - branchFromIdx;
+        branchTargets[index]->offset = branchToIdx - branchFromIdx;
     }
 }
 
@@ -984,9 +1227,8 @@ void Program::dump(SkWStream* out) {
         const Stage& stage = stages[index];
 
         // Interpret the context value as a branch offset.
-        auto BranchOffset = [&](const void* ctx) -> std::string {
-            const int *ctxAsInt = static_cast<const int*>(ctx);
-            return SkSL::String::printf("%+d (#%d)", *ctxAsInt, *ctxAsInt + index + 1);
+        auto BranchOffset = [&](const SkRasterPipeline_BranchCtx* ctx) -> std::string {
+            return SkSL::String::printf("%+d (#%d)", ctx->offset, ctx->offset + index + 1);
         };
 
         // Print a 32-bit immediate value of unknown type (int/float).
@@ -1253,14 +1495,19 @@ void Program::dump(SkWStream* out) {
             case RPOp::cast_to_float_from_int: case RPOp::cast_to_float_from_uint:
             case RPOp::cast_to_int_from_float: case RPOp::cast_to_uint_from_float:
             case RPOp::abs_float:              case RPOp::abs_int:
+            case RPOp::atan_float:
             case RPOp::ceil_float:
+            case RPOp::cos_float:
             case RPOp::floor_float:
+            case RPOp::sin_float:
+            case RPOp::sqrt_float:
+            case RPOp::tan_float:
                 opArg1 = PtrCtx(stage.ctx, 1);
                 break;
 
-            case RPOp::store_src_rg:
             case RPOp::zero_2_slots_unmasked:
             case RPOp::bitwise_not_2_ints:
+            case RPOp::load_src_rg:               case RPOp::store_src_rg:
             case RPOp::cast_to_float_from_2_ints: case RPOp::cast_to_float_from_2_uints:
             case RPOp::cast_to_int_from_2_floats: case RPOp::cast_to_uint_from_2_floats:
             case RPOp::abs_2_floats:              case RPOp::abs_2_ints:
@@ -1423,6 +1670,7 @@ void Program::dump(SkWStream* out) {
             case RPOp::cmple_n_floats: case RPOp::cmple_n_ints: case RPOp::cmple_n_uints:
             case RPOp::cmpeq_n_floats: case RPOp::cmpeq_n_ints:
             case RPOp::cmpne_n_floats: case RPOp::cmpne_n_ints:
+            case RPOp::atan2_n_floats:
                 std::tie(opArg1, opArg2) = AdjacentBinaryOpCtx(stage.ctx);
                 break;
 
@@ -1433,9 +1681,16 @@ void Program::dump(SkWStream* out) {
             case RPOp::jump:
             case RPOp::branch_if_any_active_lanes:
             case RPOp::branch_if_no_active_lanes:
-                opArg1 = BranchOffset(stage.ctx);
+                opArg1 = BranchOffset(static_cast<SkRasterPipeline_BranchCtx*>(stage.ctx));
                 break;
 
+            case RPOp::branch_if_no_active_lanes_eq: {
+                const auto* ctx = static_cast<SkRasterPipeline_BranchIfEqualCtx*>(stage.ctx);
+                opArg1 = BranchOffset(ctx);
+                opArg2 = PtrCtx(ctx->ptr, 1);
+                opArg3 = Imm(sk_bit_cast<float>(ctx->value));
+                break;
+            }
             default:
                 break;
         }
@@ -1516,6 +1771,10 @@ void Program::dump(SkWStream* out) {
 
             case RPOp::store_dst:
                 opText = opArg1 + " = dst.rgba";
+                break;
+
+            case RPOp::load_src_rg:
+                opText = "src.rg = " + opArg1;
                 break;
 
             case RPOp::load_src:
@@ -1616,11 +1875,35 @@ void Program::dump(SkWStream* out) {
                 opText = opArg1 + " = abs(" + opArg1 + ")";
                 break;
 
+            case RPOp::atan_float:
+                opText = opArg1 + " = atan(" + opArg1 + ")";
+                break;
+
+            case RPOp::atan2_n_floats:
+                opText = opArg1 + " = atan2(" + opArg1 + ", " + opArg2 + ")";
+                break;
+
             case RPOp::ceil_float:
             case RPOp::ceil_2_floats:
             case RPOp::ceil_3_floats:
             case RPOp::ceil_4_floats:
                 opText = opArg1 + " = ceil(" + opArg1 + ")";
+                break;
+
+            case RPOp::cos_float:
+                opText = opArg1 + " = cos(" + opArg1 + ")";
+                break;
+
+            case RPOp::sin_float:
+                opText = opArg1 + " = sin(" + opArg1 + ")";
+                break;
+
+            case RPOp::sqrt_float:
+                opText = opArg1 + " = sqrt(" + opArg1 + ")";
+                break;
+
+            case RPOp::tan_float:
+                opText = opArg1 + " = tan(" + opArg1 + ")";
                 break;
 
             case RPOp::floor_float:
@@ -1722,6 +2005,10 @@ void Program::dump(SkWStream* out) {
             case RPOp::branch_if_any_active_lanes:
             case RPOp::branch_if_no_active_lanes:
                 opText = std::string(opName) + " " + opArg1;
+                break;
+
+            case RPOp::branch_if_no_active_lanes_eq:
+                opText = "branch " + opArg1 + " if no lanes of " + opArg2 + " == " + opArg3;
                 break;
 
             default:

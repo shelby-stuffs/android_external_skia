@@ -155,8 +155,8 @@ public:
      */
     void reserve(int n) {
         SkASSERT(n >= 0);
-        if (n >= this->size()) {
-            this->reserve_back(n - size());
+        if (n > this->size()) {
+            this->checkRealloc(n - this->size(), kGrowing);
         }
     }
 
@@ -516,7 +516,7 @@ private:
     // unpredictable location in memory. Of course, SkTArray won't actually use fItemArray in this
     // way, and we don't want to construct a T before the user requests one. There's no real risk
     // here, so disable CFI when doing these casts.
-    SK_ATTRIBUTE(no_sanitize("cfi"))
+    SK_NO_SANITIZE("cfi")
     static T* TCast(void* buffer) {
         return (T*)buffer;
     }

@@ -9,12 +9,12 @@
 
 #include "include/core/SkColorPriv.h"
 #include "include/private/base/SkMath.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
+#include "src/base/SkMathPriv.h"
 #include "src/core/SkEndian.h"
 #include "src/core/SkMaskBlurFilter.h"
-#include "src/core/SkMathPriv.h"
 
 using namespace skia_private;
 

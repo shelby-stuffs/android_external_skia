@@ -10,13 +10,13 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkFontMgr.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTemplates.h"
 #include "modules/skshaper/include/SkShaper.h"
 #include "modules/skunicode/include/SkUnicode.h"
+#include "src/base/SkTLazy.h"
+#include "src/base/SkUTF.h"
 #include "src/core/SkFontPriv.h"
-#include "src/core/SkTLazy.h"
-#include "src/utils/SkUTF.h"
 
 #include <algorithm>
 #include <limits.h>
@@ -593,7 +593,7 @@ Shaper::Result Shaper::Shape(const SkString& orig_txt, const TextDesc& desc, con
 SkRect Shaper::ShapedGlyphs::computeBounds(BoundsType btype) const {
     auto bounds = SkRect::MakeEmpty();
 
-    SkAutoSTArray<16, SkRect> glyphBounds;
+    AutoSTArray<16, SkRect> glyphBounds;
 
     size_t offset = 0;
     for (const auto& run : fRuns) {
