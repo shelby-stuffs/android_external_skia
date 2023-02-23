@@ -73,20 +73,13 @@ private:
 class StrikeForGPU {
 public:
     virtual ~StrikeForGPU() = default;
+
+    virtual void lock() = 0;
+    virtual void unlock() = 0;
+
+    virtual SkGlyphDigest digest(SkPackedGlyphID) = 0;
+
     virtual const SkDescriptor& getDescriptor() const = 0;
-
-    // Returns the bounding rectangle of the accepted glyphs. Remember for device masks this
-    // rectangle will be in device space, and for transformed masks this rectangle will be in
-    // source space.
-    virtual SkRect prepareForMaskDrawing(
-                SkDrawableGlyphBuffer* accepted,
-                SkSourceGlyphBuffer* rejected) = 0;
-
-#if !defined(SK_DISABLE_SDF_TEXT)
-    virtual SkRect prepareForSDFTDrawing(
-                SkDrawableGlyphBuffer* accepted,
-                SkSourceGlyphBuffer* rejected) = 0;
-#endif
 
     virtual void prepareForPathDrawing(
             SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) = 0;
@@ -99,14 +92,8 @@ public:
     // Used with SkScopedStrikeForGPU to take action at the end of a scope.
     virtual void onAboutToExitScope() = 0;
 
-    // Return underlying SkStrike for building SubRuns while processing glyph runs.
-    virtual sk_sp<SkStrike> getUnderlyingStrike() const = 0;
-
     // Return a strike promise.
     virtual SkStrikePromise strikePromise() = 0;
-
-    // Return the maximum dimension of a span of glyphs.
-    virtual SkScalar findMaximumGlyphDimension(SkSpan<const SkGlyphID> glyphs) = 0;
 
     struct Deleter {
         void operator()(StrikeForGPU* ptr) const {
@@ -132,6 +119,16 @@ union IDOrPath {
 union IDOrDrawable {
     SkGlyphID fGlyphID;
     SkDrawable* fDrawable;
+};
+
+// -- StrikeMutationMonitor ------------------------------------------------------------------------
+class StrikeMutationMonitor {
+public:
+    StrikeMutationMonitor(StrikeForGPU* strike);
+    ~StrikeMutationMonitor();
+
+private:
+    StrikeForGPU* fStrike;
 };
 
 // -- StrikeForGPUCacheInterface -------------------------------------------------------------------

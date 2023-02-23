@@ -22,8 +22,8 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkVertices.h"
 #include "include/private/SkIDChangeListener.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
 #include "include/utils/SkRandom.h"
 #include "src/core/SkBlurMask.h"
@@ -49,6 +49,8 @@
 #include <memory>
 #include <new>
 #include <utility>
+
+using namespace skia_private;
 
 class SkRRect;
 
@@ -412,7 +414,7 @@ bool draw_shadow(const FACTORY& factory,
     FindContext<FACTORY> context(&path.viewMatrix(), &factory);
 
     SkResourceCache::Key* key = nullptr;
-    SkAutoSTArray<32 * 4, uint8_t> keyStorage;
+    AutoSTArray<32 * 4, uint8_t> keyStorage;
     int keyDataBytes = path.keyBytes();
     if (keyDataBytes >= 0) {
         keyStorage.reset(keyDataBytes + sizeof(SkResourceCache::Key));

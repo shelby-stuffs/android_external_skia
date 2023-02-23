@@ -85,8 +85,6 @@ public:
             const SkMatrix& deviceMatrix,
             const SkPoint& textLocation,
             const sktext::gpu::SDFTControl& control);
-
-    sk_sp<sktext::gpu::TextStrike> findOrCreateTextStrike(sktext::gpu::StrikeCache* cache) const;
 #endif
 
     sktext::ScopedStrikeForGPU findOrCreateScopedStrike(
@@ -128,7 +126,7 @@ public:
 
 private:
     inline static constexpr int kTypicalGlyphCount = 20;
-    SkAutoSTArray<kTypicalGlyphCount, const SkGlyph*> fGlyphs;
+    skia_private::AutoSTArray<kTypicalGlyphCount, const SkGlyph*> fGlyphs;
     sk_sp<SkStrike> fStrike;
 };
 
@@ -144,7 +142,7 @@ public:
 
 private:
     inline static constexpr int kTypicalGlyphCount = 20;
-    SkAutoSTArray<kTypicalGlyphCount, const SkGlyph*> fGlyphs;
+    skia_private::AutoSTArray<kTypicalGlyphCount, const SkGlyph*> fGlyphs;
     sk_sp<SkStrike> fStrike;
 };
 
@@ -158,7 +156,7 @@ public:
 
 private:
     inline static constexpr int kTypicalGlyphCount = 20;
-    SkAutoSTArray<kTypicalGlyphCount, const SkGlyph*> fGlyphs;
+    skia_private::AutoSTArray<kTypicalGlyphCount, const SkGlyph*> fGlyphs;
     sk_sp<SkStrike> fStrike;
 };
 
@@ -173,7 +171,7 @@ public:
 
 private:
     inline static constexpr int kTypicalGlyphCount = 64;
-    SkAutoSTArray<kTypicalGlyphCount, const SkGlyph*> fGlyphs;
+    skia_private::AutoSTArray<kTypicalGlyphCount, const SkGlyph*> fGlyphs;
     sk_sp<SkStrike> fStrike;
 };
 

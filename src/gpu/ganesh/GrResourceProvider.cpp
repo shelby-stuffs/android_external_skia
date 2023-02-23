@@ -10,13 +10,14 @@
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
-#include "include/private/base/SkMath.h"
 #include "include/core/SkRect.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrTypes.h"
 #include "include/private/base/SingleOwner.h"
-#include "src/core/SkMathPriv.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/base/SkMathPriv.h"
 #include "src/core/SkMipmap.h"
 #include "src/gpu/BufferWriter.h"
 #include "src/gpu/ResourceKey.h"
@@ -105,8 +106,8 @@ sk_sp<GrTexture> GrResourceProvider::createTexture(SkISize dimensions,
         }
         return this->writePixels(std::move(scratch), colorType, dimensions, texels, numMipLevels);
     }
-    SkAutoSTArray<14, GrMipLevel> tmpTexels;
-    SkAutoSTArray<14, std::unique_ptr<char[]>> tmpDatas;
+    AutoSTArray<14, GrMipLevel> tmpTexels;
+    AutoSTArray<14, std::unique_ptr<char[]>> tmpDatas;
     GrColorType tempColorType = GrColorType::kUnknown;
     if (hasPixels) {
         tempColorType = this->prepareLevels(format, colorType, dimensions, texels, numMipLevels,
@@ -918,8 +919,8 @@ sk_sp<GrTexture> GrResourceProvider::writePixels(sk_sp<GrTexture> texture,
     SkASSERT(colorType != GrColorType::kUnknown);
     SkASSERT(mipLevelCount && texels && texels[0].fPixels);
 
-    SkAutoSTArray<14, GrMipLevel> tmpTexels;
-    SkAutoSTArray<14, std::unique_ptr<char[]>> tmpDatas;
+    AutoSTArray<14, GrMipLevel> tmpTexels;
+    AutoSTArray<14, std::unique_ptr<char[]>> tmpDatas;
     auto tempColorType = this->prepareLevels(texture->backendFormat(), colorType, baseSize, texels,
                                              mipLevelCount, &tmpTexels, &tmpDatas);
     if (tempColorType == GrColorType::kUnknown) {

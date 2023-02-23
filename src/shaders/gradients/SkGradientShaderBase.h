@@ -11,8 +11,8 @@
 #include "include/effects/SkGradientShader.h"
 
 #include "include/core/SkMatrix.h"
-#include "include/private/SkTemplates.h"
 #include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTemplates.h"
 #include "src/core/SkVM.h"
 #include "src/shaders/SkShaderBase.h"
 
@@ -94,7 +94,7 @@ protected:
 
     bool onAsLuminanceColor(SkColor*) const override;
 
-    bool onAppendStages(const SkStageRec&) const override;
+    bool appendStages(const SkStageRec&, const MatrixRec&) const override;
 
     skvm::Color onProgram(skvm::Builder*, skvm::Coord device, skvm::Coord local, skvm::Color paint,
                           const SkMatrixProvider&, const SkMatrix* localM, const SkColorInfo& dstCS,

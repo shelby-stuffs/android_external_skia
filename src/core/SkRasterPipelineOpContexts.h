@@ -146,4 +146,13 @@ struct SkRasterPipeline_ShuffleCtx {
     uint16_t offsets[16];  // values must be byte offsets (4 * highp-stride * component-index)
 };
 
+struct SkRasterPipeline_BranchCtx {
+    int offset;
+};
+
+struct SkRasterPipeline_BranchIfEqualCtx : public SkRasterPipeline_BranchCtx {
+    int value;
+    const int *ptr;
+};
+
 #endif  // SkRasterPipelineOpContexts_DEFINED

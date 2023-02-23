@@ -5,8 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkMacros.h"
-#include "src/core/SkArenaAlloc.h"
+#include "include/private/base/SkMacros.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlenderBase.h"
 #include "src/core/SkColorFilterBase.h"
@@ -54,7 +54,7 @@ namespace {
             return c;
         }
 
-        bool onAppendStages(const SkStageRec&, bool) const override { return true; }
+        bool appendStages(const SkStageRec&, bool) const override { return true; }
 
         // Only created here, should never be flattened / unflattened.
         Factory getFactory() const override { return nullptr; }

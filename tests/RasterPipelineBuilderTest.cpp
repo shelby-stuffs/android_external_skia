@@ -6,8 +6,8 @@
  */
 
 #include "include/core/SkStream.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/base/SkStringView.h"
-#include "src/core/SkArenaAlloc.h"
 #include "src/core/SkOpts.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
@@ -58,9 +58,11 @@ DEF_TEST(RasterPipelineBuilder, r) {
     builder.store_src(four_slots_at(2));
     builder.store_dst(four_slots_at(6));
     builder.init_lane_masks();
+    builder.enableExecutionMaskWrites();
     builder.mask_off_return_mask();
     builder.mask_off_loop_mask();
     builder.reenable_loop_mask(one_slot_at(4));
+    builder.disableExecutionMaskWrites();
     builder.load_src(four_slots_at(1));
     builder.load_dst(four_slots_at(3));
     std::unique_ptr<SkSL::RP::Program> program = builder.finish(/*numValueSlots=*/10,
@@ -117,6 +119,11 @@ R"(    1. load_unmasked                  src.r = v12
 DEF_TEST(RasterPipelineBuilderPushPopMaskRegisters, r) {
     // Create a very simple nonsense program.
     SkSL::RP::Builder builder;
+
+    REPORTER_ASSERT(r, !builder.executionMaskWritesAreEnabled());
+    builder.enableExecutionMaskWrites();
+    REPORTER_ASSERT(r, builder.executionMaskWritesAreEnabled());
+
     builder.push_condition_mask();  // push into 0
     builder.push_loop_mask();       // push into 1
     builder.push_return_mask();     // push into 2
@@ -129,6 +136,11 @@ DEF_TEST(RasterPipelineBuilderPushPopMaskRegisters, r) {
     builder.pop_return_mask();      // pop from 0
     builder.push_condition_mask();  // push into 0
     builder.pop_condition_mask();   // pop from 0
+
+    REPORTER_ASSERT(r, builder.executionMaskWritesAreEnabled());
+    builder.disableExecutionMaskWrites();
+    REPORTER_ASSERT(r, !builder.executionMaskWritesAreEnabled());
+
     std::unique_ptr<SkSL::RP::Program> program = builder.finish(/*numValueSlots=*/0,
                                                                 /*numUniformSlots=*/0);
     check(r, *program,
@@ -144,6 +156,31 @@ R"(    1. store_condition_mask           $0 = CondMask
    10. load_return_mask               RetMask = $0
    11. store_condition_mask           $0 = CondMask
    12. load_condition_mask            CondMask = $0
+)");
+}
+
+DEF_TEST(RasterPipelineBuilderPushPopSrcDst, r) {
+    // Create a very simple nonsense program.
+    SkSL::RP::Builder builder;
+
+    builder.push_src_rgba();
+    builder.push_src_rgba();
+    builder.push_src_rgba();
+    builder.pop_src_rgba();
+    builder.pop_dst_rgba();
+    builder.pop_src_rg();
+    builder.pop_src_rg();
+
+    std::unique_ptr<SkSL::RP::Program> program = builder.finish(/*numValueSlots=*/0,
+                                                                /*numUniformSlots=*/0);
+    check(r, *program,
+R"(    1. store_src                      $0..3 = src.rgba
+    2. store_src                      $4..7 = src.rgba
+    3. store_src                      $8..11 = src.rgba
+    4. load_src                       src.rgba = $8..11
+    5. load_dst                       dst.rgba = $4..7
+    6. load_src_rg                    src.rg = $2..3
+    7. load_src_rg                    src.rg = $0..1
 )");
 }
 
@@ -205,14 +242,17 @@ DEF_TEST(RasterPipelineBuilderPushPopSlots, r) {
     builder.push_slots(four_slots_at(10));           // push from 10~13 into $0~$3
     builder.copy_stack_to_slots(one_slot_at(5), 3);  // copy from $1 into 5
     builder.pop_slots_unmasked(two_slots_at(20));    // pop from $2~$3 into 20~21 (unmasked)
+    builder.enableExecutionMaskWrites();
     builder.copy_stack_to_slots_unmasked(one_slot_at(4), 2);  // copy from $0 into 4
     builder.push_slots(three_slots_at(30));          // push from 30~32 into $2~$4
     builder.pop_slots(five_slots_at(0));             // pop from $0~$4 into 0~4 (masked)
+    builder.disableExecutionMaskWrites();
+
     std::unique_ptr<SkSL::RP::Program> program = builder.finish(/*numValueSlots=*/50,
                                                                 /*numUniformSlots=*/0);
     check(r, *program,
 R"(    1. copy_4_slots_unmasked          $0..3 = v10..13
-    2. copy_slot_masked               v5 = Mask($1)
+    2. copy_slot_unmasked             v5 = $1
     3. copy_2_slots_unmasked          v20..21 = $2..3
     4. copy_slot_unmasked             v4 = $0
     5. copy_3_slots_unmasked          $2..4 = v30..32
@@ -345,52 +385,103 @@ R"(    1. copy_constant                  $0 = 0x3F800000 (1.0)
 }
 
 DEF_TEST(RasterPipelineBuilderBranches, r) {
-    // Create a very simple nonsense program.
-    SkSL::RP::Builder builder;
-    int label1 = builder.nextLabelID();
-    int label2 = builder.nextLabelID();
-    int label3 = builder.nextLabelID();
-
-    builder.jump(label3);
-    builder.label(label1);
-    builder.immediate_f(1.0f);
-    builder.label(label2);
-    builder.immediate_f(2.0f);
-    builder.branch_if_no_active_lanes(label2);
-    builder.branch_if_no_active_lanes(label3);
-    builder.label(label3);
-    builder.immediate_f(3.0f);
-    builder.branch_if_any_active_lanes(label1);
-    builder.branch_if_any_active_lanes(label1);
-
-    std::unique_ptr<SkSL::RP::Program> program = builder.finish(/*numValueSlots=*/1,
-                                                                /*numUniformSlots=*/0);
 #if SK_HAS_MUSTTAIL
     // We have guaranteed tail-calling, and don't need to rewind the stack.
-    static constexpr char kExpectation[] =
-R"(    1. jump                           jump +4 (#5)
-    2. immediate_f                    src.r = 0x3F800000 (1.0)
-    3. immediate_f                    src.r = 0x40000000 (2.0)
-    4. branch_if_no_active_lanes      branch_if_no_active_lanes -1 (#3)
+    static constexpr char kExpectationWithKnownExecutionMask[] =
+R"(    1. copy_constant                  $0 = 0x00000001 (1.401298e-45)
+    2. jump                           jump +5 (#7)
+    3. immediate_f                    src.r = 0x3F800000 (1.0)
+    4. immediate_f                    src.r = 0x40000000 (2.0)
     5. immediate_f                    src.r = 0x40400000 (3.0)
-    6. branch_if_any_active_lanes     branch_if_any_active_lanes -4 (#2)
+    6. jump                           jump -3 (#3)
+    7. branch_if_no_active_lanes_eq   branch -2 (#5) if no lanes of $0 == 0x00000000 (0.0)
+    8. branch_if_no_active_lanes_eq   branch -5 (#3) if no lanes of $0 == 0x00000001 (1.401298e-45)
+)";
+    static constexpr char kExpectationWithExecutionMaskWrites[] =
+R"(    1. copy_constant                  $0 = 0x00000001 (1.401298e-45)
+    2. jump                           jump +6 (#8)
+    3. immediate_f                    src.r = 0x3F800000 (1.0)
+    4. immediate_f                    src.r = 0x40000000 (2.0)
+    5. branch_if_no_active_lanes      branch_if_no_active_lanes -1 (#4)
+    6. immediate_f                    src.r = 0x40400000 (3.0)
+    7. branch_if_any_active_lanes     branch_if_any_active_lanes -4 (#3)
+    8. branch_if_no_active_lanes_eq   branch -2 (#6) if no lanes of $0 == 0x00000000 (0.0)
+    9. branch_if_no_active_lanes_eq   branch -6 (#3) if no lanes of $0 == 0x00000001 (1.401298e-45)
 )";
 #else
     // We don't have guaranteed tail-calling, so we rewind the stack immediately before any backward
     // branches.
-    static constexpr char kExpectation[] =
-R"(    1. jump                           jump +5 (#6)
-    2. immediate_f                    src.r = 0x3F800000 (1.0)
-    3. immediate_f                    src.r = 0x40000000 (2.0)
-    4. stack_rewind
-    5. branch_if_no_active_lanes      branch_if_no_active_lanes -2 (#3)
-    6. immediate_f                    src.r = 0x40400000 (3.0)
-    7. stack_rewind
-    8. branch_if_any_active_lanes     branch_if_any_active_lanes -6 (#2)
+    static constexpr char kExpectationWithKnownExecutionMask[] =
+R"(    1. copy_constant                  $0 = 0x00000001 (1.401298e-45)
+    2. jump                           jump +6 (#8)
+    3. immediate_f                    src.r = 0x3F800000 (1.0)
+    4. immediate_f                    src.r = 0x40000000 (2.0)
+    5. immediate_f                    src.r = 0x40400000 (3.0)
+    6. stack_rewind
+    7. jump                           jump -4 (#3)
+    8. stack_rewind
+    9. branch_if_no_active_lanes_eq   branch -4 (#5) if no lanes of $0 == 0x00000000 (0.0)
+   10. stack_rewind
+   11. branch_if_no_active_lanes_eq   branch -8 (#3) if no lanes of $0 == 0x00000001 (1.401298e-45)
+)";
+    static constexpr char kExpectationWithExecutionMaskWrites[] =
+R"(    1. copy_constant                  $0 = 0x00000001 (1.401298e-45)
+    2. jump                           jump +8 (#10)
+    3. immediate_f                    src.r = 0x3F800000 (1.0)
+    4. immediate_f                    src.r = 0x40000000 (2.0)
+    5. stack_rewind
+    6. branch_if_no_active_lanes      branch_if_no_active_lanes -2 (#4)
+    7. immediate_f                    src.r = 0x40400000 (3.0)
+    8. stack_rewind
+    9. branch_if_any_active_lanes     branch_if_any_active_lanes -6 (#3)
+   10. stack_rewind
+   11. branch_if_no_active_lanes_eq   branch -4 (#7) if no lanes of $0 == 0x00000000 (0.0)
+   12. stack_rewind
+   13. branch_if_no_active_lanes_eq   branch -10 (#3) if no lanes of $0 == 0x00000001 (1.401298e-45)
 )";
 #endif
 
-    check(r, *program, kExpectation);
+    for (bool enableExecutionMaskWrites : {false, true}) {
+        // Create a very simple nonsense program.
+        SkSL::RP::Builder builder;
+        int label1 = builder.nextLabelID();
+        int label2 = builder.nextLabelID();
+        int label3 = builder.nextLabelID();
+        int label4 = builder.nextLabelID();
+
+        if (enableExecutionMaskWrites) {
+            builder.enableExecutionMaskWrites();
+        }
+
+        builder.push_literal_i(1);
+        builder.jump(label4);
+        builder.label(label1);
+        builder.immediate_f(1.0f);
+        builder.label(label2);
+        builder.immediate_f(2.0f);
+        builder.branch_if_no_active_lanes(label2);
+        builder.branch_if_no_active_lanes(label3);
+        builder.label(label3);
+        builder.immediate_f(3.0f);
+        builder.branch_if_any_active_lanes(label1);
+        builder.branch_if_any_active_lanes(label1);
+        builder.label(label4);
+        builder.branch_if_no_active_lanes_on_stack_top_equal(0, label3);
+        builder.branch_if_no_active_lanes_on_stack_top_equal(0, label2);
+        builder.branch_if_no_active_lanes_on_stack_top_equal(1, label1);
+        builder.branch_if_no_active_lanes_on_stack_top_equal(1, label4);
+        builder.discard_stack(1);
+
+        if (enableExecutionMaskWrites) {
+            builder.disableExecutionMaskWrites();
+        }
+
+        std::unique_ptr<SkSL::RP::Program> program = builder.finish(/*numValueSlots=*/1,
+                                                                    /*numUniformSlots=*/0);
+
+        check(r, *program, enableExecutionMaskWrites ? kExpectationWithExecutionMaskWrites
+                                                     : kExpectationWithKnownExecutionMask);
+    }
 }
 
 DEF_TEST(RasterPipelineBuilderBinaryFloatOps, r) {
@@ -527,10 +618,14 @@ DEF_TEST(RasterPipelineBuilderUnaryOps, r) {
     builder.unary_op(BuilderOp::cast_to_int_from_float, 3);
     builder.unary_op(BuilderOp::cast_to_uint_from_float, 4);
     builder.unary_op(BuilderOp::bitwise_not_int, 5);
-    builder.unary_op(BuilderOp::abs_float, 4);
+    builder.unary_op(BuilderOp::cos_float, 4);
+    builder.unary_op(BuilderOp::tan_float, 3);
+    builder.unary_op(BuilderOp::sin_float, 2);
+    builder.unary_op(BuilderOp::sqrt_float, 1);
+    builder.unary_op(BuilderOp::abs_float, 2);
     builder.unary_op(BuilderOp::abs_int, 3);
-    builder.unary_op(BuilderOp::floor_float, 2);
-    builder.unary_op(BuilderOp::ceil_float, 1);
+    builder.unary_op(BuilderOp::floor_float, 4);
+    builder.unary_op(BuilderOp::ceil_float, 5);
     builder.discard_stack(5);
     std::unique_ptr<SkSL::RP::Program> program = builder.finish(/*numValueSlots=*/0,
                                                                 /*numUniformSlots=*/0);
@@ -544,10 +639,21 @@ R"(    1. copy_constant                  $0 = 0x000001C8 (6.389921e-43)
     7. cast_to_uint_from_4_floats     $1..4 = FloatToUint($1..4)
     8. bitwise_not_4_ints             $0..3 = ~$0..3
     9. bitwise_not_int                $4 = ~$4
-   10. abs_4_floats                   $1..4 = abs($1..4)
-   11. abs_3_ints                     $2..4 = abs($2..4)
-   12. floor_2_floats                 $3..4 = floor($3..4)
-   13. ceil_float                     $4 = ceil($4)
+   10. cos_float                      $1 = cos($1)
+   11. cos_float                      $2 = cos($2)
+   12. cos_float                      $3 = cos($3)
+   13. cos_float                      $4 = cos($4)
+   14. tan_float                      $2 = tan($2)
+   15. tan_float                      $3 = tan($3)
+   16. tan_float                      $4 = tan($4)
+   17. sin_float                      $3 = sin($3)
+   18. sin_float                      $4 = sin($4)
+   19. sqrt_float                     $4 = sqrt($4)
+   20. abs_2_floats                   $3..4 = abs($3..4)
+   21. abs_3_ints                     $2..4 = abs($2..4)
+   22. floor_4_floats                 $1..4 = floor($1..4)
+   23. ceil_4_floats                  $0..3 = ceil($0..3)
+   24. ceil_float                     $4 = ceil($4)
 )");
 }
 
@@ -618,9 +724,12 @@ R"(    1. copy_constant                  $0 = 0x3F400000 (0.75)
 }
 
 DEF_TEST(RasterPipelineBuilderAutomaticStackRewinding, r) {
+    using BuilderOp = SkSL::RP::BuilderOp;
+
     SkSL::RP::Builder builder;
     builder.push_literal_i(1);
     builder.push_duplicates(2000);
+    builder.unary_op(BuilderOp::abs_int, 1);  // perform work so the program isn't eliminated
     builder.discard_stack(2001);
     std::unique_ptr<SkSL::RP::Program> program = builder.finish(/*numValueSlots=*/0,
                                                                 /*numUniformSlots=*/0);

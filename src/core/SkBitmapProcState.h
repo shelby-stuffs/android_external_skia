@@ -12,9 +12,9 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkShader.h"
 #include "include/private/SkFixed.h"
-#include "include/private/SkTemplates.h"
 #include "include/private/base/SkFloatBits.h"
-#include "src/core/SkArenaAlloc.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkMipmapAccessor.h"
 

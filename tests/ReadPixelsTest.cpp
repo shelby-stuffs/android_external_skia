@@ -27,11 +27,11 @@
 #include "include/core/SkTypes.h"
 #include "include/private/SkColorData.h"
 #include "include/private/SkHalf.h"
-#include "include/private/SkSafe32.h"
 #include "include/private/base/SkAlign.h"
 #include "include/private/base/SkCPUTypes.h"
+#include "include/private/base/SkSafe32.h"
+#include "src/base/SkMathPriv.h"
 #include "src/core/SkImageInfoPriv.h"
-#include "src/core/SkMathPriv.h"
 #include "tests/Test.h"
 
 #include <cstdint>

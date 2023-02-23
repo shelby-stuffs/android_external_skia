@@ -11,7 +11,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/BufferWriter.h"
@@ -397,8 +397,8 @@ private:
 
     // Used to perform any conversions necessary to texel data before creating a texture with
     // existing data or uploading to a scratch texture.
-    using TempLevels = SkAutoSTArray<14, GrMipLevel>;
-    using TempLevelDatas = SkAutoSTArray<14, std::unique_ptr<char[]>>;
+    using TempLevels = skia_private::AutoSTArray<14, GrMipLevel>;
+    using TempLevelDatas = skia_private::AutoSTArray<14, std::unique_ptr<char[]>>;
     GrColorType prepareLevels(const GrBackendFormat& format,
                               GrColorType,
                               SkISize baseSize,

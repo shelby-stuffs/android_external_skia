@@ -11,9 +11,9 @@
 #include <memory>
 
 #include "include/gpu/GrContextOptions.h"
+#include "src/base/SkMathPriv.h"
+#include "src/base/SkTSearch.h"
 #include "src/core/SkCompressedDataUtils.h"
-#include "src/core/SkMathPriv.h"
-#include "src/core/SkTSearch.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
 #include "src/gpu/ganesh/GrProgramDesc.h"
 #include "src/gpu/ganesh/GrRenderTargetProxy.h"

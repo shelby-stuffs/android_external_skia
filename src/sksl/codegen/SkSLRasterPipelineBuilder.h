@@ -8,9 +8,9 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkTArray.h"
+#include "src/base/SkUtils.h"
 #include "src/core/SkRasterPipelineOpList.h"
 #include "src/core/SkTHash.h"
-#include "src/core/SkUtils.h"
 
 #include <cstdint>
 #include <initializer_list>
@@ -44,7 +44,7 @@ enum class BuilderOp {
     #undef M
     // We also support Builder-specific ops; these are converted into real RP ops during
     // `appendStages`.
-    push_literal_f,
+    push_literal,
     push_slots,
     push_uniform,
     push_zeros,
@@ -60,8 +60,13 @@ enum class BuilderOp {
     pop_loop_mask,
     push_return_mask,
     pop_return_mask,
+    push_src_rgba,
+    pop_src_rg,
+    pop_src_rgba,
+    pop_dst_rgba,
     set_current_stack,
     label,
+    branch_if_no_active_lanes_on_stack_top_equal,
     unsupported
 };
 
@@ -133,6 +138,12 @@ private:
     void appendCopyConstants(SkTArray<Stage>* pipeline, SkArenaAlloc* alloc,
                              float* dst, const float* src, int numSlots);
 
+    // Appends a single-slot single-input math operation to the pipeline. The op `stage` will
+    // appended `numSlots` times, starting at position `dst` and advancing one slot for each
+    // subsequent invocation.
+    void appendSingleSlotUnaryOp(SkTArray<Stage>* pipeline, SkRasterPipelineOp stage,
+                                 float* dst, int numSlots);
+
     // Appends a multi-slot single-input math operation to the pipeline. `baseStage` must refer to
     // an single-slot "apply_op" stage, which must be immediately followed by specializations for
     // 2-4 slots. For instance, {`zero_slot`, `zero_2_slots`, `zero_3_slots`, `zero_4_slots`}
@@ -140,6 +151,14 @@ private:
     // pick the appropriate op based on `numSlots`.
     void appendMultiSlotUnaryOp(SkTArray<Stage>* pipeline, SkRasterPipelineOp baseStage,
                                 float* dst, int numSlots);
+
+    // Appends a two-input math operation to the pipeline. `src` must be _immediately_ after `dst`
+    // in memory. `baseStage` must refer to an unbounded "apply_to_n_slots" stage. A BinaryOpCtx
+    // will be used to pass pointers to the destination and source; the delta between the two
+    // pointers implicitly gives the number of slots.
+    void appendAdjacentNWayBinaryOp(SkTArray<Stage>* pipeline, SkArenaAlloc* alloc,
+                                    SkRasterPipelineOp stage,
+                                    float* dst, const float* src, int numSlots);
 
     // Appends a multi-slot two-input math operation to the pipeline. `src` must be _immediately_
     // after `dst` in memory. `baseStage` must refer to an unbounded "apply_to_n_slots" stage, which
@@ -187,6 +206,24 @@ public:
         return fNumLabels++;
     }
 
+    /**
+     * The builder keeps track of the state of execution masks; when we know that the execution
+     * mask is unaltered, we can generate simpler code. Code which alters the execution mask is
+     * required to enable this flag.
+     */
+    void enableExecutionMaskWrites() {
+        ++fExecutionMaskWritesEnabled;
+    }
+
+    void disableExecutionMaskWrites() {
+        SkASSERT(this->executionMaskWritesAreEnabled());
+        --fExecutionMaskWritesEnabled;
+    }
+
+    bool executionMaskWritesAreEnabled() {
+        return fExecutionMaskWritesEnabled > 0;
+    }
+
     /** Assemble a program from the Raster Pipeline instructions below. */
     void init_lane_masks() {
         fInstructions.push_back({BuilderOp::init_lane_masks, {}});
@@ -228,16 +265,26 @@ public:
 
     void jump(int labelID) {
         SkASSERT(labelID >= 0 && labelID < fNumLabels);
+        if (!fInstructions.empty() && fInstructions.back().fOp == BuilderOp::jump) {
+            // The previous instruction was also `jump`, so this branch could never possibly occur.
+            return;
+        }
         fInstructions.push_back({BuilderOp::jump, {}, labelID});
         ++fNumBranches;
     }
 
     void branch_if_any_active_lanes(int labelID) {
+        if (!this->executionMaskWritesAreEnabled()) {
+            this->jump(labelID);
+            return;
+        }
+
         SkASSERT(labelID >= 0 && labelID < fNumLabels);
         if (!fInstructions.empty() &&
-            fInstructions.back().fOp == BuilderOp::branch_if_any_active_lanes) {
-            // The previous instruction was also `branch_if_any_active_lanes`, so this branch could
-            // never possibly occur.
+            (fInstructions.back().fOp == BuilderOp::branch_if_any_active_lanes ||
+             fInstructions.back().fOp == BuilderOp::jump)) {
+            // The previous instruction was `jump` or `branch_if_any_active_lanes`, so this branch
+            // could never possibly occur.
             return;
         }
         fInstructions.push_back({BuilderOp::branch_if_any_active_lanes, {}, labelID});
@@ -245,14 +292,34 @@ public:
     }
 
     void branch_if_no_active_lanes(int labelID) {
+        if (!this->executionMaskWritesAreEnabled()) {
+            return;
+        }
+
         SkASSERT(labelID >= 0 && labelID < fNumLabels);
         if (!fInstructions.empty() &&
-            fInstructions.back().fOp == BuilderOp::branch_if_no_active_lanes) {
-            // The previous instruction was also `branch_if_no_active_lanes`, so this branch could
-            // never possibly occur.
+            (fInstructions.back().fOp == BuilderOp::branch_if_no_active_lanes ||
+             fInstructions.back().fOp == BuilderOp::jump)) {
+            // The previous instruction was `jump` or `branch_if_no_active_lanes`, so this branch
+            // could never possibly occur.
             return;
         }
         fInstructions.push_back({BuilderOp::branch_if_no_active_lanes, {}, labelID});
+        ++fNumBranches;
+    }
+
+    void branch_if_no_active_lanes_on_stack_top_equal(int value, int labelID) {
+        SkASSERT(labelID >= 0 && labelID < fNumLabels);
+        if (!fInstructions.empty() &&
+            (fInstructions.back().fOp == BuilderOp::jump ||
+             (fInstructions.back().fOp == BuilderOp::branch_if_no_active_lanes_on_stack_top_equal &&
+              fInstructions.back().fImmB == value))) {
+            // The previous instruction was `jump` or `branch_if_no_active_lanes_on_stack_top_equal`
+            // (checking against the same value), so this branch could never possibly occur.
+            return;
+        }
+        fInstructions.push_back({BuilderOp::branch_if_no_active_lanes_on_stack_top_equal,
+                                 {}, labelID, value});
         ++fNumBranches;
     }
 
@@ -270,15 +337,19 @@ public:
     }
 
     void push_literal_f(float val) {
-        fInstructions.push_back({BuilderOp::push_literal_f, {}, sk_bit_cast<int32_t>(val)});
+        this->push_literal_i(sk_bit_cast<int32_t>(val));
     }
 
     void push_literal_i(int32_t val) {
-        fInstructions.push_back({BuilderOp::push_literal_f, {}, val});
+        if (val == 0) {
+            this->push_zeros(1);
+        } else {
+            fInstructions.push_back({BuilderOp::push_literal, {}, val});
+        }
     }
 
     void push_literal_u(uint32_t val) {
-        fInstructions.push_back({BuilderOp::push_literal_f, {}, sk_bit_cast<int32_t>(val)});
+        this->push_literal_i(sk_bit_cast<int32_t>(val));
     }
 
     // Translates into copy_constants (from uniforms into temp stack) in Raster Pipeline.
@@ -305,16 +376,13 @@ public:
 
     void copy_stack_to_slots(SlotRange dst, int offsetFromStackTop);
 
+    // Translates into copy_slots_unmasked (from temp stack to values) in Raster Pipeline.
+    // Does not discard any values on the temp stack.
     void copy_stack_to_slots_unmasked(SlotRange dst) {
         this->copy_stack_to_slots_unmasked(dst, /*offsetFromStackTop=*/dst.count);
     }
 
-    void copy_stack_to_slots_unmasked(SlotRange dst, int offsetFromStackTop) {
-        // Translates into copy_slots_unmasked (from temp stack to values) in Raster Pipeline.
-        // Does not discard any values on the temp stack.
-        fInstructions.push_back({BuilderOp::copy_stack_to_slots_unmasked, {dst.index},
-                                 dst.count, offsetFromStackTop});
-    }
+    void copy_stack_to_slots_unmasked(SlotRange dst, int offsetFromStackTop);
 
     // Performs a unary op (like `bitwise_not`), given a slot count of `slots`. The stack top is
     // replaced with the result.
@@ -362,12 +430,9 @@ public:
         fInstructions.push_back({BuilderOp::select, {}, slots});
     }
 
-    void pop_slots_unmasked(SlotRange dst) {
-        // The opposite of push_slots; copies values from the temp stack into value slots, then
-        // shrinks the temp stack.
-        this->copy_stack_to_slots_unmasked(dst);
-        this->discard_stack(dst.count);
-    }
+    // The opposite of push_slots; copies values from the temp stack into value slots, then
+    // shrinks the temp stack.
+    void pop_slots_unmasked(SlotRange dst);
 
     void load_unmasked(Slot slot) {
         fInstructions.push_back({BuilderOp::load_unmasked, {slot}});
@@ -391,9 +456,12 @@ public:
         fInstructions.push_back({BuilderOp::copy_slot_unmasked, {dst.index, src.index}, dst.count});
     }
 
-    void zero_slots_unmasked(SlotRange dst) {
-        fInstructions.push_back({BuilderOp::zero_slot_unmasked, {dst.index}, dst.count});
+    void copy_constant(Slot slot, int constantValue) {
+        fInstructions.push_back({BuilderOp::copy_constant, {slot}, constantValue});
     }
+
+    // Stores zeros across the entire slot range.
+    void zero_slots_unmasked(SlotRange dst);
 
     // Consumes `consumedSlots` elements on the stack, then generates `components.size()` elements.
     void swizzle(int consumedSlots, SkSpan<const int8_t> components);
@@ -409,47 +477,71 @@ public:
     void matrix_resize(int origColumns, int origRows, int newColumns, int newRows);
 
     void push_condition_mask() {
+        SkASSERT(this->executionMaskWritesAreEnabled());
         fInstructions.push_back({BuilderOp::push_condition_mask, {}});
     }
 
     void pop_condition_mask() {
+        SkASSERT(this->executionMaskWritesAreEnabled());
         fInstructions.push_back({BuilderOp::pop_condition_mask, {}});
     }
 
     void merge_condition_mask() {
+        SkASSERT(this->executionMaskWritesAreEnabled());
         fInstructions.push_back({BuilderOp::merge_condition_mask, {}});
     }
 
     void push_loop_mask() {
+        SkASSERT(this->executionMaskWritesAreEnabled());
         fInstructions.push_back({BuilderOp::push_loop_mask, {}});
     }
 
     void pop_loop_mask() {
+        SkASSERT(this->executionMaskWritesAreEnabled());
         fInstructions.push_back({BuilderOp::pop_loop_mask, {}});
     }
 
+    void push_src_rgba() {
+        fInstructions.push_back({BuilderOp::push_src_rgba, {}});
+    }
+
+    void pop_src_rg() {
+        fInstructions.push_back({BuilderOp::pop_src_rg, {}});
+    }
+
+    void pop_src_rgba() {
+        fInstructions.push_back({BuilderOp::pop_src_rgba, {}});
+    }
+
+    void pop_dst_rgba() {
+        fInstructions.push_back({BuilderOp::pop_dst_rgba, {}});
+    }
+
     void mask_off_loop_mask() {
+        SkASSERT(this->executionMaskWritesAreEnabled());
         fInstructions.push_back({BuilderOp::mask_off_loop_mask, {}});
     }
 
     void reenable_loop_mask(SlotRange src) {
+        SkASSERT(this->executionMaskWritesAreEnabled());
         SkASSERT(src.count == 1);
         fInstructions.push_back({BuilderOp::reenable_loop_mask, {src.index}});
     }
 
     void merge_loop_mask() {
+        SkASSERT(this->executionMaskWritesAreEnabled());
         fInstructions.push_back({BuilderOp::merge_loop_mask, {}});
     }
 
     void push_return_mask() {
+        SkASSERT(this->executionMaskWritesAreEnabled());
         fInstructions.push_back({BuilderOp::push_return_mask, {}});
     }
 
-    void pop_return_mask() {
-        fInstructions.push_back({BuilderOp::pop_return_mask, {}});
-    }
+    void pop_return_mask();
 
     void mask_off_return_mask() {
+        SkASSERT(this->executionMaskWritesAreEnabled());
         fInstructions.push_back({BuilderOp::mask_off_return_mask, {}});
     }
 
@@ -457,6 +549,7 @@ private:
     SkTArray<Instruction> fInstructions;
     int fNumLabels = 0;
     int fNumBranches = 0;
+    int fExecutionMaskWritesEnabled = 0;
 };
 
 }  // namespace RP

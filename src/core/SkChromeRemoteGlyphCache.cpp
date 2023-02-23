@@ -7,6 +7,25 @@
 
 #include "include/private/chromium/SkChromeRemoteGlyphCache.h"
 
+#include "include/core/SkDrawable.h"
+#include "include/core/SkSpan.h"
+#include "include/core/SkTypeface.h"
+#include "include/private/SkChecksum.h"
+#include "src/base/SkTLazy.h"
+#include "src/core/SkDevice.h"
+#include "src/core/SkDistanceFieldGen.h"
+#include "src/core/SkDraw.h"
+#include "src/core/SkEnumerate.h"
+#include "src/core/SkGlyph.h"
+#include "src/core/SkReadBuffer.h"
+#include "src/core/SkStrike.h"
+#include "src/core/SkStrikeCache.h"
+#include "src/core/SkTHash.h"
+#include "src/core/SkTraceEvent.h"
+#include "src/core/SkTypeface_remote.h"
+#include "src/text/GlyphRun.h"
+#include "src/text/StrikeForGPU.h"
+
 #include <algorithm>
 #include <bitset>
 #include <iterator>
@@ -14,25 +33,7 @@
 #include <new>
 #include <string>
 #include <tuple>
-
-#include "include/core/SkDrawable.h"
-#include "include/core/SkSpan.h"
-#include "include/core/SkTypeface.h"
-#include "include/private/SkChecksum.h"
-#include "src/core/SkDevice.h"
-#include "src/core/SkDistanceFieldGen.h"
-#include "src/core/SkDraw.h"
-#include "src/core/SkEnumerate.h"
-#include "src/core/SkGlyph.h"
-#include "src/core/SkReadBuffer.h"
-#include "src/core/SkScalerCache.h"
-#include "src/core/SkStrikeCache.h"
-#include "src/core/SkTHash.h"
-#include "src/core/SkTLazy.h"
-#include "src/core/SkTraceEvent.h"
-#include "src/core/SkTypeface_remote.h"
-#include "src/text/GlyphRun.h"
-#include "src/text/StrikeForGPU.h"
+#include <unordered_map>
 
 #if SK_SUPPORT_GPU
 #include "include/gpu/GrContextOptions.h"
@@ -166,6 +167,10 @@ public:
                  SkDiscardableHandleId discardableHandleId);
     ~RemoteStrike() override = default;
 
+    void lock() override {}
+    void unlock() override {}
+    SkGlyphDigest digest(SkPackedGlyphID) override;
+
     void writePendingGlyphs(Serializer* serializer);
     SkDiscardableHandleId discardableHandleId() const { return fDiscardableHandleId; }
 
@@ -179,16 +184,6 @@ public:
         return fRoundingSpec;
     }
 
-    SkRect prepareForMaskDrawing(
-            SkDrawableGlyphBuffer* accepted,
-            SkSourceGlyphBuffer* rejected) override;
-
-#if !defined(SK_DISABLE_SDF_TEXT)
-    SkRect prepareForSDFTDrawing(
-            SkDrawableGlyphBuffer* accepted,
-            SkSourceGlyphBuffer* rejected) override;
-#endif
-
     void prepareForPathDrawing(
             SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) override;
 
@@ -197,11 +192,7 @@ public:
 
     sktext::SkStrikePromise strikePromise() override;
 
-    SkScalar findMaximumGlyphDimension(SkSpan<const SkGlyphID> glyphs) override;
-
     void onAboutToExitScope() override {}
-
-    sk_sp<SkStrike> getUnderlyingStrike() const override { return nullptr; }
 
     bool hasPendingGlyphs() const {
         return !fMasksToSend.empty() || !fPathsToSend.empty() || !fDrawablesToSend.empty();
@@ -210,7 +201,6 @@ public:
     void resetScalerContext();
 
 private:
-    SkGlyphDigest digest(SkPackedGlyphID);
 
     void writeGlyphPath(const SkGlyph& glyph, Serializer* serializer) const;
     void writeGlyphDrawable(const SkGlyph& glyph, Serializer* serializer) const;
@@ -391,66 +381,6 @@ SkGlyphDigest RemoteStrike::digest(SkPackedGlyphID packedID) {
     }
     return *digest;
 }
-
-SkScalar RemoteStrike::findMaximumGlyphDimension(SkSpan<const SkGlyphID> glyphs) {
-    SkScalar maxDimension = 0;
-    for (SkGlyphID glyphID : glyphs) {
-        SkGlyphDigest digest = this->digest(SkPackedGlyphID{glyphID});
-        maxDimension = std::max(static_cast<SkScalar>(digest.maxDimension()), maxDimension);
-    }
-
-    return maxDimension;
-}
-
-SkRect RemoteStrike::prepareForMaskDrawing(
-        SkDrawableGlyphBuffer* accepted,
-        SkSourceGlyphBuffer* rejected) {
-    SkGlyphRect boundingRect = skglyph::empty_rect();
-    for (auto [i, variant, pos] : SkMakeEnumerate(accepted->input())) {
-        SkPackedGlyphID packedID = variant.packedID();
-        SkGlyphDigest digest = this->digest(packedID);
-        // N.B. this must have the same behavior as SkScalerCache::prepareForMaskDrawing.
-        if (!digest.isEmpty()) {
-            if (digest.canDrawAsMask()) {
-                const SkGlyphRect glyphBounds = digest.bounds().offset(pos);
-                boundingRect = skglyph::rect_union(boundingRect, glyphBounds);
-                accepted->accept(packedID, glyphBounds.leftTop(), digest.maskFormat());
-            } else {
-                // Reject things that are too big.
-                rejected->reject(i);
-            }
-        }
-    }
-    return boundingRect.rect();
-}
-
-#if !defined(SK_DISABLE_SDF_TEXT)
-SkRect RemoteStrike::prepareForSDFTDrawing(SkDrawableGlyphBuffer* accepted,
-                                           SkSourceGlyphBuffer* rejected) {
-    SkGlyphRect boundingRect = skglyph::empty_rect();
-    for (auto [i, packedID, pos] : SkMakeEnumerate(accepted->input())) {
-        SkGlyphDigest digest = this->digest(packedID);
-        // N.B. this must have the same behavior as SkScalerCache::prepareForSDFTDrawing.
-        if (!digest.isEmpty()) {
-            if (digest.canDrawAsSDFT()) {
-                const SkGlyphRect glyphBounds =
-                        digest.bounds()
-                                // The SDFT glyphs have 2-pixel wide padding that should
-                                // not be used in calculating the source rectangle.
-                              .inset(SK_DistanceFieldInset, SK_DistanceFieldInset)
-                              .offset(pos);
-                boundingRect = skglyph::rect_union(boundingRect, glyphBounds);
-                accepted->accept(packedID, glyphBounds.leftTop(), digest.maskFormat());
-            } else {
-                // Reject things that are too big.
-                // N.B. this must have the same behavior as SkScalerCache::prepareForMaskDrawing.
-                rejected->reject(i);
-            }
-            }
-    }
-    return boundingRect.rect();
-}
-#endif // !defined(SK_DISABLE_SDF_TEXT)
 
 void RemoteStrike::prepareForPathDrawing(
         SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) {
