@@ -51,6 +51,10 @@ static SkSL::RP::SlotRange five_slots_at(SkSL::RP::Slot index) {
     return SkSL::RP::SlotRange{index, 5};
 }
 
+static SkSL::RP::SlotRange ten_slots_at(SkSL::RP::Slot index) {
+    return SkSL::RP::SlotRange{index, 10};
+}
+
 DEF_TEST(RasterPipelineBuilder, r) {
     // Create a very simple nonsense program.
     SkSL::RP::Builder builder;
@@ -210,6 +214,31 @@ DEF_TEST(RasterPipelineBuilderPushPopTempImmediates, r) {
 R"(    1. copy_constant                  $2 = 0x000003E7 (1.399897e-42)
     2. copy_constant                  $0 = 0x41580000 (13.5)
     3. copy_constant                  $1 = 0x00000165 (5.002636e-43)
+)");
+}
+
+DEF_TEST(RasterPipelineBuilderPushPopIndirect, r) {
+    // Create a very simple nonsense program.
+    SkSL::RP::Builder builder;
+    builder.set_current_stack(1);
+    builder.push_literal_i(3);
+    builder.set_current_stack(0);
+    builder.push_slots_indirect(two_slots_at(0), /*dynamicStack=*/1, ten_slots_at(0));
+    builder.push_slots_indirect(four_slots_at(10), /*dynamicStack=*/1, ten_slots_at(10));
+    builder.push_uniform_indirect(one_slot_at(0), /*dynamicStack=*/1, five_slots_at(0));
+    builder.push_uniform_indirect(three_slots_at(5), /*dynamicStack=*/1, five_slots_at(5));
+    builder.set_current_stack(1);
+    builder.discard_stack(1);
+    builder.set_current_stack(0);
+    builder.discard_stack(10);
+    std::unique_ptr<SkSL::RP::Program> program = builder.finish(/*numValueSlots=*/20,
+                                                                /*numUniformSlots=*/10);
+    check(r, *program,
+R"(    1. copy_constant                  $10 = 0x00000003 (4.203895e-45)
+    2. copy_from_indirect_unmasked    $0..1 = Indirect(v0..1 + $10)
+    3. copy_from_indirect_unmasked    $2..5 = Indirect(v10..13 + $10)
+    4. copy_from_indirect_uniform_unm $6 = Indirect(u0 + $10)
+    5. copy_from_indirect_uniform_unm $7..9 = Indirect(u5..7 + $10)
 )");
 }
 

@@ -9,7 +9,6 @@
 #define sktext_gpu_GlyphVector_DEFINED
 #include "include/core/SkSpan.h"
 #include "src/core/SkGlyph.h"
-#include "src/core/SkGlyphBuffer.h"
 #include "src/gpu/AtlasTypes.h"
 #include "src/text/StrikeForGPU.h"
 #include "src/text/gpu/Glyph.h"
@@ -43,8 +42,9 @@ public:
 
     GlyphVector(SkStrikePromise&& strikePromise, SkSpan<Variant> glyphs);
 
-    static GlyphVector Make(
-            SkStrikePromise&& promise, SkSpan<SkPackedGlyphID> glyphs, SubRunAllocator* alloc);
+    static GlyphVector Make(SkStrikePromise&& promise,
+                            SkSpan<const SkPackedGlyphID> glyphs,
+                            SubRunAllocator* alloc);
 
     SkSpan<const Glyph*> glyphs() const;
 
@@ -81,7 +81,6 @@ public:
 
 private:
     friend class GlyphVectorTestingPeer;
-    static Variant* MakeGlyphs(SkSpan<SkPackedGlyphID> glyphs, SubRunAllocator* alloc);
 
     SkStrikePromise fStrikePromise;
     SkSpan<Variant> fGlyphs;

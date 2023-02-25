@@ -81,8 +81,9 @@ static float align_factor(SkTextUtils::Align a) {
 
 class TextAdapter::GlyphDecoratorNode final : public sksg::Group {
 public:
-    GlyphDecoratorNode(sk_sp<GlyphDecorator> decorator)
+    GlyphDecoratorNode(sk_sp<GlyphDecorator> decorator, float scale)
         : fDecorator(std::move(decorator))
+        , fScale(scale)
     {}
 
     ~GlyphDecoratorNode() override = default;
@@ -95,7 +96,7 @@ public:
 
         for (size_t i = 0; i < recs.size(); ++i) {
             const auto& rec = recs[i];
-            fFragInfo[i] = {rec.fOrigin, rec.fGlyphs, rec.fMatrixNode};
+            fFragInfo[i] = {rec.fGlyphs, rec.fMatrixNode, rec.fAdvance};
         }
 
         SkASSERT(!fDecoratorInfo);
@@ -112,6 +113,7 @@ public:
             fDecoratorInfo[i].fMatrix = sksg::TransformPriv::As<SkMatrix>(fFragInfo[i].fMatrixNode);
 
             fDecoratorInfo[i].fCluster = glyphs->fClusters.empty() ? 0 : glyphs->fClusters.front();
+            fDecoratorInfo[i].fAdvance = fFragInfo[i].fAdvance;
         }
 
         return child_bounds;
@@ -123,17 +125,23 @@ public:
                                                                        true);
         this->INHERITED::onRender(canvas, local_ctx);
 
-        fDecorator->onDecorate(canvas, fDecoratorInfo.get(), fFragCount);
+        fDecorator->onDecorate(canvas, {
+            fDecoratorInfo.get(),
+            fFragCount,
+            fScale
+        });
     }
 
 private:
     struct FragmentInfo {
-        SkPoint                     fOrigin;
         const Shaper::ShapedGlyphs* fGlyphs;
         sk_sp<sksg::Matrix<SkM44>>  fMatrixNode;
+        float                       fAdvance;
     };
 
     const sk_sp<GlyphDecorator>                  fDecorator;
+    const float                                  fScale;
+
     std::unique_ptr<FragmentInfo[]>              fFragInfo;
     std::unique_ptr<GlyphDecorator::GlyphInfo[]> fDecoratorInfo;
     size_t                                       fFragCount;
@@ -599,7 +607,7 @@ uint32_t TextAdapter::shaperFlags() const {
         flags |= Shaper::Flags::kFragmentGlyphs;
     }
 
-    if (fRequiresAnchorPoint) {
+    if (fRequiresAnchorPoint || fText->fDecorator) {
         flags |= Shaper::Flags::kTrackFragmentAdvanceAscent;
     }
 
@@ -696,7 +704,7 @@ void TextAdapter::reshape() {
     sksg::Group* container = fRoot.get();
     sk_sp<GlyphDecoratorNode> decorator_node;
     if (fText->fDecorator) {
-        decorator_node = sk_make_sp<GlyphDecoratorNode>(fText->fDecorator);
+        decorator_node = sk_make_sp<GlyphDecoratorNode>(fText->fDecorator, fTextShapingScale);
         container = decorator_node.get();
     }
 

@@ -15,6 +15,7 @@
 class SkData;
 class SkImageGenerator;
 class SkOpenTypeSVGDecoder;
+class SkPath;
 class SkTraceMemoryDump;
 
 class SK_API SkGraphics {
@@ -117,16 +118,6 @@ public:
      */
     static void PurgeAllCaches();
 
-    /**
-     *  Applications with command line options may pass optional state, such
-     *  as cache sizes, here, for instance:
-     *  font-cache-limit=12345678
-     *
-     *  The flags format is name=value[;name=value...] with no spaces.
-     *  This format is subject to change.
-     */
-    static void SetFlags(const char* flags);
-
     typedef std::unique_ptr<SkImageGenerator>
                                             (*ImageGeneratorFromEncodedDataFactory)(sk_sp<SkData>);
 
@@ -156,6 +147,16 @@ public:
      *  Call early in main() to allow Skia to use a JIT to accelerate CPU-bound operations.
      */
     static void AllowJIT();
+
+    /**
+     *  To override the default AA algorithm choice in the CPU backend, provide a function that
+     *  returns whether to use analytic (true) or supersampled (false) for a given path.
+     *
+     *  NOTE: This is a temporary API, intended for migration of all clients to one algorithm,
+     *        and should not be used.
+     */
+    typedef bool (*PathAnalyticAADeciderProc)(const SkPath&);
+    static void SetPathAnalyticAADecider(PathAnalyticAADeciderProc);
 };
 
 class SkAutoGraphics {
