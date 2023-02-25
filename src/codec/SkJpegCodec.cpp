@@ -7,6 +7,8 @@
 
 #include "src/codec/SkJpegCodec.h"
 
+#include "include/core/SkTypes.h"
+
 #ifdef SK_CODEC_DECODES_JPEG
 #include "include/codec/SkCodec.h"
 #include "include/core/SkAlphaType.h"
@@ -16,7 +18,6 @@
 #include "include/core/SkPixmap.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
-#include "include/core/SkTypes.h"
 #include "include/core/SkYUVAInfo.h"
 #include "include/private/base/SkAlign.h"
 #include "include/private/base/SkTemplates.h"
@@ -31,6 +32,9 @@
 
 #ifdef SK_CODEC_DECODES_JPEG_GAINMAPS
 #include "src/codec/SkJpegGainmap.h"
+#include "src/codec/SkJpegMultiPicture.h"
+#include "src/codec/SkJpegSegmentScan.h"
+#include "src/codec/SkJpegXmp.h"
 #endif  // SK_CODEC_DECODES_JPEG_GAINMAPS
 
 #include <array>
@@ -276,7 +280,6 @@ SkCodec::Result SkJpegCodec::ReadHeader(SkStream* stream, SkCodec** codecOut,
         }
 
         SkEncodedOrigin orientation = get_exif_orientation(dinfo);
-        auto xmpMetadata = read_metadata(dinfo, kXMPMarker, kXMPSig, sizeof(kXMPSig));
         auto profile = read_color_profile(dinfo);
         if (profile) {
             auto type = profile->profile()->data_color_space;
@@ -312,8 +315,7 @@ SkCodec::Result SkJpegCodec::ReadHeader(SkStream* stream, SkCodec** codecOut,
         SkJpegCodec* codec = new SkJpegCodec(std::move(info),
                                              std::unique_ptr<SkStream>(stream),
                                              decoderMgr.release(),
-                                             orientation,
-                                             std::move(xmpMetadata));
+                                             orientation);
         *codecOut = codec;
     } else {
         SkASSERT(nullptr != decoderMgrOut);
@@ -343,13 +345,8 @@ std::unique_ptr<SkCodec> SkJpegCodec::MakeFromStream(std::unique_ptr<SkStream> s
 SkJpegCodec::SkJpegCodec(SkEncodedInfo&& info,
                          std::unique_ptr<SkStream> stream,
                          JpegDecoderMgr* decoderMgr,
-                         SkEncodedOrigin origin,
-                         sk_sp<const SkData> xmpMetadata)
-        : INHERITED(std::move(info),
-                    skcms_PixelFormat_RGBA_8888,
-                    std::move(stream),
-                    origin,
-                    std::move(xmpMetadata))
+                         SkEncodedOrigin origin)
+        : INHERITED(std::move(info), skcms_PixelFormat_RGBA_8888, std::move(stream), origin)
         , fDecoderMgr(decoderMgr)
         , fReadyState(decoderMgr->dinfo()->global_state) {}
 SkJpegCodec::~SkJpegCodec() = default;
@@ -1098,8 +1095,25 @@ bool SkGetJpegInfo(const void* data, size_t len,
 bool SkJpegCodec::onGetGainmapInfo(SkGainmapInfo* info,
                                    std::unique_ptr<SkStream>* gainmapImageStream) {
 #ifdef SK_CODEC_DECODES_JPEG_GAINMAPS
+    sk_sp<SkData> xmpMetadata;
+
+    // The HDRGM and JpegR gainmap formats require XMP metadata. Extract it now.
+    std::unique_ptr<SkJpegXmp> xmp;
+    {
+        std::vector<sk_sp<SkData>> decoderApp1Params;
+        for (jpeg_marker_struct* marker = fDecoderMgr->dinfo()->marker_list; marker;
+             marker = marker->next) {
+            if (marker->marker != kXMPMarker) {
+                continue;
+            }
+            auto data = SkData::MakeWithoutCopy(marker->data, marker->data_length);
+            decoderApp1Params.push_back(std::move(data));
+        }
+        xmp = SkJpegXmp::Make(decoderApp1Params);
+    }
+
     // Attempt to extract SkGainmapInfo from the HDRGM XMP.
-    if (SkJpegGetHDRGMGainmapInfo(getXmpMetadata(), stream(), info)) {
+    if (xmp && xmp->getGainmapInfoHDRGM(info)) {
         auto gainmapData = read_metadata(fDecoderMgr->dinfo(),
                                          kGainmapMarker,
                                          kGainmapSig,
@@ -1117,14 +1131,46 @@ bool SkJpegCodec::onGetGainmapInfo(SkGainmapInfo* info,
     }
 
     // Attempt to extract JpegR gainmap formats.
-    if (SkJpegGetJpegRGainmap(getXmpMetadata(), stream(), info, gainmapImageStream)) {
+    if (xmp &&
+        SkJpegGetJpegRGainmap(xmp.get(), fDecoderMgr->getSourceMgr(), info, gainmapImageStream)) {
         return true;
     }
 
-    // Attempt to extract Multi-Picture Format gainmap formats.
-    auto mpfMetadata = read_metadata(fDecoderMgr->dinfo(), kMpfMarker, kMpfSig, sizeof(kMpfSig));
-    if (SkJpegGetMultiPictureGainmap(mpfMetadata, stream(), info, gainmapImageStream)) {
-        return true;
+    // Attempt to extract Multi-Picture Format gainmap formats. Find the SkSourceMgr's SkJpegSegment
+    // corresponding to the marker found by libjpeg based on the order they appear in.
+    // TODO(ccameron): It may be preferable to make SkJpegSourceMgr save segments with certain
+    // markers to avoid this strangeness.
+    std::vector<SkJpegSegment> mpfMarkerSegments;
+    for (const auto& segment : fDecoderMgr->getSourceMgr()->getAllSegments()) {
+        if (segment.marker == kMpfMarker) {
+            mpfMarkerSegments.push_back(segment);
+        }
+    }
+    auto mpfMarkerSegmentIter = mpfMarkerSegments.begin();
+    for (jpeg_marker_struct* marker = fDecoderMgr->dinfo()->marker_list; marker;
+         marker = marker->next) {
+        if (marker->marker != kMpfMarker) {
+            continue;
+        }
+        if (mpfMarkerSegmentIter == mpfMarkerSegments.end()) {
+            SkCodecPrintf("Failed to match MPF libjpeg marker and SkJpegSegment.\n");
+            break;
+        }
+        auto mpParamsSegment = (*mpfMarkerSegmentIter);
+        ++mpfMarkerSegmentIter;
+
+        auto mpParams =
+                SkJpegParseMultiPicture(SkData::MakeWithoutCopy(marker->data, marker->data_length));
+        if (!mpParams) {
+            continue;
+        }
+        if (SkJpegGetMultiPictureGainmap(mpParams.get(),
+                                         mpParamsSegment,
+                                         fDecoderMgr->getSourceMgr(),
+                                         info,
+                                         gainmapImageStream)) {
+            return true;
+        }
     }
 #endif  // SK_CODEC_DECODES_JPEG_GAINMAPS
     return false;

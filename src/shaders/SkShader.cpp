@@ -23,6 +23,7 @@
 
 #if SK_SUPPORT_GPU
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/effects/GrMatrixEffect.h"
 #endif
 
 #ifdef SK_GRAPHITE_ENABLED
@@ -34,28 +35,85 @@ SkShaderBase::SkShaderBase() = default;
 
 SkShaderBase::~SkShaderBase() = default;
 
-SkShaderBase::MatrixRec::MatrixRec(const SkMatrix& m) : fPendingMatrix(m), fTotalMatrix(m) {}
+SkShaderBase::MatrixRec::MatrixRec(const SkMatrix& ctm) : fCTM(ctm) {}
 
 std::optional<SkShaderBase::MatrixRec>
 SkShaderBase::MatrixRec::apply(const SkStageRec& rec, const SkMatrix& postInv) const {
-    SkMatrix total;
-    if (!fPendingMatrix.invert(&total)) {
+    SkMatrix total = fPendingLocalMatrix;
+    if (!fCTMApplied) {
+        total = SkMatrix::Concat(fCTM, total);
+    }
+    if (!total.invert(&total)) {
         return {};
     }
     total = SkMatrix::Concat(postInv, total);
-    if (!fRPSeeded) {
+    if (!fCTMApplied) {
         rec.fPipeline->append(SkRasterPipelineOp::seed_shader);
     }
-    // append_matrix is a no-op if inverse worked out to identity.
+    // append_matrix is a no-op if total worked out to identity.
     rec.fPipeline->append_matrix(rec.fAlloc, total);
-    return MatrixRec{SkMatrix::I(), fTotalMatrix, fTotalMatrixIsValid, /*rpSeeded=*/true};
+    return MatrixRec{fCTM,
+                     fTotalLocalMatrix,
+                     /*pendingLocalMatrix=*/SkMatrix::I(),
+                     fTotalMatrixIsValid,
+                     /*ctmApplied=*/true};
 }
 
+std::optional<SkShaderBase::MatrixRec>
+SkShaderBase::MatrixRec::apply(skvm::Builder* p,
+                               skvm::Coord* local,
+                               skvm::Uniforms* uniforms,
+                               const SkMatrix& postInv) const {
+    SkMatrix total = fPendingLocalMatrix;
+    if (!fCTMApplied) {
+        total = SkMatrix::Concat(fCTM, total);
+    }
+    if (!total.invert(&total)) {
+        return {};
+    }
+    total = SkMatrix::Concat(postInv, total);
+    // ApplyMatrix is a no-op if total worked out to identity.
+    *local = SkShaderBase::ApplyMatrix(p, total, *local, uniforms);
+    return MatrixRec{fCTM,
+                     fTotalLocalMatrix,
+                     /*pendingLocalMatrix=*/SkMatrix::I(),
+                     fTotalMatrixIsValid,
+                     /*ctmApplied=*/true};
+}
+
+#if SK_SUPPORT_GPU
+GrFPResult SkShaderBase::MatrixRec::apply(std::unique_ptr<GrFragmentProcessor> fp,
+                                          const SkMatrix& postInv) const {
+    // FP matrices work differently than SkRasterPipeline and SkVM. The starting coordinates
+    // provided to the root SkShader's FP are already in local space. So we never apply the inverse
+    // CTM.
+    SkASSERT(!fCTMApplied);
+    SkMatrix total;
+    if (!fPendingLocalMatrix.invert(&total)) {
+        return {false, std::move(fp)};
+    }
+    total = SkMatrix::Concat(postInv, total);
+    // GrMatrixEffect returns 'fp' if total worked out to identity.
+    return {true, GrMatrixEffect::Make(total, std::move(fp))};
+}
+
+SkShaderBase::MatrixRec SkShaderBase::MatrixRec::applied() const {
+    // We mark the CTM as "not applied" because we *never* apply the CTM for FPs. Their starting
+    // coords are local, not device, coords.
+    return MatrixRec{fCTM,
+                     fTotalLocalMatrix,
+                     /*pendingLocalMatrix=*/SkMatrix::I(),
+                     fTotalMatrixIsValid,
+                     /*ctmApplied=*/false};
+}
+#endif
+
 SkShaderBase::MatrixRec SkShaderBase::MatrixRec::concat(const SkMatrix& m) const {
-    return {SkShaderBase::ConcatLocalMatrices(fPendingMatrix, m),
-            SkShaderBase::ConcatLocalMatrices(fTotalMatrix  , m),
+    return {fCTM,
+            SkShaderBase::ConcatLocalMatrices(fTotalLocalMatrix, m),
+            SkShaderBase::ConcatLocalMatrices(fPendingLocalMatrix, m),
             fTotalMatrixIsValid,
-            fRPSeeded};
+            fCTMApplied};
 }
 
 void SkShaderBase::flatten(SkWriteBuffer& buffer) const { this->INHERITED::flatten(buffer); }
@@ -122,7 +180,13 @@ SkImage* SkShader::isAImage(SkMatrix* localMatrix, SkTileMode xy[2]) const {
 }
 
 #if SK_SUPPORT_GPU
-std::unique_ptr<GrFragmentProcessor> SkShaderBase::asFragmentProcessor(const GrFPArgs&) const {
+std::unique_ptr<GrFragmentProcessor>
+SkShaderBase::asRootFragmentProcessor(const GrFPArgs& args, const SkMatrix& ctm) const {
+    return this->asFragmentProcessor(args, MatrixRec(ctm));
+}
+
+std::unique_ptr<GrFragmentProcessor> SkShaderBase::asFragmentProcessor(const GrFPArgs&,
+                                                                       const MatrixRec&) const {
     return nullptr;
 }
 #endif
@@ -207,11 +271,13 @@ bool SkShaderBase::appendStages(const SkStageRec& rec, const MatrixRec& mRec) co
     return false;
 }
 
-skvm::Color SkShaderBase::program(skvm::Builder* p,
-                                  skvm::Coord device, skvm::Coord local, skvm::Color paint,
-                                  const SkMatrixProvider& matrices, const SkMatrix* localM,
-                                  const SkColorInfo& dst,
-                                  skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const {
+skvm::Color SkShaderBase::rootProgram(skvm::Builder* p,
+                                      skvm::Coord device,
+                                      skvm::Color paint,
+                                      const SkMatrix& ctm,
+                                      const SkColorInfo& dst,
+                                      skvm::Uniforms* uniforms,
+                                      SkArenaAlloc* alloc) const {
     // Shader subclasses should always act as if the destination were premul or opaque.
     // SkVMBlitter handles all the coordination of unpremul itself, via premul.
     SkColorInfo tweaked = dst.alphaType() == kUnpremul_SkAlphaType
@@ -230,8 +296,14 @@ skvm::Color SkShaderBase::program(skvm::Builder* p,
     // shader program hash and blitter Key.  This makes it safe for us to use
     // that bit to make decisions when constructing an SkVMBlitter, like doing
     // SrcOver -> Src strength reduction.
-    if (auto color = this->onProgram(p, device,local, paint, matrices,localM, tweaked,
-                                     uniforms,alloc)) {
+    if (auto color = this->program(p,
+                                   device,
+                                   /*local=*/device,
+                                   paint,
+                                   MatrixRec(ctm),
+                                   tweaked,
+                                   uniforms,
+                                   alloc)) {
         if (this->isOpaque()) {
             color.a = p->splat(1.0f);
         }

@@ -21,14 +21,15 @@
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLIntrinsicList.h"
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
 #include "src/sksl/codegen/SkSLRasterPipelineCodeGenerator.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLBreakStatement.h"
+#include "src/sksl/ir/SkSLChildCall.h"
 #include "src/sksl/ir/SkSLConstructor.h"
-#include "src/sksl/ir/SkSLConstructorCompound.h"
 #include "src/sksl/ir/SkSLConstructorDiagonalMatrix.h"
 #include "src/sksl/ir/SkSLConstructorMatrixResize.h"
 #include "src/sksl/ir/SkSLConstructorSplat.h"
@@ -36,6 +37,7 @@
 #include "src/sksl/ir/SkSLDoStatement.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
+#include "src/sksl/ir/SkSLFieldAccess.h"
 #include "src/sksl/ir/SkSLForStatement.h"
 #include "src/sksl/ir/SkSLFunctionCall.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
@@ -230,12 +232,14 @@ public:
     [[nodiscard]] bool pushBinaryExpression(const Expression& left,
                                             Operator op,
                                             const Expression& right);
+    [[nodiscard]] bool pushChildCall(const ChildCall& c);
     [[nodiscard]] bool pushConstructorCast(const AnyConstructor& c);
-    [[nodiscard]] bool pushConstructorCompound(const ConstructorCompound& c);
+    [[nodiscard]] bool pushConstructorCompound(const AnyConstructor& c);
     [[nodiscard]] bool pushConstructorDiagonalMatrix(const ConstructorDiagonalMatrix& c);
     [[nodiscard]] bool pushConstructorMatrixResize(const ConstructorMatrixResize& c);
     [[nodiscard]] bool pushConstructorSplat(const ConstructorSplat& c);
     [[nodiscard]] bool pushExpression(const Expression& e, bool usesResult = true);
+    [[nodiscard]] bool pushFieldAccess(const FieldAccess& e);
     [[nodiscard]] bool pushFunctionCall(const FunctionCall& e);
     [[nodiscard]] bool pushIndexExpression(const IndexExpression& i);
     [[nodiscard]] bool pushIntrinsic(const FunctionCall& c);
@@ -284,6 +288,14 @@ public:
     [[nodiscard]] bool unaryOp(const SkSL::Type& type, const TypedOps& ops);
     [[nodiscard]] bool binaryOp(const SkSL::Type& type, const TypedOps& ops);
     [[nodiscard]] bool ternaryOp(const SkSL::Type& type, const TypedOps& ops);
+    [[nodiscard]] bool pushIntrinsic(const TypedOps& ops, const Expression& arg0);
+    [[nodiscard]] bool pushIntrinsic(const TypedOps& ops,
+                                     const Expression& arg0,
+                                     const Expression& arg1);
+    [[nodiscard]] bool pushIntrinsic(BuilderOp builderOp, const Expression& arg0);
+    [[nodiscard]] bool pushIntrinsic(BuilderOp builderOp,
+                                     const Expression& arg0,
+                                     const Expression& arg1);
     [[nodiscard]] bool pushVectorizedExpression(const Expression& expr, const Type& vectorType);
     [[nodiscard]] bool pushVariableReferencePartial(const VariableReference& v, SlotRange subset);
     [[nodiscard]] bool pushLValueOrExpression(LValue* lvalue, const Expression& expr);
@@ -335,6 +347,7 @@ private:
     const SkSL::Program& fProgram;
     Builder fBuilder;
     SkRPDebugTrace* fDebugTrace = nullptr;
+    SkTHashMap<const Variable*, int> fChildEffectMap;
 
     SlotManager fProgramSlots;
     SlotManager fUniformSlots;
@@ -475,11 +488,11 @@ public:
     const ComponentArray& fComponents;
 };
 
-class IndexLValue final : public LValue {
+class FixedIndexLValue final : public LValue {
 public:
-    IndexLValue(std::unique_ptr<LValue> p, const Expression& i, const Type& ti)
+    FixedIndexLValue(std::unique_ptr<LValue> p, SKSL_INT v, const Type& ti)
             : fParent(std::move(p))
-            , fIndexExpr(i)
+            , fIndexValue(v)
             , fIndexedType(ti) {}
 
     SlotMap getSlotMap(Generator* gen) const override {
@@ -488,15 +501,10 @@ public:
 
         // Take a subset of the parent's slots.
         int numElements = fIndexedType.slotCount();
+        int startingIndex = numElements * fIndexValue;
 
         SlotMap out;
-        out.slots.resize(numElements);
-        // TODO(skia:13676): support non-constant indices
-        int startingIndex = numElements * fIndexExpr.as<Literal>().intValue();
-        for (int count = 0; count < numElements; ++count) {
-            out.slots[count] = in.slots[startingIndex + count];
-        }
-
+        out.slots.push_back_n(numElements, &in.slots[startingIndex]);
         return out;
     }
 
@@ -505,8 +513,35 @@ public:
     }
 
     std::unique_ptr<LValue> fParent;
-    const Expression& fIndexExpr;
+    SKSL_INT fIndexValue;
     const Type& fIndexedType;
+};
+
+class FieldLValue final : public LValue {
+public:
+    FieldLValue(std::unique_ptr<LValue> p, const FieldAccess& fieldAccess)
+            : fParent(std::move(p)) {
+        fInitialSlot = fieldAccess.initialSlot();
+        fNumSlots = fieldAccess.type().slotCount();
+    }
+
+    SlotMap getSlotMap(Generator* gen) const override {
+        // Get the slot map from the base expression.
+        SlotMap in = fParent->getSlotMap(gen);
+
+        // Take a subset of the parent's slots.
+        SlotMap out;
+        out.slots.push_back_n(fNumSlots, &in.slots[fInitialSlot]);
+        return out;
+    }
+
+    bool isUniform() const override {
+        return fParent->isUniform();
+    }
+
+    std::unique_ptr<LValue> fParent;
+    int fInitialSlot = 0;
+    int fNumSlots = 0;
 };
 
 std::unique_ptr<LValue> LValue::Make(const Expression& e) {
@@ -518,16 +553,22 @@ std::unique_ptr<LValue> LValue::Make(const Expression& e) {
             return std::make_unique<SwizzleLValue>(std::move(base), e.as<Swizzle>().components());
         }
     }
+    if (e.is<FieldAccess>()) {
+        if (std::unique_ptr<LValue> base = LValue::Make(*e.as<FieldAccess>().base())) {
+            return std::make_unique<FieldLValue>(std::move(base), e.as<FieldAccess>());
+        }
+    }
     if (e.is<IndexExpression>()) {
         const IndexExpression& indexExpr = e.as<IndexExpression>();
-
-        // TODO(skia:13676): support non-constant indices
-        if (indexExpr.index()->is<Literal>()) {
-            if (std::unique_ptr<LValue> base = LValue::Make(*indexExpr.base())) {
-                return std::make_unique<IndexLValue>(std::move(base),
-                                                     *indexExpr.index(),
-                                                     indexExpr.type());
+        if (std::unique_ptr<LValue> base = LValue::Make(*indexExpr.base())) {
+            // If the index is a compile-time constant, we can generate simpler code.
+            SKSL_INT indexValue;
+            if (ConstantFolder::GetConstantInt(*indexExpr.index(), &indexValue)) {
+                return std::make_unique<FixedIndexLValue>(std::move(base), indexValue,
+                                                          indexExpr.type());
             }
+
+            // TODO(skia:13676): support non-constant indices
         }
     }
     // TODO(skia:13676): add support for other kinds of lvalues
@@ -773,8 +814,11 @@ bool Generator::writeGlobals() {
             const Variable* var = decl.var();
 
             if (var->type().isEffectChild()) {
-                // TODO(skia:13676): handle child effects
-                return unsupported();
+                // Associate each child effect variable with its numeric index.
+                SkASSERT(!fChildEffectMap.find(var));
+                int childEffectIndex = fChildEffectMap.count();
+                fChildEffectMap[var] = childEffectIndex;
+                continue;
             }
 
             // Opaque types include child processors and GL objects (samplers, textures, etc).
@@ -782,10 +826,13 @@ bool Generator::writeGlobals() {
             SkASSERT(!var->type().isVoid());
             SkASSERT(!var->type().isOpaque());
 
-            // Builtin variables are system-defined, with special semantics. The only builtin
-            // variable exposed to runtime effects is sk_FragCoord.
+            // Builtin variables are system-defined, with special semantics.
             if (int builtin = var->modifiers().fLayout.fBuiltin; builtin >= 0) {
-                // TODO: for SK_FRAGCOORD_BUILTIN, populate slots with device coordinates xy01.
+                if (builtin == SK_FRAGCOORD_BUILTIN) {
+                    fBuilder.store_device_xy01(this->getVariableSlots(*var));
+                    continue;
+                }
+                // The only builtin variable exposed to runtime effects is sk_FragCoord.
                 return unsupported();
             }
 
@@ -1159,8 +1206,12 @@ bool Generator::pushExpression(const Expression& e, bool usesResult) {
         case Expression::Kind::kBinary:
             return this->pushBinaryExpression(e.as<BinaryExpression>());
 
+        case Expression::Kind::kChildCall:
+            return this->pushChildCall(e.as<ChildCall>());
+
         case Expression::Kind::kConstructorCompound:
-            return this->pushConstructorCompound(e.as<ConstructorCompound>());
+        case Expression::Kind::kConstructorStruct:
+            return this->pushConstructorCompound(e.asAnyConstructor());
 
         case Expression::Kind::kConstructorCompoundCast:
         case Expression::Kind::kConstructorScalarCast:
@@ -1174,6 +1225,9 @@ bool Generator::pushExpression(const Expression& e, bool usesResult) {
 
         case Expression::Kind::kConstructorSplat:
             return this->pushConstructorSplat(e.as<ConstructorSplat>());
+
+        case Expression::Kind::kFieldAccess:
+            return this->pushFieldAccess(e.as<FieldAccess>());
 
         case Expression::Kind::kFunctionCall:
             return this->pushFunctionCall(e.as<FunctionCall>());
@@ -1206,11 +1260,11 @@ bool Generator::pushExpression(const Expression& e, bool usesResult) {
 
 BuilderOp Generator::GetTypedOp(const SkSL::Type& type, const TypedOps& ops) {
     switch (type.componentType().numberKind()) {
-        case Type::NumberKind::kFloat:    return ops.fFloatOp;    break;
-        case Type::NumberKind::kSigned:   return ops.fSignedOp;   break;
-        case Type::NumberKind::kUnsigned: return ops.fUnsignedOp; break;
-        case Type::NumberKind::kBoolean:  return ops.fBooleanOp;  break;
-        default:                          SkUNREACHABLE;
+        case Type::NumberKind::kFloat:    return ops.fFloatOp;
+        case Type::NumberKind::kSigned:   return ops.fSignedOp;
+        case Type::NumberKind::kUnsigned: return ops.fUnsignedOp;
+        case Type::NumberKind::kBoolean:  return ops.fBooleanOp;
+        default:                          return BuilderOp::unsupported;
     }
 }
 
@@ -1307,9 +1361,7 @@ bool Generator::pushMatrixMultiply(LValue* lvalue,
             // allows us to clone a column at once instead of cloning each slot individually.)
             this->pushCloneFromNextTempStack(leftColumns, leftMtxBase  - r * leftColumns);
             this->pushCloneFromNextTempStack(leftColumns, rightMtxBase - c * leftColumns);
-
-            fBuilder.binary_op(BuilderOp::mul_n_floats, leftColumns);
-            this->foldWithMultiOp(BuilderOp::add_n_floats, leftColumns);
+            fBuilder.dot_floats(leftColumns);
         }
     }
 
@@ -1391,21 +1443,21 @@ bool Generator::pushBinaryExpression(const Expression& left, Operator op, const 
     // Handle matrix multiplication (MxM/MxV/VxM).
     if (op.kind() == OperatorKind::STAR) {
         // Matrix * matrix:
-        if (type.isMatrix() && right.type().isMatrix()) {
+        if (left.type().isMatrix() && right.type().isMatrix()) {
             return this->pushMatrixMultiply(lvalue.get(), left, right,
                                             left.type().columns(), left.type().rows(),
                                             right.type().columns(), right.type().rows());
         }
 
         // Vector * matrix:
-        if (type.isVector() && right.type().isMatrix()) {
+        if (left.type().isVector() && right.type().isMatrix()) {
             return this->pushMatrixMultiply(lvalue.get(), left, right,
                                             left.type().columns(), 1,
                                             right.type().columns(), right.type().rows());
         }
 
         // Matrix * vector:
-        if (type.isMatrix() && right.type().isVector()) {
+        if (left.type().isMatrix() && right.type().isVector()) {
             return this->pushMatrixMultiply(lvalue.get(), left, right,
                                             left.type().columns(), left.type().rows(),
                                             1, right.type().columns());
@@ -1527,7 +1579,7 @@ bool Generator::pushBinaryExpression(const Expression& left, Operator op, const 
         case OperatorKind::LOGICALOR:
         case OperatorKind::BITWISEOR:
             // For logical-or, we verified above that the RHS does not have side effects.
-            fBuilder.binary_op(BuilderOp::bitwise_and_n_ints, type.slotCount());
+            fBuilder.binary_op(BuilderOp::bitwise_or_n_ints, type.slotCount());
             break;
 
         case OperatorKind::LOGICALXOR:
@@ -1548,12 +1600,79 @@ bool Generator::pushBinaryExpression(const Expression& left, Operator op, const 
     return true;
 }
 
-bool Generator::pushConstructorCompound(const ConstructorCompound& c) {
-    for (const std::unique_ptr<Expression> &arg : c.arguments()) {
+bool Generator::pushConstructorCompound(const AnyConstructor& c) {
+    for (const std::unique_ptr<Expression> &arg : c.argumentSpan()) {
         if (!this->pushExpression(*arg)) {
             return unsupported();
         }
     }
+    return true;
+}
+
+bool Generator::pushChildCall(const ChildCall& c) {
+    int* childIdx = fChildEffectMap.find(&c.child());
+    SkASSERT(childIdx != nullptr);
+    SkASSERT(c.arguments().size() >= 1);
+
+    // Save the dst.rgba fields; these hold our execution masks, and could potentially be
+    // clobbered by the child effect.
+    fBuilder.push_dst_rgba();
+
+    // All child calls have at least one argument.
+    const Expression* arg = c.arguments()[0].get();
+    if (!this->pushExpression(*arg)) {
+        return unsupported();
+    }
+
+    // Copy arguments from the stack into src/dst as required by this particular child-call.
+    switch (c.child().type().typeKind()) {
+        case Type::TypeKind::kShader: {
+            // The argument must be a float2.
+            SkASSERT(c.arguments().size() == 1);
+            SkASSERT(arg->type().matches(*fProgram.fContext->fTypes.fFloat2));
+            fBuilder.pop_src_rg();
+            fBuilder.invoke_shader(*childIdx);
+            break;
+        }
+        case Type::TypeKind::kColorFilter: {
+            // The argument must be a half4/float4.
+            SkASSERT(c.arguments().size() == 1);
+            SkASSERT(arg->type().matches(*fProgram.fContext->fTypes.fHalf4) ||
+                     arg->type().matches(*fProgram.fContext->fTypes.fFloat4));
+            fBuilder.pop_src_rgba();
+            fBuilder.invoke_color_filter(*childIdx);
+            break;
+        }
+        case Type::TypeKind::kBlender: {
+            // The first argument must be a half4/float4.
+            SkASSERT(c.arguments().size() == 2);
+            SkASSERT(arg->type().matches(*fProgram.fContext->fTypes.fHalf4) ||
+                     arg->type().matches(*fProgram.fContext->fTypes.fFloat4));
+
+            // The second argument must also be a half4/float4.
+            arg = c.arguments()[1].get();
+            SkASSERT(arg->type().matches(*fProgram.fContext->fTypes.fHalf4) ||
+                     arg->type().matches(*fProgram.fContext->fTypes.fFloat4));
+
+            if (!this->pushExpression(*arg)) {
+                return unsupported();
+            }
+
+            fBuilder.pop_dst_rgba();
+            fBuilder.pop_src_rgba();
+            fBuilder.invoke_blender(*childIdx);
+            break;
+        }
+        default: {
+            SkDEBUGFAILF("cannot sample from type '%s'", c.child().type().description().c_str());
+        }
+    }
+
+    // Restore dst.rgba so our execution masks are back to normal.
+    fBuilder.pop_dst_rgba();
+
+    // The child call has returned the result color via src.rgba; push it onto the stack.
+    fBuilder.push_src_rgba();
     return true;
 }
 
@@ -1652,6 +1771,34 @@ bool Generator::pushConstructorSplat(const ConstructorSplat& c) {
     return true;
 }
 
+bool Generator::pushFieldAccess(const FieldAccess& f) {
+    // If possible, get direct field access via the lvalue.
+    std::unique_ptr<LValue> lvalue = LValue::Make(f);
+    if (lvalue) {
+        lvalue->push(this);
+        return true;
+    }
+    // Push the entire base expression onto a separate stack.
+    this->nextTempStack();
+    if (!this->pushExpression(*f.base())) {
+        return unsupported();
+    }
+    this->previousTempStack();
+
+    // Copy the field we want onto the primary stack.
+    int totalSlots = f.base()->type().slotCount();
+    int fieldOffset = f.initialSlot();
+    int fieldSlots = f.type().slotCount();
+
+    this->pushCloneFromNextTempStack(fieldSlots, totalSlots - fieldOffset - fieldSlots);
+
+    // The rest of the base expression, on the separate stack, can now be jettisoned.
+    this->nextTempStack();
+    this->discardExpression(totalSlots);
+    this->previousTempStack();
+    return true;
+}
+
 bool Generator::pushFunctionCall(const FunctionCall& c) {
     if (c.function().isIntrinsic()) {
         return this->pushIntrinsic(c);
@@ -1740,12 +1887,39 @@ bool Generator::pushFunctionCall(const FunctionCall& c) {
 }
 
 bool Generator::pushIndexExpression(const IndexExpression& i) {
+    // If possible, get direct access via the lvalue.
     std::unique_ptr<LValue> lvalue = LValue::Make(i);
-    if (!lvalue) {
-        return unsupported();
+    if (lvalue) {
+        lvalue->push(this);
+        return true;
     }
-    lvalue->push(this);
-    return true;
+
+    // Handle fixed-index lookups into temporary values.
+    SKSL_INT indexValue;
+    if (ConstantFolder::GetConstantInt(*i.index(), &indexValue)) {
+        // Push the temporary array onto a separate stack.
+        this->nextTempStack();
+        if (!this->pushExpression(*i.base())) {
+            return unsupported();
+        }
+        this->previousTempStack();
+
+        // Clone the indexed item from the array onto the main stack.
+        int totalSlots = i.base()->type().slotCount();
+        int perItemSlots = i.type().slotCount();
+
+        this->pushCloneFromNextTempStack(perItemSlots,
+                                         totalSlots - ((indexValue + 1) * perItemSlots));
+
+        // The rest of the array, on the separate stack, can now be jettisoned.
+        this->nextTempStack();
+        this->discardExpression(totalSlots);
+        this->previousTempStack();
+        return true;
+    }
+
+    // TODO: implement dynamic-index lookups.
+    return unsupported();
 }
 
 bool Generator::pushIntrinsic(const FunctionCall& c) {
@@ -1778,13 +1952,25 @@ bool Generator::pushVectorizedExpression(const Expression& expr, const Type& vec
     return true;
 }
 
+bool Generator::pushIntrinsic(const TypedOps& ops, const Expression& arg0) {
+    if (!this->pushExpression(arg0)) {
+        return unsupported();
+    }
+    return this->unaryOp(arg0.type(), ops);
+}
+
+bool Generator::pushIntrinsic(BuilderOp builderOp, const Expression& arg0) {
+    if (!this->pushExpression(arg0)) {
+        return unsupported();
+    }
+    fBuilder.unary_op(builderOp, arg0.type().slotCount());
+    return true;
+}
+
 bool Generator::pushIntrinsic(IntrinsicKind intrinsic, const Expression& arg0) {
     switch (intrinsic) {
         case IntrinsicKind::k_abs_IntrinsicKind:
-            if (!this->pushExpression(arg0)) {
-                return unsupported();
-            }
-            return this->unaryOp(arg0.type(), kAbsOps);
+            return this->pushIntrinsic(kAbsOps, arg0);
 
         case IntrinsicKind::k_any_IntrinsicKind:
             if (!this->pushExpression(arg0)) {
@@ -1801,25 +1987,13 @@ bool Generator::pushIntrinsic(IntrinsicKind intrinsic, const Expression& arg0) {
             return true;
 
         case IntrinsicKind::k_atan_IntrinsicKind:
-            if (!this->pushExpression(arg0)) {
-                return unsupported();
-            }
-            fBuilder.unary_op(BuilderOp::atan_float, arg0.type().slotCount());
-            return true;
+            return this->pushIntrinsic(BuilderOp::atan_float, arg0);
 
         case IntrinsicKind::k_ceil_IntrinsicKind:
-            if (!this->pushExpression(arg0)) {
-                return unsupported();
-            }
-            fBuilder.unary_op(BuilderOp::ceil_float, arg0.type().slotCount());
-            return true;
+            return this->pushIntrinsic(BuilderOp::ceil_float, arg0);
 
         case IntrinsicKind::k_cos_IntrinsicKind:
-            if (!this->pushExpression(arg0)) {
-                return unsupported();
-            }
-            fBuilder.unary_op(BuilderOp::cos_float, arg0.type().slotCount());
-            return true;
+            return this->pushIntrinsic(BuilderOp::cos_float, arg0);
 
         case IntrinsicKind::k_degrees_IntrinsicKind: {
             Literal lit180OverPi{Position{}, 57.2957795131f, &arg0.type().componentType()};
@@ -1829,17 +2003,13 @@ bool Generator::pushIntrinsic(IntrinsicKind intrinsic, const Expression& arg0) {
         case IntrinsicKind::k_floatBitsToUint_IntrinsicKind:
         case IntrinsicKind::k_intBitsToFloat_IntrinsicKind:
         case IntrinsicKind::k_uintBitsToFloat_IntrinsicKind:
-            if (!this->pushExpression(arg0)) {
-                return unsupported();
-            }
-            return true;
+            return this->pushExpression(arg0);
+
+        case IntrinsicKind::k_exp_IntrinsicKind:
+            return this->pushIntrinsic(BuilderOp::exp_float, arg0);
 
         case IntrinsicKind::k_floor_IntrinsicKind:
-            if (!this->pushExpression(arg0)) {
-                return unsupported();
-            }
-            fBuilder.unary_op(BuilderOp::floor_float, arg0.type().slotCount());
-            return true;
+            return this->pushIntrinsic(BuilderOp::floor_float, arg0);
 
         case IntrinsicKind::k_fract_IntrinsicKind:
             // Implement fract as `x - floor(x)`.
@@ -1857,8 +2027,7 @@ bool Generator::pushIntrinsic(IntrinsicKind intrinsic, const Expression& arg0) {
             // Implement length as `sqrt(dot(x, x))`.
             if (arg0.type().slotCount() > 1) {
                 fBuilder.push_clone(arg0.type().slotCount());
-                fBuilder.binary_op(BuilderOp::mul_n_floats, arg0.type().slotCount());
-                this->foldWithMultiOp(BuilderOp::add_n_floats, arg0.type().slotCount());
+                fBuilder.dot_floats(arg0.type().slotCount());
                 fBuilder.unary_op(BuilderOp::sqrt_float, 1);
             } else {
                 // The length of a scalar is `sqrt(x^2)`, which is equivalent to `abs(x)`.
@@ -1911,25 +2080,13 @@ bool Generator::pushIntrinsic(IntrinsicKind intrinsic, const Expression& arg0) {
             return this->binaryOp(arg0.type(), kMinOps);
         }
         case IntrinsicKind::k_sin_IntrinsicKind:
-            if (!this->pushExpression(arg0)) {
-                return unsupported();
-            }
-            fBuilder.unary_op(BuilderOp::sin_float, arg0.type().slotCount());
-            return true;
+            return this->pushIntrinsic(BuilderOp::sin_float, arg0);
 
         case IntrinsicKind::k_sqrt_IntrinsicKind:
-            if (!this->pushExpression(arg0)) {
-                return unsupported();
-            }
-            fBuilder.unary_op(BuilderOp::sqrt_float, arg0.type().slotCount());
-            return true;
+            return this->pushIntrinsic(BuilderOp::sqrt_float, arg0);
 
         case IntrinsicKind::k_tan_IntrinsicKind:
-            if (!this->pushExpression(arg0)) {
-                return unsupported();
-            }
-            fBuilder.unary_op(BuilderOp::tan_float, arg0.type().slotCount());
-            return true;
+            return this->pushIntrinsic(BuilderOp::tan_float, arg0);
 
         case IntrinsicKind::k_transpose_IntrinsicKind:
             SkASSERT(arg0.type().isMatrix());
@@ -1945,19 +2102,27 @@ bool Generator::pushIntrinsic(IntrinsicKind intrinsic, const Expression& arg0) {
     return unsupported();
 }
 
+bool Generator::pushIntrinsic(const TypedOps& ops, const Expression& arg0, const Expression& arg1) {
+    if (!this->pushExpression(arg0) || !this->pushVectorizedExpression(arg1, arg0.type())) {
+        return unsupported();
+    }
+    return this->binaryOp(arg0.type(), ops);
+}
+
+bool Generator::pushIntrinsic(BuilderOp builderOp, const Expression& arg0, const Expression& arg1) {
+    if (!this->pushExpression(arg0) || !this->pushVectorizedExpression(arg1, arg0.type())) {
+        return unsupported();
+    }
+    fBuilder.binary_op(builderOp, arg0.type().slotCount());
+    return true;
+}
+
 bool Generator::pushIntrinsic(IntrinsicKind intrinsic,
                               const Expression& arg0,
                               const Expression& arg1) {
     switch (intrinsic) {
         case IntrinsicKind::k_atan_IntrinsicKind:
-            if (!this->pushExpression(arg0)) {
-                return unsupported();
-            }
-            if (!this->pushExpression(arg1)) {
-                return unsupported();
-            }
-            fBuilder.binary_op(BuilderOp::atan2_n_floats, arg0.type().slotCount());
-            return true;
+            return this->pushIntrinsic(BuilderOp::atan2_n_floats, arg0, arg1);
 
         case IntrinsicKind::k_cross_IntrinsicKind:
             // Implement cross as `arg0.yzx * arg1.zxy - arg0.zxy * arg1.yzx`. We use two stacks so
@@ -2011,72 +2176,48 @@ bool Generator::pushIntrinsic(IntrinsicKind intrinsic,
             if (!this->pushExpression(arg0) || !this->pushExpression(arg1)) {
                 return unsupported();
             }
-            fBuilder.binary_op(BuilderOp::mul_n_floats, arg0.type().slotCount());
-            this->foldWithMultiOp(BuilderOp::add_n_floats, arg0.type().slotCount());
+            fBuilder.dot_floats(arg0.type().slotCount());
             return true;
 
         case IntrinsicKind::k_equal_IntrinsicKind:
             SkASSERT(arg0.type().matches(arg1.type()));
-            if (!this->pushExpression(arg0) || !this->pushExpression(arg1)) {
-                return unsupported();
-            }
-            return this->binaryOp(arg0.type(), kEqualOps);
+            return this->pushIntrinsic(kEqualOps, arg0, arg1);
 
         case IntrinsicKind::k_notEqual_IntrinsicKind:
             SkASSERT(arg0.type().matches(arg1.type()));
-            if (!this->pushExpression(arg0) || !this->pushExpression(arg1)) {
-                return unsupported();
-            }
-            return this->binaryOp(arg0.type(), kNotEqualOps);
+            return this->pushIntrinsic(kNotEqualOps, arg0, arg1);
 
         case IntrinsicKind::k_lessThan_IntrinsicKind:
             SkASSERT(arg0.type().matches(arg1.type()));
-            if (!this->pushExpression(arg0) || !this->pushExpression(arg1)) {
-                return unsupported();
-            }
-            return this->binaryOp(arg0.type(), kLessThanOps);
+            return this->pushIntrinsic(kLessThanOps, arg0, arg1);
 
         case IntrinsicKind::k_greaterThan_IntrinsicKind:
             SkASSERT(arg0.type().matches(arg1.type()));
-            if (!this->pushExpression(arg1) || !this->pushExpression(arg0)) {
-                return unsupported();
-            }
-            return this->binaryOp(arg0.type(), kLessThanOps);
+            return this->pushIntrinsic(kLessThanOps, arg1, arg0);
 
         case IntrinsicKind::k_lessThanEqual_IntrinsicKind:
             SkASSERT(arg0.type().matches(arg1.type()));
-            if (!this->pushExpression(arg0) || !this->pushExpression(arg1)) {
-                return unsupported();
-            }
-            return this->binaryOp(arg0.type(), kLessThanEqualOps);
+            return this->pushIntrinsic(kLessThanEqualOps, arg0, arg1);
 
         case IntrinsicKind::k_greaterThanEqual_IntrinsicKind:
             SkASSERT(arg0.type().matches(arg1.type()));
-            if (!this->pushExpression(arg1) || !this->pushExpression(arg0)) {
-                return unsupported();
-            }
-            return this->binaryOp(arg0.type(), kLessThanEqualOps);
+            return this->pushIntrinsic(kLessThanEqualOps, arg1, arg0);
 
         case IntrinsicKind::k_min_IntrinsicKind:
             SkASSERT(arg0.type().componentType().matches(arg1.type().componentType()));
-            if (!this->pushExpression(arg0) || !this->pushVectorizedExpression(arg1, arg0.type())) {
-                return unsupported();
-            }
-            return this->binaryOp(arg0.type(), kMinOps);
-
-        case IntrinsicKind::k_max_IntrinsicKind:
-            SkASSERT(arg0.type().componentType().matches(arg1.type().componentType()));
-            if (!this->pushExpression(arg0) || !this->pushVectorizedExpression(arg1, arg0.type())) {
-                return unsupported();
-            }
-            return this->binaryOp(arg0.type(), kMaxOps);
+            return this->pushIntrinsic(kMinOps, arg0, arg1);
 
         case IntrinsicKind::k_matrixCompMult_IntrinsicKind:
             SkASSERT(arg0.type().matches(arg1.type()));
-            if (!this->pushExpression(arg0) || !this->pushExpression(arg1)) {
-                return unsupported();
-            }
-            return this->binaryOp(arg0.type(), kMultiplyOps);
+            return this->pushIntrinsic(kMultiplyOps, arg0, arg1);
+
+        case IntrinsicKind::k_max_IntrinsicKind:
+            SkASSERT(arg0.type().componentType().matches(arg1.type().componentType()));
+            return this->pushIntrinsic(kMaxOps, arg0, arg1);
+
+        case IntrinsicKind::k_pow_IntrinsicKind:
+            SkASSERT(arg0.type().matches(arg1.type()));
+            return this->pushIntrinsic(BuilderOp::pow_n_floats, arg0, arg1);
 
         case IntrinsicKind::k_step_IntrinsicKind: {
             // Compute step as `float(lessThan(edge, x))`. We convert from boolean 0/~0 to floating
@@ -2126,22 +2267,32 @@ bool Generator::pushIntrinsic(IntrinsicKind intrinsic,
             return true;
 
         case IntrinsicKind::k_mix_IntrinsicKind:
-            // TODO: implement mix(a,b,genBType)
-            if (!arg2.type().componentType().isFloat()) {
-                return unsupported();
-            }
+            // Note: our SkRP mix op takes the interpolation point first, not the interpolants.
             SkASSERT(arg0.type().matches(arg1.type()));
-            SkASSERT(arg0.type().componentType().matches(arg2.type().componentType()));
-            if (!this->pushExpression(arg0) || !this->pushExpression(arg1)) {
-                return unsupported();
+            if (arg2.type().componentType().isFloat()) {
+                SkASSERT(arg0.type().componentType().matches(arg2.type().componentType()));
+                if (!this->pushVectorizedExpression(arg2, arg0.type())) {
+                    return unsupported();
+                }
+                if (!this->pushExpression(arg0) || !this->pushExpression(arg1)) {
+                    return unsupported();
+                }
+                return this->ternaryOp(arg0.type(), kMixOps);
             }
-            if (!this->pushVectorizedExpression(arg2, arg0.type())) {
-                return unsupported();
+            if (arg2.type().componentType().isBoolean()) {
+                if (!this->pushExpression(arg2)) {
+                    return unsupported();
+                }
+                if (!this->pushExpression(arg0) || !this->pushExpression(arg1)) {
+                    return unsupported();
+                }
+                // The `mix_int` op isn't doing a lerp; it uses the third argument to select values
+                // from the first and second arguments. It's safe for use with any type in arguments
+                // 0 and 1.
+                fBuilder.ternary_op(BuilderOp::mix_n_ints, arg0.type().slotCount());
+                return true;
             }
-            if (!this->ternaryOp(arg0.type(), kMixOps)) {
-                return unsupported();
-            }
-            return true;
+            return unsupported();
 
         default:
             break;
@@ -2356,9 +2507,33 @@ bool Generator::pushTernaryExpression(const Expression& test,
         return this->pushDynamicallyUniformTernaryExpression(test, ifTrue, ifFalse);
     }
 
-    fBuilder.enableExecutionMaskWrites();
+    // Analyze the ternary to see which corners we can safely cut.
+    bool ifFalseHasSideEffects = Analysis::HasSideEffects(ifFalse);
+    bool ifTrueHasSideEffects  = Analysis::HasSideEffects(ifTrue);
+    bool ifTrueIsTrivial       = Analysis::IsTrivialExpression(ifTrue);
+    int  cleanupLabelID        = fBuilder.nextLabelID();
+
+    // If the true- and false-expressions both lack side effects, we evaluate both of them safely
+    // without masking off their effects. In that case, we can emit both sides and use boolean mix
+    // to select the correct result without using the condition mask at all.
+    if (!ifFalseHasSideEffects && !ifTrueHasSideEffects && ifTrueIsTrivial) {
+        // Push all of the arguments to mix.
+        if (!this->pushVectorizedExpression(test, ifTrue.type())) {
+            return unsupported();
+        }
+        if (!this->pushExpression(ifFalse)) {
+            return unsupported();
+        }
+        if (!this->pushExpression(ifTrue)) {
+            return unsupported();
+        }
+        // Use boolean mix to select the true- or false-expression via the test-expression.
+        fBuilder.ternary_op(BuilderOp::mix_n_ints, ifTrue.type().slotCount());
+        return true;
+    }
 
     // First, push the current condition-mask and the test-expression into a separate stack.
+    fBuilder.enableExecutionMaskWrites();
     this->nextTempStack();
     fBuilder.push_condition_mask();
     if (!this->pushExpression(test)) {
@@ -2369,9 +2544,8 @@ bool Generator::pushTernaryExpression(const Expression& test,
     // We can take some shortcuts with condition-mask handling if the false-expression is entirely
     // side-effect free. (We can evaluate it without masking off its effects.) We always handle the
     // condition mask properly for the test-expression and true-expression properly.
-    if (!Analysis::HasSideEffects(ifFalse)) {
+    if (!ifFalseHasSideEffects) {
         // Push the false-expression onto the primary stack.
-        int cleanupLabelID = fBuilder.nextLabelID();
         if (!this->pushExpression(ifFalse)) {
             return unsupported();
         }
@@ -2383,7 +2557,7 @@ bool Generator::pushTernaryExpression(const Expression& test,
 
         // If no lanes are active, we can skip the true-expression entirely. This isn't super likely
         // to happen, so it's probably only a win for non-trivial true-expressions.
-        if (!Analysis::IsTrivialExpression(ifTrue)) {
+        if (!ifTrueIsTrivial) {
             fBuilder.branch_if_no_active_lanes(cleanupLabelID);
         }
 

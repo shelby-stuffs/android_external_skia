@@ -33,9 +33,8 @@ SkShaderBase::GradientType SkLocalMatrixShader::asGradient(GradientInfo* info,
 
 #if SK_SUPPORT_GPU
 std::unique_ptr<GrFragmentProcessor> SkLocalMatrixShader::asFragmentProcessor(
-        const GrFPArgs& args) const {
-    return as_SB(fWrappedShader)->asFragmentProcessor(GrFPArgs::ConcatLocalMatrix(args,
-                                                                                  fLocalMatrix));
+        const GrFPArgs& args, const MatrixRec& mRec) const {
+    return as_SB(fWrappedShader)->asFragmentProcessor(args, mRec.concat(fLocalMatrix));
 }
 #endif
 
@@ -102,18 +101,22 @@ bool SkLocalMatrixShader::appendStages(const SkStageRec& rec, const MatrixRec& m
     return as_SB(fWrappedShader)->appendStages(rec, mRec.concat(fLocalMatrix));
 }
 
-skvm::Color SkLocalMatrixShader::onProgram(skvm::Builder* p,
-                                           skvm::Coord device, skvm::Coord local, skvm::Color paint,
-                                           const SkMatrixProvider& matrices, const SkMatrix* localM,
-                                           const SkColorInfo& dst,
-                                           skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const {
-    SkTCopyOnFirstWrite<SkMatrix> lm(fLocalMatrix);
-    if (localM) {
-        *lm.writable() = ConcatLocalMatrices(*localM, *lm);
-    }
-    return as_SB(fWrappedShader)->program(p, device,local, paint,
-                                        matrices,lm.get(), dst,
-                                        uniforms,alloc);
+skvm::Color SkLocalMatrixShader::program(skvm::Builder* p,
+                                         skvm::Coord device,
+                                         skvm::Coord local,
+                                         skvm::Color paint,
+                                         const MatrixRec& mRec,
+                                         const SkColorInfo& dst,
+                                         skvm::Uniforms* uniforms,
+                                         SkArenaAlloc* alloc) const {
+    return as_SB(fWrappedShader)->program(p,
+                                          device,
+                                          local,
+                                          paint,
+                                          mRec.concat(fLocalMatrix),
+                                          dst,
+                                          uniforms,
+                                          alloc);
 }
 
 sk_sp<SkShader> SkShader::makeWithLocalMatrix(const SkMatrix& localMatrix) const {
@@ -156,7 +159,8 @@ public:
     }
 
 #if SK_SUPPORT_GPU
-    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&) const override;
+    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&,
+                                                             const MatrixRec&) const override;
 #endif
 
 protected:
@@ -166,15 +170,15 @@ protected:
         return as_SB(fProxyShader)->appendRootStages(rec, fCTM);
     }
 
-    skvm::Color onProgram(skvm::Builder* p,
-                          skvm::Coord device, skvm::Coord local, skvm::Color paint,
-                          const SkMatrixProvider& matrices, const SkMatrix* localM,
-                          const SkColorInfo& dst,
-                          skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const override {
-        SkMatrixProvider matrixProvider(fCTM);
-        return as_SB(fProxyShader)->program(p, device,local, paint,
-                                            matrixProvider,localM, dst,
-                                            uniforms,alloc);
+    skvm::Color program(skvm::Builder* p,
+                        skvm::Coord device,
+                        skvm::Coord local,
+                        skvm::Color paint,
+                        const MatrixRec& mRec,
+                        const SkColorInfo& dst,
+                        skvm::Uniforms* uniforms,
+                        SkArenaAlloc* alloc) const override {
+        return as_SB(fProxyShader)->rootProgram(p, device, paint, fCTM, dst, uniforms, alloc);
     }
 
 private:
@@ -188,15 +192,14 @@ private:
 
 
 #if SK_SUPPORT_GPU
-std::unique_ptr<GrFragmentProcessor> SkCTMShader::asFragmentProcessor(
-        const GrFPArgs& args) const {
+std::unique_ptr<GrFragmentProcessor> SkCTMShader::asFragmentProcessor(const GrFPArgs& args,
+                                                                      const MatrixRec& mRec) const {
     SkMatrix ctmInv;
     if (!fCTM.invert(&ctmInv)) {
         return nullptr;
     }
 
-    auto ctmProvider = SkMatrixProvider(fCTM);
-    auto base = as_SB(fProxyShader)->asFragmentProcessor(args.withNewMatrixProvider(ctmProvider));
+    auto base = as_SB(fProxyShader)->asRootFragmentProcessor(args, fCTM);
     if (!base) {
         return nullptr;
     }

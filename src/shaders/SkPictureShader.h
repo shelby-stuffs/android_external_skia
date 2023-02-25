@@ -28,7 +28,8 @@ public:
                                 const SkMatrix*, const SkRect*);
 
 #if SK_SUPPORT_GPU
-    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&) const override;
+    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&,
+                                                             const MatrixRec&) const override;
 #endif
 #ifdef SK_GRAPHITE_ENABLED
     void addToKey(const skgpu::graphite::KeyContext&,
@@ -42,9 +43,14 @@ protected:
     SkPictureShader(SkReadBuffer&);
     void flatten(SkWriteBuffer&) const override;
     bool appendStages(const SkStageRec&, const MatrixRec&) const override;
-    skvm::Color onProgram(skvm::Builder*, skvm::Coord device, skvm::Coord local, skvm::Color paint,
-                          const SkMatrixProvider&, const SkMatrix* localM, const SkColorInfo& dst,
-                          skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const override;
+    skvm::Color program(skvm::Builder*,
+                        skvm::Coord device,
+                        skvm::Coord local,
+                        skvm::Color paint,
+                        const MatrixRec&,
+                        const SkColorInfo& dst,
+                        skvm::Uniforms* uniforms,
+                        SkArenaAlloc* alloc) const override;
 
 #ifdef SK_ENABLE_LEGACY_SHADERCONTEXT
     Context* onMakeContext(const ContextRec&, SkArenaAlloc*) const override;

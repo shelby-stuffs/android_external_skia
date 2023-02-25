@@ -11,33 +11,30 @@
 #include "include/core/SkRefCnt.h"  // IWYU pragma: keep
 
 class SkData;
+class SkJpegSourceMgr;
 class SkStream;
+class SkJpegXmp;
 struct SkGainmapInfo;
+struct SkJpegMultiPictureParameters;
+struct SkJpegSegment;
 
 #include <memory>
 
 /*
  * Implementation of onGetGainmap that detects Multi-Picture Format based gainmaps.
  */
-bool SkJpegGetMultiPictureGainmap(sk_sp<const SkData> decoderMpfMetadata,
-                                  SkStream* decoderStream,
+bool SkJpegGetMultiPictureGainmap(const SkJpegMultiPictureParameters* mpParams,
+                                  const SkJpegSegment& mpParamsSegment,
+                                  SkJpegSourceMgr* decoderSource,
                                   SkGainmapInfo* outInfo,
                                   std::unique_ptr<SkStream>* outGainmapImageStream);
 
 /*
  * Implementation of onGetGainmap that detects JpegR based gainmaps.
  */
-bool SkJpegGetJpegRGainmap(sk_sp<const SkData> xmpMetadata,
-                           SkStream* decoderStream,
+bool SkJpegGetJpegRGainmap(const SkJpegXmp* xmp,
+                           SkJpegSourceMgr* decoderSource,
                            SkGainmapInfo* outInfo,
                            std::unique_ptr<SkStream>* outGainmapImageStream);
-
-/*
- * Implementation of onGetGainmap that detects HDRGM based gainmaps and converts them to
- * SkGainmapInfo.
- */
-bool SkJpegGetHDRGMGainmapInfo(sk_sp<const SkData> xmpMetadata,
-                               SkStream* decoderStream,
-                               SkGainmapInfo* outGainmapInfo);
 
 #endif

@@ -321,31 +321,25 @@ bool SkPictureShader::appendStages(const SkStageRec& rec, const MatrixRec& mRec)
     return as_SB(bitmapShader)->appendStages(rec, mRec);
 }
 
-skvm::Color SkPictureShader::onProgram(skvm::Builder* p,
-                                       skvm::Coord device,
-                                       skvm::Coord local,
-                                       skvm::Color paint,
-                                       const SkMatrixProvider& matrices,
-                                       const SkMatrix* localM,
-                                       const SkColorInfo& dst,
-                                       skvm::Uniforms* uniforms,
-                                       SkArenaAlloc* alloc) const {
+skvm::Color SkPictureShader::program(skvm::Builder* p,
+                                     skvm::Coord device,
+                                     skvm::Coord local,
+                                     skvm::Color paint,
+                                     const MatrixRec& mRec,
+                                     const SkColorInfo& dst,
+                                     skvm::Uniforms* uniforms,
+                                     SkArenaAlloc* alloc) const {
     // TODO: We'll need additional plumbing to get the correct props from our callers.
     SkSurfaceProps props{};
 
-    const auto& vm     = matrices.localToDevice();
-    const auto& totalM = localM ? SkMatrix::Concat(vm, *localM) : vm;
-
     // Keep bitmapShader alive by using alloc instead of stack memory
     auto& bitmapShader = *alloc->make<sk_sp<SkShader>>();
-    bitmapShader = this->rasterShader(totalM, dst.colorType(), dst.colorSpace(), props);
+    bitmapShader = this->rasterShader(mRec.totalMatrix(), dst.colorType(), dst.colorSpace(), props);
     if (!bitmapShader) {
         return {};
     }
 
-    return as_SB(bitmapShader)->program(p, device, local, paint,
-                                        matrices, localM, dst,
-                                        uniforms, alloc);
+    return as_SB(bitmapShader)->program(p, device, local, paint, mRec, dst, uniforms, alloc);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -373,7 +367,7 @@ const {
 #include "src/gpu/ganesh/GrProxyProvider.h"
 
 std::unique_ptr<GrFragmentProcessor> SkPictureShader::asFragmentProcessor(
-        const GrFPArgs& args) const {
+        const GrFPArgs& args, const MatrixRec& mRec) const {
     auto ctx = args.fContext;
     SkColorType dstColorType = GrColorTypeToSkColorType(args.fDstColorInfo->colorType());
     if (dstColorType == kUnknown_SkColorType) {
@@ -382,18 +376,13 @@ std::unique_ptr<GrFragmentProcessor> SkPictureShader::asFragmentProcessor(
 
     auto dstCS = ref_or_srgb(args.fDstColorInfo->colorSpace());
 
-    const auto& vm    = args.fMatrixProvider.localToDevice();
-    const auto* lm    = args.fLocalMatrix;
-    const auto totalM = lm ? SkMatrix::Concat(vm, *lm) : vm;
-
     auto info = CachedImageInfo::Make(fTile,
-                                      totalM,
+                                      mRec.totalMatrix(),
                                       dstColorType,
                                       dstCS.get(),
                                       ctx->priv().caps()->maxTextureSize(),
                                       args.fSurfaceProps);
-    SkMatrix inv;
-    if (!info.success || (lm && !lm->invert(&inv))) {
+    if (!info.success) {
         return nullptr;
     }
 
@@ -444,9 +433,15 @@ std::unique_ptr<GrFragmentProcessor> SkPictureShader::asFragmentProcessor(
     const GrSamplerState sampler(static_cast<GrSamplerState::WrapMode>(fTmx),
                                  static_cast<GrSamplerState::WrapMode>(fTmy),
                                  fFilter);
-    inv.postScale(info.tileScale.width(), info.tileScale.height());
-    return GrTextureEffect::Make(
-            std::move(view), kPremul_SkAlphaType, inv, sampler, *ctx->priv().caps());
+    auto fp = GrTextureEffect::Make(std::move(view),
+                                    kPremul_SkAlphaType,
+                                    SkMatrix::I(),
+                                    sampler,
+                                    *ctx->priv().caps());
+    SkMatrix scale = SkMatrix::Scale(info.tileScale.width(), info.tileScale.height());
+    bool success;
+    std::tie(success, fp) = mRec.apply(std::move(fp), scale);
+    return success ? std::move(fp) : nullptr;
 }
 #endif
 

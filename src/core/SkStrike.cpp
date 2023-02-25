@@ -14,6 +14,7 @@
 #include "include/core/SkTypeface.h"
 #include "src/core/SkDistanceFieldGen.h"
 #include "src/core/SkEnumerate.h"
+#include "src/core/SkGlyph.h"
 #include "src/core/SkGlyphBuffer.h"
 #include "src/core/SkScalerContext.h"
 #include "src/core/SkStrikeCache.h"
@@ -22,6 +23,8 @@
 #if SK_SUPPORT_GPU
     #include "src/text/gpu/StrikeCache.h"
 #endif
+
+using namespace skglyph;
 
 static SkFontMetrics use_or_generate_metrics(
         const SkFontMetrics* metrics, SkScalerContext* context) {
@@ -93,7 +96,7 @@ SkGlyph* SkStrike::mergeGlyphAndImage(SkPackedGlyphID toID, const SkGlyph& fromG
     } else {
         SkGlyph* glyph = fAlloc.make<SkGlyph>(toID);
         fMemoryIncrease += glyph->setMetricsAndImage(&fAlloc, fromGlyph) + sizeof(SkGlyph);
-        (void)this->addGlyph(glyph);
+        (void)this->addGlyphAndDigest(glyph);
         return glyph;
     }
 }
@@ -147,7 +150,7 @@ SkSpan<const SkGlyph*> SkStrike::prepareImages(
     Monitor m{this};
     for (auto glyphID : glyphIDs) {
         SkGlyph* glyph = this->glyph(glyphID);
-        (void)this->prepareImage(glyph);
+        this->prepareForImage(glyph);
         *cursor++ = glyph;
     }
 
@@ -161,7 +164,7 @@ SkSpan<const SkGlyph*> SkStrike::prepareDrawables(
         Monitor m{this};
         for (auto glyphID : glyphIDs) {
             SkGlyph* glyph = this->glyph(SkPackedGlyphID{glyphID});
-            this->prepareDrawable(glyph);
+            this->prepareForDrawable(glyph);
             *cursor++ = glyph;
         }
     }
@@ -169,70 +172,11 @@ SkSpan<const SkGlyph*> SkStrike::prepareDrawables(
     return {results, glyphIDs.size()};
 }
 
-void SkStrike::prepareForDrawingMasksCPU(SkDrawableGlyphBuffer* accepted) {
-    Monitor m{this};
-    for (auto [i, packedID, pos] : SkMakeEnumerate(accepted->input())) {
-        if (SkScalarsAreFinite(pos.x(), pos.y())) {
-            SkGlyphDigest digest = this->digest(packedID);
-            if (!digest.isEmpty()) {
-                // If the glyph is too large, then no image is created.
-                SkGlyph* glyph = fGlyphForIndex[digest.index()];
-                const void* image = this->prepareImage(glyph);
-                if (image != nullptr) {
-                    accepted->accept(glyph, i);
-                }
-            }
-        }
-    }
-}
-
-void SkStrike::prepareForPathDrawing(SkDrawableGlyphBuffer* accepted,
-                                     SkSourceGlyphBuffer* rejected) {
-    Monitor m{this};
-    for (auto [i, packedID, pos] : SkMakeEnumerate(accepted->input())) {
-        if (SkScalarsAreFinite(pos.x(), pos.y())) {
-            SkGlyphDigest digest = this->digest(packedID);
-            if (!digest.isEmpty()) {
-                SkGlyph* glyph = fGlyphForIndex[digest.index()];
-                this->preparePath(glyph);
-                if (glyph->path() != nullptr) {
-                    // Save off the path to draw later.
-                    accepted->accept(packedID, pos);
-                } else {
-                    // Glyph does not have a path.
-                    rejected->reject(i);
-                }
-            }
-        }
-    }
-}
-
-void SkStrike::prepareForDrawableDrawing(SkDrawableGlyphBuffer* accepted,
-                                         SkSourceGlyphBuffer* rejected) {
-    Monitor m{this};
-    for (auto [i, packedID, pos] : SkMakeEnumerate(accepted->input())) {
-        if (SkScalarsAreFinite(pos.x(), pos.y())) {
-            SkGlyphDigest digest = this->digest(packedID);
-            if (!digest.isEmpty()) {
-                SkGlyph* glyph = fGlyphForIndex[digest.index()];
-                this->prepareDrawable(glyph);
-                if (glyph->drawable() != nullptr) {
-                    // Save off the drawable to draw later.
-                    accepted->accept(packedID, pos);
-                } else {
-                    // Glyph does not have a drawable.
-                    rejected->reject(i);
-                }
-            }
-        }
-    }
-}
-
 void SkStrike::glyphIDsToPaths(SkSpan<sktext::IDOrPath> idsOrPaths) {
     Monitor m{this};
     for (sktext::IDOrPath& idOrPath : idsOrPaths) {
         SkGlyph* glyph = this->glyph(SkPackedGlyphID{idOrPath.fGlyphID});
-        this->preparePath(glyph);
+        this->prepareForPath(glyph);
         new (&idOrPath.fPath) SkPath{*glyph->path()};
     }
 }
@@ -241,7 +185,7 @@ void SkStrike::glyphIDsToDrawables(SkSpan<sktext::IDOrDrawable> idsOrDrawables) 
     Monitor m{this};
     for (sktext::IDOrDrawable& idOrDrawable : idsOrDrawables) {
         SkGlyph* glyph = this->glyph(SkPackedGlyphID{idOrDrawable.fGlyphID});
-        this->prepareDrawable(glyph);
+        this->prepareForDrawable(glyph);
         SkASSERT(glyph->drawable() != nullptr);
         idOrDrawable.fDrawable = glyph->drawable();
     }
@@ -292,50 +236,64 @@ void SkStrike::dumpMemoryStatistics(SkTraceMemoryDump* dump) const {
     dump->setMemoryBacking(dumpName.c_str(), "malloc", nullptr);
 }
 
-SkGlyph* SkStrike::glyph(SkPackedGlyphID packedGlyphID) {
-    SkGlyphDigest digest = this->digest(packedGlyphID);
+SkGlyph* SkStrike::glyph(SkGlyphDigest digest) {
     return fGlyphForIndex[digest.index()];
 }
 
-SkGlyphDigest SkStrike::digest(SkPackedGlyphID packedGlyphID) {
-    SkGlyphDigest* digest = fDigestForPackedGlyphID.find(packedGlyphID);
+SkGlyph* SkStrike::glyph(SkPackedGlyphID packedGlyphID) {
+    SkGlyphDigest digest = this->digestFor(kDirectMask, packedGlyphID);
+    return this->glyph(digest);
+}
 
-    if (digest != nullptr) {
-        return *digest;
+SkGlyphDigest SkStrike::digestFor(ActionType actionType, SkPackedGlyphID packedGlyphID) {
+    SkGlyphDigest* digestPtr = fDigestForPackedGlyphID.find(packedGlyphID);
+    if (digestPtr != nullptr && digestPtr->actionFor(actionType) != GlyphAction::kUnset) {
+        return *digestPtr;
     }
 
-    SkGlyph* glyph = fAlloc.make<SkGlyph>(fScalerContext->makeGlyph(packedGlyphID, &fAlloc));
-    fMemoryIncrease += sizeof(SkGlyph);
-    return this->addGlyph(glyph);
+    SkGlyph* glyph;
+    if (digestPtr != nullptr) {
+        glyph = fGlyphForIndex[digestPtr->index()];
+    } else {
+        glyph = fAlloc.make<SkGlyph>(fScalerContext->makeGlyph(packedGlyphID, &fAlloc));
+        fMemoryIncrease += sizeof(SkGlyph);
+        digestPtr = this->addGlyphAndDigest(glyph);
+    }
+
+    digestPtr->setActionFor(actionType, glyph, this);
+
+    return *digestPtr;
 }
 
-SkGlyphDigest SkStrike::addGlyph(SkGlyph* glyph) {
+SkGlyphDigest* SkStrike::addGlyphAndDigest(SkGlyph* glyph) {
     size_t index = fGlyphForIndex.size();
     SkGlyphDigest digest = SkGlyphDigest{index, *glyph};
-    fDigestForPackedGlyphID.set(glyph->getPackedID(), digest);
+    SkGlyphDigest* newDigest = fDigestForPackedGlyphID.set(glyph->getPackedID(), digest);
     fGlyphForIndex.push_back(glyph);
-    return digest;
+    return newDigest;
 }
 
-const void* SkStrike::prepareImage(SkGlyph* glyph) {
+bool SkStrike::prepareForImage(SkGlyph* glyph) {
     if (glyph->setImage(&fAlloc, fScalerContext.get())) {
         fMemoryIncrease += glyph->imageSize();
     }
-    return glyph->image();
+    return glyph->image() != nullptr;
 }
 
-void SkStrike::preparePath(SkGlyph* glyph) {
+bool SkStrike::prepareForPath(SkGlyph* glyph) {
     if (glyph->setPath(&fAlloc, fScalerContext.get())) {
         fMemoryIncrease += glyph->path()->approximateBytesUsed();
     }
+    return glyph->path() !=nullptr;
 }
 
-void SkStrike::prepareDrawable(SkGlyph* glyph) {
+bool SkStrike::prepareForDrawable(SkGlyph* glyph) {
     if (glyph->setDrawable(&fAlloc, fScalerContext.get())) {
         size_t increase = glyph->drawable()->approximateBytesUsed();
         SkASSERT(increase > 0);
         fMemoryIncrease += increase;
     }
+    return glyph->drawable() != nullptr;
 }
 
 SkSpan<const SkGlyph*> SkStrike::internalPrepare(
@@ -344,7 +302,7 @@ SkSpan<const SkGlyph*> SkStrike::internalPrepare(
     for (auto glyphID : glyphIDs) {
         SkGlyph* glyph = this->glyph(SkPackedGlyphID{glyphID});
         if (pathDetail == kMetricsAndPath) {
-            this->preparePath(glyph);
+            this->prepareForPath(glyph);
         }
         *cursor++ = glyph;
     }
