@@ -16,7 +16,8 @@
 #include <vector>
 
 class SkData;
-class SkJpegSeekableScan;
+class SkJpegSourceMgr;
+struct SkJpegSegment;
 
 /*
  * Parsed Jpeg Multi-Picture Format structure as specified in CIPA DC-x007-2009. An introduction to
@@ -40,16 +41,18 @@ struct SkJpegMultiPictureParameters {
 };
 
 /*
- * Parse Jpeg Multi-Picture Format parameters. The specified data should start with the MP Header.
- * Returns nullptr on error.
+ * Parse Jpeg Multi-Picture Format parameters. The specified data should be APP2 segment parameters,
+ * which, if they are MPF parameter, should stat with the {'M', 'P', 'F', 0} signature. Returns
+ * nullptr the parameters do not start with the MPF signature, or if there is an error in parsing
+ * the parameters.
  */
 std::unique_ptr<SkJpegMultiPictureParameters> SkJpegParseMultiPicture(
-        const sk_sp<const SkData>& data);
+        const sk_sp<const SkData>& segmentParameters);
 
 /*
- * Create SkStreams for all MultiPicture images, given a SkJpegSeekableScan of the image. This will
- * return nullptr if there is not MultiPicture segment, or if the MultiPicture parameters fail to
- * parse.
+ * Create SkStreams for all MultiPicture images, given an SkJpegSourceMgr for an image, and the
+ * SkJpegSegment whose parameters produced the parameters. This will return nullptr if there is not
+ * MultiPicture segment, or if the MultiPicture parameters fail to parse.
  */
 struct SkJpegMultiPictureStreams {
     // An individual image.
@@ -64,6 +67,8 @@ struct SkJpegMultiPictureStreams {
     std::vector<Image> images;
 };
 std::unique_ptr<SkJpegMultiPictureStreams> SkJpegExtractMultiPictureStreams(
-        SkJpegSeekableScan* scan);
+        const SkJpegMultiPictureParameters* mpParams,
+        const SkJpegSegment& mpParamsSegment,
+        SkJpegSourceMgr* decoderSource);
 
 #endif

@@ -24,6 +24,7 @@
 #include "include/private/base/SkTo.h"
 #include "include/utils/SkNoDrawCanvas.h"
 #include "src/base/SkArenaAlloc.h"
+#include "src/base/SkMSAN.h"
 #include "src/base/SkTLazy.h"
 #include "src/core/SkBitmapDevice.h"
 #include "src/core/SkBlenderBase.h"
@@ -34,7 +35,6 @@
 #include "src/core/SkImageFilterCache.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkLatticeIter.h"
-#include "src/core/SkMSAN.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkMatrixUtils.h"
 #include "src/core/SkMeshPriv.h"
@@ -835,7 +835,7 @@ static bool draw_layer_as_sprite(const SkMatrix& matrix, const SkISize& size) {
     SkPaint paint;
     paint.setAntiAlias(true);
     SkSamplingOptions sampling{SkFilterMode::kLinear};
-    return SkTreatAsSprite(matrix, size, sampling, paint);
+    return SkTreatAsSprite(matrix, size, sampling, paint.isAntiAlias());
 }
 
 void SkCanvas::internalDrawDeviceWithFilter(SkBaseDevice* src,
@@ -2241,7 +2241,7 @@ bool SkCanvas::canDrawBitmapAsSprite(SkScalar x, SkScalar y, int w, int h,
     }
 
     const SkMatrix& ctm = this->getTotalMatrix();
-    if (!SkTreatAsSprite(ctm, SkISize::Make(w, h), sampling, paint)) {
+    if (!SkTreatAsSprite(ctm, SkISize::Make(w, h), sampling, paint.isAntiAlias())) {
         return false;
     }
 
