@@ -277,7 +277,10 @@ struct GPUTarget : public Target {
         SkSurfaceProps props(this->config.surfaceFlags, kRGB_H_SkPixelGeometry);
         this->surface = SkSurface::MakeRenderTarget(
                 this->factory->get(this->config.ctxType, this->config.ctxOverrides),
-                SkBudgeted::kNo, info, this->config.samples, &props);
+                skgpu::Budgeted::kNo,
+                info,
+                this->config.samples,
+                &props);
         this->contextInfo =
                 this->factory->getContextInfo(this->config.ctxType, this->config.ctxOverrides);
         if (!this->surface) {
@@ -1500,7 +1503,7 @@ int main(int argc, char** argv) {
             }
 
             if (FLAGS_ms) {
-                samples.reset();
+                samples.clear();
                 auto stop = now_ms() + FLAGS_ms;
                 do {
                     samples.push_back(time(loops, bench.get(), target) / loops);

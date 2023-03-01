@@ -11,6 +11,7 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkTemplates.h"
+#include "include/private/base/SkAlign.h"
 #include "include/utils/SkRandom.h"
 #include "src/core/SkAutoMalloc.h"
 #include "src/core/SkReadBuffer.h"
@@ -20,6 +21,8 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+
+using namespace skia_private;
 
 static void check_contents(skiatest::Reporter* reporter, const SkWriter32& writer,
                            const void* expected, size_t size) {
@@ -96,7 +99,7 @@ static void testWritePad(skiatest::Reporter* reporter, SkWriter32* writer) {
     // Create some random data to write.
     const size_t dataSize = 10;
 
-    SkAutoTMalloc<uint32_t> originalData(dataSize);
+    AutoTMalloc<uint32_t> originalData(dataSize);
     {
         SkRandom rand(0);
         for (size_t i = 0; i < dataSize; i++) {

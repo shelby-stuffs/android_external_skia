@@ -9,8 +9,8 @@
 
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLString.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTo.h"
 #include "include/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/ir/SkSLType.h"
@@ -33,6 +33,15 @@ std::unique_ptr<Expression> ConstructorStruct::Convert(const Context& context,
                                               "(expected %zu elements, but found %d)",
                                               type.displayName().c_str(), type.fields().size(),
                                               args.size()));
+        return nullptr;
+    }
+
+    // A struct with atomic members cannot be constructed.
+    if (type.isOrContainsAtomic()) {
+        context.fErrors->error(
+                pos,
+                String::printf("construction of struct type '%s' with atomic member is not allowed",
+                               type.displayName().c_str()));
         return nullptr;
     }
 
@@ -71,6 +80,7 @@ std::unique_ptr<Expression> ConstructorStruct::Make(const Context& context,
                                                     ExpressionArray args) {
     SkASSERT(type.isAllowedInES2(context));
     SkASSERT(arguments_match_field_types(args, type));
+    SkASSERT(!type.isOrContainsAtomic());
     return std::make_unique<ConstructorStruct>(pos, type, std::move(args));
 }
 

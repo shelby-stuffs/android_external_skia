@@ -46,7 +46,7 @@ sk_sp<Texture> DawnResourceProvider::createWrappedTexture(const BackendTexture& 
 }
 
 sk_sp<GraphicsPipeline> DawnResourceProvider::createGraphicsPipeline(
-        const SkRuntimeEffectDictionary* runtimeDict,
+        const RuntimeEffectDictionary* runtimeDict,
         const GraphicsPipelineDesc& pipelineDesc,
         const RenderPassDesc& renderPassDesc) {
     return DawnGraphicsPipeline::Make(this->dawnSharedContext(),
@@ -63,9 +63,8 @@ sk_sp<ComputePipeline> DawnResourceProvider::createComputePipeline(const Compute
 
 sk_sp<Texture> DawnResourceProvider::createTexture(SkISize dimensions,
                                                    const TextureInfo& info,
-                                                   SkBudgeted budgeted) {
+                                                   skgpu::Budgeted budgeted) {
     return DawnTexture::Make(this->dawnSharedContext(), dimensions, info, budgeted);
-
 }
 
 sk_sp<Buffer> DawnResourceProvider::createBuffer(size_t size,

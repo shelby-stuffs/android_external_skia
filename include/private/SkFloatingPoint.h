@@ -9,7 +9,7 @@
 #define SkFloatingPoint_DEFINED
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkFloatBits.h"
+#include "include/private/base/SkFloatBits.h"
 
 #include <cfloat>
 #include <cmath>
@@ -217,5 +217,14 @@ static inline float sk_fmaf(float f, float m, float a) {
     return f*m+a;
 #endif
 }
+
+// Returns true iff the provided number is within a small epsilon of 0.
+bool sk_double_nearly_zero(double a);
+
+// Comparing floating point numbers is complicated. This helper only works if one or none
+// of the two inputs is not very close to zero. It also does not work if both inputs could be NaN.
+// The term "ulps" stands for "units of least precision". Read the following for more nuance:
+//   https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/
+bool sk_doubles_nearly_equal_ulps(double a, double b, uint8_t max_ulps_diff=16);
 
 #endif

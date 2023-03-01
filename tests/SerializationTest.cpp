@@ -43,8 +43,9 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkDashPathEffect.h"
 #include "include/effects/SkImageFilters.h"
-#include "include/private/SkMalloc.h"
 #include "include/private/SkTemplates.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkMalloc.h"
 #include "src/core/SkAnnotationKeys.h"
 #include "src/core/SkAutoMalloc.h"
 #include "src/core/SkColorFilterBase.h"
@@ -62,6 +63,8 @@
 #include <cstring>
 #include <memory>
 #include <utility>
+
+using namespace skia_private;
 
 static const uint32_t kArraySize = 64;
 static const int kBitmapSize = 256;
@@ -734,7 +737,7 @@ DEF_TEST(Serialization, reporter) {
         SkBinaryWriteBuffer writer;
         SkPicturePriv::Flatten(pict, writer);
         size_t size = writer.bytesWritten();
-        SkAutoTMalloc<unsigned char> data(size);
+        AutoTMalloc<unsigned char> data(size);
         writer.writeToMemory(static_cast<void*>(data.get()));
 
         // Deserialize picture
@@ -878,7 +881,7 @@ DEF_TEST(WriteBuffer_external_memory_textblob, reporter) {
     std::fill(run.glyphs, run.glyphs + glyph_count, 0);
     auto blob = builder.make();
     SkSerialProcs procs;
-    SkAutoTMalloc<uint8_t> storage;
+    AutoTMalloc<uint8_t> storage;
     size_t blob_size = 0u;
     size_t storage_size = 0u;
 
@@ -897,7 +900,7 @@ DEF_TEST(WriteBuffer_external_memory_flattenable, reporter) {
     auto path_effect = SkDashPathEffect::Make(intervals, 2, 0);
     size_t path_size = SkAlign4(path_effect->serialize()->size());
     REPORTER_ASSERT(reporter, path_size > 4u);
-    SkAutoTMalloc<uint8_t> storage;
+    AutoTMalloc<uint8_t> storage;
 
     size_t storage_size = path_size - 4;
     storage.realloc(storage_size);

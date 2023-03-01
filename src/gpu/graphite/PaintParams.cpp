@@ -64,8 +64,9 @@ void PaintParams::toKey(const KeyContext& keyContext,
                         PaintParamsKeyBuilder* builder,
                         PipelineDataGatherer* gatherer) const {
 
-    // Begin the key with a solid color shader block to set the initial color to the paint's color.
-    SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, fColor.makeOpaque().premul());
+    // TODO: figure out how we can omit this block when the Paint's color isn't used.
+    SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer,
+                                      fColor.makeOpaque().premul());
     builder->endBlock();
 
     if (fShader) {
@@ -74,7 +75,7 @@ void PaintParams::toKey(const KeyContext& keyContext,
 
     if (fPrimitiveBlender) {
         as_BB(fPrimitiveBlender)->addToKey(keyContext, builder, gatherer,
-                                           /*primitiveColorBlender=*/true);
+                                           /* primitiveColorBlender= */ true);
     }
 
     // Apply the paint's alpha value.
@@ -91,7 +92,7 @@ void PaintParams::toKey(const KeyContext& keyContext,
 
     if (fFinalBlender) {
         as_BB(fFinalBlender)->addToKey(keyContext, builder, gatherer,
-                                       /*primitiveColorBlender=*/false);
+                                       /* primitiveColorBlender= */false);
     } else {
         BlendModeBlock::BeginBlock(keyContext, builder, gatherer, SkBlendMode::kSrcOver);
         builder->endBlock();

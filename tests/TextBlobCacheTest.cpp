@@ -31,10 +31,12 @@
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/private/SkSpinlock.h"
-#include "include/private/SkTArray.h"
 #include "include/private/SkTemplates.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTo.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/text/GrAtlasManager.h"
 #include "src/text/gpu/TextBlobRedrawCoordinator.h"
@@ -50,6 +52,8 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+
+using namespace skia_private;
 
 struct GrContextOptions;
 
@@ -98,7 +102,7 @@ static void text_blob_cache_inner(skiatest::Reporter* reporter, GrDirectContext*
 
     SkImageInfo info = SkImageInfo::Make(kWidth, kHeight, kRGBA_8888_SkColorType,
                                          kPremul_SkAlphaType);
-    auto surface(SkSurface::MakeRenderTarget(dContext, SkBudgeted::kNo, info, 0, &props));
+    auto surface(SkSurface::MakeRenderTarget(dContext, skgpu::Budgeted::kNo, info, 0, &props));
     REPORTER_ASSERT(reporter, surface);
     if (!surface) {
         return;
@@ -111,7 +115,7 @@ static void text_blob_cache_inner(skiatest::Reporter* reporter, GrDirectContext*
     int count = std::min(fm->countFamilies(), maxFamilies);
 
     // make a ton of text
-    SkAutoTArray<uint16_t> text(maxTotalText);
+    AutoTArray<uint16_t> text(maxTotalText);
     for (int i = 0; i < maxTotalText; i++) {
         text[i] = i % maxGlyphID;
     }
@@ -300,7 +304,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TextBlobIntegerOverflowTest, reporter, ct
     auto dContext = ctxInfo.directContext();
     const SkImageInfo info =
             SkImageInfo::Make(kScreenDim, kScreenDim, kN32_SkColorType, kPremul_SkAlphaType);
-    auto surface = SkSurface::MakeRenderTarget(dContext, SkBudgeted::kNo, info);
+    auto surface = SkSurface::MakeRenderTarget(dContext, skgpu::Budgeted::kNo, info);
 
     auto blob = make_large_blob();
     int y = 40;
@@ -326,7 +330,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TextBlobJaggedGlyph,
     auto direct = ctxInfo.directContext();
     const SkImageInfo info =
             SkImageInfo::Make(kScreenDim, kScreenDim, kN32_SkColorType, kPremul_SkAlphaType);
-    auto surface = SkSurface::MakeRenderTarget(direct, SkBudgeted::kNo, info);
+    auto surface = SkSurface::MakeRenderTarget(direct, skgpu::Budgeted::kNo, info);
 
     auto blob = make_blob();
 
@@ -385,7 +389,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TextBlobSmoothScroll,
     auto direct = ctxInfo.directContext();
     const SkImageInfo info =
             SkImageInfo::Make(kScreenDim, kScreenDim, kN32_SkColorType, kPremul_SkAlphaType);
-    auto surface = SkSurface::MakeRenderTarget(direct, SkBudgeted::kNo, info);
+    auto surface = SkSurface::MakeRenderTarget(direct, skgpu::Budgeted::kNo, info);
 
     auto movingBlob = make_blob();
 

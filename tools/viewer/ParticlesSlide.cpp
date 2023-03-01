@@ -8,11 +8,11 @@
 #include "tools/viewer/ParticlesSlide.h"
 
 #include "include/core/SkCanvas.h"
-#include "include/private/SkStringView.h"
 #include "modules/particles/include/SkParticleEffect.h"
 #include "modules/particles/include/SkParticleSerialization.h"
 #include "modules/particles/include/SkReflected.h"
 #include "modules/skresources/include/SkResources.h"
+#include "src/base/SkStringView.h"
 #include "src/core/SkOSFile.h"
 #include "src/sksl/codegen/SkSLVMCodeGenerator.h"
 #include "src/sksl/ir/SkSLProgram.h"
@@ -270,8 +270,8 @@ ParticlesSlide::ParticlesSlide() {
 }
 
 void ParticlesSlide::loadEffects(const char* dirname) {
-    fLoaded.reset();
-    fRunning.reset();
+    fLoaded.clear();
+    fRunning.clear();
     SkOSFile::Iter iter(dirname, ".json");
     for (SkString file; iter.next(&file); ) {
         LoadedEffect effect;

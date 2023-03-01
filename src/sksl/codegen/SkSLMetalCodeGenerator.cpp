@@ -15,7 +15,7 @@
 #include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLStatement.h"
 #include "include/private/SkSLString.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
 #include "include/sksl/SkSLErrorReporter.h"
 #include "include/sksl/SkSLOperator.h"
 #include "include/sksl/SkSLPosition.h"
@@ -156,9 +156,13 @@ std::string MetalCodeGenerator::typeName(const Type& type) {
                 case Type::TextureAccess::kRead:      return "texture2d<half, access::read>";
                 case Type::TextureAccess::kWrite:     return "texture2d<half, access::write>";
                 case Type::TextureAccess::kReadWrite: return "texture2d<half, access::read_write>";
-                default:                              SkUNREACHABLE;
+                default:                              break;
             }
-            break;
+            SkUNREACHABLE;
+        case Type::TypeKind::kAtomic:
+            // SkSL currently only supports the atomicUint type.
+            SkASSERT(type.matches(*fContext.fTypes.fAtomicUInt));
+            return "atomic_uint";
         default:
             return std::string(type.name());
     }
@@ -1017,6 +1021,25 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
             return true;
         case k_workgroupBarrier_IntrinsicKind:
             this->write("threadgroup_barrier(mem_flags::mem_threadgroup)");
+            return true;
+        case k_atomicAdd_IntrinsicKind:
+            this->write("atomic_fetch_add_explicit(&");
+            this->writeExpression(*c.arguments()[0], Precedence::kSequence);
+            this->write(", ");
+            this->writeExpression(*c.arguments()[1], Precedence::kSequence);
+            this->write(", memory_order_relaxed)");
+            return true;
+        case k_atomicLoad_IntrinsicKind:
+            this->write("atomic_load_explicit(&");
+            this->writeExpression(*c.arguments()[0], Precedence::kSequence);
+            this->write(", memory_order_relaxed)");
+            return true;
+        case k_atomicStore_IntrinsicKind:
+            this->write("atomic_store_explicit(&");
+            this->writeExpression(*c.arguments()[0], Precedence::kSequence);
+            this->write(", ");
+            this->writeExpression(*c.arguments()[1], Precedence::kSequence);
+            this->write(", memory_order_relaxed)");
             return true;
         default:
             return false;

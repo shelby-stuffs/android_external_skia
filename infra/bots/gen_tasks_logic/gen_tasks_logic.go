@@ -414,6 +414,7 @@ func GenTasks(cfg *Config) {
 		Paths: []string{
 			// source code
 			"skia/example",
+			"skia/experimental/bazel_test",
 			"skia/include",
 			"skia/modules",
 			"skia/src",
@@ -816,7 +817,7 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 			"Mac13":      "Mac-13",
 			"Ubuntu18":   "Ubuntu-18.04",
 			"Win":        DEFAULT_OS_WIN,
-			"Win10":      "Windows-10-19044",
+			"Win10":      "Windows-10-19045",
 			"Win2019":    DEFAULT_OS_WIN,
 			"Win8":       "Windows-8.1-SP0",
 			"iOS":        "iOS-13.3.1",
@@ -2230,6 +2231,8 @@ func (b *jobBuilder) bazelTest() {
 				panic("Gold keys not specified for config " + config)
 			}
 		case "cpu_tests":
+			break
+		case "toolchain_layering_check":
 			break
 		default:
 			panic("Unsupported Bazel taskdriver " + taskdriverName)

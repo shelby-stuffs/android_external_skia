@@ -10,10 +10,10 @@
 #include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "src/gpu/graphite/Buffer.h"
+#include "src/gpu/graphite/BufferManager.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/ContextUtils.h"
-#include "src/gpu/graphite/DrawBufferManager.h"
 #include "src/gpu/graphite/DrawContext.h"
 #include "src/gpu/graphite/DrawList.h"
 #include "src/gpu/graphite/DrawWriter.h"
@@ -408,7 +408,7 @@ DrawPass::~DrawPass() = default;
 std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
                                          std::unique_ptr<DrawList> draws,
                                          sk_sp<TextureProxy> target,
-                                         SkISize deviceSize,
+                                         const SkImageInfo& targetInfo,
                                          std::pair<LoadOp, StoreOp> ops,
                                          std::array<float, 4> clearColor) {
     // NOTE: This assert is here to ensure SortKey is as tightly packed as possible. Any change to
@@ -442,13 +442,14 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
     GraphicsPipelineCache pipelineCache;
 
     // Geometry uniforms are currently always UBO-backed.
-    Layout geometryUniformLayout = recorder->priv().caps()->uniformBufferLayout();
+    const ResourceBindingRequirements& bindingReqs =
+            recorder->priv().caps()->resourceBindingRequirements();
+    Layout geometryUniformLayout = bindingReqs.fUniformBufferLayout;
     UniformSsboTracker geometrySsboTracker(/*useStorageBuffers=*/false);
 
     bool useStorageBuffers = recorder->priv().caps()->storageBufferPreferred();
-    Layout shadingUniformLayout = useStorageBuffers
-                                          ? recorder->priv().caps()->storageBufferLayout()
-                                          : recorder->priv().caps()->uniformBufferLayout();
+    Layout shadingUniformLayout =
+            useStorageBuffers ? bindingReqs.fStorageBufferLayout : bindingReqs.fUniformBufferLayout;
     UniformSsboTracker shadingSsboTracker(useStorageBuffers);
     TextureBindingTracker textureBindingTracker;
 
@@ -465,7 +466,7 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
         // If we have two different descriptors, such that the uniforms from the PaintParams can be
         // bound independently of those used by the rest of the RenderStep, then we can upload now
         // and remember the location for re-use on any RenderStep that does shading.
-        SkUniquePaintParamsID shaderID;
+        UniquePaintParamsID shaderID;
         const UniformDataBlock* shadingUniforms = nullptr;
         const TextureDataBlock* paintTextures = nullptr;
         if (draw.fPaintParams.has_value()) {
@@ -475,7 +476,8 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
                                      &builder,
                                      shadingUniformLayout,
                                      draw.fDrawParams.transform(),
-                                     draw.fPaintParams.value());
+                                     draw.fPaintParams.value(),
+                                     targetInfo.colorInfo());
         } // else depth-only
 
         for (int stepIndex = 0; stepIndex < draw.fRenderer->numRenderSteps(); ++stepIndex) {
@@ -483,7 +485,7 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
             const bool performsShading = draw.fPaintParams.has_value() && step->performsShading();
 
             GraphicsPipelineCache::Index pipelineIndex = pipelineCache.insert(
-                    {step, performsShading ? shaderID : SkUniquePaintParamsID::InvalidID()});
+                    {step, performsShading ? shaderID : UniquePaintParamsID::InvalidID()});
             auto [geometryUniforms, stepTextures] = ExtractRenderStepData(&geometryUniformDataCache,
                                                                           textureDataCache,
                                                                           &gatherer,
@@ -522,7 +524,7 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
     // Used to record vertex/instance data, buffer binds, and draw calls
     DrawWriter drawWriter(&drawPass->fCommandList, bufferMgr);
     GraphicsPipelineCache::Index lastPipeline = GraphicsPipelineCache::kInvalidIndex;
-    SkIRect lastScissor = SkIRect::MakeSize(deviceSize);
+    SkIRect lastScissor = SkIRect::MakeSize(targetInfo.dimensions());
 
     SkASSERT(!drawPass->fTarget->isInstantiated() ||
              SkIRect::MakeSize(drawPass->fTarget->dimensions()).contains(lastScissor));
@@ -593,7 +595,7 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
 }
 
 bool DrawPass::prepareResources(ResourceProvider* resourceProvider,
-                                const SkRuntimeEffectDictionary* runtimeDict,
+                                const RuntimeEffectDictionary* runtimeDict,
                                 const RenderPassDesc& renderPassDesc) {
     fFullPipelines.reserve_back(fPipelineDescs.size());
     for (const GraphicsPipelineDesc& pipelineDesc : fPipelineDescs) {
@@ -608,7 +610,7 @@ bool DrawPass::prepareResources(ResourceProvider* resourceProvider,
     }
     // The DrawPass may be long lived on a Recording and we no longer need the GraphicPipelineDescs
     // once we've created pipelines, so we drop the storage for them here.
-    fPipelineDescs.reset();
+    fPipelineDescs.clear();
 
     for (int i = 0; i < fSampledTextures.size(); ++i) {
         // TODO: We need to remove this check once we are creating valid SkImages from things like
@@ -638,7 +640,7 @@ bool DrawPass::prepareResources(ResourceProvider* resourceProvider,
     }
     // The DrawPass may be long lived on a Recording and we no longer need the SamplerDescs
     // once we've created Samplers, so we drop the storage for them here.
-    fSamplerDescs.reset();
+    fSamplerDescs.clear();
 
     return true;
 }

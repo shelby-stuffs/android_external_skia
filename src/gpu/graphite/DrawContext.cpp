@@ -28,6 +28,7 @@
 #include "src/gpu/graphite/UploadTask.h"
 #include "src/gpu/graphite/geom/BoundsManager.h"
 #include "src/gpu/graphite/geom/Geometry.h"
+#include "src/gpu/graphite/text/AtlasManager.h"
 
 #ifdef SK_ENABLE_PIET_GPU
 #include "src/gpu/graphite/PietRenderTask.h"
@@ -102,18 +103,26 @@ void DrawContext::recordDraw(const Renderer* renderer,
     fPendingDraws->recordDraw(renderer, localToDevice, geometry, clip, ordering, paint, stroke);
 }
 
+bool DrawContext::recordTextUploads(AtlasManager* am) {
+    return am->recordUploads(fPendingUploads.get(), /*useCachedUploads=*/false);
+}
+
 bool DrawContext::recordUpload(Recorder* recorder,
                                sk_sp<TextureProxy> targetProxy,
-                               SkColorType colorType,
+                               const SkColorInfo& srcColorInfo,
+                               const SkColorInfo& dstColorInfo,
                                const std::vector<MipLevel>& levels,
-                               const SkIRect& dstRect) {
+                               const SkIRect& dstRect,
+                               std::unique_ptr<ConditionalUploadContext> condContext) {
     // Our caller should have clipped to the bounds of the surface already.
     SkASSERT(SkIRect::MakeSize(targetProxy->dimensions()).contains(dstRect));
     return fPendingUploads->recordUpload(recorder,
                                          std::move(targetProxy),
-                                         colorType,
+                                         srcColorInfo,
+                                         dstColorInfo,
                                          levels,
-                                         dstRect);
+                                         dstRect,
+                                         std::move(condContext));
 }
 
 #ifdef SK_ENABLE_PIET_GPU
@@ -133,7 +142,7 @@ void DrawContext::snapDrawPass(Recorder* recorder) {
     auto pass = DrawPass::Make(recorder,
                                std::move(fPendingDraws),
                                fTarget,
-                               this->imageInfo().dimensions(),
+                               this->imageInfo(),
                                std::make_pair(fPendingLoadOp, fPendingStoreOp),
                                fPendingClearColor);
     fDrawPasses.push_back(std::move(pass));
@@ -142,26 +151,19 @@ void DrawContext::snapDrawPass(Recorder* recorder) {
     fPendingStoreOp = StoreOp::kStore;
 }
 
-sk_sp<Task> DrawContext::snapRenderPassTask(Recorder* recorder) {
-    this->snapDrawPass(recorder);
-    if (fDrawPasses.empty()) {
-        return nullptr;
-    }
-
-    const Caps* caps = recorder->priv().caps();
-
-    // TODO: At this point we would determine all the targets used by the drawPasses,
-    // build up the union of them and store them in the RenderPassDesc. However, for
-    // the moment we should have only one drawPass.
-    SkASSERT(fDrawPasses.size() == 1);
+RenderPassDesc RenderPassDesc::Make(const Caps* caps,
+                                    const TextureInfo& targetInfo,
+                                    LoadOp loadOp,
+                                    StoreOp storeOp,
+                                    SkEnumBitMask<DepthStencilFlags> depthStencilFlags,
+                                    const std::array<float, 4>& clearColor,
+                                    bool requiresMSAA) {
     RenderPassDesc desc;
-    auto& drawPass = fDrawPasses[0];
-    const TextureInfo& targetInfo = drawPass->target()->textureInfo();
-    auto [loadOp, storeOp] = drawPass->ops();
+
     // It doesn't make sense to have a storeOp for our main target not be store. Why are we doing
     // this DrawPass then
     SkASSERT(storeOp == StoreOp::kStore);
-    if (drawPass->requiresMSAA()) {
+    if (requiresMSAA) {
         // TODO: If the resolve texture isn't readable, the MSAA color attachment will need to be
         // persistently associated with the framebuffer, in which case it's not discardable.
         desc.fColorAttachment.fTextureInfo = caps->getDefaultMSAATextureInfo(targetInfo,
@@ -185,11 +187,11 @@ sk_sp<Task> DrawContext::snapRenderPassTask(Recorder* recorder) {
         desc.fColorAttachment.fLoadOp = loadOp;
         desc.fColorAttachment.fStoreOp = storeOp;
     }
-    desc.fClearColor = drawPass->clearColor();
+    desc.fClearColor = clearColor;
 
-    if (drawPass->depthStencilFlags() != DepthStencilFlags::kNone) {
+    if (depthStencilFlags != DepthStencilFlags::kNone) {
         desc.fDepthStencilAttachment.fTextureInfo = caps->getDefaultDepthStencilTextureInfo(
-                drawPass->depthStencilFlags(),
+                depthStencilFlags,
                 desc.fColorAttachment.fTextureInfo.numSamples(),
                 Protected::kNo);
         // Always clear the depth and stencil to 0 at the start of a DrawPass, but discard at the
@@ -199,6 +201,30 @@ sk_sp<Task> DrawContext::snapRenderPassTask(Recorder* recorder) {
         desc.fClearStencil = 0;
         desc.fDepthStencilAttachment.fStoreOp = StoreOp::kDiscard;
     }
+
+    return desc;
+}
+
+sk_sp<Task> DrawContext::snapRenderPassTask(Recorder* recorder) {
+    this->snapDrawPass(recorder);
+    if (fDrawPasses.empty()) {
+        return nullptr;
+    }
+
+    const Caps* caps = recorder->priv().caps();
+
+    // TODO: At this point we would determine all the targets used by the drawPasses,
+    // build up the union of them and store them in the RenderPassDesc. However, for
+    // the moment we should have only one drawPass.
+    SkASSERT(fDrawPasses.size() == 1);
+    auto& drawPass = fDrawPasses[0];
+    const TextureInfo& targetInfo = drawPass->target()->textureInfo();
+    auto [loadOp, storeOp] = drawPass->ops();
+
+    RenderPassDesc desc = RenderPassDesc::Make(caps, targetInfo, loadOp, storeOp,
+                                               drawPass->depthStencilFlags(),
+                                               drawPass->clearColor(),
+                                               drawPass->requiresMSAA());
 
     sk_sp<TextureProxy> targetProxy = sk_ref_sp(fDrawPasses[0]->target());
     return RenderPassTask::Make(std::move(fDrawPasses), desc, std::move(targetProxy));

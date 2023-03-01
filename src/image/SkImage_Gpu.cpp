@@ -12,9 +12,9 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "include/gpu/GrYUVABackendTextures.h"
-#include "include/private/SkImageInfoPriv.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkBitmapCache.h"
+#include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkMipmap.h"
 #include "src/core/SkScopeExit.h"
 #include "src/core/SkTraceEvent.h"
@@ -39,10 +39,6 @@
 #include "src/gpu/ganesh/GrYUVATextureProxies.h"
 #include "src/gpu/ganesh/SurfaceFillContext.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
-
-#ifdef SK_GRAPHITE_ENABLED
-#include "src/gpu/graphite/Log.h"
-#endif
 
 #include <cstddef>
 #include <cstring>
@@ -201,7 +197,7 @@ sk_sp<SkImage> SkImage_Gpu::MakeWithVolatileSrc(sk_sp<GrRecordingContext> rConte
                                      volatileSrc.origin(),
                                      mm,
                                      SkBackingFit::kExact,
-                                     SkBudgeted::kYes,
+                                     skgpu::Budgeted::kYes,
                                      /*label=*/"ImageGpu_MakeWithVolatileSrc",
                                      &copyTask);
     if (!copy) {
@@ -536,7 +532,7 @@ sk_sp<SkImage> SkImage::MakeTextureFromCompressed(GrDirectContext* direct, sk_sp
 
     GrProxyProvider* proxyProvider = direct->priv().proxyProvider();
     sk_sp<GrTextureProxy> proxy = proxyProvider->createCompressedTextureProxy(
-            {width, height}, SkBudgeted::kYes, mipmapped, isProtected, type, std::move(data));
+            {width, height}, skgpu::Budgeted::kYes, mipmapped, isProtected, type, std::move(data));
     if (!proxy) {
         return nullptr;
     }
@@ -552,7 +548,7 @@ sk_sp<SkImage> SkImage::MakeTextureFromCompressed(GrDirectContext* direct, sk_sp
 
 sk_sp<SkImage> SkImage::makeTextureImage(GrDirectContext* dContext,
                                          GrMipmapped mipmapped,
-                                         SkBudgeted budgeted) const {
+                                         skgpu::Budgeted budgeted) const {
     if (!dContext) {
         return nullptr;
     }
@@ -569,7 +565,7 @@ sk_sp<SkImage> SkImage::makeTextureImage(GrDirectContext* dContext,
             return sk_ref_sp(const_cast<SkImage*>(this));
         }
     }
-    GrImageTexGenPolicy policy = budgeted == SkBudgeted::kYes
+    GrImageTexGenPolicy policy = budgeted == skgpu::Budgeted::kYes
                                          ? GrImageTexGenPolicy::kNew_Uncached_Budgeted
                                          : GrImageTexGenPolicy::kNew_Uncached_Unbudgeted;
     // TODO: Don't flatten YUVA images here. Add mips to the planes instead.
@@ -865,15 +861,6 @@ std::tuple<GrSurfaceProxyView, GrColorType> SkImage_Gpu::onAsView(
     }
     return {std::move(view), ct};
 }
-
-#ifdef SK_GRAPHITE_ENABLED
-sk_sp<SkImage> SkImage_Gpu::onMakeTextureImage(skgpu::graphite::Recorder*,
-                                               SkImage::RequiredImageProperties) const {
-    SKGPU_LOG_W("Cannot convert Ganesh-backed image to Graphite");
-    return nullptr;
-}
-#endif
-
 
 std::unique_ptr<GrFragmentProcessor> SkImage_Gpu::onAsFragmentProcessor(
         GrRecordingContext* rContext,

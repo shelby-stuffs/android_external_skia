@@ -113,9 +113,9 @@ GrSurfaceProxyView SkPictureImageGenerator::onGenerateTexture(GrRecordingContext
                                                               GrImageTexGenPolicy texGenPolicy) {
     SkASSERT(ctx);
 
-    SkBudgeted budgeted = texGenPolicy == GrImageTexGenPolicy::kNew_Uncached_Unbudgeted
-                                  ? SkBudgeted::kNo
-                                  : SkBudgeted::kYes;
+    skgpu::Budgeted budgeted = texGenPolicy == GrImageTexGenPolicy::kNew_Uncached_Unbudgeted
+                                       ? skgpu::Budgeted::kNo
+                                       : skgpu::Budgeted::kYes;
     auto surface = SkSurface::MakeRenderTarget(ctx, budgeted, info, 0, kTopLeft_GrSurfaceOrigin,
                                                &fProps, mipmapped == GrMipmapped::kYes);
     if (!surface) {
@@ -155,7 +155,7 @@ sk_sp<SkImage> SkPictureImageGenerator::onMakeTextureImage(skgpu::graphite::Reco
 
     surface->getCanvas()->clear(SkColors::kTransparent);
     surface->getCanvas()->drawPicture(fPicture.get(), &fMatrix, fPaint.getMaybeNull());
-    return surface->makeImageSnapshot();
+    return surface->asImage();
 }
 
 #endif // SK_GRAPHITE_ENABLED

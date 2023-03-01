@@ -6,10 +6,11 @@
  */
 
 #include "include/core/SkData.h"
-#include "include/core/SkMath.h"
+#include "include/private/base/SkMath.h"
 #include "include/private/SkPathRef.h"
 #include "include/private/SkTPin.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkPathEnums.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkBuffer.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkRRectPriv.h"

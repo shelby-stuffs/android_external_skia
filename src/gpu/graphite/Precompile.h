@@ -8,10 +8,6 @@
 #ifndef skgpu_graphite_Precompile_DEFINED
 #define skgpu_graphite_Precompile_DEFINED
 
-#include "include/core/SkTypes.h"
-
-#ifdef SK_ENABLE_PRECOMPILE
-
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSpan.h"
@@ -22,12 +18,11 @@
 
 class SkRuntimeEffect;
 
-// TODO: move SkUniquePaintParamsID to the skgpu::graphite namespace
-class SkUniquePaintParamsID;
-
 namespace skgpu::graphite {
 
+class KeyContext;
 class PrecompileBasePriv;
+class UniquePaintParamsID;
 
 class PrecompileBase : public SkRefCnt {
 public:
@@ -128,7 +123,7 @@ public:
 
     virtual std::optional<SkBlendMode> asBlendMode() const { return {}; }
 
-    static sk_sp<PrecompileBlender> Mode(SkBlendMode blendMode);
+    static sk_sp<PrecompileBlender> Mode(SkBlendMode);
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -177,10 +172,12 @@ private:
 
     int numCombinations() const;
     // 'desiredCombination' must be less than the result of the numCombinations call
-    void createKey(const KeyContext&, int desiredCombination, PaintParamsKeyBuilder*) const;
+    void createKey(const KeyContext&, int desiredCombination,
+                   PaintParamsKeyBuilder*, bool addPrimitiveBlender) const;
     void buildCombinations(
-        ShaderCodeDictionary*,
-        const std::function<void(SkUniquePaintParamsID)>& processCombination) const;
+        const KeyContext&,
+        bool addPrimitiveBlender,
+        const std::function<void(UniquePaintParamsID)>& processCombination) const;
 
     std::vector<sk_sp<PrecompileShader>> fShaderOptions;
     std::vector<sk_sp<PrecompileMaskFilter>> fMaskFilterOptions;
@@ -190,7 +187,5 @@ private:
 };
 
 } // namespace skgpu::graphite
-
-#endif // SK_ENABLE_PRECOMPILE
 
 #endif // skgpu_graphite_Precompile_DEFINED

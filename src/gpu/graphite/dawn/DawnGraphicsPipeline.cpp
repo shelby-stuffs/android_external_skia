@@ -12,10 +12,11 @@
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
 #include "src/gpu/graphite/Log.h"
+#include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/UniformManager.h"
 #include "src/gpu/graphite/dawn/DawnResourceProvider.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
-#include "src/gpu/graphite/dawn/DawnUtils.h"
+#include "src/gpu/graphite/dawn/DawnUtilsPriv.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLProgram.h"
 
@@ -213,7 +214,7 @@ static wgpu::BlendOperation blend_equation_to_dawn_blend_op(skgpu::BlendEquation
 // static
 sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* sharedContext,
                                                        SkSL::Compiler* compiler,
-                                                       const SkRuntimeEffectDictionary* runtimeDict,
+                                                       const RuntimeEffectDictionary* runtimeDict,
                                                        const GraphicsPipelineDesc& pipelineDesc,
                                                        const RenderPassDesc& renderPassDesc) {
     const auto& device = sharedContext->device();
@@ -222,6 +223,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
     SkSL::ProgramSettings settings;
 
     settings.fForceNoRTFlip = true;
+    settings.fSPIRVDawnCompatMode = true;
 
     ShaderErrorHandler* errorHandler = sharedContext->caps()->shaderErrorHandler();
 
@@ -239,8 +241,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
 
     // Some steps just render depth buffer but not color buffer, so the fragment
     // shader is null.
-    auto fsSKSL = GetSkSLFS(sharedContext->caps()->uniformBufferLayout(),
-                            sharedContext->caps()->storageBufferLayout(),
+    auto fsSKSL = GetSkSLFS(sharedContext->caps()->resourceBindingRequirements(),
                             sharedContext->shaderCodeDictionary(),
                             runtimeDict,
                             step,
@@ -268,7 +269,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
     }
 
     if (!SkSLToSPIRV(compiler,
-                     GetSkSLVS(sharedContext->caps()->uniformBufferLayout(),
+                     GetSkSLVS(sharedContext->caps()->resourceBindingRequirements(),
                                step,
                                useShadingSsboIndex,
                                localCoordsNeeded),
@@ -353,7 +354,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
             entries[0].binding = kIntrinsicUniformBufferIndex;
             entries[0].visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
             entries[0].buffer.type = wgpu::BufferBindingType::Uniform;
-            entries[0].buffer.hasDynamicOffset = true;
+            entries[0].buffer.hasDynamicOffset = false;
             entries[0].buffer.minBindingSize = 0;
 
             entries[1].binding = kRenderStepUniformBufferIndex;

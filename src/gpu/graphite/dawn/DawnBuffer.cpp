@@ -7,6 +7,7 @@
 
 #include "src/gpu/graphite/dawn/DawnBuffer.h"
 
+#include "include/private/base/SkAlign.h"
 #include "src/gpu/graphite/dawn/DawnAsyncWait.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
 
@@ -31,8 +32,6 @@ sk_sp<Buffer> DawnBuffer::Make(const DawnSharedContext* sharedContext,
         return nullptr;
     }
 
-    const DawnCaps* dawnCaps = sharedContext->dawnCaps();
-
     wgpu::BufferUsage usage = wgpu::BufferUsage::None;
     switch (type) {
     case BufferType::kVertex:
@@ -55,7 +54,6 @@ sk_sp<Buffer> DawnBuffer::Make(const DawnSharedContext* sharedContext,
         break;
     }
 
-    size = SkAlignTo(size, dawnCaps->getMinBufferAlignment());
     wgpu::BufferDescriptor desc;
 #ifdef SK_DEBUG
     desc.label = kBufferTypeNames[static_cast<int>(type)];
@@ -73,17 +71,13 @@ sk_sp<Buffer> DawnBuffer::Make(const DawnSharedContext* sharedContext,
 
     return sk_sp<Buffer>(new DawnBuffer(sharedContext,
                                         size,
-                                        type,
-                                        prioritizeGpuReads,
                                         std::move(buffer)));
 }
 
 DawnBuffer::DawnBuffer(const DawnSharedContext* sharedContext,
                        size_t size,
-                       BufferType type,
-                       PrioritizeGpuReads prioritizeGpuReads,
                        wgpu::Buffer buffer)
-        : Buffer(sharedContext, size, type, prioritizeGpuReads)
+        : Buffer(sharedContext, size)
         , fBuffer(std::move(buffer)) {}
 
 void DawnBuffer::onMap() {

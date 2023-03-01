@@ -1,0 +1,46 @@
+load("//bazel:macros.bzl", "exports_files_legacy", "skia_filegroup")
+
+licenses(["notice"])
+
+exports_files_legacy()
+
+# In own skia_filegroup for mapping to //gn/gpu.gni:skia_shared_gpu_sources.
+skia_filegroup(
+    name = "shared_gpu_private_hdrs",
+    srcs = ["SingleOwner.h"],
+)
+
+skia_filegroup(
+    name = "private_hdrs",
+    srcs = [
+        "SkAPI.h",
+        "SkAlign.h",
+        "SkAlignedStorage.h",
+        "SkAssert.h",
+        "SkAttributes.h",
+        "SkCPUTypes.h",
+        "SkContainers.h",
+        "SkDebug.h",
+        "SkDeque.h",
+        "SkFeatures.h",
+        "SkFloatBits.h",
+        "SkLoadUserConfig.h",
+        "SkMalloc.h",
+        "SkMath.h",
+        "SkMutex.h",
+        "SkOnce.h",
+        "SkPathEnums.h",
+        "SkSemaphore.h",
+        "SkSpan_impl.h",
+        "SkTArray.h",
+        "SkTDArray.h",
+        "SkTFitsIn.h",
+        "SkThreadAnnotations.h",
+        "SkThreadID.h",
+        "SkTo.h",
+        "SkTypeTraits.h",
+        "SkVx.h",
+        ":shared_gpu_private_hdrs",
+    ],
+    visibility = ["//include/private:__pkg__"],
+)

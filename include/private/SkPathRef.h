@@ -8,35 +8,23 @@
 #ifndef SkPathRef_DEFINED
 #define SkPathRef_DEFINED
 
-#include "include/core/SkMatrix.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
 #include "include/private/SkIDChangeListener.h"
-#include "include/private/SkMutex.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTo.h"
 
 #include <atomic>
-#include <limits>
+#include <cstddef>
+#include <cstdint>
 #include <tuple>
+#include <utility>
 
-class SkRBuffer;
-class SkWBuffer;
+class SkMatrix;
 class SkRRect;
-
-enum class SkPathConvexity {
-    kConvex,
-    kConcave,
-    kUnknown,
-};
-
-enum class SkPathFirstDirection {
-    kCW,         // == SkPathDirection::kCW
-    kCCW,        // == SkPathDirection::kCCW
-    kUnknown,
-};
 
 // These are computed from a stream of verbs
 struct SkPathVerbAnalysis {
@@ -326,24 +314,15 @@ public:
 
     bool operator== (const SkPathRef& ref) const;
 
-    /**
-     * Writes the path points and verbs to a buffer.
-     */
-    void writeToBuffer(SkWBuffer* buffer) const;
-
-    /**
-     * Gets the number of bytes that would be written in writeBuffer()
-     */
-    uint32_t writeSize() const;
-
     void interpolate(const SkPathRef& ending, SkScalar weight, SkPathRef* out) const;
 
     /**
      * Gets an ID that uniquely identifies the contents of the path ref. If two path refs have the
      * same ID then they have the same verbs and points. However, two path refs may have the same
      * contents but different genIDs.
+     * skbug.com/1762 for background on why fillType is necessary (for now).
      */
-    uint32_t genID() const;
+    uint32_t genID(uint8_t fillType) const;
 
     void addGenIDChangeListener(sk_sp<SkIDChangeListener>);   // Threadsafe.
     int genIDChangeListenerCount();                           // Threadsafe

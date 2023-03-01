@@ -114,7 +114,7 @@ sk_sp<SkFlattenable> SkModeColorFilter::CreateProc(SkReadBuffer& buffer) {
 }
 
 bool SkModeColorFilter::onAppendStages(const SkStageRec& rec, bool shaderIsOpaque) const {
-    rec.fPipeline->append(SkRasterPipeline::move_src_dst);
+    rec.fPipeline->append(SkRasterPipelineOp::move_src_dst);
     SkPMColor4f color = map_color(fColor, sk_srgb_singleton(), rec.fDstCS);
     rec.fPipeline->append_constant_color(rec.fAlloc, color.vec());
     SkBlendMode_AppendStages(fMode, rec.fPipeline);
@@ -185,7 +185,7 @@ void SkModeColorFilter::addToKey(const skgpu::graphite::KeyContext& keyContext,
     SkPMColor4f color = map_color(fColor, sk_srgb_singleton(), nullptr);
     BlendColorFilterBlock::BlendColorFilterData data(fMode, color);
 
-    BlendColorFilterBlock::BeginBlock(keyContext, builder, gatherer, data);
+    BlendColorFilterBlock::BeginBlock(keyContext, builder, gatherer, &data);
     builder->endBlock();
 }
 

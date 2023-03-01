@@ -18,15 +18,17 @@
 #include "include/core/SkString.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
 #include "include/private/SkColorData.h"
 #include "include/private/SkSLSampleUsage.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "include/utils/SkRandom.h"
 #include "src/gpu/KeyBuilder.h"
+#include "src/gpu/SkBackingFit.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrAppliedClip.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -217,7 +219,7 @@ DEF_GANESH_TEST_FOR_ALL_CONTEXTS(ProcessorRefTest, reporter, ctxInfo, CtsEnforce
                                                    1,
                                                    GrMipmapped::kNo,
                                                    SkBackingFit::kExact,
-                                                   SkBudgeted::kYes,
+                                                   skgpu::Budgeted::kYes,
                                                    GrProtected::kNo,
                                                    /*label=*/"ProcessorRefTest");
 

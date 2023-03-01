@@ -5,11 +5,17 @@
  * found in the LICENSE file.
  */
 
+#include "src/core/SkEdgeBuilder.h"
+
 #include "include/core/SkPath.h"
-#include "include/private/SkTo.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
+#include "include/private/SkFixed.h"
+#include "include/private/SkSafe32.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkAnalyticEdge.h"
 #include "src/core/SkEdge.h"
-#include "src/core/SkEdgeBuilder.h"
 #include "src/core/SkEdgeClipper.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkLineClipper.h"

@@ -14,7 +14,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkYUVAPixmaps.h"
 #include "include/gpu/GrBackendSurface.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 #include "src/core/SkCachedData.h"
 #include "src/core/SkTLazy.h"
 
@@ -119,8 +119,8 @@ public:
 
     // Remove this class' refs on the promise images and the PromiseImageCallbackContexts
     void reset() {
-        fImageInfo.reset();
-        fPromiseImages.reset();
+        fImageInfo.clear();
+        fPromiseImages.clear();
     }
 
 private:

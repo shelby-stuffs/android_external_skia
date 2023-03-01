@@ -17,6 +17,7 @@
 #include "src/gpu/graphite/GlobalCache.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
 #include "src/gpu/graphite/Renderer.h"
+#include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/mtl/MtlBuffer.h"
 #include "src/gpu/graphite/mtl/MtlCommandBuffer.h"
 #include "src/gpu/graphite/mtl/MtlComputePipeline.h"
@@ -24,7 +25,7 @@
 #include "src/gpu/graphite/mtl/MtlSampler.h"
 #include "src/gpu/graphite/mtl/MtlSharedContext.h"
 #include "src/gpu/graphite/mtl/MtlTexture.h"
-#include "src/gpu/graphite/mtl/MtlUtils.h"
+#include "src/gpu/graphite/mtl/MtlUtilsPriv.h"
 #include "src/sksl/SkSLProgramSettings.h"
 
 #import <Metal/Metal.h>
@@ -95,7 +96,7 @@ sk_sp<MtlGraphicsPipeline> MtlResourceProvider::findOrCreateLoadMSAAPipeline(
 }
 
 sk_sp<GraphicsPipeline> MtlResourceProvider::createGraphicsPipeline(
-        const SkRuntimeEffectDictionary* runtimeDict,
+        const RuntimeEffectDictionary* runtimeDict,
         const GraphicsPipelineDesc& pipelineDesc,
         const RenderPassDesc& renderPassDesc) {
     std::string vsMSL, fsMSL;
@@ -116,8 +117,7 @@ sk_sp<GraphicsPipeline> MtlResourceProvider::createGraphicsPipeline(
     BlendInfo blendInfo;
     bool localCoordsNeeded = false;
     if (!SkSLToMSL(skslCompiler,
-                   GetSkSLFS(fSharedContext->caps()->uniformBufferLayout(),
-                             fSharedContext->caps()->storageBufferLayout(),
+                   GetSkSLFS(fSharedContext->caps()->resourceBindingRequirements(),
                              fSharedContext->shaderCodeDictionary(),
                              runtimeDict,
                              step,
@@ -134,7 +134,7 @@ sk_sp<GraphicsPipeline> MtlResourceProvider::createGraphicsPipeline(
     }
 
     if (!SkSLToMSL(skslCompiler,
-                   GetSkSLVS(fSharedContext->caps()->uniformBufferLayout(),
+                   GetSkSLVS(fSharedContext->caps()->resourceBindingRequirements(),
                              step,
                              useShadingSsboIndex,
                              localCoordsNeeded),
@@ -171,7 +171,7 @@ sk_sp<ComputePipeline> MtlResourceProvider::createComputePipeline(
 
 sk_sp<Texture> MtlResourceProvider::createTexture(SkISize dimensions,
                                                   const TextureInfo& info,
-                                                  SkBudgeted budgeted) {
+                                                  skgpu::Budgeted budgeted) {
     return MtlTexture::Make(this->mtlSharedContext(), dimensions, info, budgeted);
 }
 

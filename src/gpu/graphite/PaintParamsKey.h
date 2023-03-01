@@ -12,9 +12,9 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkMacros.h"
-#include "include/private/SkTDArray.h"
-#include "src/core/SkBuiltInCodeSnippetID.h"
+#include "include/private/base/SkTDArray.h"
 #include "src/gpu/Blend.h"
+#include "src/gpu/graphite/BuiltInCodeSnippetID.h"
 
 #include <array>
 #include <limits>
@@ -181,7 +181,7 @@ public:
     const skgpu::BlendInfo& blendInfo() const { return fBlendInfo; }
 
     void beginBlock(int32_t codeSnippetID);
-    void beginBlock(SkBuiltInCodeSnippetID id) { this->beginBlock(static_cast<int32_t>(id)); }
+    void beginBlock(BuiltInCodeSnippetID id) { this->beginBlock(static_cast<int32_t>(id)); }
     void endBlock();
 
     void addBytes(uint32_t numBytes, const uint8_t* data);

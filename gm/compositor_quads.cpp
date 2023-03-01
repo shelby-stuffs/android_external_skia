@@ -35,7 +35,7 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
 #include "include/effects/SkShaderMaskFilter.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 #include "src/core/SkLineClipper.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
@@ -503,8 +503,8 @@ private:
     SkString fName;
 
     void configureMatrices() {
-        fMatrices.reset();
-        fMatrixNames.reset();
+        fMatrices.clear();
+        fMatrixNames.clear();
         fMatrices.push_back_n(kMatrixCount);
 
         // Identity
@@ -877,9 +877,9 @@ private:
                 &paint, SkCanvas::kFast_SrcRectConstraint);
 
         // Reset for next tile
-        fDstClips.reset();
-        fPreViewMatrices.reset();
-        fSetEntries.reset();
+        fDstClips.clear();
+        fPreViewMatrices.clear();
+        fSetEntries.clear();
         fBatchCount = 0;
 
         return 1;
@@ -979,8 +979,8 @@ private:
                 SkCanvas::kFast_SrcRectConstraint);
 
         // Reset for next tile
-        fDstClips.reset();
-        fSetEntries.reset();
+        fDstClips.clear();
+        fSetEntries.clear();
 
         return 1;
     }

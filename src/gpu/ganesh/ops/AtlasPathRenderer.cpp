@@ -7,7 +7,7 @@
 
 #include "src/gpu/ganesh/ops/AtlasPathRenderer.h"
 
-#include "include/private/SkVx.h"
+#include "include/private/base/SkVx.h"
 #include "src/core/SkIPoint16.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrClip.h"
@@ -436,7 +436,7 @@ bool AtlasPathRenderer::preFlush(GrOnFlushResourceProvider* onFlushRP) {
     }
 
     // Reset all atlas data.
-    fAtlasRenderTasks.reset();
+    fAtlasRenderTasks.clear();
     fAtlasPathCache.reset();
     return successful;
 }

@@ -10,49 +10,36 @@
 #include "include/core/SkPathTypes.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/graphite/BackendTexture.h"
-#include "include/gpu/graphite/CombinationBuilder.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/TextureInfo.h"
 #include "src/gpu/RefCntedCallback.h"
+#include "src/gpu/graphite/BufferManager.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/ClientMappedBufferManager.h"
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/CopyTask.h"
+#include "src/gpu/graphite/DrawAtlas.h"
 #include "src/gpu/graphite/GlobalCache.h"
+#include "src/gpu/graphite/GraphicsPipeline.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
 #include "src/gpu/graphite/Image_Graphite.h"
+#include "src/gpu/graphite/KeyContext.h"
+#include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/QueueManager.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/RecordingPriv.h"
 #include "src/gpu/graphite/Renderer.h"
+#include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/ResourceProvider.h"
+#include "src/gpu/graphite/RuntimeEffectDictionary.h"
 #include "src/gpu/graphite/ShaderCodeDictionary.h"
 #include "src/gpu/graphite/SharedContext.h"
 #include "src/gpu/graphite/Surface_Graphite.h"
 #include "src/gpu/graphite/SynchronizeToCpuTask.h"
 #include "src/gpu/graphite/TextureProxyView.h"
 #include "src/gpu/graphite/UploadTask.h"
-
-#ifdef SK_DAWN
-#include "include/gpu/graphite/dawn/DawnBackendContext.h"
-#include "src/gpu/graphite/dawn/DawnSharedContext.h"
-#endif
-
-#ifdef SK_METAL
-#include "src/gpu/graphite/mtl/MtlTrampoline.h"
-#endif
-
-#ifdef SK_VULKAN
-#include "include/gpu/vk/VulkanBackendContext.h"
-#include "src/gpu/graphite/vk/VulkanQueueManager.h"
-#include "src/gpu/graphite/vk/VulkanSharedContext.h"
-#endif
-
-#ifdef SK_ENABLE_PRECOMPILE
-#include "src/gpu/graphite/PaintOptionsPriv.h"
-#endif
 
 namespace skgpu::graphite {
 
@@ -81,6 +68,7 @@ Context::Context(sk_sp<SharedContext> sharedContext,
     // SingleOwner object and it is declared last
     fResourceProvider = fSharedContext->makeResourceProvider(&fSingleOwner);
     fMappedBufferManager = std::make_unique<ClientMappedBufferManager>(this->contextID());
+    fPlotUploadTracker = std::make_unique<PlotUploadTracker>();
 }
 
 Context::~Context() {
@@ -92,72 +80,29 @@ Context::~Context() {
 #endif
 }
 
+bool Context::finishInitialization() {
+    SkASSERT(!fSharedContext->rendererProvider()); // Can only initialize once
+
+    StaticBufferManager bufferManager{fResourceProvider.get(), fSharedContext->caps()};
+    std::unique_ptr<RendererProvider> renderers{
+            new RendererProvider(fSharedContext->caps(), &bufferManager)};
+
+    auto result = bufferManager.finalize(this, fQueueManager.get(), fSharedContext->globalCache());
+    if (result == StaticBufferManager::FinishResult::kFailure) {
+        // If something went wrong filling out the static vertex buffers, any Renderer that would
+        // use it will draw incorrectly, so it's better to fail the Context creation.
+        return false;
+    }
+    if (result == StaticBufferManager::FinishResult::kSuccess &&
+        !fQueueManager->submitToGpu()) {
+        SKGPU_LOG_W("Failed to submit initial command buffer for Context creation.\n");
+        return false;
+    } // else result was kNoWork so skip submitting to the GPU
+    fSharedContext->setRendererProvider(std::move(renderers));
+    return true;
+}
+
 BackendApi Context::backend() const { return fSharedContext->backend(); }
-
-#ifdef SK_DAWN
-std::unique_ptr<Context> Context::MakeDawn(const DawnBackendContext& backendContext,
-                                           const ContextOptions& options) {
-    sk_sp<SharedContext> sharedContext = DawnSharedContext::Make(backendContext, options);
-    if (!sharedContext) {
-        return nullptr;
-    }
-
-    // TODO: Make a QueueManager
-    std::unique_ptr<QueueManager> queueManager;
-    if (!queueManager) {
-        return nullptr;
-    }
-
-    auto context = std::unique_ptr<Context>(new Context(std::move(sharedContext),
-                                                        std::move(queueManager),
-                                                        options));
-    SkASSERT(context);
-    return context;
-}
-#endif
-
-#ifdef SK_METAL
-std::unique_ptr<Context> Context::MakeMetal(const MtlBackendContext& backendContext,
-                                            const ContextOptions& options) {
-    sk_sp<SharedContext> sharedContext = MtlTrampoline::MakeSharedContext(backendContext, options);
-    if (!sharedContext) {
-        return nullptr;
-    }
-
-    auto queueManager = MtlTrampoline::MakeQueueManager(backendContext, sharedContext.get());
-    if (!queueManager) {
-        return nullptr;
-    }
-
-    auto context = std::unique_ptr<Context>(new Context(std::move(sharedContext),
-                                                        std::move(queueManager),
-                                                        options));
-    SkASSERT(context);
-    return context;
-}
-#endif
-
-#ifdef SK_VULKAN
-std::unique_ptr<Context> Context::MakeVulkan(const VulkanBackendContext& backendContext,
-                                             const ContextOptions& options) {
-    sk_sp<SharedContext> sharedContext = VulkanSharedContext::Make(backendContext, options);
-    if (!sharedContext) {
-        return nullptr;
-    }
-
-    std::unique_ptr<QueueManager> queueManager(new VulkanQueueManager(backendContext.fQueue,
-                                                                      sharedContext.get()));
-    if (!queueManager) {
-        return nullptr;
-    }
-
-    auto context = std::unique_ptr<Context>(new Context(std::move(sharedContext),
-                                                        std::move(queueManager),
-                                                        options));
-    SkASSERT(context);
-    return context;
-}
-#endif
 
 std::unique_ptr<Recorder> Context::makeRecorder(const RecorderOptions& options) {
     ASSERT_SINGLE_OWNER
@@ -174,14 +119,15 @@ std::unique_ptr<Recorder> Context::makeRecorder(const RecorderOptions& options) 
 bool Context::insertRecording(const InsertRecordingInfo& info) {
     ASSERT_SINGLE_OWNER
 
-    return fQueueManager->addRecording(info, fResourceProvider.get());
+    return fQueueManager->addRecording(info, this);
 }
 
-void Context::submit(SyncToCpu syncToCpu) {
+bool Context::submit(SyncToCpu syncToCpu) {
     ASSERT_SINGLE_OWNER
 
-    fQueueManager->submitToGpu();
+    bool success = fQueueManager->submitToGpu();
     fQueueManager->checkForFinishedWork(syncToCpu);
+    return success;
 }
 
 void Context::asyncReadPixels(const SkImage* image,
@@ -278,22 +224,30 @@ void Context::asyncReadPixels(const TextureProxy* proxy,
                                             rowBytes,
                                             fMappedBufferManager.get(),
                                             std::move(transferResult)};
-    GpuFinishedProc finishCallback = [](GpuFinishedContext c, CallbackResult) {
+    GpuFinishedProc finishCallback = [](GpuFinishedContext c, CallbackResult status) {
         const auto* context = reinterpret_cast<const FinishContext*>(c);
-        ClientMappedBufferManager* manager = context->fMappedBufferManager;
-        auto result = std::make_unique<AsyncReadResult>(manager->ownerID());
-        if (!result->addTransferResult(context->fTransferResult, context->fSize,
-                                       context->fRowBytes, manager)) {
-            result.reset();
+        if (status == CallbackResult::kSuccess) {
+            ClientMappedBufferManager* manager = context->fMappedBufferManager;
+            auto result = std::make_unique<AsyncReadResult>(manager->ownerID());
+            if (!result->addTransferResult(context->fTransferResult, context->fSize,
+                                        context->fRowBytes, manager)) {
+                result.reset();
+            }
+            (*context->fClientCallback)(context->fClientContext, std::move(result));
+        } else {
+            (*context->fClientCallback)(context->fClientContext, nullptr);
         }
-        (*context->fClientCallback)(context->fClientContext, std::move(result));
         delete context;
     };
 
     InsertFinishInfo info;
     info.fFinishedContext = finishContext;
     info.fFinishedProc = finishCallback;
-    fQueueManager->addFinishInfo(info, fResourceProvider.get());
+    // If addFinishInfo() fails, it invokes the finish callback automatically, which handles all the
+    // required clean up for us, just log an error message.
+    if (!fQueueManager->addFinishInfo(info, fResourceProvider.get())) {
+        SKGPU_LOG_E("Failed to register finish callbacks for asyncReadPixels.");
+    }
 }
 
 Context::PixelTransferResult Context::transferPixels(const TextureProxy* proxy,
@@ -322,7 +276,7 @@ Context::PixelTransferResult Context::transferPixels(const TextureProxy* proxy,
 
     size_t rowBytes = caps->getAlignedTextureDataRowBytes(
                               SkColorTypeBytesPerPixel(supportedColorType) * srcRect.width());
-    size_t size = rowBytes * srcRect.height();
+    size_t size = SkAlignTo(rowBytes * srcRect.height(), caps->requiredTransferBufferAlignment());
     sk_sp<Buffer> buffer = fResourceProvider->findOrCreateBuffer(
             size,
             BufferType::kXferCpuToGpu,
@@ -331,32 +285,30 @@ Context::PixelTransferResult Context::transferPixels(const TextureProxy* proxy,
         return {};
     }
 
-    // Set up copy task
+    // Set up copy task. Since we always use a new buffer the offset can be 0 and we don't need to
+    // worry about aligning it to the required transfer buffer alignment.
     sk_sp<CopyTextureToBufferTask> copyTask = CopyTextureToBufferTask::Make(sk_ref_sp(proxy),
                                                                             srcRect,
                                                                             buffer,
                                                                             /*bufferOffset=*/0,
                                                                             rowBytes);
-    if (!copyTask) {
+    if (!copyTask || !fQueueManager->addTask(copyTask.get(), this)) {
         return {};
     }
     sk_sp<SynchronizeToCpuTask> syncTask = SynchronizeToCpuTask::Make(buffer);
-    if (!syncTask) {
+    if (!syncTask || !fQueueManager->addTask(syncTask.get(), this)) {
         return {};
     }
-
-    fQueueManager->addTask(copyTask.get(), fResourceProvider.get());
-    fQueueManager->addTask(syncTask.get(), fResourceProvider.get());
 
     PixelTransferResult result;
     result.fTransferBuffer = std::move(buffer);
     if (srcImageInfo.colorInfo() != dstColorInfo) {
-        result.fPixelConverter = [dims = srcRect.size(), dstColorInfo, srcImageInfo](
+        result.fPixelConverter = [dims = srcRect.size(), dstColorInfo, srcImageInfo, rowBytes](
                 void* dst, const void* src) {
             SkImageInfo srcInfo = SkImageInfo::Make(dims, srcImageInfo.colorInfo());
             SkImageInfo dstInfo = SkImageInfo::Make(dims, dstColorInfo);
             SkAssertResult(SkConvertPixels(dstInfo, dst, dstInfo.minRowBytes(),
-                                           srcInfo, src, srcInfo.minRowBytes()));
+                                           srcInfo, src, rowBytes));
         };
     }
 
@@ -369,60 +321,6 @@ void Context::checkAsyncWorkCompletion() {
 
     fQueueManager->checkForFinishedWork(SyncToCpu::kNo);
 }
-
-#ifdef SK_ENABLE_PRECOMPILE
-
-void Context::precompile(const PaintOptions& options) {
-    ASSERT_SINGLE_OWNER
-
-    options.priv().buildCombinations(
-        fSharedContext->shaderCodeDictionary(),
-        [&](SkUniquePaintParamsID uniqueID) {
-            for (const Renderer* r : fSharedContext->rendererProvider()->renderers()) {
-                for (auto&& s : r->steps()) {
-                    if (s->performsShading()) {
-                        GraphicsPipelineDesc desc(s, uniqueID);
-                        (void) desc;
-
-                        // TODO: Combine the desc with the renderpass description set to generate a
-                        // full GraphicsPipeline and MSL program. Cache that compiled pipeline on
-                        // the resource provider in a map from desc -> pipeline so that any
-                        // later desc created from equivalent RenderStep + Combination maps to it.
-                    }
-                }
-            }
-        });
-}
-
-BlenderID Context::addUserDefinedBlender(sk_sp<SkRuntimeEffect> effect) {
-    return fSharedContext->shaderCodeDictionary()->addUserDefinedBlender(std::move(effect));
-}
-
-void Context::precompile(CombinationBuilder* combinationBuilder) {
-    ASSERT_SINGLE_OWNER
-
-    combinationBuilder->buildCombinations(
-            fSharedContext->shaderCodeDictionary(),
-            [&](SkUniquePaintParamsID uniqueID) {
-                for (const Renderer* r : fSharedContext->rendererProvider()->renderers()) {
-                    for (auto&& s : r->steps()) {
-                        if (s->performsShading()) {
-                            GraphicsPipelineDesc desc(s, uniqueID);
-                            (void) desc;
-                            // TODO: Combine with renderpass description set to generate full
-                            // GraphicsPipeline and MSL program. Cache that compiled pipeline on
-                            // the resource provider in a map from desc -> pipeline so that any
-                            // later desc created from equivalent RenderStep + Combination get it.
-                        }
-                    }
-                }
-            });
-
-    // TODO: Iterate over the renderers and make descriptions for the steps that don't perform
-    // shading, and just use ShaderType::kNone.
-}
-
-#endif // SK_ENABLE_PRECOMPILE
 
 void Context::deleteBackendTexture(BackendTexture& texture) {
     ASSERT_SINGLE_OWNER
@@ -479,5 +377,21 @@ void ContextPriv::deregisterRecorder(const Recorder* recorder) {
 }
 
 #endif
+
+///////////////////////////////////////////////////////////////////////////////////
+
+std::unique_ptr<Context> ContextCtorAccessor::MakeContext(
+        sk_sp<SharedContext> sharedContext,
+        std::unique_ptr<QueueManager> queueManager,
+        const ContextOptions& options) {
+    auto context = std::unique_ptr<Context>(new Context(std::move(sharedContext),
+                                                        std::move(queueManager),
+                                                        options));
+    if (context && context->finishInitialization()) {
+        return context;
+    } else {
+        return nullptr;
+    }
+}
 
 } // namespace skgpu::graphite

@@ -58,6 +58,7 @@ CPU_ONLY_TESTS = [
     "FlattenableFactoryToName.cpp",
     "FlattenableNameToFactory.cpp",
     "Float16Test.cpp",
+    "FloatingPointTest.cpp",
     "FontHostStreamTest.cpp",
     "FontHostTest.cpp",
     "FontNamesTest.cpp",
@@ -220,7 +221,6 @@ GANESH_TESTS = [
     "CullTestTest.cpp",
     "DMSAATest.cpp",
     "DefaultPathRendererTest.cpp",
-    "DeferredDisplayListTest.cpp",
     "DeviceTest.cpp",
     "DrawOpAtlasTest.cpp",
     "EGLImageTest.cpp",
@@ -313,7 +313,6 @@ GANESH_TESTS = [
     "TransferPixelsTest.cpp",
     "TriangulatingPathRendererTests.cpp",
     "VkBackendSurfaceTest.cpp",
-    "VkDrawableTest.cpp",
     "VkHardwareBufferTest.cpp",
     "VkPriorityExtensionTest.cpp",
     "VkProtectedContextTest.cpp",
@@ -326,6 +325,7 @@ GANESH_TESTS = [
 ]
 
 PATHOPS_TESTS = [
+    "CubicRootsTest.cpp",
     "PathOpsAngleIdeas.cpp",
     "PathOpsAngleTest.cpp",
     "PathOpsAsWindingTest.cpp",
@@ -376,6 +376,7 @@ PATHOPS_TESTS = [
     "PathOpsTigerTest.cpp",
     "PathOpsTightBoundsTest.cpp",
     "PathOpsTypesTest.cpp",
+    "QuadRootsTest.cpp",
     "StrokerTest.cpp",
 ]
 
@@ -623,6 +624,19 @@ skia_cpu_tests(
     harness = ":tests_base",
     resources = ["//resources"],
     tests = PDF_TESTS,
+)
+
+skia_ganesh_tests(
+    name = "secondary_draw_context_tests",
+    flags = {
+        "enable_secondary_draw_context": ["True"],
+    },
+    harness = ":tests_base",
+    resources = ["//resources"],
+    tests = [
+        "DeferredDisplayListTest.cpp",
+        "VkDrawableTest.cpp",
+    ],
 )
 
 skia_cpu_tests(

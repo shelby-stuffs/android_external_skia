@@ -11,7 +11,7 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 #include "src/core/SkEnumBitMask.h"
 #include "src/gpu/graphite/AttachmentTypes.h"
 #include "src/gpu/graphite/DrawCommands.h"
@@ -21,7 +21,7 @@
 
 #include <memory>
 
-class SkRuntimeEffectDictionary;
+struct SkImageInfo;
 
 namespace skgpu::graphite {
 
@@ -32,6 +32,7 @@ class GraphicsPipeline;
 class Recorder;
 struct RenderPassDesc;
 class ResourceProvider;
+class RuntimeEffectDictionary;
 class Sampler;
 class TextureDataBlock;
 class TextureProxy;
@@ -56,8 +57,8 @@ public:
 
     static std::unique_ptr<DrawPass> Make(Recorder*,
                                           std::unique_ptr<DrawList>,
-                                          sk_sp<TextureProxy>,
-                                          SkISize deviceSize,
+                                          sk_sp<TextureProxy> target,
+                                          const SkImageInfo& targetInfo,
                                           std::pair<LoadOp, StoreOp>,
                                           std::array<float, 4> clearColor);
 
@@ -80,7 +81,7 @@ public:
     // ResourceProvider. This includes things likes GraphicsPipelines, sampled Textures, Samplers,
     // etc.
     bool prepareResources(ResourceProvider*,
-                          const SkRuntimeEffectDictionary*,
+                          const RuntimeEffectDictionary*,
                           const RenderPassDesc&);
 
     DrawPassCommands::List::Iter commands() const {

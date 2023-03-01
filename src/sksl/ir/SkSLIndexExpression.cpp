@@ -9,7 +9,7 @@
 
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 #include "include/sksl/SkSLErrorReporter.h"
 #include "include/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLAnalysis.h"
@@ -155,7 +155,7 @@ std::unique_ptr<Expression> IndexExpression::Make(const Context& context,
                         ctorArgs.push_back(Literal::Make(baseExpr->fPosition, *slotVal,
                                 &scalarType));
                     } else {
-                        ctorArgs.reset();
+                        ctorArgs.clear();
                         break;
                     }
                 }

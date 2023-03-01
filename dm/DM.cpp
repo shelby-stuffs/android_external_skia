@@ -18,11 +18,11 @@
 #include "include/private/SkChecksum.h"
 #include "include/private/SkHalf.h"
 #include "include/private/SkSpinlock.h"
-#include "include/private/SkTHash.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkLeanWindows.h"
 #include "src/core/SkMD5.h"
 #include "src/core/SkOSFile.h"
+#include "src/core/SkTHash.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/utils/SkOSPath.h"
 #include "tests/Test.h"
@@ -980,6 +980,8 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
                 return new GPUSlugSink(gpuConfig, grCtxOptions);
             } else if (gpuConfig->getSerializedSlug()) {
                 return new GPUSerializeSlugSink(gpuConfig, grCtxOptions);
+            } else if (gpuConfig->getRemoteSlug()) {
+                return new GPURemoteSlugSink(gpuConfig, grCtxOptions);
             } else {
                 return new GPUSink(gpuConfig, grCtxOptions);
             }
@@ -1318,8 +1320,8 @@ struct Task {
 
         skcms_TransferFunction tf;
         cs->transferFn(&tf);
-        switch (classify_transfer_fn(tf)) {
-            case sRGBish_TF:
+        switch (skcms_TransferFunction_getType(&tf)) {
+            case skcms_TFType_sRGBish:
                 if (tf.a == 1 && tf.b == 0 && tf.c == 0 && tf.d == 0 && tf.e == 0 && tf.f == 0) {
                     return SkStringPrintf("gamma %.3g", tf.g);
                 }
@@ -1328,18 +1330,18 @@ struct Task {
                 return SkStringPrintf("%.3g %.3g %.3g %.3g %.3g %.3g %.3g",
                                         tf.g, tf.a, tf.b, tf.c, tf.d, tf.e, tf.f);
 
-            case PQish_TF:
+            case skcms_TFType_PQish:
                 if (eq(tf, SkNamedTransferFn::kPQ)) { return SkString("PQ"); }
                 return SkStringPrintf("PQish %.3g %.3g %.3g %.3g %.3g %.3g",
                                       tf.a, tf.b, tf.c, tf.d, tf.e, tf.f);
 
-            case HLGish_TF:
+            case skcms_TFType_HLGish:
                 if (eq(tf, SkNamedTransferFn::kHLG)) { return SkString("HLG"); }
                 return SkStringPrintf("HLGish %.3g %.3g %.3g %.3g %.3g (%.3g)",
                                       tf.a, tf.b, tf.c, tf.d, tf.e, tf.f+1);
 
-            case HLGinvish_TF: break;
-            case Bad_TF: break;
+            case skcms_TFType_HLGinvish: break;
+            case skcms_TFType_Invalid: break;
         }
         return SkString("non-numeric");
     }

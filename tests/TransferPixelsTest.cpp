@@ -13,10 +13,11 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrConfig.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
+#include "include/private/base/SkAlign.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrColor.h"
@@ -151,7 +152,7 @@ void basic_transfer_to_test(skiatest::Reporter* reporter,
                                                            renderable,
                                                            1,
                                                            GrMipmapped::kNo,
-                                                           SkBudgeted::kNo,
+                                                           skgpu::Budgeted::kNo,
                                                            GrProtected::kNo,
                                                            /*label=*/{});
     if (!tex) {
@@ -346,7 +347,7 @@ void basic_transfer_from_test(skiatest::Reporter* reporter, const sk_gpu_test::C
                                                            colorType,
                                                            renderable,
                                                            1,
-                                                           SkBudgeted::kNo,
+                                                           skgpu::Budgeted::kNo,
                                                            GrMipmapped::kNo,
                                                            GrProtected::kNo,
                                                            &data,

@@ -6,7 +6,7 @@
 
 export LD_LIBRARY_PATH="external/clang_linux_amd64/usr/lib/x86_64-linux-gnu"
 
-set -e
+set -euo pipefail
 
 # We only want to run include-what-you-use if DSKIA_ENFORCE_IWYU is in the arguments
 # passed in (i.e. the "skia_enforce_iwyu" feature is enabled) and we are not linking
@@ -18,6 +18,7 @@ fi
 
 supported_files_or_dirs=(
   "modules/skunicode/"
+  "src/base/"
   "src/codec/"
   "src/effects/"
   "src/images/"
@@ -27,18 +28,37 @@ supported_files_or_dirs=(
   "src/utils/"
   "tools/debugger/"
   "tests/"
+  "src/core/SkArenaAlloc.cpp"
   "src/core/SkColor.cpp"
   "src/core/SkColorSpace.cpp"
+  "src/core/SkCubicClipper.cpp"
+  "src/core/SkCubicMap.cpp"
+  "src/core/SkEdgeBuilder.cpp"
+  "src/core/SkEdgeClipper.cpp"
   "src/core/SkFlattenable.cpp"
+  "src/core/SkFloatingPoint.cpp"
+  "src/core/SkGeometry.cpp"
+  "src/core/SkGlyph.cpp"
+  "src/core/SkLineClipper.cpp"
   "src/core/SkMaskFilter.cpp"
+  "src/core/SkMatrix.cpp"
   "src/core/SkPaint.cpp"
   "src/core/SkPath.cpp"
+  "src/core/SkPathBuilder.cpp"
+  "src/core/SkPathRef.cpp"
+  "src/core/SkPathUtils.cpp"
   "src/core/SkPoint.cpp"
+  "src/core/SkRRect.cpp"
   "src/core/SkRect.cpp"
+  "src/core/SkSafeMath.cpp"
   "src/core/SkScalar.cpp"
+  "src/core/SkStream.cpp"
+  "src/core/SkString.cpp"
+  "src/core/SkTDArray.cpp"
   "src/gpu/ganesh/GrCaps.cpp"
   "src/gpu/ganesh/GrProcessor.cpp"
   "src/gpu/ganesh/GrRenderTargetProxy.cpp"
+  "src/gpu/ganesh/GrResourceProvider.cpp"
   "src/gpu/ganesh/GrSurfaceProxy.cpp"
   "src/gpu/ganesh/GrSurfaceProxyView.cpp"
   "src/gpu/ganesh/GrTextureProxy.cpp"

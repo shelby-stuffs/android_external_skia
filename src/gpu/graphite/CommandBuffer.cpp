@@ -27,7 +27,7 @@ CommandBuffer::~CommandBuffer() {
 void CommandBuffer::releaseResources() {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
 
-    fTrackedResources.reset();
+    fTrackedResources.clear();
 }
 
 void CommandBuffer::resetCommandBuffer() {
@@ -51,7 +51,7 @@ void CommandBuffer::callFinishedProcs(bool success) {
             fFinishedProcs[i]->setFailureResult();
         }
     }
-    fFinishedProcs.reset();
+    fFinishedProcs.clear();
 }
 
 bool CommandBuffer::addRenderPass(const RenderPassDesc& renderPassDesc,
@@ -191,6 +191,18 @@ bool CommandBuffer::synchronizeBufferToCpu(sk_sp<Buffer> buffer) {
         this->trackResource(std::move(buffer));
         SkDEBUGCODE(fHasWork = true;)
     }
+
+    return true;
+}
+
+bool CommandBuffer::clearBuffer(const Buffer* buffer, size_t offset, size_t size) {
+    SkASSERT(buffer);
+
+    if (!this->onClearBuffer(buffer, offset, size)) {
+        return false;
+    }
+
+    SkDEBUGCODE(fHasWork = true;)
 
     return true;
 }

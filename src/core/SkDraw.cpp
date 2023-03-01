@@ -12,21 +12,22 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPathEffect.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkString.h"
 #include "include/core/SkStrokeRec.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkImageInfoPriv.h"
 #include "include/private/SkMacros.h"
 #include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkAutoBlitterChoose.h"
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlitter.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkDrawProcs.h"
+#include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkImagePriv.h"
 #include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkMatrixUtils.h"
@@ -41,6 +42,8 @@
 #include "src/core/SkUtils.h"
 
 #include <utility>
+
+using namespace skia_private;
 
 static SkPaint make_paint_with_image(const SkPaint& origPaint, const SkBitmap& bitmap,
                                      const SkSamplingOptions& sampling,
@@ -939,8 +942,8 @@ void SkDraw::drawPath(const SkPath& origSrcPath, const SkPaint& origPaint,
         if (this->computeConservativeLocalClipBounds(&cullRect)) {
             cullRectPtr = &cullRect;
         }
-        doFill = paint->getFillPath(*pathPtr, tmpPath, cullRectPtr,
-                                    fMatrixProvider->localToDevice());
+        doFill = skpathutils::FillPathWithPaint(*pathPtr, *paint, tmpPath, cullRectPtr,
+                                                fMatrixProvider->localToDevice());
         pathPtr = tmpPath;
     }
 
@@ -1016,7 +1019,7 @@ void SkDraw::drawBitmapAsMask(const SkBitmap& bitmap, const SkSamplingOptions& s
         }
 
         // allocate (and clear) our temp buffer to hold the transformed bitmap
-        SkAutoTMalloc<uint8_t> storage(size);
+        AutoTMalloc<uint8_t> storage(size);
         mask.fImage = storage.get();
         memset(mask.fImage, 0, size);
 

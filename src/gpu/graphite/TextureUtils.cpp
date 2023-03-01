@@ -19,6 +19,7 @@
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/CopyTask.h"
 #include "src/gpu/graphite/Image_Graphite.h"
+#include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/ResourceProvider.h"
 #include "src/gpu/graphite/SynchronizeToCpuTask.h"
@@ -31,7 +32,7 @@ std::tuple<TextureProxyView, SkColorType> MakeBitmapProxyView(Recorder* recorder
                                                               const SkBitmap& bitmap,
                                                               sk_sp<SkMipmap> mipmapsIn,
                                                               Mipmapped mipmapped,
-                                                              SkBudgeted budgeted) {
+                                                              skgpu::Budgeted budgeted) {
     // Adjust params based on input and Caps
     const skgpu::graphite::Caps* caps = recorder->priv().caps();
     SkColorType ct = bitmap.info().colorType();
@@ -107,10 +108,17 @@ std::tuple<TextureProxyView, SkColorType> MakeBitmapProxyView(Recorder* recorder
     SkASSERT(caps->areColorTypeAndTextureInfoCompatible(ct, proxy->textureInfo()));
     SkASSERT(mipmapped == Mipmapped::kNo || proxy->mipmapped() == Mipmapped::kYes);
 
+    // Src and dst colorInfo are the same
+    const SkColorInfo& colorInfo = bmpToUpload.info().colorInfo();
     // Add UploadTask to Recorder
     UploadInstance upload = UploadInstance::Make(
-            recorder, proxy, ct, texels, SkIRect::MakeSize(bmpToUpload.dimensions()));
-    recorder->priv().add(UploadTask::Make(upload));
+            recorder, proxy, colorInfo, colorInfo, texels,
+            SkIRect::MakeSize(bmpToUpload.dimensions()), nullptr);
+    if (!upload.isValid()) {
+        SKGPU_LOG_E("MakeBitmapProxyView: Could not create UploadInstance");
+        return {};
+    }
+    recorder->priv().add(UploadTask::Make(std::move(upload)));
 
     Swizzle swizzle = caps->getReadSwizzle(ct, textureInfo);
     return {{std::move(proxy), swizzle}, ct};
@@ -120,7 +128,7 @@ sk_sp<SkImage> MakeFromBitmap(Recorder* recorder,
                               const SkColorInfo& colorInfo,
                               const SkBitmap& bitmap,
                               sk_sp<SkMipmap> mipmaps,
-                              SkBudgeted budgeted,
+                              skgpu::Budgeted budgeted,
                               SkImage::RequiredImageProperties requiredProps) {
     auto [ view, ct ] = MakeBitmapProxyView(recorder, bitmap, std::move(mipmaps),
                                             requiredProps.fMipmapped, budgeted);

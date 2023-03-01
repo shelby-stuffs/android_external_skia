@@ -9,7 +9,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkUnPreMultiply.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 #include "modules/skcms/skcms.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkColorFilterBase.h"
@@ -30,6 +30,7 @@
 #endif
 
 #ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #endif
@@ -122,7 +123,7 @@ SkPMColor4f SkColorFilterBase::onFilterColor4f(const SkPMColor4f& color,
     if (as_CFB(this)->onAppendStages(rec, color.fA == 1)) {
         SkPMColor4f dst;
         SkRasterPipeline_MemoryCtx dstPtr = { &dst, 0 };
-        pipeline.append(SkRasterPipeline::store_f32, &dstPtr);
+        pipeline.append(SkRasterPipelineOp::store_f32, &dstPtr);
         pipeline.run(0,0, 1,1);
         return dst;
     }
@@ -333,13 +334,13 @@ public:
 
     bool onAppendStages(const SkStageRec& rec, bool shaderIsOpaque) const override {
         if (!shaderIsOpaque) {
-            rec.fPipeline->append(SkRasterPipeline::unpremul);
+            rec.fPipeline->append(SkRasterPipelineOp::unpremul);
         }
 
         fSteps.apply(rec.fPipeline);
 
         if (!shaderIsOpaque) {
-            rec.fPipeline->append(SkRasterPipeline::premul);
+            rec.fPipeline->append(SkRasterPipelineOp::premul);
         }
         return true;
     }
@@ -430,6 +431,35 @@ public:
 
         return ok ? GrFPSuccess(GrColorSpaceXformEffect::Make(std::move(fp), working,dst))
                   : GrFPFailure(std::move(fp));
+    }
+#endif
+
+#ifdef SK_GRAPHITE_ENABLED
+    void addToKey(const skgpu::graphite::KeyContext& keyContext,
+                  skgpu::graphite::PaintParamsKeyBuilder* builder,
+                  skgpu::graphite::PipelineDataGatherer* gatherer) const override {
+        using namespace skgpu::graphite;
+
+        const SkAlphaType dstAT = keyContext.dstColorInfo().alphaType();
+        sk_sp<SkColorSpace> dstCS = keyContext.dstColorInfo().refColorSpace();
+        if (!dstCS) {
+            dstCS = SkColorSpace::MakeSRGB();
+        }
+
+        SkAlphaType workingAT;
+        sk_sp<SkColorSpace> workingCS = this->workingFormat(dstCS, &workingAT);
+
+        ColorSpaceTransformBlock::ColorSpaceTransformData data1(
+                dstCS.get(), dstAT, workingCS.get(), workingAT);
+        ColorSpaceTransformBlock::BeginBlock(keyContext, builder, gatherer, &data1);
+        builder->endBlock();
+
+        as_CFB(fChild)->addToKey(keyContext, builder, gatherer);
+
+        ColorSpaceTransformBlock::ColorSpaceTransformData data2(
+                workingCS.get(), workingAT, dstCS.get(), dstAT);
+        ColorSpaceTransformBlock::BeginBlock(keyContext, builder, gatherer, &data2);
+        builder->endBlock();
     }
 #endif
 

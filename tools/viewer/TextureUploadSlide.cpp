@@ -90,8 +90,8 @@ private:
             SkSurfaceProps surfaceProps(0, kRGB_H_SkPixelGeometry);
             SkImageInfo imageInfo = SkImageInfo::Make(size, size, kRGBA_8888_SkColorType,
                                                       kPremul_SkAlphaType);
-            fSurface = SkSurface::MakeRenderTarget(direct, SkBudgeted::kNo, imageInfo, 0,
-                                                   &surfaceProps);
+            fSurface = SkSurface::MakeRenderTarget(
+                    direct, skgpu::Budgeted::kNo, imageInfo, 0, &surfaceProps);
         }
 
         sk_sp<SkImage> getImage() {
@@ -134,7 +134,7 @@ private:
         return surface;
     }
     void initializeTextures(GrDirectContext* direct) {
-        fTextures.reset();
+        fTextures.clear();
         int textureCount = fTileRows * fTileCols;
         for (int i = 0; i < textureCount; i++) {
             fTextures.emplace_back(new RenderTargetTexture(direct, fTileSize));

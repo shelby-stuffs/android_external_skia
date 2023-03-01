@@ -10,9 +10,11 @@
 #include "include/gpu/graphite/Recording.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/graphite/CommandBuffer.h"
+#include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/GpuWorkSubmission.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/RecordingPriv.h"
+#include "src/gpu/graphite/Surface_Graphite.h"
 #include "src/gpu/graphite/Task.h"
 
 namespace skgpu::graphite {
@@ -53,7 +55,7 @@ bool QueueManager::setupCommandBuffer(ResourceProvider* resourceProvider) {
 }
 
 bool QueueManager::addRecording(const InsertRecordingInfo& info,
-                                ResourceProvider* resourceProvider) {
+                                Context* context) {
     sk_sp<RefCntedCallback> callback;
     if (info.fFinishedProc) {
         callback = RefCntedCallback::Make(info.fFinishedProc, info.fFinishedContext);
@@ -68,6 +70,16 @@ bool QueueManager::addRecording(const InsertRecordingInfo& info,
         return false;
     }
 
+    if (info.fTargetSurface &&
+        !static_cast<const SkSurface_Base*>(info.fTargetSurface)->isGraphiteBacked()) {
+        if (callback) {
+            callback->setFailureResult();
+        }
+        SKGPU_LOG_E("Target surface passed into addRecording call is not graphite-backed");
+        return false;
+    }
+
+    auto resourceProvider = context->priv().resourceProvider();
     if (!this->setupCommandBuffer(resourceProvider)) {
         if (callback) {
             callback->setFailureResult();
@@ -97,7 +109,9 @@ bool QueueManager::addRecording(const InsertRecordingInfo& info,
         }
     }
 
-    if (!info.fRecording->priv().addCommands(resourceProvider, fCurrentCommandBuffer.get())) {
+    if (!info.fRecording->priv().addCommands(context,
+                                             fCurrentCommandBuffer.get(),
+                                             static_cast<Surface*>(info.fTargetSurface))) {
         if (callback) {
             callback->setFailureResult();
         }
@@ -115,19 +129,19 @@ bool QueueManager::addRecording(const InsertRecordingInfo& info,
 }
 
 bool QueueManager::addTask(Task* task,
-                           ResourceProvider* resourceProvider) {
+                           Context* context) {
     SkASSERT(task);
     if (!task) {
         SKGPU_LOG_E("No valid Task passed into addTask call");
         return false;
     }
 
-    if (!this->setupCommandBuffer(resourceProvider)) {
+    if (!this->setupCommandBuffer(context->priv().resourceProvider())) {
         SKGPU_LOG_E("CommandBuffer creation failed");
         return false;
     }
 
-    if (!task->addCommands(resourceProvider, fCurrentCommandBuffer.get())) {
+    if (!task->addCommands(context, fCurrentCommandBuffer.get())) {
         SKGPU_LOG_E("Adding Task commands to the CommandBuffer has failed");
         return false;
     }
@@ -159,8 +173,11 @@ bool QueueManager::addFinishInfo(const InsertFinishInfo& info,
 
 bool QueueManager::submitToGpu() {
     if (!fCurrentCommandBuffer) {
+        // We warn because this probably representative of a bad client state, where they don't
+        // need to submit but didn't notice, but technically the submit itself is fine (no-op), so
+        // we return true.
         SKGPU_LOG_W("Submit called with no active command buffer!");
-        return false;
+        return true;
     }
 
 #ifdef SK_DEBUG

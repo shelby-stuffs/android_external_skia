@@ -26,7 +26,7 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "include/gpu/GrTypes.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrPixmap.h"
 #include "src/image/SkImage_Base.h"
@@ -266,7 +266,7 @@ private:
     }
 
     void onGpuTeardown() override {
-        fLabels.reset();
+        fLabels.clear();
         fReferenceImages[0] = fReferenceImages[1] = nullptr;
     }
 

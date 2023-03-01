@@ -14,6 +14,7 @@
 #include "include/core/SkMaskFilter.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
@@ -34,6 +35,8 @@
 #include <string>
 
 #undef ASSERT
+
+using namespace skia_private;
 
 DEF_TEST(Paint_copy, reporter) {
     SkPaint paint;
@@ -80,7 +83,7 @@ DEF_TEST(Paint_regression_cubic, reporter) {
 
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setStrokeWidth(SkIntToScalar(2));
-    paint.getFillPath(path, &stroke);
+    skpathutils::FillPathWithPaint(path, paint, &stroke);
     strokeR = stroke.getBounds();
 
     SkRect maxR = fillR;
@@ -203,13 +206,13 @@ DEF_TEST(Font_getpos, r) {
     SkFont font;
     const char text[] = "Hamburgefons!@#!#23425,./;'[]";
     int count = font.countText(text, strlen(text), SkTextEncoding::kUTF8);
-    SkAutoTArray<uint16_t> glyphStorage(count);
+    AutoTArray<uint16_t> glyphStorage(count);
     uint16_t* glyphs = glyphStorage.get();
     (void)font.textToGlyphs(text, strlen(text), SkTextEncoding::kUTF8, glyphs, count);
 
-    SkAutoTArray<SkScalar> widthStorage(count);
-    SkAutoTArray<SkScalar> xposStorage(count);
-    SkAutoTArray<SkPoint> posStorage(count);
+    AutoTArray<SkScalar> widthStorage(count);
+    AutoTArray<SkScalar> xposStorage(count);
+    AutoTArray<SkPoint> posStorage(count);
 
     SkScalar* widths = widthStorage.get();
     SkScalar* xpos = xposStorage.get();

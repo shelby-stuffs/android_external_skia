@@ -16,8 +16,8 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkSerialProcs.h"
 #include "include/core/SkStream.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTo.h"
 #include "include/utils/SkNWayCanvas.h"
 #include "src/utils/SkMultiPictureDocumentPriv.h"
 
@@ -101,13 +101,13 @@ struct MultiPictureDocument final : public SkDocument {
         }
         sk_sp<SkPicture> p = fPictureRecorder.finishRecordingAsPicture();
         p->serialize(wStream, &fProcs);
-        fPages.reset();
-        fSizes.reset();
+        fPages.clear();
+        fSizes.clear();
         return;
     }
     void onAbort() override {
-        fPages.reset();
-        fSizes.reset();
+        fPages.clear();
+        fSizes.clear();
     }
 };
 }  // namespace

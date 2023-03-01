@@ -9,7 +9,7 @@
 #define SkImage_Lazy_DEFINED
 
 #include "include/private/SkIDChangeListener.h"
-#include "include/private/SkMutex.h"
+#include "include/private/base/SkMutex.h"
 #include "src/image/SkImage_Base.h"
 
 #if SK_SUPPORT_GPU
@@ -44,6 +44,10 @@ public:
                       CachingHint) const override;
     sk_sp<SkData> onRefEncoded() const override;
     sk_sp<SkImage> onMakeSubset(const SkIRect&, GrDirectContext*) const override;
+#ifdef SK_GRAPHITE_ENABLED
+    sk_sp<SkImage> onMakeSubset(const SkIRect&, skgpu::graphite::Recorder*,
+                                RequiredImageProperties) const override;
+#endif
     bool getROPixels(GrDirectContext*, SkBitmap*, CachingHint) const override;
     bool onIsLazyGenerated() const override { return true; }
     sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType, sk_sp<SkColorSpace>,
@@ -80,7 +84,7 @@ private:
                                                                const SkRect*,
                                                                const SkRect*) const override;
 
-    GrSurfaceProxyView textureProxyViewFromPlanes(GrRecordingContext*, SkBudgeted) const;
+    GrSurfaceProxyView textureProxyViewFromPlanes(GrRecordingContext*, skgpu::Budgeted) const;
     sk_sp<SkCachedData> getPlanes(const SkYUVAPixmapInfo::SupportedDataTypes& supportedDataTypes,
                                   SkYUVAPixmaps* pixmaps) const;
 #endif

@@ -6,6 +6,7 @@
  */
 
 #include "include/core/SkTypes.h"
+#include "include/private/base/SkAlign.h"
 #include "src/core/SkBlockAllocator.h"
 #include "src/core/SkTBlockList.h"
 #include "tests/Test.h"
@@ -13,7 +14,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <new>
 #include <type_traits>
 #include <utility>
 #include <vector>

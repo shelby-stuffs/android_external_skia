@@ -21,6 +21,7 @@
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/gpu/AtlasTypes.h"
+#include "src/gpu/SkBackingFit.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDeferredUpload.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
@@ -98,13 +99,13 @@ public:
     const skgpu::TokenTracker* tokenTracker() final { return &fTokenTracker; }
     skgpu::TokenTracker* writeableTokenTracker() { return &fTokenTracker; }
 
-    skgpu::DrawToken addInlineUpload(GrDeferredTextureUploadFn&&) final {
+    skgpu::AtlasToken addInlineUpload(GrDeferredTextureUploadFn&&) final {
         SkASSERT(0); // this test shouldn't invoke this code path
         return fTokenTracker.nextDrawToken();
     }
 
-    skgpu::DrawToken addASAPUpload(GrDeferredTextureUploadFn&& upload) final {
-        return fTokenTracker.nextTokenToFlush();
+    skgpu::AtlasToken addASAPUpload(GrDeferredTextureUploadFn&& upload) final {
+        return fTokenTracker.nextFlushToken();
     }
 
     void issueDrawToken() { fTokenTracker.issueDrawToken(); }
@@ -192,7 +193,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(BasicDrawOpAtlas,
         atlas->setLastUseToken(atlasLocators[0], uploadTarget.tokenTracker()->nextDrawToken());
         uploadTarget.issueDrawToken();
         uploadTarget.issueFlushToken();
-        atlas->compact(uploadTarget.tokenTracker()->nextTokenToFlush());
+        atlas->compact(uploadTarget.tokenTracker()->nextFlushToken());
     }
 
     check(reporter, atlas.get(), 1, 4, 1);

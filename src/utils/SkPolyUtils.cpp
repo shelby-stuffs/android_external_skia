@@ -10,11 +10,11 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkFloatingPoint.h"
-#include "include/private/SkMalloc.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTDArray.h"
 #include "include/private/SkTemplates.h"
-#include "include/private/SkVx.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/base/SkVx.h"
+#include "include/private/base/SkMalloc.h"
 #include "src/core/SkPointPriv.h"
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkTDPQueue.h"
@@ -24,6 +24,8 @@
 #include <cstdint>
 #include <limits>
 #include <new>
+
+using namespace skia_private;
 
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 
@@ -364,7 +366,7 @@ bool SkInsetConvexPolygon(const SkPoint* inputPolygonVerts, int inputPolygonSize
     }
 
     // set up
-    SkAutoSTMalloc<64, OffsetEdge> edgeData(inputPolygonSize);
+    AutoSTMalloc<64, OffsetEdge> edgeData(inputPolygonSize);
     int prev = inputPolygonSize - 1;
     for (int curr = 0; curr < inputPolygonSize; prev = curr, ++curr) {
         int next = (curr + 1) % inputPolygonSize;
@@ -1229,7 +1231,7 @@ bool SkOffsetSimplePolygon(const SkPoint* inputPolygonVerts, int inputPolygonSiz
     }
 
     // build normals
-    SkAutoSTMalloc<64, SkVector> normals(inputPolygonSize);
+    AutoSTMalloc<64, SkVector> normals(inputPolygonSize);
     unsigned int numEdges = 0;
     for (int currIndex = 0, prevIndex = inputPolygonSize - 1;
          currIndex < inputPolygonSize;

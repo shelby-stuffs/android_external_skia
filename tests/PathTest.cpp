@@ -16,6 +16,7 @@
 #include "include/core/SkPath.h"
 #include "include/core/SkPathBuilder.h"
 #include "include/core/SkPathTypes.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
@@ -29,12 +30,13 @@
 #include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
 #include "include/pathops/SkPathOps.h"
-#include "include/private/SkFloatBits.h"
 #include "include/private/SkFloatingPoint.h"
 #include "include/private/SkIDChangeListener.h"
-#include "include/private/SkMalloc.h"
 #include "include/private/SkPathRef.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkFloatBits.h"
+#include "include/private/base/SkPathEnums.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTo.h"
 #include "include/utils/SkNullCanvas.h"
 #include "include/utils/SkParse.h"
 #include "include/utils/SkParsePath.h"
@@ -480,7 +482,7 @@ static void test_bad_cubic_crbug229478() {
     SkPath dst;
     // Before the fix, this would infinite-recurse, and run out of stack
     // because we would keep trying to subdivide a degenerate cubic segment.
-    paint.getFillPath(path, &dst, nullptr);
+    skpathutils::FillPathWithPaint(path, paint, &dst, nullptr);
 }
 
 static void build_path_170666(SkPath& path) {
@@ -1229,7 +1231,7 @@ static void stroke_cubic(const SkPoint pts[4]) {
     paint.setStrokeWidth(SK_Scalar1 * 2);
 
     SkPath fill;
-    paint.getFillPath(path, &fill);
+    skpathutils::FillPathWithPaint(path, paint, &fill);
 }
 
 // just ensure this can run w/o any SkASSERTS firing in the debug build
@@ -2616,7 +2618,7 @@ static void test_isNestedFillRects(skiatest::Reporter* reporter) {
     SkPaint strokePaint;
     strokePaint.setStyle(SkPaint::kStroke_Style);
     strokePaint.setStrokeWidth(2);
-    strokePaint.getFillPath(src, &dst);
+    skpathutils::FillPathWithPaint(src, strokePaint, &dst);
     REPORTER_ASSERT(reporter, SkPathPriv::IsNestedFillRects(dst, nullptr));
 }
 
@@ -3987,7 +3989,6 @@ static void test_arcTo(skiatest::Reporter* reporter) {
     p.arcTo(noOvalHeight, 0, 360, false);
     REPORTER_ASSERT(reporter, p.isEmpty());
 
-#ifndef SK_LEGACY_PATH_ARCTO_ENDPOINT
     // Inspired by http://code.google.com/p/chromium/issues/detail?id=1001768
     {
       p.reset();
@@ -3999,7 +4000,6 @@ static void test_arcTo(skiatest::Reporter* reporter) {
       int n = p.countPoints();
       REPORTER_ASSERT(reporter, p.getPoint(0) == p.getPoint(n - 1));
     }
-#endif
 
     // This test, if improperly handled, can create an infinite loop in angles_to_unit_vectors
     p.reset();

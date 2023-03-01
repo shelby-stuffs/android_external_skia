@@ -14,13 +14,13 @@
 #include "include/core/SkUnPreMultiply.h"
 #include "include/private/SkColorData.h"
 #include "include/private/SkHalf.h"
-#include "include/private/SkImageInfoPriv.h"
 #include "include/private/SkTPin.h"
 #include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
-#include "include/private/SkVx.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/base/SkVx.h"
 #include "src/core/SkConvertPixels.h"
 #include "src/core/SkDraw.h"
+#include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkMask.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkPixmapPriv.h"
@@ -672,7 +672,6 @@ bool SkPixmap::computeIsOpaque() const {
         case kBGR_101010x_SkColorType:
         case kR8_unorm_SkColorType:
             return true;
-            break;
         case kARGB_4444_SkColorType: {
             unsigned c = 0xFFFF;
             for (int y = 0; y < height; ++y) {

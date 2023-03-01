@@ -11,6 +11,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/gpu/graphite/TextureInfo.h"
+#include "include/private/base/SkTo.h"
 
 #include <functional>
 
@@ -25,8 +26,10 @@ class Texture;
 
 class TextureProxy : public SkRefCnt {
 public:
-    TextureProxy(SkISize dimensions, const TextureInfo& info, SkBudgeted budgeted);
+    TextureProxy(SkISize dimensions, const TextureInfo& info, skgpu::Budgeted budgeted);
     TextureProxy(sk_sp<Texture>);
+
+    TextureProxy() = delete;
 
     ~TextureProxy() override;
 
@@ -67,24 +70,24 @@ public:
                                     Mipmapped,
                                     Protected,
                                     Renderable,
-                                    SkBudgeted);
+                                    skgpu::Budgeted);
 
     using LazyInstantiateCallback = std::function<sk_sp<Texture> (ResourceProvider*)>;
 
     static sk_sp<TextureProxy> MakeLazy(SkISize dimensions,
                                         const TextureInfo&,
-                                        SkBudgeted,
+                                        skgpu::Budgeted,
                                         Volatile,
                                         LazyInstantiateCallback&&);
     static sk_sp<TextureProxy> MakeFullyLazy(const TextureInfo&,
-                                             SkBudgeted,
+                                             skgpu::Budgeted,
                                              Volatile,
                                              LazyInstantiateCallback&&);
 
 private:
     TextureProxy(SkISize dimensions,
                  const TextureInfo&,
-                 SkBudgeted,
+                 skgpu::Budgeted,
                  Volatile,
                  LazyInstantiateCallback&&);
 
@@ -97,12 +100,27 @@ private:
     SkISize fDimensions;
     const TextureInfo fInfo;
 
-    SkBudgeted fBudgeted;
+    skgpu::Budgeted fBudgeted;
     const Volatile fVolatile;
 
     sk_sp<Texture> fTexture;
 
     const LazyInstantiateCallback fLazyInstantiateCallback;
+};
+
+// Volatile texture proxy that deinstantiates itself on destruction.
+class AutoDeinstantiateTextureProxy {
+public:
+    AutoDeinstantiateTextureProxy(TextureProxy* textureProxy) : fTextureProxy(textureProxy) {}
+
+    ~AutoDeinstantiateTextureProxy() {
+        if (fTextureProxy) {
+            fTextureProxy->deinstantiate();
+        }
+    }
+
+private:
+    TextureProxy* const fTextureProxy;
 };
 
 } // namepsace skgpu::graphite

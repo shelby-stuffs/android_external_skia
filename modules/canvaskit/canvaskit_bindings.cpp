@@ -25,6 +25,7 @@
 #include "include/core/SkPath.h"
 #include "include/core/SkPathEffect.h"
 #include "include/core/SkPathMeasure.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkPoint3.h"
@@ -186,7 +187,7 @@ sk_sp<GrDirectContext> MakeGrContext()
 }
 
 sk_sp<SkSurface> MakeOnScreenGLSurface(sk_sp<GrDirectContext> dContext, int width, int height,
-                                       sk_sp<SkColorSpace> colorSpace) {
+                                       sk_sp<SkColorSpace> colorSpace, int sampleCnt, int stencil) {
     // WebGL should already be clearing the color and stencil buffers, but do it again here to
     // ensure Skia receives them in the expected state.
     emscripten_glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -198,12 +199,6 @@ sk_sp<SkSurface> MakeOnScreenGLSurface(sk_sp<GrDirectContext> dContext, int widt
     // The on-screen canvas is FBO 0. Wrap it in a Skia render target so Skia can render to it.
     GrGLFramebufferInfo info;
     info.fFBOID = 0;
-
-    GrGLint sampleCnt;
-    emscripten_glGetIntegerv(GL_SAMPLES, &sampleCnt);
-
-    GrGLint stencil;
-    emscripten_glGetIntegerv(GL_STENCIL_BITS, &stencil);
 
     if (!colorSpace) {
         colorSpace = SkColorSpace::MakeSRGB();
@@ -217,24 +212,39 @@ sk_sp<SkSurface> MakeOnScreenGLSurface(sk_sp<GrDirectContext> dContext, int widt
     return surface;
 }
 
+sk_sp<SkSurface> MakeOnScreenGLSurface(sk_sp<GrDirectContext> dContext, int width, int height,
+                                       sk_sp<SkColorSpace> colorSpace) {
+    GrGLint sampleCnt;
+    emscripten_glGetIntegerv(GL_SAMPLES, &sampleCnt);
+
+    GrGLint stencil;
+    emscripten_glGetIntegerv(GL_STENCIL_BITS, &stencil);
+
+    return MakeOnScreenGLSurface(dContext, width, height, colorSpace, sampleCnt, stencil);
+}
+
 sk_sp<SkSurface> MakeRenderTarget(sk_sp<GrDirectContext> dContext, int width, int height) {
     SkImageInfo info = SkImageInfo::MakeN32(
             width, height, SkAlphaType::kPremul_SkAlphaType, SkColorSpace::MakeSRGB());
 
     sk_sp<SkSurface> surface(SkSurface::MakeRenderTarget(dContext.get(),
-                             SkBudgeted::kYes,
-                             info, 0,
-                             kBottomLeft_GrSurfaceOrigin,
-                             nullptr, true));
+                                                         skgpu::Budgeted::kYes,
+                                                         info,
+                                                         0,
+                                                         kBottomLeft_GrSurfaceOrigin,
+                                                         nullptr,
+                                                         true));
     return surface;
 }
 
 sk_sp<SkSurface> MakeRenderTarget(sk_sp<GrDirectContext> dContext, SimpleImageInfo sii) {
     sk_sp<SkSurface> surface(SkSurface::MakeRenderTarget(dContext.get(),
-                             SkBudgeted::kYes,
-                             toSkImageInfo(sii), 0,
-                             kBottomLeft_GrSurfaceOrigin,
-                             nullptr, true));
+                                                         skgpu::Budgeted::kYes,
+                                                         toSkImageInfo(sii),
+                                                         0,
+                                                         kBottomLeft_GrSurfaceOrigin,
+                                                         nullptr,
+                                                         true));
     return surface;
 }
 #endif // CK_ENABLE_WEBGL
@@ -693,7 +703,7 @@ bool ApplyStroke(SkPath& path, StrokeOpts opts) {
     p.setStrokeWidth(opts.width);
     p.setStrokeMiter(opts.miter_limit);
 
-    return p.getFillPath(path, &path, nullptr, opts.precision);
+    return skpathutils::FillPathWithPaint(path, p, &path, nullptr, opts.precision);
 }
 
 // This function is private, we call it in interface.js
@@ -914,7 +924,8 @@ EMSCRIPTEN_BINDINGS(Skia) {
 
 #ifdef CK_ENABLE_WEBGL
     constant("webgl", true);
-    function("_MakeOnScreenGLSurface", &MakeOnScreenGLSurface);
+    function("_MakeOnScreenGLSurface", select_overload<sk_sp<SkSurface>(sk_sp<GrDirectContext>, int, int, sk_sp<SkColorSpace>)>(&MakeOnScreenGLSurface));
+    function("_MakeOnScreenGLSurface", select_overload<sk_sp<SkSurface>(sk_sp<GrDirectContext>, int, int, sk_sp<SkColorSpace>, int, int)>(&MakeOnScreenGLSurface));
     function("_MakeRenderTargetWH", select_overload<sk_sp<SkSurface>(sk_sp<GrDirectContext>, int, int)>(&MakeRenderTarget));
     function("_MakeRenderTargetII", select_overload<sk_sp<SkSurface>(sk_sp<GrDirectContext>, SimpleImageInfo)>(&MakeRenderTarget));
 #endif // CK_ENABLE_WEBGL

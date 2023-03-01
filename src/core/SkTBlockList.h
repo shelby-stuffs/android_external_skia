@@ -8,9 +8,14 @@
 #ifndef SkTBlockList_DEFINED
 #define SkTBlockList_DEFINED
 
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkBlockAllocator.h"
 
+#include <algorithm>
+#include <cstring>
 #include <type_traits>
+#include <utility>
 
 // Forward declarations for the iterators used by SkTBlockList
 using IndexFn = int (*)(const SkBlockAllocator::Block*);

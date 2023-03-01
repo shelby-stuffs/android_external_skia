@@ -17,12 +17,13 @@ namespace skgpu::graphite {
 class Context;
 class Device;
 class Recorder;
+class TextureProxy;
 
 class Surface final : public SkSurface_Base {
 public:
     static sk_sp<SkSurface> MakeGraphite(Recorder* recorder,
                                          const SkImageInfo& info,
-                                         SkBudgeted budgeted,
+                                         skgpu::Budgeted budgeted,
                                          Mipmapped = Mipmapped::kNo,
                                          const SkSurfaceProps* props = nullptr);
 
@@ -71,6 +72,8 @@ public:
                                   const GrFlushInfo&,
                                   const skgpu::MutableTextureState*) override;
 #endif
+
+    TextureProxy* backingTextureProxy();
 
 private:
     sk_sp<Device> fDevice;

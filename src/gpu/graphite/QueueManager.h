@@ -10,7 +10,7 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/gpu/graphite/GraphiteTypes.h"
-#include "include/private/SkDeque.h"
+#include "include/private/base/SkDeque.h"
 
 #include <memory>
 #include <vector>
@@ -18,6 +18,7 @@
 namespace skgpu::graphite {
 
 class CommandBuffer;
+class Context;
 class GpuWorkSubmission;
 struct InsertRecordingInfo;
 class ResourceProvider;
@@ -29,15 +30,15 @@ public:
     virtual ~QueueManager();
 
     // Adds the commands from the passed in Recording to the current CommandBuffer
-    bool addRecording(const InsertRecordingInfo&, ResourceProvider*);
+    bool SK_WARN_UNUSED_RESULT addRecording(const InsertRecordingInfo&, Context*);
 
     // Adds the commands from the passed in Task to the current CommandBuffer
-    bool addTask(Task*, ResourceProvider*);
+    bool SK_WARN_UNUSED_RESULT addTask(Task*, Context*);
 
     // Adds the commands from the passed in Task to the current CommandBuffer
-    bool addFinishInfo(const InsertFinishInfo&, ResourceProvider*);
+    bool SK_WARN_UNUSED_RESULT addFinishInfo(const InsertFinishInfo&, ResourceProvider*);
 
-    bool submitToGpu();
+    bool SK_WARN_UNUSED_RESULT submitToGpu();
     void checkForFinishedWork(SyncToCpu);
 
 #if GRAPHITE_TEST_UTILS

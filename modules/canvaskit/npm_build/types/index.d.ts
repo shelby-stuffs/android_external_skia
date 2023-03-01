@@ -256,9 +256,13 @@ export interface CanvasKit {
      * @param width - number of pixels of the width of the visible area.
      * @param height - number of pixels of the height of the visible area.
      * @param colorSpace
+     * @param sampleCount - sample count value from GL_SAMPLES. If not provided this will be looked up from
+     *                      the canvas.
+     * @param stencil - stencil count value from GL_STENCIL_BITS. If not provided this will be looked up
+     *                  from the WebGL Context.
      */
     MakeOnScreenGLSurface(ctx: GrDirectContext, width: number, height: number,
-                          colorSpace: ColorSpace): Surface | null;
+                          colorSpace: ColorSpace, sampleCount?: number, stencil?: number): Surface | null;
 
     /**
      * Creates a context that operates over the given WebGPU Device.
@@ -927,7 +931,7 @@ export interface Paragraph extends EmbindObject<Paragraph> {
     getMaxIntrinsicWidth(): number;
     getMaxWidth(): number;
     getMinIntrinsicWidth(): number;
-    getRectsForPlaceholders(): Rect[];
+    getRectsForPlaceholders(): RectWithDirection[];
 
     /**
      * Returns bounding boxes that enclose all text in the range of glpyh indexes [start, end).
@@ -937,7 +941,7 @@ export interface Paragraph extends EmbindObject<Paragraph> {
      * @param wStyle
      */
     getRectsForRange(start: number, end: number, hStyle: RectHeightStyle,
-                     wStyle: RectWidthStyle): Rect[];
+                     wStyle: RectWidthStyle): RectWithDirection[];
 
     /**
      * Finds the first and last glyphs that define a word containing the glyph at index offset.
@@ -2843,8 +2847,10 @@ export interface Surface extends EmbindObject<Surface> {
      * draw multiple frames, e.g. of an animation.
      *
      * Node users should call getCanvas() and work with that canvas directly.
+     *
+     * Returns the animation id.
      */
-    requestAnimationFrame(drawFrame: (_: Canvas) => void): void;
+    requestAnimationFrame(drawFrame: (_: Canvas) => void): number;
 
     /**
      * If this surface is GPU-backed, return the sample count of the surface.
@@ -4047,14 +4053,20 @@ export type ColorMatrix = Float32Array;
  */
 export type IRect = Int32Array;
 /**
- * An Point is represented by 2 floats: (x, y).
+ * A Point is represented by 2 floats: (x, y).
  */
 export type Point = Float32Array;
 /**
- * An Rect is represented by 4 floats. In order, the floats correspond to left, top,
+ * A Rect is represented by 4 floats. In order, the floats correspond to left, top,
  * right, bottom. See Rect.h for more
  */
 export type Rect = Float32Array;
+
+export interface RectWithDirection {
+    rect: Rect;
+    dir: TextDirection;
+}
+
 /**
  * An RRect (rectangle with rounded corners) is represented by 12 floats. In order, the floats
  * correspond to left, top, right, bottom and then in pairs, the radiusX, radiusY for upper-left,

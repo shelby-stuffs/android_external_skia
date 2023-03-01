@@ -13,8 +13,8 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkMutex.h"
 #include "include/private/SkTPin.h"
+#include "include/private/base/SkMutex.h"
 #include "src/core/SkEndian.h"
 #include "src/core/SkFontDescriptor.h"
 #include "src/core/SkTypefaceCache.h"
@@ -29,6 +29,8 @@
 #include <dwrite.h>
 #include <dwrite_2.h>
 #include <dwrite_3.h>
+
+using namespace skia_private;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1037,7 +1039,7 @@ static HRESULT apply_fontargument_variation(SkTScopedComPtr<IDWriteFontFace>& fo
 
     UINT32 fontAxisCount = fontFace5->GetFontAxisValueCount();
     UINT32 argsCoordCount = args.getVariationDesignPosition().coordinateCount;
-    SkAutoSTMalloc<8, DWRITE_FONT_AXIS_VALUE> variation(fontAxisCount);
+    AutoSTMalloc<8, DWRITE_FONT_AXIS_VALUE> variation(fontAxisCount);
     SkTScopedComPtr<IDWriteFontResource> fontResource;
     HR(fontFace5->GetFontResource(&fontResource));
     HR(fontResource->GetDefaultFontAxisValues(variation, fontAxisCount));

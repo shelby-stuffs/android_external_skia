@@ -27,12 +27,12 @@ ComputePassTask::ComputePassTask(std::vector<ResourceBinding> bindings,
         , fBindings(std::move(bindings)) {}
 
 bool ComputePassTask::prepareResources(ResourceProvider* provider,
-                                       const SkRuntimeEffectDictionary*) {
+                                       const RuntimeEffectDictionary*) {
     fPipeline = provider->findOrCreateComputePipeline(fPipelineDesc);
     return fPipeline != nullptr;
 }
 
-bool ComputePassTask::addCommands(ResourceProvider* provider, CommandBuffer* commandBuffer) {
+bool ComputePassTask::addCommands(Context*, CommandBuffer* commandBuffer) {
     SkASSERT(fPipeline);
     return commandBuffer->addComputePass(fComputePassDesc, fPipeline, fBindings);
 }

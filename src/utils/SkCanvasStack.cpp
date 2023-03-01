@@ -10,7 +10,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkShader.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 #include <utility>
 
 class SkPath;
@@ -53,7 +53,7 @@ void SkCanvasStack::pushCanvas(std::unique_ptr<SkCanvas> canvas, const SkIPoint&
 
 void SkCanvasStack::removeAll() {
     this->INHERITED::removeAll();   // call the baseclass *before* we actually delete the canvases
-    fCanvasData.reset();
+    fCanvasData.clear();
 }
 
 /**

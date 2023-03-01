@@ -21,14 +21,15 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkPathEffect.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
 #include "include/pathops/SkPathOps.h"
-#include "include/private/SkTDArray.h"
 #include "include/private/SkTemplates.h"
+#include "include/private/base/SkTDArray.h"
 #include "include/utils/SkNoDrawCanvas.h"
 #include "modules/svg/include/SkSVGDOM.h"
 #include "modules/svg/include/SkSVGNode.h"
@@ -47,6 +48,8 @@
 #include "tools/Resources.h"
 
 #include <utility>
+
+using namespace skia_private;
 
 class SkDescriptor;
 
@@ -1164,7 +1167,7 @@ void path_to_quads(const SkPath& path, SkPath* quadPath) {
                 quadPath->quadTo(pts[1].fX, pts[1].fY, pts[2].fX, pts[2].fY);
                 break;
             case SkPathVerb::kCubic:
-                qPts.reset();
+                qPts.clear();
                 convertCubicToQuads(pts, SK_Scalar1, &qPts);
                 for (int i = 0; i < qPts.size(); i += 3) {
                     quadPath->quadTo(
@@ -1316,7 +1319,7 @@ public:
 
         // Apply the path effect.
         if (paint.getPathEffect() || paint.getStyle() != SkPaint::kFill_Style) {
-            bool fill = paint.getFillPath(path, &path);
+            bool fill = skpathutils::FillPathWithPaint(path, paint, &path);
 
             paint.setPathEffect(nullptr);
             if (fill) {
@@ -1443,7 +1446,7 @@ void TestSVGTypeface::exportTtxColr(SkWStream* out) const {
     out->writeText("  </COLR>\n");
 
     // The colors must be written in order, the 'index' is ignored by ttx.
-    SkAutoTMalloc<SkColor> colorsInOrder(colors.count());
+    AutoTMalloc<SkColor> colorsInOrder(colors.count());
     colors.foreach ([&colorsInOrder](const SkColor& c, const int* i) { colorsInOrder[*i] = c; });
     out->writeText("  <CPAL>\n");
     out->writeText("    <version value=\"0\"/>\n");

@@ -16,11 +16,11 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/SkDeque.h"
-#include "include/private/SkMutex.h"
 #include "include/private/SkNoncopyable.h"
 #include "include/private/SkTemplates.h"
-#include "include/private/SkThreadID.h"
+#include "include/private/base/SkDeque.h"
+#include "include/private/base/SkMutex.h"
+#include "include/private/base/SkThreadID.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/image/SkImage_Gpu.h"
 #include "tools/gpu/GrContextFactory.h"
@@ -29,6 +29,7 @@
 #include <memory>
 #include <queue>
 
+using namespace skia_private;
 using ContextType = sk_gpu_test::GrContextFactory::ContextType;
 
 // be careful: `foo(make_fuzz_t<T>(f), make_fuzz_t<U>(f))` is undefined.
@@ -94,7 +95,7 @@ private:
 
     Fuzz* fFuzz = nullptr;
     GrDirectContext* fContext = nullptr;
-    SkAutoTArray<PromiseImageInfo> fPromiseImages{kPromiseImageCount};
+    AutoTArray<PromiseImageInfo> fPromiseImages{kPromiseImageCount};
     sk_sp<SkSurface> fSurface;
     SkSurfaceCharacterization fSurfaceCharacterization;
     std::unique_ptr<SkExecutor> fGpuExecutor = SkExecutor::MakeFIFOThreadPool(1, false);
@@ -118,7 +119,7 @@ DDLFuzzer::DDLFuzzer(Fuzz* fuzz, ContextType contextType) : fFuzz(fuzz) {
     SkISize canvasSize = kPromiseImageSize;
     canvasSize.fWidth *= kPromiseImagesPerDDL;
     SkImageInfo ii = SkImageInfo::Make(canvasSize, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    fSurface = SkSurface::MakeRenderTarget(fContext, SkBudgeted::kNo, ii);
+    fSurface = SkSurface::MakeRenderTarget(fContext, skgpu::Budgeted::kNo, ii);
     if (!fSurface || !fSurface->characterize(&fSurfaceCharacterization)) {
         return;
     }

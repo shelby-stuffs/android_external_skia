@@ -11,8 +11,8 @@
 #include "include/effects/SkGradientShader.h"
 
 #include "include/core/SkMatrix.h"
-#include "include/private/SkTArray.h"
 #include "include/private/SkTemplates.h"
+#include "include/private/base/SkTArray.h"
 #include "src/core/SkVM.h"
 #include "src/shaders/SkShaderBase.h"
 
@@ -144,7 +144,7 @@ private:
     inline static constexpr size_t kInlineStopCount   = 4;
     inline static constexpr size_t kInlineStorageSize = (sizeof(SkColor4f) + sizeof(SkScalar))
                                                * kInlineStopCount;
-    SkAutoSTMalloc<kInlineStorageSize, uint8_t> fStorage;
+    skia_private::AutoSTMalloc<kInlineStorageSize, uint8_t> fStorage;
 
     bool                                        fColorsAreOpaque;
 

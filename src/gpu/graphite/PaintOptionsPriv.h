@@ -24,9 +24,10 @@ public:
     }
 
     void buildCombinations(
-            ShaderCodeDictionary* dict,
-            const std::function<void(SkUniquePaintParamsID)>& processCombination) const {
-        fPaintOptions->buildCombinations(dict, processCombination);
+            const KeyContext& keyContext,
+            bool addPrimitiveBlender,
+            const std::function<void(UniquePaintParamsID)>& processCombination) const {
+        fPaintOptions->buildCombinations(keyContext, addPrimitiveBlender, processCombination);
     }
 
 private:

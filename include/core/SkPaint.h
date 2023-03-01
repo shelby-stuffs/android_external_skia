@@ -13,7 +13,9 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkFloatingPoint.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkCPUTypes.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/base/SkTypeTraits.h"
 
 #include <cstdint>
 #include <optional>
@@ -24,8 +26,6 @@ class SkColorFilter;
 class SkColorSpace;
 class SkImageFilter;
 class SkMaskFilter;
-class SkMatrix;
-class SkPath;
 class SkPathEffect;
 class SkShader;
 enum class SkBlendMode;
@@ -387,34 +387,6 @@ public:
         example: https://fiddle.skia.org/c/@Paint_setStrokeJoin
     */
     void setStrokeJoin(Join join);
-
-    /** Returns the filled equivalent of the stroked path.
-
-        @param src       SkPath read to create a filled version
-        @param dst       resulting SkPath; may be the same as src, but may not be nullptr
-        @param cullRect  optional limit passed to SkPathEffect
-        @param resScale  if > 1, increase precision, else if (0 < resScale < 1) reduce precision
-                         to favor speed and size
-        @return          true if the path represents style fill, or false if it represents hairline
-    */
-    bool getFillPath(const SkPath& src, SkPath* dst, const SkRect* cullRect,
-                     SkScalar resScale = 1) const;
-
-    bool getFillPath(const SkPath& src, SkPath* dst, const SkRect* cullRect,
-                     const SkMatrix& ctm) const;
-
-    /** Returns the filled equivalent of the stroked path.
-
-        Replaces dst with the src path modified by SkPathEffect and style stroke.
-        SkPathEffect, if any, is not culled. stroke width is created with default precision.
-
-        @param src  SkPath read to create a filled version
-        @param dst  resulting SkPath dst may be the same as src, but may not be nullptr
-        @return     true if the path represents style fill, or false if it represents hairline
-    */
-    bool getFillPath(const SkPath& src, SkPath* dst) const {
-        return this->getFillPath(src, dst, nullptr, 1);
-    }
 
     /** Returns optional colors used when filling a path, such as a gradient.
 

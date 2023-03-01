@@ -13,6 +13,8 @@
 
 #include <memory>
 
+class SkSurface;
+
 namespace skgpu::graphite {
 
 class Recording;
@@ -28,9 +30,15 @@ using GpuFinishedProc = void (*)(GpuFinishedContext finishedContext, CallbackRes
  * the Recording that they may be holding onto. If the Recording is successfully submitted to the
  * GPU the callback will be called with CallbackResult::kSuccess once the GPU has finished. All
  * other cases where some failure occured it will be called with CallbackResult::kFailed.
+ *
+ * The fTargetSurface, if provided, is used as a target for any draws recorded onto a deferred
+ * canvas returned from Recorder::makeDeferredCanvas. This target surface must be provided iff
+ * the Recording contains any such draws. It must be Graphite-backed and its backing texture's
+ * TextureInfo must match the info provided to the Recorder when making the deferred canvas.
  */
 struct InsertRecordingInfo {
     Recording* fRecording = nullptr;
+    SkSurface* fTargetSurface = nullptr;
     GpuFinishedContext fFinishedContext = nullptr;
     GpuFinishedProc fFinishedProc = nullptr;
 };
@@ -65,12 +73,33 @@ enum class Mipmapped : bool {
 };
 
 /*
- * Only relevant for Promise Images - should the Promise Image be fulfilled every time a
- * Recording that references it is inserted into the Context.
+ * For Promise Images - should the Promise Image be fulfilled every time a Recording that references
+ * it is inserted into the Context.
  */
 enum class Volatile : bool {
     kNo = false,              // only fulfilled once
     kYes = true               // fulfilled on every insertion call
+};
+
+/*
+ * Graphite's different rendering methods each only apply to certain types of draws. This
+ * enum supports decision-making regarding the different renderers and what is being drawn.
+ */
+enum DrawTypeFlags : uint8_t {
+
+    kNone         = 0b000,
+
+    // SkCanvas:: drawSimpleText, drawString, drawGlyphs, drawTextBlob, drawSlug
+    kText         = 0b001,
+
+    // SkCanvas::drawVertices
+    kDrawVertices = 0b010,
+
+    // All other canvas draw calls
+    kShape        = 0b100,
+
+    kMostCommon = kText | kShape,
+    kAll = kText | kDrawVertices | kShape
 };
 
 } // namespace skgpu::graphite

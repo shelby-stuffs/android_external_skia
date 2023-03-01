@@ -10,7 +10,7 @@
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
 #include "modules/skparagraph/include/DartTypes.h"
 #include "modules/skparagraph/include/Metrics.h"
 #include "modules/skparagraph/include/ParagraphPainter.h"
@@ -660,6 +660,7 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Clu
         font.setSubpixel(true);
 
         std::unique_ptr<SkShaper> shaper = SkShaper::MakeShapeDontWrapOrReorder(
+                            fOwner->getUnicode()->copy(),
                             fallback ? SkFontMgr::RefDefault() : SkFontMgr::RefEmpty());
         shaper->shape(ellipsis.c_str(),
                       ellipsis.size(),

@@ -439,11 +439,13 @@ describe('Paragraph Behavior', function() {
         let rects = paragraph.getRectsForPlaceholders();
         canvas.drawParagraph(paragraph, 10, 10);
 
-        for (const rect of rects) {
+        for (const r of rects) {
             const p = new CanvasKit.Paint();
             p.setColor(CanvasKit.Color(0, 0, 255));
             p.setStyle(CanvasKit.PaintStyle.Stroke);
             // Account for the (10, 10) offset when we painted the paragraph.
+            const rect = r.rect;
+            expect(r.dir).toEqual(CanvasKit.TextDirection.LTR);
             const placeholder =
                 CanvasKit.LTRBRect(rect[0]+10,rect[1]+10,rect[2]+10,rect[3]+10);
             canvas.drawRect(placeholder, p);
@@ -528,12 +530,12 @@ describe('Paragraph Behavior', function() {
             expect(Array.isArray(rects)).toEqual(true);
             expect(rects.length).toEqual(test.expectedNum);
 
-            for (const rect of rects) {
-                expect(rect.direction.value).toEqual(CanvasKit.TextDirection.LTR.value);
+            for (const r of rects) {
+                expect(r.dir).toEqual(CanvasKit.TextDirection.LTR);
                 const p = new CanvasKit.Paint();
                 p.setColor(test.color);
                 p.setStyle(CanvasKit.PaintStyle.Stroke);
-                canvas.drawRect(rect, p);
+                canvas.drawRect(r.rect, p);
                 p.delete();
             }
         }
@@ -1119,121 +1121,9 @@ describe('Paragraph Behavior', function() {
         builder.delete();
     });
 
-    // The purpose of this text is to make sure that we can use Client ICU
-    // API for English text and get the results reasonably similar to the
-    // normal paragraph API.
-    gm('paragraph_client_icu', (canvas) => {
-        const fontMgr = CanvasKit.FontMgr.FromData(robotoFontBuffer);
-        expect(fontMgr.countFamilies()).toEqual(1);
-        expect(fontMgr.getFamilyName(0)).toEqual('Roboto');
-
-        const paraStyle = new CanvasKit.ParagraphStyle({
-            textStyle: {
-                color: CanvasKit.BLACK,
-                fontFamilies: ['Roboto'],
-                fontSize: 50,
-                maxLines: 3,
-            },
-            textAlign: CanvasKit.TextAlign.Left,
-            maxLines: 3,
-        });
-
-        const builder = CanvasKit.ParagraphBuilder.Make(paraStyle, fontMgr);
-        builder.addText('The quick brown fox\n' +
-                        'ate a hamburgerfons and got sick.');
-
-        const text = builder.getText();
-        // In this case the text is constant but it will not always be:
-        expect(text).toEqual('The quick brown fox\n' +
-                             'ate a hamburgerfons and got sick.');
-
-        // Pass 1 bidi region as a triple of integers, [start:end), direction
-        const mallocedBidis = CanvasKit.Malloc(Uint32Array, 3);
-        mallocedBidis.toTypedArray().set([0, text.length, CanvasKit.TextDirection.LTR.value]);
-
-        // Pass the entire text as one word. It's only used for the method
-        // getWords
-        const mallocedWords = CanvasKit.Malloc(Uint32Array, 2);
-        mallocedWords.toTypedArray().set([0, text.length]);
-
-        // Pass each character as a separate grapheme
-        const mallocedGraphemes = CanvasKit.Malloc(Uint32Array, text.length + 1);
-        const graphemesArr = mallocedGraphemes.toTypedArray();
-        for (let i = 0; i <= text.length; i++) {
-            graphemesArr[i] = i;
-        }
-
-        // Pass each space as a "soft" break and each new line as a "hard" break.
-        const SOFT = 0;
-        const HARD = 1;
-        const lineBreaks = [0, SOFT];
-        for (let i = 0; i < text.length; ++i) {
-          if (text[i] === ' ') {
-              lineBreaks.push(i + 1, SOFT);
-          }
-          if (text[i] === '\n') {
-              lineBreaks.push(i + 1, HARD);
-          }
-        }
-        lineBreaks.push(text.length, SOFT);
-        const mallocedLineBreaks = CanvasKit.Malloc(Uint32Array, lineBreaks.length);
-        mallocedLineBreaks.toTypedArray().set(lineBreaks);
-
-        const text2 = builder.getText();
-        expect(text2).toEqual(text);
-
-        const paragraph = builder.buildWithClientInfo(
-            mallocedBidis,
-            mallocedWords,
-            graphemesArr,
-            mallocedLineBreaks
-        );
-
-        paragraph.layout(600);
-
-        // TODO(kjlubick, jlavrovra) re-enable these assertions after flaky failure seen in Gold.
-        console.log('paragraph.didExceedMaxLines', paragraph.didExceedMaxLines(), '=? false')
-        console.log('paragraph.getAlphabeticBaseline', paragraph.getAlphabeticBaseline(), '?= 46.399');
-        console.log('paragraph.getHeight', paragraph.getHeight(), '?= 177');
-        console.log('paragraph.getIdeographicBaseline', paragraph.getIdeographicBaseline(), '?= 58.599');
-        console.log('paragraph.getLongestLine', paragraph.getLongestLine(), '?= 558.349');
-        console.log('paragraph.getMaxIntrinsicWidth', paragraph.getMaxIntrinsicWidth(), '?= 758.349');
-        console.log('paragraph.getMaxWidth', paragraph.getMaxWidth(), '?= 600');
-        console.log('paragraph.getMinIntrinsicWidth', paragraph.getMinIntrinsicWidth(), '?= 341.399');
-
-        const lineMetrics = paragraph.getLineMetrics();
-        console.log('lineMetrics.length', lineMetrics.length, '?= 3'); // 3 lines worth of metrics
-        const flm = lineMetrics[0]; // First Line Metric
-        console.log('flm.startIndex', flm.startIndex, '?= 0');
-        console.log('flm.endExcludingWhitespaces', flm.endExcludingWhitespaces, '?= 19');
-        console.log('flm.endIndex', flm.endIndex, '?= 19'); // Including whitespaces but excluding newlines
-        console.log('flm.endIncludingNewline', flm.endIncludingNewline, '?= 20');
-        console.log('flm.lineNumber', flm.lineNumber, '?= 0');
-        console.log('flm.isHardBreak', flm.isHardBreak, '?= true');
-        console.log('flm.ascent', flm.ascent, '?= 46.399');
-        console.log('flm.descent', flm.descent, '?= 12.199');
-        console.log('flm.height', flm.height, '?= 59.000');
-        console.log('flm.width', flm.width, '?= 448.450');
-        console.log('flm.left', flm.left, '?= 0');
-        console.log('flm.baseline', flm.baseline, '?= 46.799');
-
-        canvas.drawParagraph(paragraph, 10, 10);
-
-        fontMgr.delete();
-        paragraph.delete();
-        builder.delete();
-
-        CanvasKit.Free(mallocedBidis);
-        CanvasKit.Free(mallocedWords);
-        CanvasKit.Free(mallocedGraphemes);
-        CanvasKit.Free(mallocedLineBreaks);
-    });
-
     gm('paragraph_fontSize_and_heightMultiplier_0', (canvas) => {
         const fontMgr = CanvasKit.FontMgr.FromData(robotoFontBuffer);
-
         const wrapTo = 250;
-
         const paraStyle = new CanvasKit.ParagraphStyle({
             textStyle: {
                 fontSize: 0,
@@ -1250,7 +1140,8 @@ describe('Paragraph Behavior', function() {
         let rects = paragraph.getRectsForRange(0, 1, CanvasKit.RectHeightStyle.Tight, CanvasKit.RectWidthStyle.Tight);
         const paint = new CanvasKit.Paint();
         paint.setColor(CanvasKit.Color(255, 0, 0));
-        canvas.drawRect(rects[0], paint);
+        canvas.drawRect(rects[0].rect, paint);
+        expect(rects[0].dir).toEqual(CanvasKit.TextDirection.LTR);
         paint.delete();
 
         paragraph.delete();

@@ -5,16 +5,24 @@
  * found in the LICENSE file.
  */
 
+#include "src/core/SkGeometry.h"
+
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPoint3.h"
+#include "include/core/SkRect.h"
+#include "include/private/SkFloatingPoint.h"
 #include "include/private/SkTPin.h"
-#include "include/private/SkVx.h"
-#include "src/core/SkGeometry.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/base/SkVx.h"
 #include "src/core/SkPointPriv.h"
+#include "src/pathops/SkPathOpsCubic.h"
+#include "src/pathops/SkPathOpsPoint.h"
 
 #include <algorithm>
-#include <tuple>
-#include <utility>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 
 namespace {
 
@@ -1138,8 +1146,6 @@ SkScalar SkFindCubicCusp(const SkPoint src[4]) {
     return -1;
 }
 
-#include "src/pathops/SkPathOpsCubic.h"
-
 typedef int (SkDCubic::*InterceptProc)(double intercept, double roots[3]) const;
 
 static bool cubic_dchop_at_intercept(const SkPoint src[4], SkScalar intercept, SkPoint dst[7],
@@ -1157,11 +1163,11 @@ static bool cubic_dchop_at_intercept(const SkPoint src[4], SkScalar intercept, S
     return false;
 }
 
-bool SkChopMonoCubicAtY(SkPoint src[4], SkScalar y, SkPoint dst[7]) {
+bool SkChopMonoCubicAtY(const SkPoint src[4], SkScalar y, SkPoint dst[7]) {
     return cubic_dchop_at_intercept(src, y, dst, &SkDCubic::horizontalIntersect);
 }
 
-bool SkChopMonoCubicAtX(SkPoint src[4], SkScalar x, SkPoint dst[7]) {
+bool SkChopMonoCubicAtX(const SkPoint src[4], SkScalar x, SkPoint dst[7]) {
     return cubic_dchop_at_intercept(src, x, dst, &SkDCubic::verticalIntersect);
 }
 

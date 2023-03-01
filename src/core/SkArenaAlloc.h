@@ -9,13 +9,12 @@
 #define SkArenaAlloc_DEFINED
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkTFitsIn.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTFitsIn.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkASAN.h"
 
+#include <algorithm>
 #include <array>
-#include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -23,7 +22,6 @@
 #include <new>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 // We found allocating strictly doubling amounts of memory from the heap left too
 // much unused slop, particularly on Android.  Instead we'll follow a Fibonacci-like

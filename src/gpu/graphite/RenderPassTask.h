@@ -15,10 +15,7 @@
 
 namespace skgpu::graphite {
 
-class CommandBuffer;
-class Context;
 class DrawPass;
-class ResourceProvider;
 
 /**
  * RenderPassTask handles preparing and recording DrawLists into a single render pass within a
@@ -35,9 +32,9 @@ public:
 
     ~RenderPassTask() override;
 
-    bool prepareResources(ResourceProvider*, const SkRuntimeEffectDictionary*) override;
+    bool prepareResources(ResourceProvider*, const RuntimeEffectDictionary*) override;
 
-    bool addCommands(ResourceProvider*, CommandBuffer*) override;
+    bool addCommands(Context*, CommandBuffer*) override;
 
 private:
     RenderPassTask(std::vector<std::unique_ptr<DrawPass>> passes,

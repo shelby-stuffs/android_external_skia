@@ -16,6 +16,7 @@
 #include "include/core/SkMaskFilter.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRRect.h"
@@ -26,9 +27,10 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkPerlinNoiseShader.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/SkFloatBits.h"
 #include "include/private/SkTPin.h"
+#include "include/private/base/SkFloatBits.h"
 #include "src/core/SkBlurMask.h"
 #include "src/core/SkGpuBlurUtils.h"
 #include "src/core/SkMask.h"
@@ -140,7 +142,7 @@ DEF_TEST(BlurDrawing, reporter) {
                 SkPath path;
                 tests[test].addPath(&path);
                 SkPath strokedPath;
-                paint.getFillPath(path, &strokedPath);
+                skpathutils::FillPathWithPaint(path, paint, &strokedPath);
                 SkRect refBound = strokedPath.getBounds();
                 SkIRect iref;
                 refBound.roundOut(&iref);
@@ -423,7 +425,7 @@ DEF_TEST(BlurAsABlur, reporter) {
 // SkBlurMask::BoxBlur wasn't being checked in SkBlurMaskFilter.cpp::GrRRectBlurEffect::Create
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SmallBoxBlurBug, reporter, ctxInfo, CtsEnforcement::kNever) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(128, 128);
-    auto surface(SkSurface::MakeRenderTarget(ctxInfo.directContext(), SkBudgeted::kNo, info));
+    auto surface(SkSurface::MakeRenderTarget(ctxInfo.directContext(), skgpu::Budgeted::kNo, info));
     SkCanvas* canvas = surface->getCanvas();
 
     SkRect r = SkRect::MakeXYWH(10, 10, 100, 100);
@@ -552,7 +554,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(BlurMaskBiggerThanDest,
 
     SkImageInfo ii = SkImageInfo::Make(32, 32, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
 
-    sk_sp<SkSurface> dst(SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, ii));
+    sk_sp<SkSurface> dst(SkSurface::MakeRenderTarget(context, skgpu::Budgeted::kNo, ii));
     if (!dst) {
         ERRORF(reporter, "Could not create surface for test.");
         return;

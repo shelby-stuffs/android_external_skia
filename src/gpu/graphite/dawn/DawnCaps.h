@@ -41,12 +41,9 @@ public:
                             Shareable,
                             GraphiteResourceKey*) const override;
 
-    size_t getMinBufferAlignment() const { return 4; }
-
 private:
     const ColorTypeInfo* getColorTypeInfo(SkColorType, const TextureInfo&) const override;
     bool onIsTexturable(const TextureInfo&) const override;
-    size_t getTransferBufferAlignment(size_t bytesPerPixel) const override;
     bool supportsWritePixels(const TextureInfo& textureInfo) const override;
     bool supportsReadPixels(const TextureInfo& textureInfo) const override;
     SkColorType supportedWritePixelsColorType(SkColorType dstColorType,
@@ -57,6 +54,7 @@ private:
                                              SkColorType dstColorType) const override;
 
     void initCaps(const wgpu::Device& device);
+    void initShaderCaps();
     void initFormatTable(const wgpu::Device& device);
 
     wgpu::TextureFormat getFormatFromColorType(SkColorType colorType) const {
@@ -93,7 +91,7 @@ private:
         std::unique_ptr<ColorTypeInfo[]> fColorTypeInfos;
         int fColorTypeInfoCount = 0;
     };
-    std::array<FormatInfo, 5> fFormatTable;
+    std::array<FormatInfo, 8> fFormatTable;
 
     static size_t GetFormatIndex(wgpu::TextureFormat format);
     const FormatInfo& getFormatInfo(wgpu::TextureFormat format) const {
@@ -108,4 +106,3 @@ private:
 } // namespace skgpu::graphite
 
 #endif // skgpu_graphite_DawnCaps_DEFINED
-

@@ -28,7 +28,7 @@ sk_sp<Texture> VulkanResourceProvider::createWrappedTexture(const BackendTexture
 }
 
 sk_sp<GraphicsPipeline> VulkanResourceProvider::createGraphicsPipeline(
-        const SkRuntimeEffectDictionary*,
+        const RuntimeEffectDictionary*,
         const GraphicsPipelineDesc&,
         const RenderPassDesc&) {
     return nullptr;
@@ -38,7 +38,7 @@ sk_sp<ComputePipeline> VulkanResourceProvider::createComputePipeline(const Compu
     return nullptr;
 }
 
-sk_sp<Texture> VulkanResourceProvider::createTexture(SkISize, const TextureInfo&, SkBudgeted) {
+sk_sp<Texture> VulkanResourceProvider::createTexture(SkISize, const TextureInfo&, skgpu::Budgeted) {
     return nullptr;
 }
 

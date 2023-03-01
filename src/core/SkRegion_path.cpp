@@ -6,8 +6,8 @@
  */
 
 #include "include/core/SkPath.h"
-#include "include/private/SkTDArray.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkBlitter.h"
 #include "src/core/SkRegionPriv.h"
 #include "src/core/SkSafeMath.h"

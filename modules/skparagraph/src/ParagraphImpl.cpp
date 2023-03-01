@@ -6,8 +6,8 @@
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/SkTFitsIn.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTFitsIn.h"
+#include "include/private/base/SkTo.h"
 #include "modules/skparagraph/include/Metrics.h"
 #include "modules/skparagraph/include/Paragraph.h"
 #include "modules/skparagraph/include/ParagraphPainter.h"
@@ -143,16 +143,16 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
                     fState = kIndexed;
                 }
             }
-            this->fRuns.reset();
-            this->fClusters.reset();
-            this->fClustersIndexFromCodeUnit.reset();
+            this->fRuns.clear();
+            this->fClusters.clear();
+            this->fClustersIndexFromCodeUnit.clear();
             this->fClustersIndexFromCodeUnit.push_back_n(fText.size() + 1, EMPTY_INDEX);
             if (!this->shapeTextIntoEndlessLine()) {
                 this->resetContext();
                 // TODO: merge the two next calls - they always come together
                 this->resolveStrut();
                 this->computeEmptyMetrics();
-                this->fLines.reset();
+                this->fLines.clear();
 
                 // Set the important values that are not zero
                 fWidth = floorWidth;
@@ -182,7 +182,7 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
         this->resetContext();
         this->resolveStrut();
         this->computeEmptyMetrics();
-        this->fLines.reset();
+        this->fLines.clear();
         this->breakShapedTextIntoLines(floorWidth);
         fState = kLineBroken;
     }
@@ -513,7 +513,7 @@ bool ParagraphImpl::shapeTextIntoEndlessLine() {
         return false;
     }
 
-    fFontSwitches.reset();
+    fFontSwitches.clear();
 
     OneLineShaper oneLineShaper(this);
     auto result = oneLineShaper.shape();
@@ -627,7 +627,7 @@ void ParagraphImpl::formatLines(SkScalar maxWidth) {
     if (!SkScalarIsFinite(maxWidth) && effectiveAlign != TextAlign::kLeft) {
         // Special case: clean all text in case of maxWidth == INF & align != left
         // We had to go through shaping though because we need all the measurement numbers
-        fLines.reset();
+        fLines.clear();
         return;
     }
 
@@ -841,7 +841,7 @@ PositionWithAffinity ParagraphImpl::getGlyphPositionAtCoordinate(SkScalar dx, Sk
 SkRange<size_t> ParagraphImpl::getWordBoundary(unsigned offset) {
 
     if (fWords.empty()) {
-        if (!fUnicode->getWords(fText.c_str(), fText.size(), &fWords)) {
+        if (!fUnicode->getWords(fText.c_str(), fText.size(), nullptr, &fWords)) {
             return {0, 0 };
         }
     }
@@ -925,12 +925,12 @@ void ParagraphImpl::setState(InternalState state) {
             [[fallthrough]];
 
         case kIndexed:
-            fRuns.reset();
-            fClusters.reset();
+            fRuns.clear();
+            fClusters.clear();
             [[fallthrough]];
 
         case kShaped:
-            fLines.reset();
+            fLines.clear();
             [[fallthrough]];
 
         case kLineBroken:

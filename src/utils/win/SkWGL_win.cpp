@@ -10,8 +10,8 @@
 
 #include "src/utils/win/SkWGL.h"
 
-#include "include/private/SkOnce.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkOnce.h"
+#include "include/private/base/SkTDArray.h"
 #include "src/core/SkTSearch.h"
 #include "src/core/SkTSort.h"
 
@@ -35,8 +35,6 @@ bool SkWGLExtensions::hasExtension(HDC dc, const char* ext) const {
         }
         extensionString += n+1;
     }
-
-    return false;
 }
 
 const char* SkWGLExtensions::getExtensionsString(HDC hdc) const {

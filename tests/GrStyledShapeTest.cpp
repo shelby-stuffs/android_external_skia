@@ -25,8 +25,9 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkDashPathEffect.h"
 #include "include/pathops/SkPathOps.h"
-#include "include/private/SkTArray.h"
 #include "include/private/SkTemplates.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkPathEffectBase.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkRectPriv.h"
@@ -42,6 +43,8 @@
 #include <memory>
 #include <string>
 #include <utility>
+
+using namespace skia_private;
 
 uint32_t GrStyledShape::testingOnly_getOriginalGenerationID() const {
     if (const auto* lp = this->originalPathForListeners()) {
@@ -340,7 +343,7 @@ void test_inversions(skiatest::Reporter* r, const GrStyledShape& shape, const Ke
     // It can be the case that the double flip has no key but preserve does. This happens when the
     // original shape has an inherited style key. That gets dropped on the first inversion flip.
     if (preserveKey.size() && !doubleFlipKey.size()) {
-        preserveKey.reset();
+        preserveKey.clear();
     }
     check_equivalence(r, preserve, doubleFlip, preserveKey, doubleFlipKey);
 }
@@ -1702,7 +1705,7 @@ void test_rrect(skiatest::Reporter* r, const SkRRect& rrect) {
     };
     static const SkPathDirection kSecondDirection = static_cast<SkPathDirection>(1);
     const int cnt = index(true, kSecondDirection, 7, static_cast<Style>(kStyleCnt - 1), true) + 1;
-    SkAutoTArray<GrStyledShape> shapes(cnt);
+    AutoTArray<GrStyledShape> shapes(cnt);
     for (bool inverted : {false, true}) {
         for (SkPathDirection dir : {SkPathDirection::kCW, SkPathDirection::kCCW}) {
             for (unsigned start = 0; start < 8; ++start) {

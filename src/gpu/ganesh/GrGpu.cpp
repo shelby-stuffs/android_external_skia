@@ -101,7 +101,7 @@ sk_sp<GrTexture> GrGpu::createTextureCommon(SkISize dimensions,
                                             GrTextureType textureType,
                                             GrRenderable renderable,
                                             int renderTargetSampleCnt,
-                                            SkBudgeted budgeted,
+                                            skgpu::Budgeted budgeted,
                                             GrProtected isProtected,
                                             int mipLevelCount,
                                             uint32_t levelClearMask,
@@ -158,7 +158,7 @@ sk_sp<GrTexture> GrGpu::createTexture(SkISize dimensions,
                                       GrRenderable renderable,
                                       int renderTargetSampleCnt,
                                       GrMipmapped mipmapped,
-                                      SkBudgeted budgeted,
+                                      skgpu::Budgeted budgeted,
                                       GrProtected isProtected,
                                       std::string_view label) {
     int mipLevelCount = 1;
@@ -190,7 +190,7 @@ sk_sp<GrTexture> GrGpu::createTexture(SkISize dimensions,
                                       GrTextureType textureType,
                                       GrRenderable renderable,
                                       int renderTargetSampleCnt,
-                                      SkBudgeted budgeted,
+                                      skgpu::Budgeted budgeted,
                                       GrProtected isProtected,
                                       GrColorType textureColorType,
                                       GrColorType srcColorType,
@@ -258,7 +258,7 @@ sk_sp<GrTexture> GrGpu::createTexture(SkISize dimensions,
 
 sk_sp<GrTexture> GrGpu::createCompressedTexture(SkISize dimensions,
                                                 const GrBackendFormat& format,
-                                                SkBudgeted budgeted,
+                                                skgpu::Budgeted budgeted,
                                                 GrMipmapped mipmapped,
                                                 GrProtected isProtected,
                                                 const void* data,
@@ -790,7 +790,7 @@ void GrGpu::callSubmittedProcs(bool success) {
     for (int i = 0; i < fSubmittedProcs.size(); ++i) {
         fSubmittedProcs[i].fProc(fSubmittedProcs[i].fContext, success);
     }
-    fSubmittedProcs.reset();
+    fSubmittedProcs.clear();
 }
 
 #ifdef SK_ENABLE_DUMP_GPU

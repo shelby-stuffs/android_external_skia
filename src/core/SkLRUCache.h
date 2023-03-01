@@ -9,7 +9,7 @@
 #define SkLRUCache_DEFINED
 
 #include "include/private/SkChecksum.h"
-#include "include/private/SkTHash.h"
+#include "src/core/SkTHash.h"
 #include "src/core/SkTInternalLList.h"
 
 /**
@@ -30,8 +30,7 @@ private:
     };
 
 public:
-    explicit SkLRUCache(int maxCount)
-    : fMaxCount(maxCount) {}
+    explicit SkLRUCache(int maxCount) : fMaxCount(maxCount) {}
 
     ~SkLRUCache() {
         Entry* node = fLRU.head();
@@ -76,7 +75,7 @@ public:
         }
     }
 
-    int count() {
+    int count() const {
         return fMap.count();
     }
 

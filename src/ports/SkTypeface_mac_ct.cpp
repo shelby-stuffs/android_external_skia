@@ -33,13 +33,13 @@
 #include "include/core/SkTypeface.h"
 #include "include/ports/SkTypeface_mac.h"
 #include "include/private/SkFixed.h"
-#include "include/private/SkMalloc.h"
-#include "include/private/SkMutex.h"
-#include "include/private/SkOnce.h"
-#include "include/private/SkTDArray.h"
 #include "include/private/SkTPin.h"
 #include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkMutex.h"
+#include "include/private/base/SkOnce.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkAdvancedTypefaceMetrics.h"
 #include "src/core/SkEndian.h"
 #include "src/core/SkFontDescriptor.h"
@@ -63,6 +63,8 @@
 #include <limits.h>
 #include <string.h>
 #include <memory>
+
+using namespace skia_private;
 
 /** Assumes src and dst are not nullptr. */
 void SkStringFromCFString(CFStringRef src, SkString* dst) {
@@ -1084,7 +1086,7 @@ void SkTypeface_Mac::onCharsToGlyphs(const SkUnichar uni[], int count, SkGlyphID
     // When a surrogate pair is detected, the glyph index used is the index of the high surrogate.
     // It is documented that if a mapping is unavailable, the glyph will be set to 0.
 
-    SkAutoSTMalloc<1024, UniChar> charStorage;
+    AutoSTMalloc<1024, UniChar> charStorage;
     const UniChar* src; // UniChar is a UTF-16 16-bit code unit.
     int srcCount;
     const SkUnichar* utf32 = reinterpret_cast<const SkUnichar*>(uni);
@@ -1096,7 +1098,7 @@ void SkTypeface_Mac::onCharsToGlyphs(const SkUnichar uni[], int count, SkGlyphID
     srcCount = SkToInt(utf16 - src);
 
     // If there are any non-bmp code points, the provided 'glyphs' storage will be inadequate.
-    SkAutoSTMalloc<1024, uint16_t> glyphStorage;
+    AutoSTMalloc<1024, uint16_t> glyphStorage;
     uint16_t* macGlyphs = glyphs;
     if (srcCount > count) {
         macGlyphs = glyphStorage.reset(srcCount);

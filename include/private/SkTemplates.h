@@ -9,8 +9,9 @@
 #define SkTemplates_DEFINED
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkMalloc.h"
 #include "include/private/SkTLogic.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkMalloc.h"
 
 #include <array>
 #include <cstddef>
@@ -32,6 +33,17 @@
  *  Note that this does *not* prevent the local variable from being optimized away.
  */
 template<typename T> inline void sk_ignore_unused_variable(const T&) { }
+
+/**
+ * This is a general purpose absolute-value function.
+ * See SkAbs32 in (SkSafe32.h) for a 32-bit int specific version that asserts.
+ */
+template <typename T> static inline T SkTAbs(T value) {
+    if (value < 0) {
+        value = -value;
+    }
+    return value;
+}
 
 /**
  *  Returns a pointer to a D which comes immediately after S[count].
@@ -78,14 +90,16 @@ public:
     operator T*() const { return this->get(); }
 };
 
+
+namespace skia_private {
 /** Allocate an array of T elements, and free the array in the destructor
  */
-template <typename T> class SkAutoTArray  {
+template <typename T> class AutoTArray  {
 public:
-    SkAutoTArray() {}
+    AutoTArray() {}
     /** Allocate count number of T elements
      */
-    explicit SkAutoTArray(int count) {
+    explicit AutoTArray(int count) {
         SkASSERT(count >= 0);
         if (count) {
             fArray.reset(new T[count]);
@@ -93,10 +107,10 @@ public:
         SkDEBUGCODE(fCount = count;)
     }
 
-    SkAutoTArray(SkAutoTArray&& other) : fArray(std::move(other.fArray)) {
+    AutoTArray(AutoTArray&& other) : fArray(std::move(other.fArray)) {
         SkDEBUGCODE(fCount = other.fCount; other.fCount = 0;)
     }
-    SkAutoTArray& operator=(SkAutoTArray&& other) {
+    AutoTArray& operator=(AutoTArray&& other) {
         if (this != &other) {
             fArray = std::move(other.fArray);
             SkDEBUGCODE(fCount = other.fCount; other.fCount = 0;)
@@ -106,7 +120,7 @@ public:
 
     /** Reallocates given a new count. Reallocation occurs even if new count equals old count.
      */
-    void reset(int count = 0) { *this = SkAutoTArray(count); }
+    void reset(int count = 0) { *this = AutoTArray(count); }
 
     /** Return the array of T elements. Will be NULL if count == 0
      */
@@ -127,8 +141,9 @@ private:
     std::unique_ptr<T[]> fArray;
     SkDEBUGCODE(int fCount = 0;)
 };
+}  // namespace skia_private
 
-/** Wraps SkAutoTArray, with room for kCountRequested elements preallocated.
+/** Wraps AutoTArray, with room for kCountRequested elements preallocated.
  */
 template <int kCountRequested, typename T> class SkAutoSTArray {
 public:
@@ -219,8 +234,8 @@ public:
 
 private:
 #if defined(SK_BUILD_FOR_GOOGLE3)
-    // Stack frame size is limited for SK_BUILD_FOR_GOOGLE3. 4k is less than the actual max, but some functions
-    // have multiple large stack allocations.
+    // Stack frame size is limited for SK_BUILD_FOR_GOOGLE3. 4k is less than the actual max,
+    // but some functions have multiple large stack allocations.
     static const int kMaxBytes = 4 * 1024;
     static const int kCount = kCountRequested * sizeof(T) > kMaxBytes
         ? kMaxBytes / sizeof(T)
@@ -229,29 +244,29 @@ private:
     static const int kCount = kCountRequested;
 #endif
 
-    int     fCount;
-    T*      fArray;
-    // since we come right after fArray, fStorage should be properly aligned
-    char    fStorage[kCount * sizeof(T)];
+    int fCount;
+    T* fArray;
+    alignas(T) char fStorage[kCount * sizeof(T)];
 };
 
+namespace skia_private {
 /** Manages an array of T elements, freeing the array in the destructor.
  *  Does NOT call any constructors/destructors on T (T must be POD).
  */
 template <typename T,
           typename = std::enable_if_t<std::is_trivially_default_constructible<T>::value &&
                                       std::is_trivially_destructible<T>::value>>
-class SkAutoTMalloc  {
+class AutoTMalloc  {
 public:
     /** Takes ownership of the ptr. The ptr must be a value which can be passed to sk_free. */
-    explicit SkAutoTMalloc(T* ptr = nullptr) : fPtr(ptr) {}
+    explicit AutoTMalloc(T* ptr = nullptr) : fPtr(ptr) {}
 
     /** Allocates space for 'count' Ts. */
-    explicit SkAutoTMalloc(size_t count)
+    explicit AutoTMalloc(size_t count)
         : fPtr(count ? (T*)sk_malloc_throw(count, sizeof(T)) : nullptr) {}
 
-    SkAutoTMalloc(SkAutoTMalloc&&) = default;
-    SkAutoTMalloc& operator=(SkAutoTMalloc&&) = default;
+    AutoTMalloc(AutoTMalloc&&) = default;
+    AutoTMalloc& operator=(AutoTMalloc&&) = default;
 
     /** Resize the memory area pointed to by the current ptr preserving contents. */
     void realloc(size_t count) {
@@ -293,11 +308,11 @@ template <size_t kCountRequested,
           typename T,
           typename = std::enable_if_t<std::is_trivially_default_constructible<T>::value &&
                                       std::is_trivially_destructible<T>::value>>
-class SkAutoSTMalloc {
+class AutoSTMalloc {
 public:
-    SkAutoSTMalloc() : fPtr(fTStorage) {}
+    AutoSTMalloc() : fPtr(fTStorage) {}
 
-    SkAutoSTMalloc(size_t count) {
+    AutoSTMalloc(size_t count) {
         if (count > kCount) {
             fPtr = (T*)sk_malloc_throw(count, sizeof(T));
         } else if (count) {
@@ -307,12 +322,12 @@ public:
         }
     }
 
-    SkAutoSTMalloc(SkAutoSTMalloc&&) = delete;
-    SkAutoSTMalloc(const SkAutoSTMalloc&) = delete;
-    SkAutoSTMalloc& operator=(SkAutoSTMalloc&&) = delete;
-    SkAutoSTMalloc& operator=(const SkAutoSTMalloc&) = delete;
+    AutoSTMalloc(AutoSTMalloc&&) = delete;
+    AutoSTMalloc(const AutoSTMalloc&) = delete;
+    AutoSTMalloc& operator=(AutoSTMalloc&&) = delete;
+    AutoSTMalloc& operator=(const AutoSTMalloc&) = delete;
 
-    ~SkAutoSTMalloc() {
+    ~AutoSTMalloc() {
         if (fPtr != fTStorage) {
             sk_free(fPtr);
         }
@@ -394,31 +409,13 @@ private:
     };
 };
 
+}  // namespace skia_private
+
+// TODO remove after all external client uses are removed.
+template <size_t size, typename T>
+using SkAutoSTMalloc = skia_private::AutoSTMalloc<size, T>;
+
 //////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <int N, typename T> class SkAlignedSTStorage {
-public:
-    SkAlignedSTStorage() {}
-    SkAlignedSTStorage(SkAlignedSTStorage&&) = delete;
-    SkAlignedSTStorage(const SkAlignedSTStorage&) = delete;
-    SkAlignedSTStorage& operator=(SkAlignedSTStorage&&) = delete;
-    SkAlignedSTStorage& operator=(const SkAlignedSTStorage&) = delete;
-
-    /**
-     * Returns void* because this object does not initialize the
-     * memory. Use placement new for types that require a constructor.
-     */
-    void* get() { return fStorage; }
-    const void* get() const { return fStorage; }
-
-    // Act as a container of bytes because the storage is uninitialized.
-    std::byte* data() { return fStorage; }
-    const std::byte* data() const { return fStorage; }
-    size_t size() const { return std::size(fStorage); }
-
-private:
-    alignas(T) std::byte fStorage[sizeof(T) * N];
-};
 
 using SkAutoFree = std::unique_ptr<void, SkOverloadedFunctionObject<void(void*), sk_free>>;
 
@@ -432,31 +429,5 @@ template<size_t N, typename C> constexpr auto SkMakeArray(C c)
 -> std::array<decltype(c(std::declval<typename std::index_sequence<N>::value_type>())), N> {
     return SkMakeArrayFromIndexSequence(c, std::make_index_sequence<N>{});
 }
-
-/**
- * Trait for identifying types which are relocatable via memcpy, for container optimizations.
- *
- */
-template<typename, typename = void>
-struct sk_has_trivially_relocatable_member : std::false_type {};
-
-// Types can declare themselves trivially relocatable with a public
-//    using sk_is_trivially_relocatable = std::true_type;
-template<typename T>
-struct sk_has_trivially_relocatable_member<T, std::void_t<typename T::sk_is_trivially_relocatable>>
-        : T::sk_is_trivially_relocatable {};
-
-// By default, all trivially copyable types are trivially relocatable.
-template <typename T>
-struct sk_is_trivially_relocatable
-        : std::disjunction<std::is_trivially_copyable<T>, sk_has_trivially_relocatable_member<T>>{};
-
-// Here be some dragons: while technically not guaranteed, we count on all sane unique_ptr
-// implementations to be trivially relocatable.
-template <typename T>
-struct sk_is_trivially_relocatable<std::unique_ptr<T>> : std::true_type {};
-
-template <typename T>
-inline constexpr bool sk_is_trivially_relocatable_v = sk_is_trivially_relocatable<T>::value;
 
 #endif
