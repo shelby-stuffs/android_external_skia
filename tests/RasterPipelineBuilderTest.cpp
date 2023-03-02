@@ -199,12 +199,13 @@ DEF_TEST(RasterPipelineBuilderPushPopTempImmediates, r) {
     builder.push_literal_i(999);                                          // push into 2
     builder.set_current_stack(0);
     builder.push_literal_f(13.5f);                                        // push into 0
-    builder.push_clone_from_stack(/*numSlots=*/1, /*otherStackIndex=*/1); // push into 1 from 2
+    builder.push_clone_from_stack(one_slot_at(0), /*otherStackID=*/1, /*offsetFromStackTop=*/1);
+                                                                          // push into 1 from 2
     builder.discard_stack();                                              // discard 2
     builder.push_literal_u(357);                                          // push into 2
     builder.set_current_stack(1);
-    builder.push_clone_from_stack(/*numSlots=*/1, /*otherStackIndex=*/0,
-                                  /*offsetFromStackTop=*/1);              // push into 3 from 0
+    builder.push_clone_from_stack(one_slot_at(0), /*otherStackID=*/0, /*offsetFromStackTop=*/1);
+                                                                          // push into 3 from 0
     builder.discard_stack(2);                                             // discard 2 and 3
     builder.set_current_stack(0);
     builder.discard_stack(2);                                             // discard 0 and 1
@@ -425,68 +426,74 @@ DEF_TEST(RasterPipelineBuilderBranches, r) {
 #if SK_HAS_MUSTTAIL
     // We have guaranteed tail-calling, and don't need to rewind the stack.
     static constexpr char kExpectationWithKnownExecutionMask[] =
-R"(    1. jump                           jump +8 (label 3 at #9)
-    2. label                          label 0x00000000
-    3. zero_slot_unmasked             v0 = 0
-    4. label                          label 0x00000001
-    5. zero_slot_unmasked             v1 = 0
-    6. label                          label 0x00000002
-    7. zero_slot_unmasked             v2 = 0
-    8. jump                           jump -6 (label 0 at #2)
-    9. label                          label 0x00000003
-   10. branch_if_no_active_lanes_eq   branch -4 (label 2 at #6) if no lanes of v2 == 0x00000000 (0.0)
-   11. branch_if_no_active_lanes_eq   branch -9 (label 0 at #2) if no lanes of v2 == 0x00000001 (1.401298e-45)
-)";
-    static constexpr char kExpectationWithExecutionMaskWrites[] =
 R"(    1. jump                           jump +9 (label 3 at #10)
     2. label                          label 0x00000000
     3. zero_slot_unmasked             v0 = 0
     4. label                          label 0x00000001
     5. zero_slot_unmasked             v1 = 0
-    6. branch_if_no_active_lanes      branch_if_no_active_lanes -2 (label 1 at #4)
+    6. jump                           jump -4 (label 0 at #2)
     7. label                          label 0x00000002
     8. zero_slot_unmasked             v2 = 0
-    9. branch_if_any_active_lanes     branch_if_any_active_lanes -7 (label 0 at #2)
+    9. jump                           jump -7 (label 0 at #2)
    10. label                          label 0x00000003
    11. branch_if_no_active_lanes_eq   branch -4 (label 2 at #7) if no lanes of v2 == 0x00000000 (0.0)
    12. branch_if_no_active_lanes_eq   branch -10 (label 0 at #2) if no lanes of v2 == 0x00000001 (1.401298e-45)
+)";
+    static constexpr char kExpectationWithExecutionMaskWrites[] =
+R"(    1. jump                           jump +10 (label 3 at #11)
+    2. label                          label 0x00000000
+    3. zero_slot_unmasked             v0 = 0
+    4. label                          label 0x00000001
+    5. zero_slot_unmasked             v1 = 0
+    6. branch_if_no_lanes_active      branch_if_no_lanes_active -2 (label 1 at #4)
+    7. branch_if_all_lanes_active     branch_if_all_lanes_active -5 (label 0 at #2)
+    8. label                          label 0x00000002
+    9. zero_slot_unmasked             v2 = 0
+   10. branch_if_any_lanes_active     branch_if_any_lanes_active -8 (label 0 at #2)
+   11. label                          label 0x00000003
+   12. branch_if_no_active_lanes_eq   branch -4 (label 2 at #8) if no lanes of v2 == 0x00000000 (0.0)
+   13. branch_if_no_active_lanes_eq   branch -11 (label 0 at #2) if no lanes of v2 == 0x00000001 (1.401298e-45)
 )";
 #else
     // We don't have guaranteed tail-calling, so we rewind the stack immediately before any backward
     // branches.
     static constexpr char kExpectationWithKnownExecutionMask[] =
-R"(    1. jump                           jump +9 (label 3 at #10)
-    2. label                          label 0x00000000
-    3. zero_slot_unmasked             v0 = 0
-    4. label                          label 0x00000001
-    5. zero_slot_unmasked             v1 = 0
-    6. label                          label 0x00000002
-    7. zero_slot_unmasked             v2 = 0
-    8. stack_rewind
-    9. jump                           jump -7 (label 0 at #2)
-   10. label                          label 0x00000003
-   11. stack_rewind
-   12. branch_if_no_active_lanes_eq   branch -6 (label 2 at #6) if no lanes of v2 == 0x00000000 (0.0)
-   13. stack_rewind
-   14. branch_if_no_active_lanes_eq   branch -12 (label 0 at #2) if no lanes of v2 == 0x00000001 (1.401298e-45)
-)";
-    static constexpr char kExpectationWithExecutionMaskWrites[] =
 R"(    1. jump                           jump +11 (label 3 at #12)
     2. label                          label 0x00000000
     3. zero_slot_unmasked             v0 = 0
     4. label                          label 0x00000001
     5. zero_slot_unmasked             v1 = 0
     6. stack_rewind
-    7. branch_if_no_active_lanes      branch_if_no_active_lanes -3 (label 1 at #4)
+    7. jump                           jump -5 (label 0 at #2)
     8. label                          label 0x00000002
     9. zero_slot_unmasked             v2 = 0
    10. stack_rewind
-   11. branch_if_any_active_lanes     branch_if_any_active_lanes -9 (label 0 at #2)
+   11. jump                           jump -9 (label 0 at #2)
    12. label                          label 0x00000003
    13. stack_rewind
    14. branch_if_no_active_lanes_eq   branch -6 (label 2 at #8) if no lanes of v2 == 0x00000000 (0.0)
    15. stack_rewind
    16. branch_if_no_active_lanes_eq   branch -14 (label 0 at #2) if no lanes of v2 == 0x00000001 (1.401298e-45)
+)";
+    static constexpr char kExpectationWithExecutionMaskWrites[] =
+R"(    1. jump                           jump +13 (label 3 at #14)
+    2. label                          label 0x00000000
+    3. zero_slot_unmasked             v0 = 0
+    4. label                          label 0x00000001
+    5. zero_slot_unmasked             v1 = 0
+    6. stack_rewind
+    7. branch_if_no_lanes_active      branch_if_no_lanes_active -3 (label 1 at #4)
+    8. stack_rewind
+    9. branch_if_all_lanes_active     branch_if_all_lanes_active -7 (label 0 at #2)
+   10. label                          label 0x00000002
+   11. zero_slot_unmasked             v2 = 0
+   12. stack_rewind
+   13. branch_if_any_lanes_active     branch_if_any_lanes_active -11 (label 0 at #2)
+   14. label                          label 0x00000003
+   15. stack_rewind
+   16. branch_if_no_active_lanes_eq   branch -6 (label 2 at #10) if no lanes of v2 == 0x00000000 (0.0)
+   17. stack_rewind
+   18. branch_if_no_active_lanes_eq   branch -16 (label 0 at #2) if no lanes of v2 == 0x00000001 (1.401298e-45)
 )";
 #endif
 
@@ -507,12 +514,13 @@ R"(    1. jump                           jump +11 (label 3 at #12)
         builder.zero_slots_unmasked(one_slot_at(0));
         builder.label(label2);
         builder.zero_slots_unmasked(one_slot_at(1));
-        builder.branch_if_no_active_lanes(label2);
-        builder.branch_if_no_active_lanes(label3);
+        builder.branch_if_no_lanes_active(label2);
+        builder.branch_if_no_lanes_active(label3);
+        builder.branch_if_all_lanes_active(label1);
         builder.label(label3);
         builder.zero_slots_unmasked(one_slot_at(2));
-        builder.branch_if_any_active_lanes(label1);
-        builder.branch_if_any_active_lanes(label1);
+        builder.branch_if_any_lanes_active(label1);
+        builder.branch_if_any_lanes_active(label1);
         builder.label(label4);
         builder.branch_if_no_active_lanes_on_stack_top_equal(0, label3);
         builder.branch_if_no_active_lanes_on_stack_top_equal(0, label2);

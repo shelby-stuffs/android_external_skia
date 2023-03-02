@@ -21,12 +21,12 @@
 #include "src/shaders/SkShaderBase.h"
 #include "src/shaders/SkTransformShader.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/effects/GrMatrixEffect.h"
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 #include "src/gpu/graphite/KeyHelpers.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #endif
@@ -81,7 +81,7 @@ SkShaderBase::MatrixRec::apply(skvm::Builder* p,
                      /*ctmApplied=*/true};
 }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 GrFPResult SkShaderBase::MatrixRec::apply(std::unique_ptr<GrFragmentProcessor> fp,
                                           const SkMatrix& postInv) const {
     // FP matrices work differently than SkRasterPipeline and SkVM. The starting coordinates
@@ -179,7 +179,7 @@ SkImage* SkShader::isAImage(SkMatrix* localMatrix, SkTileMode xy[2]) const {
     return as_SB(this)->onIsAImage(localMatrix, xy);
 }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 std::unique_ptr<GrFragmentProcessor>
 SkShaderBase::asRootFragmentProcessor(const GrFPArgs& args, const SkMatrix& ctm) const {
     return this->asFragmentProcessor(args, MatrixRec(ctm));
@@ -195,7 +195,7 @@ sk_sp<SkShader> SkShaderBase::makeAsALocalMatrixShader(SkMatrix*) const {
     return nullptr;
 }
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 // TODO: add implementations for derived classes
 void SkShaderBase::addToKey(const skgpu::graphite::KeyContext& keyContext,
                             skgpu::graphite::PaintParamsKeyBuilder* builder,
@@ -215,15 +215,12 @@ bool SkShaderBase::appendStages(const SkStageRec& rec, const MatrixRec& mRec) co
     // SkShader::Context::shadeSpan() handles the paint opacity internally,
     // but SkRasterPipelineBlitter applies it as a separate stage.
     // We skip the internal shadeSpan() step by forcing the paint opaque.
-    SkTCopyOnFirstWrite<SkPaint> opaquePaint(rec.fPaint);
-    if (rec.fPaint.getAlpha() != SK_AlphaOPAQUE) {
-        opaquePaint.writable()->setAlpha(SK_AlphaOPAQUE);
-    }
+    SkColor4f opaquePaintColor = rec.fPaintColor.makeOpaque();
 
     // We don't have a separate ctm and local matrix at this point. Just pass the combined matrix
     // as the CTM. TODO: thread the MatrixRec through the legacy context system.
     auto tm = mRec.totalMatrix();
-    ContextRec cr(*opaquePaint,
+    ContextRec cr(opaquePaintColor,
                   tm,
                   nullptr,
                   rec.fDstColorType,

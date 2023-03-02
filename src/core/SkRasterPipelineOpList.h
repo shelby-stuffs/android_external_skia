@@ -106,8 +106,8 @@
     M(load_loop_mask)      M(store_loop_mask)      M(mask_off_loop_mask)                      \
     M(reenable_loop_mask)  M(merge_loop_mask)      M(case_op)                                 \
     M(load_return_mask)    M(store_return_mask)    M(mask_off_return_mask)                    \
-    M(branch_if_any_active_lanes) M(branch_if_no_active_lanes)                                \
-    M(branch_if_no_active_lanes_eq)  M(jump)                                                  \
+    M(branch_if_all_lanes_active) M(branch_if_any_lanes_active) M(branch_if_no_lanes_active)  \
+    M(branch_if_no_active_lanes_eq) M(jump)                                                   \
     M(bitwise_and_n_ints)                                                                     \
     M(bitwise_and_int) M(bitwise_and_2_ints) M(bitwise_and_3_ints) M(bitwise_and_4_ints)      \
     M(bitwise_or_n_ints)                                                                      \
@@ -132,6 +132,7 @@
     M(copy_constant)    M(copy_2_constants)    M(copy_3_constants)    M(copy_4_constants)     \
     M(copy_slot_masked) M(copy_2_slots_masked) M(copy_3_slots_masked) M(copy_4_slots_masked)  \
     M(copy_from_indirect_unmasked) M(copy_from_indirect_uniform_unmasked)                     \
+    M(copy_to_indirect_masked)                                                                \
     M(copy_slot_unmasked)          M(copy_2_slots_unmasked)                                   \
     M(copy_3_slots_unmasked)       M(copy_4_slots_unmasked)                                   \
     M(zero_slot_unmasked)          M(zero_2_slots_unmasked)                                   \

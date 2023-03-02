@@ -128,6 +128,11 @@ namespace SK_OPTS_NS {
     template <typename T>
     SI T gather(const T* p, U32 ix) { return p[ix]; }
 
+    template <typename T>
+    SI void scatter_masked(T src, T* dst, U32 ix, I32 mask) {
+        dst[ix] = mask ? src : dst[ix];
+    }
+
     SI void load2(const uint16_t* ptr, size_t tail, U16* r, U16* g) {
         *r = ptr[0];
         *g = ptr[1];
@@ -244,6 +249,15 @@ namespace SK_OPTS_NS {
     SI V<T> gather(const T* p, U32 ix) {
         return {p[ix[0]], p[ix[1]], p[ix[2]], p[ix[3]]};
     }
+    template <typename V, typename S>
+    SI void scatter_masked(V src, S* dst, U32 ix, I32 mask) {
+        V before = gather(dst, ix);
+        V after = if_then_else(mask, src, before);
+        dst[ix[0]] = after[0];
+        dst[ix[1]] = after[1];
+        dst[ix[2]] = after[2];
+        dst[ix[3]] = after[3];
+    }
     SI void load2(const uint16_t* ptr, size_t tail, U16* r, U16* g) {
         uint16x4x2_t rg;
         if (__builtin_expect(tail,0)) {
@@ -357,13 +371,7 @@ namespace SK_OPTS_NS {
     using U16 = V<uint16_t>;
     using U8  = V<uint8_t >;
 
-    SI F mad(F f, F m, F a)  {
-    #if defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
-        return _mm256_fmadd_ps(f,m,a);
-    #else
-        return f*m+a;
-    #endif
-    }
+    SI F   mad(F f, F m, F a) { return _mm256_fmadd_ps(f, m, a); }
 
     SI F   min(F a, F b)     { return _mm256_min_ps(a,b);    }
     SI I32 min(I32 a, I32 b) { return _mm256_min_epi32(a,b); }
@@ -381,11 +389,7 @@ namespace SK_OPTS_NS {
     SI F   sqrt_ (F v)   { return _mm256_sqrt_ps (v);    }
     SI F rcp_precise (F v) {
         F e = rcp_fast(v);
-        #if defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
-            return _mm256_fnmadd_ps(v, e, _mm256_set1_ps(2.0f)) * e;
-        #else
-            return e * (2.0f - v * e);
-        #endif
+        return _mm256_fnmadd_ps(v, e, _mm256_set1_ps(2.0f)) * e;
     }
 
     SI U32 round (F v, F scale) { return _mm256_cvtps_epi32(v*scale); }
@@ -408,17 +412,28 @@ namespace SK_OPTS_NS {
         return { p[ix[0]], p[ix[1]], p[ix[2]], p[ix[3]],
                  p[ix[4]], p[ix[5]], p[ix[6]], p[ix[7]], };
     }
-    #if defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
-        SI F   gather(const float*    p, U32 ix) { return _mm256_i32gather_ps   (p, ix, 4); }
-        SI U32 gather(const uint32_t* p, U32 ix) { return _mm256_i32gather_epi32(p, ix, 4); }
-        SI U64 gather(const uint64_t* p, U32 ix) {
-            __m256i parts[] = {
-                _mm256_i32gather_epi64(p, _mm256_extracti128_si256(ix,0), 8),
-                _mm256_i32gather_epi64(p, _mm256_extracti128_si256(ix,1), 8),
-            };
-            return sk_bit_cast<U64>(parts);
-        }
-    #endif
+    SI F   gather(const float*    p, U32 ix) { return _mm256_i32gather_ps   (p, ix, 4); }
+    SI U32 gather(const uint32_t* p, U32 ix) { return _mm256_i32gather_epi32(p, ix, 4); }
+    SI U64 gather(const uint64_t* p, U32 ix) {
+        __m256i parts[] = {
+            _mm256_i32gather_epi64(p, _mm256_extracti128_si256(ix,0), 8),
+            _mm256_i32gather_epi64(p, _mm256_extracti128_si256(ix,1), 8),
+        };
+        return sk_bit_cast<U64>(parts);
+    }
+    template <typename V, typename S>
+    SI void scatter_masked(V src, S* dst, U32 ix, I32 mask) {
+        V before = gather(dst, ix);
+        V after = if_then_else(mask, src, before);
+        dst[ix[0]] = after[0];
+        dst[ix[1]] = after[1];
+        dst[ix[2]] = after[2];
+        dst[ix[3]] = after[3];
+        dst[ix[4]] = after[4];
+        dst[ix[5]] = after[5];
+        dst[ix[6]] = after[6];
+        dst[ix[7]] = after[7];
+    }
 
     SI void load2(const uint16_t* ptr, size_t tail, U16* r, U16* g) {
         U16 _0123, _4567;
@@ -795,7 +810,15 @@ template <typename T> using V = T __attribute__((ext_vector_type(4)));
     SI V<T> gather(const T* p, U32 ix) {
         return {p[ix[0]], p[ix[1]], p[ix[2]], p[ix[3]]};
     }
-
+    template <typename V, typename S>
+    SI void scatter_masked(V src, S* dst, U32 ix, I32 mask) {
+        V before = gather(dst, ix);
+        V after = if_then_else(mask, src, before);
+        dst[ix[0]] = after[0];
+        dst[ix[1]] = after[1];
+        dst[ix[2]] = after[2];
+        dst[ix[3]] = after[3];
+    }
     SI void load2(const uint16_t* ptr, size_t tail, U16* r, U16* g) {
         __m128i _01;
         if (__builtin_expect(tail,0)) {
@@ -3312,11 +3335,21 @@ STAGE_TAIL(mask_off_return_mask, NoCtx) {
     update_execution_mask();
 }
 
-STAGE_BRANCH(branch_if_any_active_lanes, SkRasterPipeline_BranchCtx* ctx) {
+STAGE_BRANCH(branch_if_all_lanes_active, SkRasterPipeline_BranchCtx* ctx) {
+    if (tail) {
+        uint32_t iota[] = {0,1,2,3,4,5,6,7};
+        I32 tailLanes = cond_to_mask(tail <= sk_unaligned_load<U32>(iota));
+        return all(execution_mask() | tailLanes) ? ctx->offset : 1;
+    } else {
+        return all(execution_mask()) ? ctx->offset : 1;
+    }
+}
+
+STAGE_BRANCH(branch_if_any_lanes_active, SkRasterPipeline_BranchCtx* ctx) {
     return any(execution_mask()) ? ctx->offset : 1;
 }
 
-STAGE_BRANCH(branch_if_no_active_lanes, SkRasterPipeline_BranchCtx* ctx) {
+STAGE_BRANCH(branch_if_no_lanes_active, SkRasterPipeline_BranchCtx* ctx) {
     return any(execution_mask()) ? 1 : ctx->offset;
 }
 
@@ -3526,6 +3559,30 @@ STAGE_TAIL(copy_from_indirect_uniform_unmasked, SkRasterPipeline_CopyIndirectCtx
         dst += 1;
         src += 1;
     } while (dst != end);
+}
+
+STAGE_TAIL(copy_to_indirect_masked, SkRasterPipeline_CopyIndirectCtx* ctx) {
+    // Clamp the indirect offsets to stay within the limit.
+    U32 offsets = *(U32*)ctx->indirectOffset;
+    offsets = min(offsets, ctx->indirectLimit);
+
+    // Scale up the offsets to account for the N lanes per value.
+    offsets *= N;
+
+    // Adjust the offsets forward so that they store into the correct lane.
+    static constexpr uint32_t iota[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+    offsets += sk_unaligned_load<I32>(iota);
+
+    // Perform indirect, masked writes into `dst`.
+    const F* src = (F*)ctx->src;
+    const F* end = src + ctx->slots;
+    float*   dst = ctx->dst;
+    I32      mask = execution_mask();
+    do {
+        scatter_masked(*src, dst, offsets, mask);
+        dst += N;
+        src += 1;
+    } while (src != end);
 }
 
 // Unary operations take a single input, and overwrite it with their output.
@@ -4661,7 +4718,7 @@ SI void store(T* ptr, size_t tail, V v) {
 // ~~~~~~ 32-bit memory loads and stores ~~~~~~ //
 
 SI void from_8888(U32 rgba, U16* r, U16* g, U16* b, U16* a) {
-#if 1 && defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+#if defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
     // Swap the middle 128-bit lanes to make _mm256_packus_epi32() in cast_U16() work out nicely.
     __m256i _01,_23;
     split(rgba, &_01, &_23);

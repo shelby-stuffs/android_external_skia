@@ -8,6 +8,7 @@
 #ifndef SkShaderBase_DEFINED
 #define SkShaderBase_DEFINED
 
+#include "include/core/SkColor.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkSamplingOptions.h"
@@ -18,6 +19,8 @@
 #include "src/core/SkEffectPriv.h"
 #include "src/core/SkMask.h"
 #include "src/core/SkVM_fwd.h"
+
+#include <tuple>
 
 class GrFragmentProcessor;
 struct GrFPArgs;
@@ -37,7 +40,7 @@ class PaintParamsKeyBuilder;
 class PipelineDataGatherer;
 }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 using GrFPResult = std::tuple<bool /*success*/, std::unique_ptr<GrFragmentProcessor>>;
 #endif
 
@@ -129,15 +132,14 @@ public:
      *  ContextRec acts as a parameter bundle for creating Contexts.
      */
     struct ContextRec {
-        ContextRec(const SkPaint& paint, const SkMatrix& matrix, const SkMatrix* localM,
+        ContextRec(const SkColor4f& paintColor, const SkMatrix& matrix, const SkMatrix* localM,
                    SkColorType dstColorType, SkColorSpace* dstColorSpace, SkSurfaceProps props)
             : fMatrix(&matrix)
             , fLocalMatrix(localM)
             , fDstColorType(dstColorType)
             , fDstColorSpace(dstColorSpace)
             , fProps(props) {
-                fPaintAlpha = paint.getAlpha();
-                fPaintDither = paint.isDither();
+                fPaintAlpha = SkColorGetA(paintColor.toSkColor());
             }
 
         const SkMatrix* fMatrix;           // the current matrix in the canvas
@@ -146,7 +148,6 @@ public:
         SkColorSpace*   fDstColorSpace;    // the color space of the dest surface (if any)
         SkSurfaceProps  fProps;            // props of the dest surface
         SkAlpha         fPaintAlpha;
-        bool            fPaintDither;
 
         bool isLegacyCompatible(SkColorSpace* shadersColorSpace) const;
     };
@@ -238,7 +239,7 @@ public:
                                                              skvm::Uniforms*,
                                                              const SkMatrix& postInv = {}) const;
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
         /**
          * Produces an FP that muls its input coords by the inverse of the pending matrix and then
          * samples the passed FP with those coordinates. 'postInv' is an additional matrix to
@@ -330,7 +331,7 @@ public:
      */
     Context* makeContext(const ContextRec&, SkArenaAlloc*) const;
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     /**
      * Call on the root SkShader to produce a GrFragmentProcessor.
      *
@@ -427,7 +428,7 @@ public:
                                 skvm::Uniforms*,
                                 SkArenaAlloc*) const = 0;
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
     /**
         Add implementation details, for the specified backend, of this SkShader to the
         provided key.

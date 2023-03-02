@@ -37,7 +37,7 @@
 #include "src/image/SkRescaleAndReadPixels.h"
 #include "src/shaders/SkImageShader.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
@@ -59,7 +59,7 @@
 enum class GrColorType;
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 #include "src/gpu/graphite/Image_Graphite.h"
 #include "src/gpu/graphite/Log.h"
 #endif
@@ -224,23 +224,34 @@ sk_sp<SkShader> SkImage::makeRawShader(SkTileMode tmx, SkTileMode tmy,
                                   sampling, localMatrix);
 }
 
-sk_sp<SkData> SkImage::encodeToData(SkEncodedImageFormat type, int quality) const {
-    // Context TODO: Elevate GrDirectContext requirement to public API.
-    auto dContext = as_IB(this)->directContext();
+sk_sp<SkData> SkImage::encodeToData(GrDirectContext* context, SkEncodedImageFormat type,
+                                    int quality) const {
     SkBitmap bm;
-    if (as_IB(this)->getROPixels(dContext, &bm)) {
+    if (as_IB(this)->getROPixels(context, &bm)) {
         return SkEncodeBitmap(bm, type, quality);
     }
     return nullptr;
 }
 
-sk_sp<SkData> SkImage::encodeToData() const {
+sk_sp<SkData> SkImage::encodeToData(GrDirectContext* context) const {
     if (auto encoded = this->refEncodedData()) {
         return encoded;
     }
 
-    return this->encodeToData(SkEncodedImageFormat::kPNG, 100);
+    return this->encodeToData(context, SkEncodedImageFormat::kPNG, 100);
 }
+
+#ifndef SK_IMAGE_READ_PIXELS_DISABLE_LEGACY_API
+sk_sp<SkData> SkImage::encodeToData(SkEncodedImageFormat type, int quality) const {
+    auto dContext = as_IB(this)->directContext();
+    return this->encodeToData(dContext, type, quality);
+}
+
+sk_sp<SkData> SkImage::encodeToData() const {
+    auto dContext = as_IB(this)->directContext();
+    return this->encodeToData(dContext);
+}
+#endif
 
 sk_sp<SkData> SkImage::refEncodedData() const {
     return sk_sp<SkData>(as_IB(this)->onRefEncoded());
@@ -267,7 +278,7 @@ sk_sp<SkImage> SkImage::makeSubset(const SkIRect& subset, GrDirectContext* direc
         return nullptr;
     }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     auto myContext = as_IB(this)->context();
     // This check is also performed in the subclass, but we do it here for the short-circuit below.
     if (myContext && !myContext->priv().matches(direct)) {
@@ -283,7 +294,7 @@ sk_sp<SkImage> SkImage::makeSubset(const SkIRect& subset, GrDirectContext* direc
     return as_IB(this)->onMakeSubset(subset, direct);
 }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 
 bool SkImage::isTextureBacked() const {
     return as_IB(this)->isGaneshBacked() || as_IB(this)->isGraphiteBacked();
@@ -376,7 +387,7 @@ void SkImage_Base::onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace,
     callback(context, nullptr);
 }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 std::tuple<GrSurfaceProxyView, GrColorType> SkImage_Base::asView(GrRecordingContext* context,
                                                                  GrMipmapped mipmapped,
                                                                  GrImageTexGenPolicy policy) const {
@@ -548,9 +559,9 @@ GrSurfaceProxyView SkImage_Base::CopyView(GrRecordingContext* context,
                                     /*label=*/label);
 }
 
-#endif // SK_SUPPORT_GPU
+#endif // defined(SK_GANESH)
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 std::tuple<skgpu::graphite::TextureProxyView, SkColorType> SkImage_Base::asView(
         skgpu::graphite::Recorder* recorder,
         skgpu::Mipmapped mipmapped) const {
@@ -559,6 +570,10 @@ std::tuple<skgpu::graphite::TextureProxyView, SkColorType> SkImage_Base::asView(
     }
 
     if (!as_IB(this)->isGraphiteBacked()) {
+        return {};
+    }
+    // TODO(b/238756380): YUVA not supported yet
+    if (as_IB(this)->isYUVA()) {
         return {};
     }
 
@@ -609,10 +624,10 @@ sk_sp<SkImage> SkImage::makeColorTypeAndColorSpace(SkColorType targetColorType,
                                                      requiredProps);
 }
 
-#endif // SK_GRAPHITE_ENABLED
+#endif // SK_GRAPHITE
 
 GrDirectContext* SkImage_Base::directContext() const {
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     return GrAsDirectContext(this->context());
 #else
     return nullptr;
@@ -689,7 +704,7 @@ sk_sp<SkImage> SkImage::makeWithFilter(GrRecordingContext* rContext, const SkIma
         return nullptr;
     }
     sk_sp<SkSpecialImage> srcSpecialImage;
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     auto myContext = as_IB(this)->context();
     if (myContext && !myContext->priv().matches(rContext)) {
         return nullptr;
@@ -762,7 +777,7 @@ sk_sp<SkImage> SkImage::makeColorTypeAndColorSpace(SkColorType targetColorType,
         return nullptr;
     }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     auto myContext = as_IB(this)->context();
     // This check is also performed in the subclass, but we do it here for the short-circuit below.
     if (myContext && !myContext->priv().matches(dContext)) {

@@ -502,7 +502,7 @@ DEF_TEST(SkRasterPipeline_CopyFromIndirectUniformUnmasked, r) {
     alignas(64) const uint32_t kOffsets1[8] = {0, 0, 0, 0, 0, 0, 0, 0};
     alignas(64) const uint32_t kOffsets2[8] = {2, 2, 2, 2, 2, 2, 2, 2};
     alignas(64) const uint32_t kOffsets3[8] = {0, 2, 0, 2, 0, 2, 0, 2};
-    alignas(64) const uint32_t kOffsets4[8] = {99, 99, 0, 0, 99, 99, 0, 0};
+    alignas(64) const uint32_t kOffsets4[8] = {99, ~99u, 0, 0, ~99u, 99, 0, 0};
 
     const int N = SkOpts::raster_pipeline_highp_stride;
 
@@ -530,13 +530,12 @@ DEF_TEST(SkRasterPipeline_CopyFromIndirectUniformUnmasked, r) {
             // matter; indexing off the end of the buffer is UB, and we don't make any promises
             // about the values you get. If we didn't crash, that's success. (In practice, we
             // will have clamped the source pointer so that we don't read past the end.)
-            int maxOffset = *std::max_element(offsets, offsets + N);
+            uint32_t maxOffset = *std::max_element(offsets, offsets + N);
             if (copySize + maxOffset > 5) {
                 continue;
             }
 
-            // Verify that the destination has been overwritten in the mask-on fields, and has
-            // not been overwritten in the mask-off fields, for each destination slot.
+            // Verify that the destination has been overwritten in each slot.
             float expectedUnchanged = 0.0f;
             float expectedFromZero = src[0], expectedFromTwo = src[2];
             float* destPtr = dst;
@@ -563,6 +562,93 @@ DEF_TEST(SkRasterPipeline_CopyFromIndirectUniformUnmasked, r) {
         }
     }
 }
+
+DEF_TEST(SkRasterPipeline_CopyToIndirectMasked, r) {
+    // Allocate space for 5 source slots, and 5 dest slots.
+    alignas(64) float src[5 * SkRasterPipeline_kMaxStride_highp];
+    alignas(64) float dst[5 * SkRasterPipeline_kMaxStride_highp];
+
+    // Test with various mixes of indirect offsets.
+    static_assert(SkRasterPipeline_kMaxStride_highp == 8);
+    alignas(64) const uint32_t kOffsets1[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    alignas(64) const uint32_t kOffsets2[8] = {2, 2, 2, 2, 2, 2, 2, 2};
+    alignas(64) const uint32_t kOffsets3[8] = {0, 2, 0, 2, 0, 2, 0, 2};
+    alignas(64) const uint32_t kOffsets4[8] = {99, ~99u, 0, 0, ~99u, 99, 0, 0};
+
+    // Test with various masks.
+    alignas(64) const int32_t kMask1[8]  = {~0, ~0, ~0, ~0, ~0,  0, ~0, ~0};
+    alignas(64) const int32_t kMask2[8]  = {~0,  0, ~0, ~0,  0,  0,  0, ~0};
+    alignas(64) const int32_t kMask3[8]  = {~0, ~0,  0, ~0,  0,  0, ~0, ~0};
+    alignas(64) const int32_t kMask4[8]  = { 0,  0,  0,  0,  0,  0,  0,  0};
+
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    for (const int32_t* mask : {kMask1, kMask2, kMask3, kMask4}) {
+        for (const uint32_t* offsets : {kOffsets1, kOffsets2, kOffsets3, kOffsets4}) {
+            for (int copySize = 1; copySize <= 5; ++copySize) {
+                // Initialize the destination slots to 0,1,2.. and the source slots to
+                // 1000,1001,1002...
+                std::iota(&dst[0], &dst[5 * N], 0.0f);
+                std::iota(&src[0], &src[5 * N], 1000.0f);
+
+                // Run `copy_to_indirect_masked` over our data.
+                SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+                SkRasterPipeline p(&alloc);
+                auto* ctx = alloc.make<SkRasterPipeline_CopyIndirectCtx>();
+                ctx->dst = &dst[0];
+                ctx->src = &src[0];
+                ctx->indirectOffset = offsets;
+                ctx->indirectLimit = 5 - copySize;
+                ctx->slots = copySize;
+
+                p.append(SkRasterPipelineOp::init_lane_masks);
+                p.append(SkRasterPipelineOp::load_condition_mask, mask);
+                p.append(SkRasterPipelineOp::copy_to_indirect_masked, ctx);
+                p.run(0,0,N,1);
+
+                // If the offset plus copy-size would overflow the destination, the results don't
+                // matter; indexing off the end of the buffer is UB, and we don't make any promises
+                // about the values you get. If we didn't crash, that's success. (In practice, we
+                // will have clamped the destination pointer so that we don't read past the end.)
+                uint32_t maxOffset = *std::max_element(offsets, offsets + N);
+                if (copySize + maxOffset > 5) {
+                    continue;
+                }
+
+                // Verify that the destination has been overwritten in the mask-on fields, and has
+                // not been overwritten in the mask-off fields, for each destination slot.
+                float expectedUnchanged = 0.0f;
+                float expectedFromZero = src[0], expectedFromTwo = src[0] - (2 * N);
+                float* destPtr = dst;
+                int pos = 0;
+                for (int checkSlot = 0; checkSlot < 5; ++checkSlot) {
+                    for (int checkLane = 0; checkLane < N; ++checkLane) {
+                        int rangeStart = offsets[checkLane] * N;
+                        int rangeEnd   = (offsets[checkLane] + copySize) * N;
+                        if (mask[checkLane] && pos >= rangeStart && pos < rangeEnd) {
+                            if (offsets[checkLane] == 0) {
+                                REPORTER_ASSERT(r, *destPtr == expectedFromZero);
+                            } else if (offsets[checkLane] == 2) {
+                                REPORTER_ASSERT(r, *destPtr == expectedFromTwo);
+                            } else {
+                                ERRORF(r, "unexpected offset value");
+                            }
+                        } else {
+                            REPORTER_ASSERT(r, *destPtr == expectedUnchanged);
+                        }
+
+                        ++pos;
+                        ++destPtr;
+                        expectedUnchanged += 1.0f;
+                        expectedFromZero += 1.0f;
+                        expectedFromTwo += 1.0f;
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 DEF_TEST(SkRasterPipeline_CopySlotsMasked, r) {
     // Allocate space for 5 source slots and 5 dest slots.
@@ -1723,7 +1809,52 @@ DEF_TEST(SkRasterPipeline_Jump, r) {
     }
 }
 
-DEF_TEST(SkRasterPipeline_BranchIfAnyActiveLanes, r) {
+DEF_TEST(SkRasterPipeline_BranchIfAllLanesActive, r) {
+    // Allocate space for 4 slots.
+    alignas(64) float slots[4 * SkRasterPipeline_kMaxStride_highp] = {};
+    const int N = SkOpts::raster_pipeline_highp_stride;
+
+    alignas(64) static constexpr float kTransparentHyperRed[4] = {2.0f, 0.0f, 0.0f, 0.5f};
+    alignas(64) static constexpr float kColorRed[4]            = {1.0f, 0.0f, 0.0f, 1.0f};
+    SkRasterPipeline_BranchCtx ctx;
+    ctx.offset = 2;
+
+    // An array of all zeros.
+    alignas(64) static constexpr int32_t kNoLanesActive[4 * SkRasterPipeline_kMaxStride_highp] = {};
+
+    // An array of all zeros, except for a single ~0 in the second dA slot.
+    alignas(64) int32_t oneLaneActive[4 * SkRasterPipeline_kMaxStride_highp] = {};
+    oneLaneActive[3*N + 1] = ~0;
+
+    // Make a program which conditionally branches past two append_constant_color ops.
+    for (int lanes = 1; lanes <= N; ++lanes) {
+        SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
+        SkRasterPipeline p(&alloc);
+        p.append(SkRasterPipelineOp::init_lane_masks);                 // execution mask all-on
+        p.append_constant_color(&alloc, kTransparentHyperRed);         // set the color to hyper-red
+        p.append(SkRasterPipelineOp::branch_if_all_lanes_active, &ctx);// skip past next line
+        p.append(SkRasterPipelineOp::swap_rb);                         // (not executed)
+        p.append(SkRasterPipelineOp::load_dst, oneLaneActive);         // set one lane active
+        p.append(SkRasterPipelineOp::branch_if_all_lanes_active, &ctx);// do not skip past next line
+        p.append(SkRasterPipelineOp::force_opaque);                    // set alpha to 1
+        p.append(SkRasterPipelineOp::load_dst, kNoLanesActive);        // set no lanes active
+        p.append(SkRasterPipelineOp::branch_if_all_lanes_active, &ctx);// do not skip past next line
+        p.append(SkRasterPipelineOp::clamp_x_1);                       // clamp red to 1
+        p.append(SkRasterPipelineOp::store_src, slots);                // store final color
+        p.run(0,0,lanes,1);
+
+        // Verify that the slots contain green.
+        float* destPtr = &slots[0];
+        for (int checkSlot = 0; checkSlot < 4; ++checkSlot) {
+            for (int checkLane = 0; checkLane < N; ++checkLane) {
+                REPORTER_ASSERT(r, *destPtr == kColorRed[checkSlot]);
+                ++destPtr;
+            }
+        }
+    }
+}
+
+DEF_TEST(SkRasterPipeline_BranchIfAnyLanesActive, r) {
     // Allocate space for 4 slots.
     alignas(64) float slots[4 * SkRasterPipeline_kMaxStride_highp] = {};
     const int N = SkOpts::raster_pipeline_highp_stride;
@@ -1745,16 +1876,16 @@ DEF_TEST(SkRasterPipeline_BranchIfAnyActiveLanes, r) {
     SkRasterPipeline p(&alloc);
     p.append_constant_color(&alloc, kColorDarkRed);                    // set the color to dark red
     p.append(SkRasterPipelineOp::load_dst, kNoLanesActive);            // make no lanes active
-    p.append(SkRasterPipelineOp::branch_if_any_active_lanes, &ctx);    // do not skip past next line
+    p.append(SkRasterPipelineOp::branch_if_any_lanes_active, &ctx);    // do not skip past next line
     p.append_constant_color(&alloc, kColorGreen);                      // set the color to green
     p.append(SkRasterPipelineOp::load_dst, oneLaneActive);             // set one lane active
-    p.append(SkRasterPipelineOp::branch_if_any_active_lanes, &ctx);    // skip past next line
+    p.append(SkRasterPipelineOp::branch_if_any_lanes_active, &ctx);    // skip past next line
     p.append_constant_color(&alloc, kColorDarkRed);                    // (not executed)
     p.append(SkRasterPipelineOp::init_lane_masks);                     // set all lanes active
-    p.append(SkRasterPipelineOp::branch_if_any_active_lanes, &ctx);    // skip past next line
+    p.append(SkRasterPipelineOp::branch_if_any_lanes_active, &ctx);    // skip past next line
     p.append_constant_color(&alloc, kColorDarkRed);                    // (not executed)
     p.append(SkRasterPipelineOp::store_src, slots);                    // store final color
-    p.run(0,0,1,1);
+    p.run(0,0,N,1);
 
     // Verify that the slots contain green.
     float* destPtr = &slots[0];
@@ -1766,7 +1897,7 @@ DEF_TEST(SkRasterPipeline_BranchIfAnyActiveLanes, r) {
     }
 }
 
-DEF_TEST(SkRasterPipeline_BranchIfNoActiveLanes, r) {
+DEF_TEST(SkRasterPipeline_BranchIfNoLanesActive, r) {
     // Allocate space for 4 slots.
     alignas(64) float slots[4 * SkRasterPipeline_kMaxStride_highp] = {};
     const int N = SkOpts::raster_pipeline_highp_stride;
@@ -1789,16 +1920,16 @@ DEF_TEST(SkRasterPipeline_BranchIfNoActiveLanes, r) {
     SkRasterPipeline p(&alloc);
     p.append_constant_color(&alloc, kColorBlack);                      // set the color to black
     p.append(SkRasterPipelineOp::init_lane_masks);                     // set all lanes active
-    p.append(SkRasterPipelineOp::branch_if_no_active_lanes, &ctx);     // do not skip past next line
+    p.append(SkRasterPipelineOp::branch_if_no_lanes_active, &ctx);     // do not skip past next line
     p.append_constant_color(&alloc, kColorRed);                        // sets the color to red
     p.append(SkRasterPipelineOp::load_dst, oneLaneActive);             // set one lane active
-    p.append(SkRasterPipelineOp::branch_if_no_active_lanes, &ctx);     // do not skip past next line
+    p.append(SkRasterPipelineOp::branch_if_no_lanes_active, &ctx);     // do not skip past next line
     p.append(SkRasterPipelineOp::swap_rb);                             // swap R and B (making blue)
     p.append(SkRasterPipelineOp::load_dst, kNoLanesActive);            // make no lanes active
-    p.append(SkRasterPipelineOp::branch_if_no_active_lanes, &ctx);     // skip past next line
+    p.append(SkRasterPipelineOp::branch_if_no_lanes_active, &ctx);     // skip past next line
     p.append_constant_color(&alloc, kColorBlack);                      // (not executed)
     p.append(SkRasterPipelineOp::store_src, slots);                    // store final blue color
-    p.run(0,0,1,1);
+    p.run(0,0,N,1);
 
     // Verify that the slots contain blue.
     float* destPtr = &slots[0];
