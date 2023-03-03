@@ -670,10 +670,10 @@ public:
 
         if (swizzle.empty()) {
             if (dynamicOffset) {
-                // TODO: implement indirect store
-                return unsupported();
+                gen->builder()->copy_stack_to_slots_indirect(fixedOffset, dynamicOffset->stackID(),
+                                                             this->fixedSlotRange(gen));
             } else {
-                gen->builder()->copy_stack_to_slots(fixedOffset, fixedOffset.count);
+                gen->builder()->copy_stack_to_slots(fixedOffset);
             }
         } else {
             if (dynamicOffset) {
@@ -2569,6 +2569,15 @@ bool Generator::pushIntrinsic(IntrinsicKind intrinsic, const Expression& arg0) {
                 return unsupported();
             }
             fBuilder.transpose(arg0.type().columns(), arg0.type().rows());
+            return true;
+
+        case IntrinsicKind::k_trunc_IntrinsicKind:
+            // Implement trunc as `float(int(x))`, since float-to-int rounds toward zero.
+            if (!this->pushExpression(arg0)) {
+                return unsupported();
+            }
+            fBuilder.unary_op(BuilderOp::cast_to_int_from_float, arg0.type().slotCount());
+            fBuilder.unary_op(BuilderOp::cast_to_float_from_int, arg0.type().slotCount());
             return true;
 
         case IntrinsicKind::k_fromLinearSrgb_IntrinsicKind:
