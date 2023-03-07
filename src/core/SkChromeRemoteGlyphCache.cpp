@@ -48,6 +48,9 @@ using namespace sktext;
 using namespace sktext::gpu;
 using namespace skglyph;
 
+// TODO: remove when new serialization code is done.
+#define SK_SUPPORT_LEGACY_STRIKE_SERIALIZATION
+
 namespace {
 // -- Serializer -----------------------------------------------------------------------------------
 size_t pad(size_t size, size_t alignment) { return (size + (alignment - 1)) & ~(alignment - 1); }
@@ -504,6 +507,7 @@ sk_sp<SkData> SkStrikeServerImpl::serializeTypeface(SkTypeface* tf) {
     return *data;
 }
 
+#if defined(SK_SUPPORT_LEGACY_STRIKE_SERIALIZATION)
 void SkStrikeServerImpl::writeStrikeData(std::vector<uint8_t>* memory) {
     #if defined(SK_TRACE_GLYPH_RUN_PROCESS)
         SkString msg;
@@ -553,6 +557,10 @@ void SkStrikeServerImpl::writeStrikeData(std::vector<uint8_t>* memory) {
         SkDebugf("%s\n", msg.c_str());
     #endif
 }
+#else
+// New serialization code here.
+void SkStrikeServerImpl::writeStrikeData(std::vector<uint8_t>* memory) {}
+#endif  // defined(SK_SUPPORT_LEGACY_STRIKE_SERIALIZATION)
 
 sk_sp<StrikeForGPU> SkStrikeServerImpl::findOrCreateScopedStrike(
         const SkStrikeSpec& strikeSpec) {
@@ -690,33 +698,6 @@ protected:
         SkMatrix positionMatrix = this->localToDevice();
         positionMatrix.preTranslate(glyphRunList.origin().x(), glyphRunList.origin().y());
 
-#ifdef SK_SUPPORT_LEGACY_SLUG_CONVERT
-        // TODO these two passes can be converted into one when the SkRemoteGlyphCache's strike
-        //  cache is fortified with enough information for supporting slug creation.
-
-        // Use the lightweight strike cache provided by SkRemoteGlyphCache through fPainter to do
-        // the analysis. Just ignore the resulting SubRunContainer. Since we're passing in a null
-        // SubRunAllocator no SubRuns will be produced.
-        STSubRunAllocator<sizeof(SubRunContainer), alignof(SubRunContainer)> tempAlloc;
-        auto container = SubRunContainer::MakeInAlloc(glyphRunList,
-                                                      positionMatrix,
-                                                      drawingPaint,
-                                                      this->strikeDeviceInfo(),
-                                                      fStrikeServerImpl,
-                                                      &tempAlloc,
-                                                      SubRunContainer::kStrikeCalculationsOnly,
-                                                      "Convert Slug Analysis");
-        // Calculations only. No SubRuns.
-        SkASSERT(container->isEmpty());
-
-        // Use the glyph strike cache to get actual glyph information.
-        return skgpu::v1::MakeSlug(this->localToDevice(),
-                                   glyphRunList,
-                                   initialPaint,
-                                   drawingPaint,
-                                   this->strikeDeviceInfo(),
-                                   SkStrikeCache::GlobalStrikeCache());
-#else
         // Use the SkStrikeServer's strike cache to generate the Slug.
         return skgpu::v1::MakeSlug(this->localToDevice(),
                                    glyphRunList,
@@ -724,7 +705,6 @@ protected:
                                    drawingPaint,
                                    this->strikeDeviceInfo(),
                                    fStrikeServerImpl);
-#endif
     }
 
 private:
@@ -875,6 +855,7 @@ bool SkStrikeClientImpl::ReadGlyph(SkTLazy<SkGlyph>& glyph, Deserializer* deseri
         return false;                                                       \
     }
 
+#if defined(SK_SUPPORT_LEGACY_STRIKE_SERIALIZATION)
 bool SkStrikeClientImpl::readStrikeData(const volatile void* memory, size_t memorySize) {
     SkASSERT(memorySize != 0u);
     Deserializer deserializer(static_cast<const volatile char*>(memory), memorySize);
@@ -1023,6 +1004,11 @@ bool SkStrikeClientImpl::readStrikeData(const volatile void* memory, size_t memo
 
     return true;
 }
+#else
+bool SkStrikeClientImpl::readStrikeData(const volatile void* memory, size_t memorySize) {
+    return false;
+}
+#endif  // defined(SK_SUPPORT_LEGACY_STRIKE_SERIALIZATION)
 
 bool SkStrikeClientImpl::translateTypefaceID(SkAutoDescriptor* toChange) const {
     SkDescriptor& descriptor = *toChange->getDesc();
