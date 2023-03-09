@@ -125,6 +125,8 @@
 // its reciprocal is provided in sk_FragCoord.w.
 namespace skgpu::graphite {
 
+using AAFlags = EdgeAAQuad::Flags;
+
 static skvx::float4 load_x_radii(const SkRRect& rrect) {
     return skvx::float4{rrect.radii(SkRRect::kUpperLeft_Corner).fX,
                         rrect.radii(SkRRect::kUpperRight_Corner).fX,
@@ -225,7 +227,7 @@ static float local_aa_radius(const Transform& t, const Rect& bounds) {
     }
 }
 
-static bool insets_intersect(const SkRRect& rrect, float strokeRadius, float aaRadius) {
+static bool opposite_insets_intersect(const SkRRect& rrect, float strokeRadius, float aaRadius) {
     // One AA inset per side
     const float maxInset = strokeRadius + 2.f * aaRadius;
     return // Horizontal insets would intersect opposite corner's curve
@@ -240,13 +242,33 @@ static bool insets_intersect(const SkRRect& rrect, float strokeRadius, float aaR
            maxInset >= rrect.height() - rrect.radii(SkRRect::kUpperRight_Corner).fY;
 }
 
-static bool insets_intersect(const Shape& shape, float strokeRadius, float aaRadius) {
-    // TODO: if (shape.isQuad()) { return true; } // for simplicity assume arbitrary quads intersect
-    if (shape.isRect()) {
-        return any(shape.rect().size() <= 2.f * (strokeRadius + aaRadius));
+static bool opposite_insets_intersect(const Geometry& geometry,
+                                      float strokeRadius,
+                                      float aaRadius) {
+    if (geometry.isEdgeAAQuad()) {
+        SkASSERT(strokeRadius == 0.f);
+        const EdgeAAQuad& quad = geometry.edgeAAQuad();
+        if (quad.edgeFlags() == AAFlags::kNone) {
+            // If all edges are non-AA, there won't be any insetting.
+            return false;
+        } else if (quad.isRect()) {
+            auto inset = skvx::float2(quad.edgeFlags() & AAFlags::kLeft   ? aaRadius : 0.f,
+                                      quad.edgeFlags() & AAFlags::kTop    ? aaRadius : 0.f) +
+                         skvx::float2(quad.edgeFlags() & AAFlags::kRight  ? aaRadius : 0.f,
+                                      quad.edgeFlags() & AAFlags::kBottom ? aaRadius : 0.f);
+            return any(quad.bounds().size() <= inset);
+        } else {
+            // For simplicity an arbitrary quadrilateral with any AA assumes the insets intersect.
+            return true;
+        }
     } else {
-        SkASSERT(shape.isRRect());
-        return insets_intersect(shape.rrect(), strokeRadius, aaRadius);
+        const Shape& shape = geometry.shape();
+        if (shape.isRect()) {
+            return any(shape.rect().size() <= 2.f * (strokeRadius + aaRadius));
+        } else {
+            SkASSERT(shape.isRRect());
+            return opposite_insets_intersect(shape.rrect(), strokeRadius, aaRadius);
+        }
     }
 }
 
@@ -255,7 +277,6 @@ struct Vertex {
     SkV2 fPosition;
     SkV2 fNormal;
     float fNormalScale;
-    float fMirrorOffset;
     float fCenterWeight;
 };
 
@@ -270,9 +291,9 @@ static constexpr float kFilledStrokeInterior = -1.f;
 // need extra calculations in the vertex shader.
 static constexpr float kComplexAAInsets = -1.f;
 
-static constexpr int kCornerVertexCount = 15; // sk_VertexID is divided by this in SkSL
+static constexpr int kCornerVertexCount = 9; // sk_VertexID is divided by this in SkSL
 static constexpr int kVertexCount = 4 * kCornerVertexCount;
-static constexpr int kIndexCount = 114;
+static constexpr int kIndexCount = 69;
 
 static void write_index_buffer(VertexWriter writer) {
     static constexpr uint16_t kTL = 0 * kCornerVertexCount;
@@ -282,23 +303,23 @@ static void write_index_buffer(VertexWriter writer) {
 
     static const uint16_t kIndices[kIndexCount] = {
         // Exterior AA ramp outset
-        kTL+0,kTL+6,kTL+1,kTL+7,kTL+2,kTL+7,kTL+3,kTL+8,kTL+4,kTL+8,kTL+5,kTL+9,
-        kTR+0,kTR+6,kTR+1,kTR+7,kTR+2,kTR+7,kTR+3,kTR+8,kTR+4,kTR+8,kTR+5,kTR+9,
-        kBR+0,kBR+6,kBR+1,kBR+7,kBR+2,kBR+7,kBR+3,kBR+8,kBR+4,kBR+8,kBR+5,kBR+9,
-        kBL+0,kBL+6,kBL+1,kBL+7,kBL+2,kBL+7,kBL+3,kBL+8,kBL+4,kBL+8,kBL+5,kBL+9,
-        kTL+0,kTL+6, // close and jump to next strip
-        // Outer to inner edge triangles
-        kTL+6,kTL+10,kTL+7,kTL+11,kTL+8,kTL+12,kTL+9,kTL+12,
-        kTR+6,kTR+10,kTR+7,kTR+11,kTR+8,kTR+12,kTR+9,kTR+12,
-        kBR+6,kBR+10,kBR+7,kBR+11,kBR+8,kBR+12,kBR+9,kBR+12,
-        kBL+6,kBL+10,kBL+7,kBL+11,kBL+8,kBL+12,kBL+9,kBL+12,
-        kTL+6,kTL+10, // close and extra vertex to jump to next strip
-        // Inner inset to center of shape
-        kTL+10,kTL+13,kTL+11,kTL+11,kTL+14,kTL+12,kTL+14,
-        kTR+10,kTR+13,kTR+11,kTR+11,kTR+14,kTR+12,kTR+14,
-        kBR+10,kBR+13,kBR+11,kBR+11,kBR+14,kBR+12,kBR+14,
-        kBL+10,kBL+13,kBL+11,kBL+11,kBL+14,kBL+12,kBL+14,
-        kTL+10,kTL+13 // close
+        kTL+0,kTL+4,kTL+1,kTL+5,kTL+2,kTL+3,kTL+5,
+        kTR+0,kTR+4,kTR+1,kTR+5,kTR+2,kTR+3,kTR+5,
+        kBR+0,kBR+4,kBR+1,kBR+5,kBR+2,kBR+3,kBR+5,
+        kBL+0,kBL+4,kBL+1,kBL+5,kBL+2,kBL+3,kBL+5,
+        kTL+0,kTL+4, // close and jump to next strip
+        // Outer to inner edges
+        kTL+4,kTL+6,kTL+5,kTL+7,
+        kTR+4,kTR+6,kTR+5,kTR+7,
+        kBR+4,kBR+6,kBR+5,kBR+7,
+        kBL+4,kBL+6,kBL+5,kBL+7,
+        kTL+4,kTL+6, // close and jump to next strip
+        // Fill triangles
+        kTL+6,kTL+8,kTL+7, kTL+7,kTR+8,
+        kTR+6,kTR+8,kTR+7, kTR+7,kBR+8,
+        kBR+6,kBR+8,kBR+7, kBR+7,kBL+8,
+        kBL+6,kBL+8,kBL+7, kBL+7,kTL+8,
+        kTL+6 // close
     };
 
     writer << kIndices;
@@ -311,7 +332,6 @@ static void write_vertex_buffer(VertexWriter writer) {
     static constexpr float kOutset = 1.0;
     static constexpr float kInset  = -1.0;
 
-    static constexpr float kMirror = 1.f; // "true" as a float
     static constexpr float kCenter = 1.f; // "true" as a float
 
     // Zero, but named this way to help call out non-zero parameters.
@@ -326,82 +346,58 @@ static void write_vertex_buffer(VertexWriter writer) {
     static constexpr Vertex kVertexTemplate[kVertexCount] = {
         // ** TL **
         // Device-space AA outsets from outer curve
-        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, kOutset, _______, _______ }, // not strictly needed
-        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, kOutset, kMirror, _______ },
-        { {-1.0f,  0.0f}, {-kHR2, -kHR2}, kOutset, kMirror, _______ },
-        { { 0.0f, -1.0f}, {-kHR2, -kHR2}, kOutset, kMirror, _______ },
-        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, kOutset, kMirror, _______ },
-        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, kOutset, _______, _______ }, // not strictly needed
+        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, kOutset, _______ },
+        { {-1.0f,  0.0f}, {-kHR2, -kHR2}, kOutset, _______ },
+        { { 0.0f, -1.0f}, {-kHR2, -kHR2}, kOutset, _______ },
+        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, kOutset, _______ },
 
         // Outer anchors (no local or device-space normal outset)
-        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, _______, _______, _______ }, // not strictly needed
-        { {-1.0f,  0.0f}, {-kHR2, -kHR2}, _______, kMirror, _______ },
-        { { 0.0f, -1.0f}, {-kHR2, -kHR2}, _______, kMirror, _______ },
-        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, _______, _______, _______ }, // not strictly needed
+        { {-1.0f,  0.0f}, {-kHR2, -kHR2}, _______, _______ },
+        { { 0.0f, -1.0f}, {-kHR2, -kHR2}, _______, _______ },
 
         // Inner curve (with additional AA inset in the common case)
-        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, kInset,  _______, _______ },
-        { {-0.5f, -0.5f}, {-kHR2, -kHR2}, kInset,  kMirror, _______ }, // not strictly needed
-        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, kInset,  _______, _______ },
+        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, kInset, _______ },
+        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, kInset, _______ },
 
         // Center filling vertices (equal to inner AA insets unless 'center' triggers a fill).
         // TODO: On backends that support "cull" distances (and with SkSL support), these vertices
         // and their corresponding triangles can be completely removed. The inset vertices can
         // set their cull distance value to cause all filling triangles to be discarded or not
         // depending on the instance's style.
-        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, kInset,  _______, kCenter },
-        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, kInset,  _______, kCenter }, // not strictly needed
+        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, kInset,  kCenter },
 
         // ** TR **
-        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, kOutset, _______, _______ }, // not strictly needed
-        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, kOutset, kMirror, _______ },
-        { { 0.0f, -1.0f}, { kHR2, -kHR2}, kOutset, kMirror, _______ },
-        { { 1.0f,  0.0f}, { kHR2, -kHR2}, kOutset, kMirror, _______ },
-        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, kOutset, kMirror, _______ },
-        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, kOutset, _______, _______ }, // not strictly needed
-        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, _______, _______, _______ }, // not strictly needed
-        { { 0.0f, -1.0f}, { kHR2, -kHR2}, _______, kMirror, _______ },
-        { { 1.0f,  0.0f}, { kHR2, -kHR2}, _______, kMirror, _______ },
-        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, _______, _______, _______ }, // not strictly needed
-        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, kInset,  _______, _______ },
-        { { 0.5f, -0.5f}, { kHR2, -kHR2}, kInset,  kMirror, _______ }, // not strictly needed
-        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, kInset,  _______, _______ },
-        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, kInset,  _______, kCenter },
-        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, kInset,  _______, kCenter }, // not strictly needed
+        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, kOutset, _______ },
+        { { 0.0f, -1.0f}, { kHR2, -kHR2}, kOutset, _______ },
+        { { 1.0f,  0.0f}, { kHR2, -kHR2}, kOutset, _______ },
+        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, kOutset, _______ },
+        { { 0.0f, -1.0f}, { kHR2, -kHR2}, _______, _______ },
+        { { 1.0f,  0.0f}, { kHR2, -kHR2}, _______, _______ },
+        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, kInset,  _______ },
+        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, kInset,  _______ },
+        { { 0.0f, -1.0f}, { 0.0f, -1.0f}, kInset,  kCenter },
 
         // ** BR **
-        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, kOutset, _______, _______ }, // not strictly needed
-        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, kOutset, kMirror, _______ },
-        { { 1.0f,  0.0f}, { kHR2,  kHR2}, kOutset, kMirror, _______ },
-        { { 0.0f,  1.0f}, { kHR2,  kHR2}, kOutset, kMirror, _______ },
-        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, kOutset, kMirror, _______ },
-        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, kOutset, _______, _______ }, // not strictly needed
-        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, _______, _______, _______ }, // not strictly needed
-        { { 1.0f,  0.0f}, { kHR2,  kHR2}, _______, kMirror, _______ },
-        { { 0.0f,  1.0f}, { kHR2,  kHR2}, _______, kMirror, _______ },
-        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, _______, _______, _______ }, // not strictly needed
-        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, kInset,  _______, _______ },
-        { { 0.5f,  0.5f}, { kHR2,  kHR2}, kInset,  kMirror, _______ }, // not strictly needed
-        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, kInset,  _______, _______ },
-        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, kInset,  _______, kCenter },
-        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, kInset,  _______, kCenter }, // not strictly needed
+        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, kOutset, _______ },
+        { { 1.0f,  0.0f}, { kHR2,  kHR2}, kOutset, _______ },
+        { { 0.0f,  1.0f}, { kHR2,  kHR2}, kOutset, _______ },
+        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, kOutset, _______ },
+        { { 1.0f,  0.0f}, { kHR2,  kHR2}, _______, _______ },
+        { { 0.0f,  1.0f}, { kHR2,  kHR2}, _______, _______ },
+        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, kInset,  _______ },
+        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, kInset,  _______ },
+        { { 1.0f,  0.0f}, { 1.0f,  0.0f}, kInset,  kCenter },
 
         // ** BL **
-        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, kOutset, _______, _______ }, // not strictly needed
-        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, kOutset, kMirror, _______ },
-        { { 0.0f,  1.0f}, {-kHR2,  kHR2}, kOutset, kMirror, _______ },
-        { {-1.0f,  0.0f}, {-kHR2,  kHR2}, kOutset, kMirror, _______ },
-        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, kOutset, kMirror, _______ },
-        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, kOutset, _______, _______ }, // not strictly needed
-        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, _______, _______, _______ }, // not strictly needed
-        { { 0.0f,  1.0f}, {-kHR2,  kHR2}, _______, kMirror, _______ },
-        { {-1.0f,  0.0f}, {-kHR2,  kHR2}, _______, kMirror, _______ },
-        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, _______, _______, _______ }, // not strictly needed
-        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, kInset,  _______, _______ },
-        { {-0.5f,  0.5f}, {-kHR2,  kHR2}, kInset,  kMirror, _______ }, // not strictly needed
-        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, kInset,  _______, _______ },
-        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, kInset,  _______, kCenter },
-        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, kInset,  _______, kCenter }, // not strictly needed
+        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, kOutset, _______ },
+        { { 0.0f,  1.0f}, {-kHR2,  kHR2}, kOutset, _______ },
+        { {-1.0f,  0.0f}, {-kHR2,  kHR2}, kOutset, _______ },
+        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, kOutset, _______ },
+        { { 0.0f,  1.0f}, {-kHR2,  kHR2}, _______, _______ },
+        { {-1.0f,  0.0f}, {-kHR2,  kHR2}, _______, _______ },
+        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, kInset,  _______ },
+        { {-1.0f,  0.0f}, {-1.0f,  0.0f}, kInset,  _______ },
+        { { 0.0f,  1.0f}, { 0.0f,  1.0f}, kInset,  kCenter },
     };
 
     writer << kVertexTemplate;
@@ -416,11 +412,10 @@ AnalyticRRectRenderStep::AnalyticRRectRenderStep(StaticBufferManager* bufferMana
                      kDirectDepthGreaterPass,
                      /*vertexAttrs=*/{
                             {"position", VertexAttribType::kFloat2, SkSLType::kFloat2},
-                            {"aNormal", VertexAttribType::kFloat2, SkSLType::kFloat2},
+                            {"normalAttr", VertexAttribType::kFloat2, SkSLType::kFloat2},
                             // TODO: These values are all +1/0/-1, or +1/0, so could be packed
                             // much more densely than as three floats.
                             {"normalScale", VertexAttribType::kFloat, SkSLType::kFloat},
-                            {"aMirrorOffset", VertexAttribType::kFloat, SkSLType::kFloat},
                             {"centerWeight", VertexAttribType::kFloat, SkSLType::kFloat}
                      },
                      /*instanceAttrs=*/
@@ -486,7 +481,7 @@ AnalyticRRectRenderStep::~AnalyticRRectRenderStep() {}
 std::string AnalyticRRectRenderStep::vertexSkSL() const {
     // TODO: Move this into a module
     return R"(
-        const int kCornerVertexCount = 15; // KEEP IN SYNC WITH C++'s kCornerVertexCount
+        const int kCornerVertexCount = 9; // KEEP IN SYNC WITH C++'s kCornerVertexCount
         const float kMiterScale = 1.0;
         const float kBevelScale = 0.0;
         const float kRoundScale = 0.41421356237; // sqrt(2)-1
@@ -566,13 +561,13 @@ std::string AnalyticRRectRenderStep::vertexSkSL() const {
             joinScale = kMiterScale;
         }
 
-        float mirrorOffset = aMirrorOffset;
+        float mirrorOffset = normalScale >= 0.0 ? 1.0 : 0.0;
         if (joinScale == kMiterScale) {
             mirrorOffset = 1.0;
             cornerRadii = float2(0.0); // (will only affect vertex placement, not FS coverage)
         }
 
-        float2 normal = aNormal;
+        float2 normal = normalAttr;
         bool isMidVertex = normal.x != 0.0 && normal.y != 0.0;
         if (isMidVertex && cornerRadii.y != cornerRadii.x) {
             // Update normals for elliptical corners.
@@ -616,6 +611,7 @@ std::string AnalyticRRectRenderStep::vertexSkSL() const {
         // Calculate edge distances and device space coordinate for the vertex
         float4 dx = xs - xs.wxyz;
         float4 dy = ys - ys.wxyz;
+        // TODO: Apply edge AA flags to these values to turn off AA when necessary.
         edgeDistances = inversesqrt(dx*dx + dy*dy) * (dy*(xs - localPos.x) - dx*(ys - localPos.y));
 
         float3x3 localToDevice = float3x3(mat0, mat1, mat2);
@@ -754,13 +750,12 @@ const char* AnalyticRRectRenderStep::fragmentCoverageSkSL() const {
 void AnalyticRRectRenderStep::writeVertices(DrawWriter* writer,
                                            const DrawParams& params,
                                            int ssboIndex) const {
-    SkASSERT(params.geometry().isShape());
-    const Shape& shape = params.geometry().shape();
+    SkASSERT(params.geometry().isShape() || params.geometry().isEdgeAAQuad());
 
     DrawWriter::Instances instance{*writer, fVertexBuffer, fIndexBuffer, kIndexCount};
     auto vw = instance.append(1);
 
-    // The bounds of a rect is the rect, and the bounds of a rrectv is tight (== SkRRect::getRect()).
+    // The bounds of a rect is the rect, and the bounds of a rrect is tight (== SkRRect::getRect()).
     Rect bounds = params.geometry().bounds();
 
     // aaRadius will be set to a negative value to signal a complex self-intersection that has to
@@ -770,6 +765,8 @@ void AnalyticRRectRenderStep::writeVertices(DrawWriter* writer,
     float centerWeight = kSolidInterior;
 
     if (params.isStroke()) {
+        const Shape& shape = params.geometry().shape(); // EdgeAAQuads are not stroked
+
         SkASSERT(params.strokeStyle().halfWidth() >= 0.f);
         SkASSERT(shape.isRect() || params.strokeStyle().halfWidth() == 0.f ||
                  (shape.isRRect() && SkRRectPriv::AllCornersCircular(shape.rrect())));
@@ -789,9 +786,14 @@ void AnalyticRRectRenderStep::writeVertices(DrawWriter* writer,
         if (params.strokeStyle().halfWidth() > 0.f) {
             float joinStyle = params.strokeStyle().joinLimit();
             if (params.strokeStyle().isMiterJoin()) {
-                // Discard actual miter limit because a 90-degree corner never exceeds that, and
-                // set either +1 for per-corner mitering or +2 for if all corners are mitered.
-                joinStyle = all(xRadii == skvx::float4(0.f)) ? 2.f : 1.f;
+                // All corners are 90-degrees so become beveled if the miter limit is < sqrt(2).
+                if (params.strokeStyle().miterLimit() < SK_ScalarSqrt2) {
+                    joinStyle = 0.f; // == bevel
+                } else {
+                    // Discard actual miter limit because a 90-degree corner never exceeds that, and
+                    // set either +1 for per-corner mitering or +2 for if all corners are mitered.
+                    joinStyle = all(xRadii == skvx::float4(0.f)) ? 2.f : 1.f;
+                }
             }
             // Write a negative value outside [-1, 0] to signal a stroked shape, then the style
             // params, followed by corner radii and bounds.
@@ -804,23 +806,36 @@ void AnalyticRRectRenderStep::writeVertices(DrawWriter* writer,
             vw << (-2.f - xRadii) << yRadii << bounds.ltrb();
         }
     } else {
-        // TODO: Add quadrilateral support to Shape with per-edge flags.
-        if (shape.isRect() || (shape.isRRect() && shape.rrect().isRect())) {
-            // Rectangles (or rectangles embedded in an SkRRect) are converted to the quadrilateral
-            // case, but with all edges anti-aliased (== -1).
-            skvx::float4 ltrb = bounds.ltrb();
-            vw << /*edge flags*/ skvx::float4(-1.f)
-               << /*xs*/ skvx::shuffle<0,2,2,0>(ltrb)
-               << /*ys*/ skvx::shuffle<1,1,3,3>(ltrb);
+        if (params.geometry().isEdgeAAQuad()) {
+            // NOTE: If quad.isRect() && quad.edgeFlags() == kAll, the written data is identical to
+            // Shape.isRect() case below.
+            const EdgeAAQuad& quad = params.geometry().edgeAAQuad();
+            // -1 for AA on, 0 for AA off
+            auto edgeSigns = skvx::float4{quad.edgeFlags() & AAFlags::kLeft   ? -1.f : 0.f,
+                                          quad.edgeFlags() & AAFlags::kTop    ? -1.f : 0.f,
+                                          quad.edgeFlags() & AAFlags::kRight  ? -1.f : 0.f,
+                                          quad.edgeFlags() & AAFlags::kBottom ? -1.f : 0.f};
+            vw << edgeSigns << quad.xs() << quad.ys();
         } else {
-            // A filled rounded rectangle
-            SkASSERT(any(load_x_radii(shape.rrect()) > 0.f)); // If not, the shader won't detect it.
+            const Shape& shape = params.geometry().shape();
+            if (shape.isRect() || (shape.isRRect() && shape.rrect().isRect())) {
+                // Rectangles (or rectangles embedded in an SkRRect) are converted to the
+                // quadrilateral case, but with all edges anti-aliased (== -1).
+                skvx::float4 ltrb = bounds.ltrb();
+                vw << /*edge flags*/ skvx::float4(-1.f)
+                   << /*xs*/ skvx::shuffle<0,2,2,0>(ltrb)
+                   << /*ys*/ skvx::shuffle<1,1,3,3>(ltrb);
+            } else {
+                // A filled rounded rectangle, so make sure at least one corner radii > 0 or the
+                // shader won't detect it as a rounded rect.
+                SkASSERT(any(load_x_radii(shape.rrect()) > 0.f));
 
-            vw << load_x_radii(shape.rrect()) << load_y_radii(shape.rrect()) << bounds.ltrb();
+                vw << load_x_radii(shape.rrect()) << load_y_radii(shape.rrect()) << bounds.ltrb();
+            }
         }
     }
 
-    if (insets_intersect(shape, strokeInset, aaRadius)) {
+    if (opposite_insets_intersect(params.geometry(), strokeInset, aaRadius)) {
         aaRadius = kComplexAAInsets;
         if (centerWeight == kStrokeInterior) {
             centerWeight = kFilledStrokeInterior;

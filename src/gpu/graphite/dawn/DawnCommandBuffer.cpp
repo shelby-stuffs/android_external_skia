@@ -23,7 +23,20 @@ namespace skgpu::graphite {
 
 namespace {
 using IntrinsicConstant = float[4];
+
+uint64_t clamp_ubo_binding_size(uint64_t offset, uint64_t bufferSize) {
+    // Dawn's limit
+    constexpr uint32_t kMaxUniformBufferBindingSize = 64 * 1024;
+
+    SkASSERT(offset <= bufferSize);
+    auto remainSize = bufferSize - offset;
+    if (remainSize > kMaxUniformBufferBindingSize) {
+        return kMaxUniformBufferBindingSize;
+    }
+
+    return wgpu::kWholeSize;
 }
+}  // namespace
 
 std::unique_ptr<DawnCommandBuffer> DawnCommandBuffer::Make(const DawnSharedContext* sharedContext,
                                                            DawnResourceProvider* resourceProvider) {
@@ -347,7 +360,8 @@ void DawnCommandBuffer::addDrawPass(const DrawPass* drawPass) {
             }
             case DrawPassCommands::Type::kBindDrawBuffers: {
                 auto bdb = static_cast<DrawPassCommands::BindDrawBuffers*>(cmdPtr);
-                this->bindDrawBuffers(bdb->fVertices, bdb->fInstances, bdb->fIndices);
+                this->bindDrawBuffers(
+                        bdb->fVertices, bdb->fInstances, bdb->fIndices, bdb->fIndirect);
                 break;
             }
             case DrawPassCommands::Type::kBindTexturesAndSamplers: {
@@ -391,6 +405,16 @@ void DawnCommandBuffer::addDrawPass(const DrawPass* drawPass) {
                                            draw->fInstanceCount);
                 break;
             }
+            case DrawPassCommands::Type::kDrawIndirect: {
+                auto draw = static_cast<DrawPassCommands::DrawIndirect*>(cmdPtr);
+                this->drawIndirect(draw->fType);
+                break;
+            }
+            case DrawPassCommands::Type::kDrawIndexedIndirect: {
+                auto draw = static_cast<DrawPassCommands::DrawIndexedIndirect*>(cmdPtr);
+                this->drawIndexedIndirect(draw->fType);
+                break;
+            }
         }
     }
 }
@@ -426,7 +450,8 @@ void DawnCommandBuffer::bindUniformBuffer(const BindBufferInfo& info, UniformSlo
 
 void DawnCommandBuffer::bindDrawBuffers(const BindBufferInfo& vertices,
                                         const BindBufferInfo& instances,
-                                        const BindBufferInfo& indices) {
+                                        const BindBufferInfo& indices,
+                                        const BindBufferInfo& indirect) {
     SkASSERT(fActiveRenderPassEncoder);
 
     if (vertices.fBuffer) {
@@ -443,6 +468,13 @@ void DawnCommandBuffer::bindDrawBuffers(const BindBufferInfo& vertices,
         auto dawnBuffer = static_cast<const DawnBuffer*>(indices.fBuffer)->dawnBuffer();
         fActiveRenderPassEncoder.SetIndexBuffer(
                 dawnBuffer, wgpu::IndexFormat::Uint16, indices.fOffset);
+    }
+    if (indirect.fBuffer) {
+        fCurrentIndirectBuffer = static_cast<const DawnBuffer*>(indirect.fBuffer)->dawnBuffer();
+        fCurrentIndirectBufferOffset = indirect.fOffset;
+    } else {
+        fCurrentIndirectBuffer = nullptr;
+        fCurrentIndirectBufferOffset = 0;
     }
 }
 
@@ -499,25 +531,34 @@ void DawnCommandBuffer::syncUniformBuffers() {
 
         if (fActiveGraphicsPipeline->hasStepUniforms() &&
             fBoundUniformBuffers[DawnGraphicsPipeline::kRenderStepUniformBufferIndex]) {
+            auto boundBuffer =
+                    fBoundUniformBuffers[DawnGraphicsPipeline::kRenderStepUniformBufferIndex];
+
             entries[numBuffers].binding = DawnGraphicsPipeline::kRenderStepUniformBufferIndex;
-            entries[numBuffers].buffer =
-                    fBoundUniformBuffers[DawnGraphicsPipeline::kRenderStepUniformBufferIndex]
-                            ->dawnBuffer();
+            entries[numBuffers].buffer = boundBuffer->dawnBuffer();
+
             entries[numBuffers].offset =
                     fBoundUniformBufferOffsets[DawnGraphicsPipeline::kRenderStepUniformBufferIndex];
-            entries[numBuffers].size = wgpu::kWholeSize;
+
+            entries[numBuffers].size =
+                    clamp_ubo_binding_size(entries[numBuffers].offset, boundBuffer->size());
+
             ++numBuffers;
         }
 
         if (fActiveGraphicsPipeline->hasFragment() &&
             fBoundUniformBuffers[DawnGraphicsPipeline::kPaintUniformBufferIndex]) {
+            auto boundBuffer = fBoundUniformBuffers[DawnGraphicsPipeline::kPaintUniformBufferIndex];
+
             entries[numBuffers].binding = DawnGraphicsPipeline::kPaintUniformBufferIndex;
-            entries[numBuffers].buffer =
-                    fBoundUniformBuffers[DawnGraphicsPipeline::kPaintUniformBufferIndex]
-                            ->dawnBuffer();
+            entries[numBuffers].buffer = boundBuffer->dawnBuffer();
+
             entries[numBuffers].offset =
                     fBoundUniformBufferOffsets[DawnGraphicsPipeline::kPaintUniformBufferIndex];
-            entries[numBuffers].size = wgpu::kWholeSize;
+
+            entries[numBuffers].size =
+                    clamp_ubo_binding_size(entries[numBuffers].offset, boundBuffer->size());
+
             ++numBuffers;
         }
 
@@ -640,6 +681,27 @@ void DawnCommandBuffer::drawIndexedInstanced(PrimitiveType type,
 
     fActiveRenderPassEncoder.DrawIndexed(
             indexCount, instanceCount, baseIndex, baseVertex, baseInstance);
+}
+
+void DawnCommandBuffer::drawIndirect(PrimitiveType type) {
+    SkASSERT(fActiveRenderPassEncoder);
+    SkASSERT(fActiveGraphicsPipeline->primitiveType() == type);
+    SkASSERT(fCurrentIndirectBuffer);
+
+    this->syncUniformBuffers();
+
+    fActiveRenderPassEncoder.DrawIndirect(fCurrentIndirectBuffer, fCurrentIndirectBufferOffset);
+}
+
+void DawnCommandBuffer::drawIndexedIndirect(PrimitiveType type) {
+    SkASSERT(fActiveRenderPassEncoder);
+    SkASSERT(fActiveGraphicsPipeline->primitiveType() == type);
+    SkASSERT(fCurrentIndirectBuffer);
+
+    this->syncUniformBuffers();
+
+    fActiveRenderPassEncoder.DrawIndexedIndirect(fCurrentIndirectBuffer,
+                                                 fCurrentIndirectBufferOffset);
 }
 
 void DawnCommandBuffer::beginComputePass() { SkASSERT(false); }
