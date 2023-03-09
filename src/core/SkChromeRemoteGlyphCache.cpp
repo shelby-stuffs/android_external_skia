@@ -441,7 +441,6 @@ public:
             SkStrikeServer::DiscardableHandleManager* discardableHandleManager);
 
     // SkStrikeServer API methods
-    sk_sp<SkData> serializeTypeface(SkTypeface*);
     void writeStrikeData(std::vector<uint8_t>* memory);
 
     sk_sp<sktext::StrikeForGPU> findOrCreateScopedStrike(const SkStrikeSpec& strikeSpec) override;
@@ -474,9 +473,6 @@ private:
     SkTHashSet<SkTypefaceID> fCachedTypefaces;
     size_t fMaxEntriesInDescriptorMap = kMaxEntriesInDescriptorMap;
 
-    // Cached serialized typefaces.
-    SkTHashMap<SkTypefaceID, sk_sp<SkData>> fSerializedTypefaces;
-
     // State cached until the next serialization.
     SkTHashSet<RemoteStrike*> fRemoteStrikesToSend;
     std::vector<WireTypeface> fTypefacesToSend;
@@ -494,25 +490,13 @@ size_t SkStrikeServerImpl::remoteStrikeMapSizeForTesting() const {
     return fDescToRemoteStrike.size();
 }
 
-sk_sp<SkData> SkStrikeServerImpl::serializeTypeface(SkTypeface* tf) {
-    auto* data = fSerializedTypefaces.find(SkTypeface::UniqueID(tf));
-    if (data) {
-        return *data;
-    }
-
-    WireTypeface wire(SkTypeface::UniqueID(tf), tf->countGlyphs(), tf->fontStyle(),
-                      tf->isFixedPitch(), tf->glyphMaskNeedsCurrentColor());
-    data = fSerializedTypefaces.set(SkTypeface::UniqueID(tf),
-                                    SkData::MakeWithCopy(&wire, sizeof(wire)));
-    return *data;
-}
-
 #if defined(SK_SUPPORT_LEGACY_STRIKE_SERIALIZATION)
 void SkStrikeServerImpl::writeStrikeData(std::vector<uint8_t>* memory) {
     #if defined(SK_TRACE_GLYPH_RUN_PROCESS)
         SkString msg;
         msg.appendf("\nBegin send strike differences\n");
     #endif
+
     size_t strikesToSend = 0;
     fRemoteStrikesToSend.foreach ([&](RemoteStrike* strike) {
         if (strike->hasPendingGlyphs()) {
@@ -748,10 +732,6 @@ std::unique_ptr<SkCanvas> SkStrikeServer::makeAnalysisCanvas(int width, int heig
     return std::make_unique<SkCanvas>(std::move(trackingDevice));
 }
 
-sk_sp<SkData> SkStrikeServer::serializeTypeface(SkTypeface* tf) {
-    return fImpl->serializeTypeface(tf);
-}
-
 void SkStrikeServer::writeStrikeData(std::vector<uint8_t>* memory) {
     fImpl->writeStrikeData(memory);
 }
@@ -788,10 +768,9 @@ public:
                                 bool isLogging = true,
                                 SkStrikeCache* strikeCache = nullptr);
 
-    sk_sp<SkTypeface> deserializeTypeface(const void* data, size_t length);
-
     bool readStrikeData(const volatile void* memory, size_t memorySize);
     bool translateTypefaceID(SkAutoDescriptor* descriptor) const;
+    sk_sp<SkTypeface> retrieveTypefaceUsingServerID(SkTypefaceID) const;
 
 private:
     class PictureBackedGlyphDrawable final : public SkDrawable {
@@ -1034,11 +1013,9 @@ bool SkStrikeClientImpl::translateTypefaceID(SkAutoDescriptor* toChange) const {
     return true;
 }
 
-sk_sp<SkTypeface> SkStrikeClientImpl::deserializeTypeface(const void* buf, size_t len) {
-    WireTypeface wire;
-    if (len != sizeof(wire)) return nullptr;
-    memcpy(&wire, buf, sizeof(wire));
-    return this->addTypeface(wire);
+sk_sp<SkTypeface> SkStrikeClientImpl::retrieveTypefaceUsingServerID(SkTypefaceID typefaceID) const {
+    auto* tfPtr = fRemoteTypefaceIdToTypeface.find(typefaceID);
+    return tfPtr != nullptr ? *tfPtr : nullptr;
 }
 
 sk_sp<SkTypeface> SkStrikeClientImpl::addTypeface(const WireTypeface& wire) {
@@ -1064,8 +1041,9 @@ bool SkStrikeClient::readStrikeData(const volatile void* memory, size_t memorySi
     return fImpl->readStrikeData(memory, memorySize);
 }
 
-sk_sp<SkTypeface> SkStrikeClient::deserializeTypeface(const void* buf, size_t len) {
-    return fImpl->deserializeTypeface(buf, len);
+sk_sp<SkTypeface> SkStrikeClient::retrieveTypefaceUsingServerIDForTest(
+        SkTypefaceID typefaceID) const {
+    return fImpl->retrieveTypefaceUsingServerID(typefaceID);
 }
 
 bool SkStrikeClient::translateTypefaceID(SkAutoDescriptor* descriptor) const {
@@ -1073,7 +1051,7 @@ bool SkStrikeClient::translateTypefaceID(SkAutoDescriptor* descriptor) const {
 }
 
 #if defined(SK_GANESH)
-sk_sp<sktext::gpu::Slug> SkStrikeClient::deserializeSlug(const void* data, size_t size) const {
+sk_sp<sktext::gpu::Slug> SkStrikeClient::deserializeSlugForTest(const void* data, size_t size) const {
     return sktext::gpu::Slug::Deserialize(data, size, this);
 }
 #endif  // defined(SK_GANESH)
