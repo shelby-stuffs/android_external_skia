@@ -9,6 +9,7 @@
 
 #include "include/codec/SkCodec.h"
 #include "include/core/SkAlphaType.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkColorType.h"
 #include "include/core/SkData.h"
 #include "include/core/SkEncodedImageFormat.h"
@@ -16,7 +17,9 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkStream.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/SkGainmapInfo.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkTemplates.h"
 #include "modules/skcms/skcms.h"
 #include "src/codec/SkCodecPriv.h"
 #include "src/codec/SkSampledCodec.h"
@@ -31,7 +34,6 @@
 #include <utility>
 
 class SkPngChunkReader;
-struct SkGainmapInfo;
 
 static bool is_valid_sample_size(int sampleSize) {
     // FIXME: As Leon has mentioned elsewhere, surely there is also a maximum sampleSize?
@@ -120,9 +122,6 @@ std::unique_ptr<SkAndroidCodec> SkAndroidCodec::MakeFromCodec(std::unique_ptr<Sk
 #ifdef SK_CODEC_DECODES_AVIF
         case SkEncodedImageFormat::kAVIF:
 #endif
-#ifdef SK_CODEC_DECODES_JPEGR
-        case SkEncodedImageFormat::kJPEGR:
-#endif
 #if defined(SK_CODEC_DECODES_WEBP) || defined(SK_CODEC_DECODES_RAW) || \
         defined(SK_HAS_WUFFS_LIBRARY) || defined(SK_CODEC_DECODES_AVIF)
             return std::make_unique<SkAndroidCodecAdapter>(codec.release());
@@ -174,15 +173,6 @@ SkColorType SkAndroidCodec::computeOutputColorType(SkColorType requestedColorTyp
         default:
             break;
     }
-
-#ifdef SK_CODEC_DECODES_JPEGR
-    if (fCodec->getEncodedFormat() == SkEncodedImageFormat::kJPEGR) {
-        if (requestedColorType == kRGBA_8888_SkColorType ||
-            requestedColorType == kBGRA_8888_SkColorType) {
-            return requestedColorType;
-        }
-    }
-#endif
 
     // F16 is the Android default for high precision images.
     return highPrecision ? kRGBA_F16_SkColorType :
@@ -414,5 +404,18 @@ SkCodec::Result SkAndroidCodec::getAndroidPixels(const SkImageInfo& info, void* 
 
 bool SkAndroidCodec::getAndroidGainmap(SkGainmapInfo* info,
                                        std::unique_ptr<SkStream>* outGainmapImageStream) {
-    return fCodec->onGetGainmapInfo(info, outGainmapImageStream);
+    if (!fCodec->onGetGainmapInfo(info, outGainmapImageStream)) {
+        return false;
+    }
+    // Convert old parameter names to new parameter names.
+    // TODO(ccameron): Remove these parameters.
+    info->fLogRatioMin.fR = sk_float_log(info->fGainmapRatioMin.fR);
+    info->fLogRatioMin.fG = sk_float_log(info->fGainmapRatioMin.fG);
+    info->fLogRatioMin.fB = sk_float_log(info->fGainmapRatioMin.fB);
+    info->fLogRatioMax.fR = sk_float_log(info->fGainmapRatioMax.fR);
+    info->fLogRatioMax.fG = sk_float_log(info->fGainmapRatioMax.fG);
+    info->fLogRatioMax.fB = sk_float_log(info->fGainmapRatioMax.fB);
+    info->fHdrRatioMin = info->fDisplayRatioSdr;
+    info->fHdrRatioMax = info->fDisplayRatioHdr;
+    return true;
 }

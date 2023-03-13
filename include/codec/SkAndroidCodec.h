@@ -10,13 +10,12 @@
 
 #include "include/codec/SkCodec.h"
 #include "include/core/SkColorSpace.h"
-#include "include/core/SkData.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkEncodedInfo.h"
-#include "include/private/SkNoncopyable.h"
+#include "include/private/base/SkNoncopyable.h"
 #include "modules/skcms/skcms.h"
 
 // TODO(kjlubick, bungeman) Replace these includes with forward declares
@@ -27,6 +26,7 @@
 #include <cstddef>
 #include <memory>
 
+class SkData;
 class SkPngChunkReader;
 class SkStream;
 struct SkGainmapInfo;
@@ -90,11 +90,6 @@ public:
     const skcms_ICCProfile* getICCProfile() const {
         return fCodec->getEncodedInfo().profile();
     }
-
-    /**
-     * Return the XMP metadata from the image.
-     */
-    sk_sp<const SkData> getXmpMetadata() const { return fCodec->fXmpMetadata; }
 
     /**
      *  Format of the encoded data.

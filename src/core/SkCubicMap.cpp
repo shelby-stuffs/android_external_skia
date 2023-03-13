@@ -7,9 +7,9 @@
 
 #include "include/core/SkCubicMap.h"
 
-#include "include/private/SkFloatingPoint.h"
-#include "include/private/SkTPin.h"
-#include "include/private/base/SkVx.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkTPin.h"
+#include "src/base/SkVx.h"
 #include "src/core/SkOpts.h"
 
 #include <algorithm>

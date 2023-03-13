@@ -17,12 +17,17 @@
 #include "src/core/SkDraw.h"
 #include "src/core/SkEnumerate.h"
 #include "src/core/SkFontPriv.h"
+#include "src/core/SkGlyph.h"
 #include "src/core/SkGlyphBuffer.h"
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkScalerContext.h"
+#include "src/core/SkStrike.h"
 #include "src/core/SkStrikeCache.h"
 #include "src/core/SkStrikeSpec.h"
 #include "src/text/GlyphRun.h"
+
+using namespace skglyph;
+using namespace sktext;
 
 namespace {
 SkScalerContextFlags compute_scaler_context_flags(const SkColorSpace* cs) {
@@ -34,6 +39,76 @@ SkScalerContextFlags compute_scaler_context_flags(const SkColorSpace* cs) {
     } else {
         return SkScalerContextFlags::kFakeGammaAndBoostContrast;
     }
+}
+
+// TODO: collect this up into a single class when all the details are worked out.
+// This is duplicate code. The original is in SubRunContainer.cpp.
+void prepare_for_path_drawing(StrikeForGPU* strike,
+                              SkDrawableGlyphBuffer* accepted,
+                              SkSourceGlyphBuffer* rejected) {
+    strike->lock();
+    for (auto [i, packedID, pos] : SkMakeEnumerate(accepted->input())) {
+        if (SkScalarsAreFinite(pos.x(), pos.y())) {
+            switch (strike->digestFor(kPath, packedID).actionFor(kPath)) {
+                case GlyphAction::kAccept:
+                    accepted->accept(packedID, pos);
+                    break;
+                case GlyphAction::kReject:
+                    rejected->reject(i);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+    strike->unlock();
+}
+
+// TODO: collect this up into a single class when all the details are worked out.
+// This is duplicate code. The original is in SubRunContainer.cpp.
+void prepare_for_drawable_drawing(StrikeForGPU* strike,
+                                  SkDrawableGlyphBuffer* accepted,
+                                  SkSourceGlyphBuffer* rejected) {
+    strike->lock();
+    for (auto [i, packedID, pos] : SkMakeEnumerate(accepted->input())) {
+        if (SkScalarsAreFinite(pos.x(), pos.y())) {
+            switch (strike->digestFor(kDrawable, packedID).actionFor(kDrawable)) {
+                case GlyphAction::kAccept:
+                    accepted->accept(packedID, pos);
+                    break;
+                case GlyphAction::kReject:
+                    rejected->reject(i);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+    strike->unlock();
+}
+
+void prepare_for_direct_mask_drawing(SkStrike* strike,
+                                     SkDrawableGlyphBuffer* accepted,
+                                     SkSourceGlyphBuffer* rejected) {
+    strike->lock();
+    for (auto [i, packedID, pos] : SkMakeEnumerate(accepted->input())) {
+        if (!SkScalarsAreFinite(pos.x(), pos.y())) {
+            continue;
+        }
+
+        switch (SkGlyphDigest digest = strike->digestFor(skglyph::kDirectMaskCPU, packedID);
+                digest.actionFor(kDirectMaskCPU)) {
+            case GlyphAction::kAccept:
+                accepted->accept(strike->glyph(digest), i);
+                break;
+            case GlyphAction::kReject:
+                rejected->reject(i);
+                break;
+            default:
+                break;
+        }
+    }
+    strike->unlock();
 }
 }  // namespace
 
@@ -74,7 +149,7 @@ void SkGlyphRunListPainterCPU::drawForBitmapDevice(
             auto strike = strikeSpec.findOrCreateStrike();
 
             accepted->startSource(rejected->source());
-            strike->prepareForPathDrawing(accepted, rejected);
+            prepare_for_path_drawing(strike.get(), accepted, rejected);
             rejected->flipRejectsToSource();
 
             // The paint we draw paths with must have the same anti-aliasing state as the runFont
@@ -121,7 +196,7 @@ void SkGlyphRunListPainterCPU::drawForBitmapDevice(
 
             if (!rejected->source().empty()) {
                 accepted->startSource(rejected->source());
-                strike->prepareForDrawableDrawing(accepted, rejected);
+                prepare_for_drawable_drawing(strike.get(), accepted, rejected);
                 rejected->flipRejectsToSource();
 
                 SkBulkGlyphMetricsAndDrawables glyphs(std::move(strike));
@@ -149,7 +224,7 @@ void SkGlyphRunListPainterCPU::drawForBitmapDevice(
             accepted->startDevicePositioning(
                     rejected->source(), positionMatrix, strike->roundingSpec());
 
-            strike->prepareForDrawingMasksCPU(accepted);
+            prepare_for_direct_mask_drawing(strike.get(), accepted, rejected);
             rejected->flipRejectsToSource();
             bitmapDevice->paintMasks(accepted, paint);
         }
@@ -203,7 +278,7 @@ void SkGlyphRunListPainterCPU::drawForBitmapDevice(
             accepted->startDevicePositioning(
                     rejected->source(), positionMatrix, strike->roundingSpec());
 
-            strike->prepareForDrawingMasksCPU(accepted);
+            prepare_for_direct_mask_drawing(strike.get(), accepted, rejected);
             auto variants = accepted->accepted().get<0>();
             for (auto [variant, srcPos] : SkMakeZip(variants, sourcePositions)) {
                 const SkGlyph* glyph = variant.glyph();

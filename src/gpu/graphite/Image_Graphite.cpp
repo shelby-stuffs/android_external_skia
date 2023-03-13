@@ -7,7 +7,9 @@
 
 #include "src/gpu/graphite/Image_Graphite.h"
 
+#include "include/core/SkCanvas.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkSurface.h"
 #include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "src/gpu/RefCntedCallback.h"
@@ -45,6 +47,23 @@ sk_sp<SkImage> Image::onMakeSubset(const SkIRect& subset,
         return sk_ref_sp(const_cast<SkImage*>(image));
     }
 
+    return this->copyImage(subset, recorder, requiredProps);
+}
+
+sk_sp<SkImage> Image::onMakeTextureImage(Recorder* recorder,
+                                         RequiredImageProperties requiredProps) const {
+    if (requiredProps.fMipmapped == Mipmapped::kNo || this->hasMipmaps()) {
+        const SkImage* image = this;
+        return sk_ref_sp(const_cast<SkImage*>(image));
+    }
+
+    const SkIRect bounds = SkIRect::MakeWH(this->width(), this->height());
+    return this->copyImage(bounds, recorder, requiredProps);
+}
+
+sk_sp<SkImage> Image::copyImage(const SkIRect& subset,
+                                Recorder* recorder,
+                                RequiredImageProperties requiredProps) const {
     TextureProxyView srcView = this->textureProxyView();
     if (!srcView) {
         return nullptr;
@@ -70,28 +89,23 @@ sk_sp<SkImage> Image::onReinterpretColorSpace(sk_sp<SkColorSpace> newCS) const {
                              this->imageInfo().colorInfo().makeColorSpace(std::move(newCS)));
 }
 
-sk_sp<SkImage> Image::onMakeTextureImage(Recorder* recorder,
-                                         RequiredImageProperties requiredProps) const {
-    SkASSERT(requiredProps.fMipmapped == Mipmapped::kYes && !this->hasMipmaps());
+sk_sp<SkImage> Image::onMakeColorTypeAndColorSpace(SkColorType targetCT,
+                                                   sk_sp<SkColorSpace> targetCS,
+                                                   Recorder* recorder,
+                                                   RequiredImageProperties requiredProps) const {
+    SkAlphaType at = (this->alphaType() == kOpaque_SkAlphaType) ? kPremul_SkAlphaType
+                                                                : this->alphaType();
 
-    TextureProxyView srcView = this->textureProxyView();
-    if (!srcView) {
+    SkImageInfo ii = SkImageInfo::Make(this->dimensions(), targetCT, at, std::move(targetCS));
+
+    sk_sp<SkSurface> s = SkSurface::MakeGraphite(recorder, ii, requiredProps.fMipmapped);
+    if (!s) {
         return nullptr;
     }
 
-    const SkIRect bounds = SkIRect::MakeSize(this->imageInfo().dimensions());
-    TextureProxyView copiedView = TextureProxyView::Copy(recorder,
-                                                         this->imageInfo().colorInfo(),
-                                                         srcView,
-                                                         bounds,
-                                                         requiredProps.fMipmapped);
-    if (!copiedView) {
-        return nullptr;
-    }
+    s->getCanvas()->drawImage(this, 0, 0);
 
-    return sk_sp<Image>(new Image(kNeedNewImageUniqueID,
-                                  std::move(copiedView),
-                                  this->imageInfo().colorInfo()));
+    return s->asImage();
 }
 
 } // namespace skgpu::graphite

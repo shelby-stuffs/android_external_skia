@@ -14,9 +14,10 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "include/private/base/SkTo.h"
 #include "include/utils/SkPaintFilterCanvas.h"
+#include "src/base/SkTSort.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkImagePriv.h"
@@ -26,7 +27,6 @@
 #include "src/core/SkScan.h"
 #include "src/core/SkStringUtils.h"
 #include "src/core/SkSurfacePriv.h"
-#include "src/core/SkTSort.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/core/SkTextBlobPriv.h"
 #include "src/core/SkVMBlitter.h"
@@ -337,8 +337,6 @@ extern bool gUseSkVMBlitter;
 extern bool gSkVMAllowJIT;
 extern bool gSkVMJITViaDylib;
 
-static bool ColrV1VariationsEnabledForTest() { return true; }
-
 Viewer::Viewer(int argc, char** argv, void* platformData)
     : fCurrentSlide(-1)
     , fRefresh(false)
@@ -372,7 +370,6 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
 #if defined(SK_ENABLE_SVG)
     SkGraphics::SetOpenTypeSVGDecoderFactory(SkSVGOpenTypeSVGDecoder::Make);
 #endif
-    SkGraphics::SetVariableColrV1EnabledFunc(ColrV1VariationsEnabledForTest);
 
     gPathRendererNames[GpuPathRenderers::kDefault] = "Default Path Renderers";
     gPathRendererNames[GpuPathRenderers::kAtlas] = "Atlas (tessellation)";

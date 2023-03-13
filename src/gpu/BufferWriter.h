@@ -11,8 +11,8 @@
 #include <type_traits>
 #include "include/core/SkRect.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkTemplates.h"
-#include "include/private/base/SkVx.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/base/SkVx.h"
 #include "src/core/SkConvertPixels.h"
 
 namespace skgpu {

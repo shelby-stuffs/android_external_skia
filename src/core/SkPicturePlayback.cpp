@@ -11,6 +11,7 @@
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkTDArray.h"
 #include "include/private/chromium/Slug.h"
+#include "src/base/SkSafeMath.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkDrawShadowInfo.h"
 #include "src/core/SkFontPriv.h"
@@ -20,7 +21,6 @@
 #include "src/core/SkPicturePlayback.h"
 #include "src/core/SkPictureRecord.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/core/SkSafeMath.h"
 #include "src/core/SkSamplingPriv.h"
 #include "src/core/SkVerticesPriv.h"
 #include "src/utils/SkPatchUtils.h"
@@ -254,7 +254,8 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             SkBlendMode mode = SkBlendMode::kDst;
             if (flags & DRAW_ATLAS_HAS_COLORS) {
                 colors = (const SkColor*)reader->skip(count, sizeof(SkColor));
-                mode = (SkBlendMode)reader->readUInt();
+                mode = reader->read32LE(SkBlendMode::kLastMode);
+                BREAK_ON_READ_ERROR(reader);
             }
             const SkRect* cull = nullptr;
             if (flags & DRAW_ATLAS_HAS_CULL) {
@@ -310,7 +311,8 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             SkCanvas::QuadAAFlags aaFlags = static_cast<SkCanvas::QuadAAFlags>(reader->read32());
             SkColor4f color;
             reader->readColor4f(&color);
-            SkBlendMode blend = static_cast<SkBlendMode>(reader->read32());
+            SkBlendMode blend = reader->read32LE(SkBlendMode::kLastMode);
+            BREAK_ON_READ_ERROR(reader);
             bool hasClip = reader->readInt();
             SkPoint* clip = nullptr;
             if (hasClip) {

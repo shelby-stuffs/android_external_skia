@@ -67,6 +67,30 @@ struct SkRasterPipeline_DecalTileCtx {
     float    inclusiveEdge_y = 0;
 };
 
+// State used by mipmap_linear_*
+struct SkRasterPipeline_MipmapCtx {
+    // Original coords, saved before the base level logic
+    float x[SkRasterPipeline_kMaxStride_highp];
+    float y[SkRasterPipeline_kMaxStride_highp];
+
+    // Base level color
+    float r[SkRasterPipeline_kMaxStride_highp];
+    float g[SkRasterPipeline_kMaxStride_highp];
+    float b[SkRasterPipeline_kMaxStride_highp];
+    float a[SkRasterPipeline_kMaxStride_highp];
+
+    // Scale factors to transform base level coords to lower level coords
+    float scaleX;
+    float scaleY;
+
+    float lowerWeight;
+};
+
+struct SkRasterPipeline_CoordClampCtx {
+    float min_x, min_y;
+    float max_x, max_y;
+};
+
 struct SkRasterPipeline_CallbackCtx {
     void (*fn)(SkRasterPipeline_CallbackCtx* self,
                int active_pixels /*<= SkRasterPipeline_kMaxStride_highp*/);
@@ -144,6 +168,15 @@ struct SkRasterPipeline_ShuffleCtx {
     float *ptr;
     int count;
     uint16_t offsets[16];  // values must be byte offsets (4 * highp-stride * component-index)
+};
+
+struct SkRasterPipeline_BranchCtx {
+    int offset;  // contains the label ID during compilation, and the program offset when compiled
+};
+
+struct SkRasterPipeline_BranchIfEqualCtx : public SkRasterPipeline_BranchCtx {
+    int value;
+    const int *ptr;
 };
 
 #endif  // SkRasterPipelineOpContexts_DEFINED

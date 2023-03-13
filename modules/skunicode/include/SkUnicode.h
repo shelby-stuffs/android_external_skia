@@ -11,7 +11,7 @@
 #include "include/core/SkTypes.h"
 #include "include/private/SkBitmaskEnum.h" // IWYU pragma: keep
 #include "include/private/base/SkTArray.h"
-#include "src/utils/SkUTF.h"
+#include "src/base/SkUTF.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -84,6 +84,7 @@ class SKUNICODE_API SkUnicode {
             kPartOfIntraWordBreak = 0x10,
             kControl = 0x20,
             kTabulation = 0x40,
+            kGlyphClusterStart = 0x80,
         };
         enum class TextDirection {
             kLTR,

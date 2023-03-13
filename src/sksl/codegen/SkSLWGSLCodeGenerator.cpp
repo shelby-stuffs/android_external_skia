@@ -22,6 +22,7 @@
 #include "include/private/SkSLStatement.h"
 #include "include/private/SkSLString.h"
 #include "include/private/SkSLSymbol.h"
+#include "include/private/base/SkTArray.h"
 #include "include/sksl/SkSLErrorReporter.h"
 #include "include/sksl/SkSLOperator.h"
 #include "include/sksl/SkSLPosition.h"
@@ -48,8 +49,10 @@
 #include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLStructDefinition.h"
 #include "src/sksl/ir/SkSLSwizzle.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
+#include "src/sksl/ir/SkSLTernaryExpression.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
@@ -124,9 +127,17 @@ std::string to_wgsl_type(const Type& type) {
     switch (type.typeKind()) {
         case Type::TypeKind::kScalar:
             return std::string(to_scalar_type(type));
-        case Type::TypeKind::kVector:
-            return "vec" + std::to_string(type.columns()) + "<" +
-                   std::string(to_scalar_type(type.componentType())) + ">";
+        case Type::TypeKind::kVector: {
+            std::string_view ct = to_scalar_type(type.componentType());
+            return String::printf("vec%d<%.*s>", type.columns(), (int)ct.length(), ct.data());
+        }
+        case Type::TypeKind::kArray: {
+            std::string elementType = to_wgsl_type(type.componentType());
+            if (type.isUnsizedArray()) {
+                return String::printf("array<%s>", elementType.c_str());
+            }
+            return String::printf("array<%s, %d>", elementType.c_str(), type.columns());
+        }
         default:
             break;
     }
@@ -394,6 +405,11 @@ int count_pipeline_inputs(const Program* program) {
     return inputCount;
 }
 
+static bool is_in_global_uniforms(const Variable& var) {
+    SkASSERT(var.storage() == VariableStorage::kGlobal);
+    return var.modifiers().fFlags & Modifiers::kUniform_Flag && !var.type().isOpaque();
+}
+
 }  // namespace
 
 bool WGSLCodeGenerator::generateCode() {
@@ -407,10 +423,10 @@ bool WGSLCodeGenerator::generateCode() {
     {
         AutoOutputStream outputToHeader(this, &header, &fIndentation);
         // TODO(skia:13092): Implement the following:
-        // - struct definitions
         // - global uniform/storage resource declarations, including interface blocks.
         this->writeStageInputStruct();
         this->writeStageOutputStruct();
+        this->writeNonBlockUniformsForTests();
     }
     StringStream body;
     {
@@ -473,6 +489,14 @@ void WGSLCodeGenerator::writeName(std::string_view name) {
     this->write(name);
 }
 
+void WGSLCodeGenerator::writeVariableDecl(const Type& type,
+                                          std::string_view name,
+                                          Delimiter delimiter) {
+    this->writeName(name);
+    this->write(": " + to_wgsl_type(type));
+    this->writeLine(delimiter_to_str(delimiter));
+}
+
 void WGSLCodeGenerator::writePipelineIODeclaration(Modifiers modifiers,
                                                    const Type& type,
                                                    std::string_view name,
@@ -513,9 +537,7 @@ void WGSLCodeGenerator::writeUserDefinedIODecl(const Type& type,
         this->write("@interpolate(flat) ");
     }
 
-    this->writeName(name);
-    this->write(": " + to_wgsl_type(type));
-    this->writeLine(delimiter_to_str(delimiter));
+    this->writeVariableDecl(type, name, delimiter);
 }
 
 void WGSLCodeGenerator::writeBuiltinIODecl(const Type& type,
@@ -759,16 +781,23 @@ void WGSLCodeGenerator::writeExpression(const Expression& e, Precedence parentPr
             break;
         case Expression::Kind::kConstructorCompoundCast:
         case Expression::Kind::kConstructorScalarCast:
+        case Expression::Kind::kConstructorSplat:
             this->writeAnyConstructor(e.asAnyConstructor(), parentPrecedence);
             break;
         case Expression::Kind::kFieldAccess:
             this->writeFieldAccess(e.as<FieldAccess>());
+            break;
+        case Expression::Kind::kFunctionCall:
+            this->writeFunctionCall(e.as<FunctionCall>());
             break;
         case Expression::Kind::kLiteral:
             this->writeLiteral(e.as<Literal>());
             break;
         case Expression::Kind::kSwizzle:
             this->writeSwizzle(e.as<Swizzle>());
+            break;
+        case Expression::Kind::kTernary:
+            this->writeTernaryExpression(e.as<TernaryExpression>(), parentPrecedence);
             break;
         case Expression::Kind::kVariableReference:
             this->writeVariableReference(e.as<VariableReference>());
@@ -829,6 +858,24 @@ void WGSLCodeGenerator::writeFieldAccess(const FieldAccess& f) {
     this->writeName(field->fName);
 }
 
+void WGSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
+    const FunctionDeclaration& func = c.function();
+
+    // TODO(skia:13092): Handle intrinsic call as many of them need to be rewritten.
+    // TODO(skia:13092): Handle out-param semantics.
+
+    this->write(func.mangledName());
+    this->write("(");
+    bool wroteArgs = this->writeFunctionDependencyArgs(func);
+    const char* separator = wroteArgs ? ", " : "";
+    for (int i = 0; i < c.arguments().size(); ++i) {
+        this->write(separator);
+        separator = ", ";
+        this->writeExpression(*c.arguments()[i], Precedence::kSequence);
+    }
+    this->write(")");
+}
+
 void WGSLCodeGenerator::writeLiteral(const Literal& l) {
     const Type& type = l.type();
     if (type.isFloat() || type.isBoolean()) {
@@ -856,6 +903,51 @@ void WGSLCodeGenerator::writeSwizzle(const Swizzle& swizzle) {
     }
 }
 
+void WGSLCodeGenerator::writeTernaryExpression(const TernaryExpression& t,
+                                               Precedence parentPrecedence) {
+    bool needParens = Precedence::kTernary >= parentPrecedence;
+    if (needParens) {
+        this->write("(");
+    }
+
+    // The trivial case is when neither branch has side effects and evaluate to a scalar or vector
+    // type. This can be represented with a call to the WGSL `select` intrinsic although it doesn't
+    // support short-circuiting.
+    if ((t.type().isScalar() || t.type().isVector()) && !Analysis::HasSideEffects(*t.ifTrue()) &&
+        !Analysis::HasSideEffects(*t.ifFalse())) {
+        this->write("select(");
+        this->writeExpression(*t.ifFalse(), Precedence::kTernary);
+        this->write(", ");
+        this->writeExpression(*t.ifTrue(), Precedence::kTernary);
+        this->write(", ");
+
+        bool isVector = t.type().isVector();
+        if (isVector) {
+            // Splat the condition expression into a vector.
+            this->write(String::printf("vec%d<bool>", t.type().columns()));
+            this->write("(");
+        }
+        this->writeExpression(*t.test(), Precedence::kTernary);
+        if (isVector) {
+            this->write(")");
+        }
+        this->write(")");
+
+        if (needParens) {
+            this->write(")");
+        }
+        return;
+    }
+
+    // TODO(skia:13092): WGSL does not support ternary expressions. To replicate the required
+    // short-circuting behavior we need to hoist the expression out into the surrounding block,
+    // convert it into an if statement that writes the result to a synthesized variable, and replace
+    // the original expression with a reference to that variable.
+    //
+    // Once hoisting is supported, we may want to use that for vector type expressions as well,
+    // since select above does a component-wise select
+}
+
 void WGSLCodeGenerator::writeVariableReference(const VariableReference& r) {
     // TODO(skia:13902): Correctly handle function parameters.
     // TODO(skia:13902): Correctly handle RTflip for built-ins.
@@ -873,6 +965,8 @@ void WGSLCodeGenerator::writeVariableReference(const VariableReference& r) {
             this->write("_stageIn.");
         } else if (v.modifiers().fFlags & Modifiers::kOut_Flag) {
             this->write("(*_stageOut).");
+        } else if (is_in_global_uniforms(v)) {
+            this->write("_globalUniforms.");
         }
     }
 
@@ -922,16 +1016,14 @@ void WGSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
             // WGSL extensions aside from the hypotheticals listed in the spec.
             break;
         case ProgramElement::Kind::kGlobalVar:
-            // All global declarations are handled explicitly as the "program header" in
-            // generateCode().
+            this->writeGlobalVarDeclaration(e.as<GlobalVarDeclaration>());
             break;
         case ProgramElement::Kind::kInterfaceBlock:
             // All interface block declarations are handled explicitly as the "program header" in
             // generateCode().
             break;
         case ProgramElement::Kind::kStructDefinition:
-            // All struct type declarations are handled explicitly as the "program header" in
-            // generateCode().
+            this->writeStructDefinition(e.as<StructDefinition>());
             break;
         case ProgramElement::Kind::kFunctionPrototype:
             // A WGSL function declaration must contain its body and the function name is in scope
@@ -946,6 +1038,40 @@ void WGSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
         default:
             SkDEBUGFAILF("unsupported program element: %s\n", e.description().c_str());
             break;
+    }
+}
+
+void WGSLCodeGenerator::writeGlobalVarDeclaration(const GlobalVarDeclaration& d) {
+    const Variable& var = *d.declaration()->as<VarDeclaration>().var();
+    if ((var.modifiers().fFlags & (Modifiers::kIn_Flag | Modifiers::kOut_Flag)) ||
+        is_in_global_uniforms(var)) {
+        // Pipeline stage I/O parameters and top-level (non-block) uniforms are handled specially
+        // in generateCode().
+        return;
+    }
+
+    // TODO(skia:13092): Implement workgroup variable decoration
+    this->write("var<private> ");
+    this->writeVariableDecl(var.type(), var.name(), Delimiter::kSemicolon);
+}
+
+void WGSLCodeGenerator::writeStructDefinition(const StructDefinition& s) {
+    const Type& type = s.type();
+    this->writeLine("struct " + type.displayName() + " {");
+    fIndentation++;
+    this->writeFields(SkSpan(type.fields()), type.fPosition);
+    fIndentation--;
+    this->writeLine("};");
+}
+
+void WGSLCodeGenerator::writeFields(SkSpan<const Type::Field> fields,
+                                    Position parentPos,
+                                    const MemoryLayout*) {
+    // TODO(skia:13092): Check alignment against `layout` constraints, if present. A layout
+    // constraint will be specified for interface blocks and for structs that appear in a block.
+    for (const Type::Field& field : fields) {
+        const Type* fieldType = field.fType;
+        this->writeVariableDecl(*fieldType, field.fName, Delimiter::kComma);
     }
 }
 
@@ -1071,6 +1197,49 @@ void WGSLCodeGenerator::writeStageOutputStruct() {
     if (ProgramConfig::IsVertex(fProgram.fConfig->fKind) && requiresPointSizeBuiltin) {
         this->writeLine("/* unsupported */ var<private> sk_PointSize: f32;");
     }
+}
+
+void WGSLCodeGenerator::writeNonBlockUniformsForTests() {
+    for (const ProgramElement* e : fProgram.elements()) {
+        if (e->is<GlobalVarDeclaration>()) {
+            const GlobalVarDeclaration& decls = e->as<GlobalVarDeclaration>();
+            const Variable& var = *decls.varDeclaration().var();
+            if (is_in_global_uniforms(var)) {
+                if (!fDeclaredUniformsStruct) {
+                    this->write("struct _GlobalUniforms {\n");
+                    fDeclaredUniformsStruct = true;
+                }
+                this->write("    ");
+                this->writeVariableDecl(var.type(), var.mangledName(), Delimiter::kComma);
+            }
+        }
+    }
+    if (fDeclaredUniformsStruct) {
+        int binding = fProgram.fConfig->fSettings.fDefaultUniformBinding;
+        int set = fProgram.fConfig->fSettings.fDefaultUniformSet;
+        this->write("};\n");
+        this->write("@binding(" + std::to_string(binding) + ") ");
+        this->write("@group(" + std::to_string(set) + ") ");
+        this->writeLine("var<uniform> _globalUniforms: _GlobalUniforms;");
+    }
+}
+
+bool WGSLCodeGenerator::writeFunctionDependencyArgs(const FunctionDeclaration& f) {
+    FunctionDependencies* deps = fRequirements.dependencies.find(&f);
+    if (!deps || *deps == FunctionDependencies::kNone) {
+        return false;
+    }
+
+    const char* separator = "";
+    if ((*deps & FunctionDependencies::kPipelineInputs) != FunctionDependencies::kNone) {
+        this->write("_stageIn");
+        separator = ", ";
+    }
+    if ((*deps & FunctionDependencies::kPipelineOutputs) != FunctionDependencies::kNone) {
+        this->write(separator);
+        this->write("_stageOut");
+    }
+    return true;
 }
 
 }  // namespace SkSL

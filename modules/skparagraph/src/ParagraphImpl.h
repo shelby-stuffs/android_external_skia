@@ -13,9 +13,9 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkBitmaskEnum.h"
-#include "include/private/SkTemplates.h"
 #include "include/private/base/SkOnce.h"
 #include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTemplates.h"
 #include "modules/skparagraph/include/DartTypes.h"
 #include "modules/skparagraph/include/FontCollection.h"
 #include "modules/skparagraph/include/Paragraph.h"
@@ -142,6 +142,8 @@ public:
     void ensureUTF16Mapping();
     TextIndex findNextGraphemeBoundary(TextIndex utf8);
     TextIndex findPreviousGraphemeBoundary(TextIndex utf8);
+    TextIndex findNextGlyphClusterBoundary(TextIndex utf8);
+    TextIndex findPreviousGlyphClusterBoundary(TextIndex utf8);
     size_t getUTF16Index(TextIndex index) {
         return fUTF16IndexForUTF8Index[index];
     }

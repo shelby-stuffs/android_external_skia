@@ -17,9 +17,9 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkNoncopyable.h"
+#include "include/private/base/SkNoncopyable.h"
 #include "include/private/base/SkTArray.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 
 namespace {
 

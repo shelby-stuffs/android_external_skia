@@ -17,7 +17,7 @@
 #include "include/core/SkImage.h" // IWYU pragma: keep
 #include "include/core/SkMatrix.h"
 #include "include/core/SkStream.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
 #include "modules/skcms/skcms.h"
 #include "src/codec/SkCodecPriv.h"
 #include "src/codec/SkFrameHolder.h"
@@ -39,10 +39,6 @@
 
 #ifdef SK_HAS_HEIF_LIBRARY
 #include "src/codec/SkHeifCodec.h"
-#endif
-
-#ifdef SK_CODEC_DECODES_JPEGR
-#include "src/codec/SkJpegRCodec.h"
 #endif
 
 #ifdef SK_CODEC_DECODES_JPEG
@@ -70,18 +66,15 @@
 #include "src/codec/SkWuffsCodec.h"
 #endif
 
+namespace {
+
 struct DecoderProc {
     bool (*IsFormat)(const void*, size_t);
     std::unique_ptr<SkCodec> (*MakeFromStream)(std::unique_ptr<SkStream>, SkCodec::Result*);
 };
 
-static std::vector<DecoderProc>* decoders() {
+std::vector<DecoderProc>* decoders() {
     static auto* decoders = new std::vector<DecoderProc> {
-
-    // JPEGR Decoder should be checked before JPEG, because JPEGR is an extension of JPEG
-    #ifdef SK_CODEC_DECODES_JPEGR
-        { SkJpegRCodec::IsJpegR, SkJpegRCodec::MakeFromStream },
-    #endif
     #ifdef SK_CODEC_DECODES_JPEG
         { SkJpegCodec::IsJpeg, SkJpegCodec::MakeFromStream },
     #endif
@@ -105,6 +98,8 @@ static std::vector<DecoderProc>* decoders() {
     };
     return decoders;
 }
+
+}  // namespace
 
 void SkCodec::Register(
             bool                     (*peek)(const void*, size_t),
@@ -205,13 +200,11 @@ std::unique_ptr<SkCodec> SkCodec::MakeFromData(sk_sp<SkData> data, SkPngChunkRea
 SkCodec::SkCodec(SkEncodedInfo&& info,
                  XformFormat srcFormat,
                  std::unique_ptr<SkStream> stream,
-                 SkEncodedOrigin origin,
-                 sk_sp<const SkData> xmpMetadata)
+                 SkEncodedOrigin origin)
         : fEncodedInfo(std::move(info))
         , fSrcXformFormat(srcFormat)
         , fStream(std::move(stream))
         , fOrigin(origin)
-        , fXmpMetadata(std::move(xmpMetadata))
         , fDstInfo()
         , fOptions() {}
 

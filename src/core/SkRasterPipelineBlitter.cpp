@@ -10,7 +10,8 @@
 #include "include/core/SkPixmap.h"
 #include "include/core/SkShader.h"
 #include "include/private/base/SkTo.h"
-#include "src/core/SkArenaAlloc.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/base/SkUtils.h"
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlitter.h"
 #include "src/core/SkColorFilterBase.h"
@@ -19,7 +20,6 @@
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkOpts.h"
 #include "src/core/SkRasterPipeline.h"
-#include "src/core/SkUtils.h"
 #include "src/shaders/SkShaderBase.h"
 #include "src/utils/SkBlitterTrace.h"
 
@@ -153,7 +153,7 @@ void* worker_blitRect(void* arg) {
 
 SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap& dst,
                                          const SkPaint& paint,
-                                         const SkMatrixProvider& matrixProvider,
+                                         const SkMatrix& ctm,
                                          SkArenaAlloc* alloc,
                                          sk_sp<SkShader> clipShader,
                                          const SkSurfaceProps& props) {
@@ -184,8 +184,7 @@ SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap& dst,
     bool is_opaque    = shader->isOpaque() && paintColor.fA == 1.0f;
     bool is_constant  = shader->isConstant();
 
-    if (shader->appendStages(
-                {&shaderPipeline, alloc, dstCT, dstCS, paint, nullptr, matrixProvider, props})) {
+    if (shader->appendRootStages({&shaderPipeline, alloc, dstCT, dstCS, paint, props}, ctm)) {
         if (paintColor.fA != 1.0f) {
             shaderPipeline.append(SkRasterPipelineOp::scale_1_float,
                                   alloc->make<float>(paintColor.fA));
@@ -235,11 +234,9 @@ SkBlitter* SkRasterPipelineBlitter::Create(const SkPixmap& dst,
         SkPaint clipPaint;  // just need default values
         SkColorType clipCT = kRGBA_8888_SkColorType;
         SkColorSpace* clipCS = nullptr;
-        SkMatrixProvider clipMatrixProvider(SkMatrix::I());
         SkSurfaceProps props{}; // default OK; clipShader doesn't render text
-        SkStageRec rec = {clipP, alloc, clipCT, clipCS, clipPaint, nullptr, clipMatrixProvider,
-                          props};
-        if (as_SB(clipShader)->appendStages(rec)) {
+        SkStageRec rec = {clipP, alloc, clipCT, clipCS, clipPaint, props};
+        if (as_SB(clipShader)->appendRootStages(rec, SkMatrix::I())) {
             struct Storage {
                 // large enough for highp (float) or lowp(U16)
                 float   fA[SkRasterPipeline_kMaxStride];
@@ -258,10 +255,8 @@ SkBlitter* SkRasterPipelineBlitter::Create(const SkPixmap& dst,
 
     // If there's a color filter it comes next.
     if (auto colorFilter = paint.getColorFilter()) {
-        SkMatrixProvider matrixProvider(SkMatrix::I());
         SkSurfaceProps props{}; // default OK; colorFilter doesn't render text
-        SkStageRec rec = {colorPipeline, alloc, dst.colorType(), dst.colorSpace(), paint, nullptr,
-                          matrixProvider, props};
+        SkStageRec rec = {colorPipeline, alloc, dst.colorType(), dst.colorSpace(), paint, props};
         if (!as_CFB(colorFilter)->appendStages(rec, is_opaque)) {
             return nullptr;
         }

@@ -12,6 +12,7 @@
 #include "src/codec/SkCodecPriv.h"
 #include "src/codec/SkJpegPriv.h"
 #include "src/codec/SkJpegSegmentScan.h"
+#include "src/codec/SkJpegSourceMgr.h"
 
 #include <cstring>
 
@@ -34,10 +35,20 @@
     (void)VAR
 
 std::unique_ptr<SkJpegMultiPictureParameters> SkJpegParseMultiPicture(
-        const sk_sp<const SkData>& data) {
-    std::unique_ptr<SkMemoryStream> stream = SkMemoryStream::MakeDirect(data->data(), data->size());
-    // This function reads the structure described in Figure 6 of CIPA DC-x007-2009.
+        const sk_sp<const SkData>& segmentParameters) {
+    // Read the MP Format identifier starting after the APP2 Field Length. See Figure 4 of CIPA
+    // DC-x007-2009.
+    if (segmentParameters->size() < sizeof(kMpfSig)) {
+        return nullptr;
+    }
+    if (memcmp(segmentParameters->data(), kMpfSig, sizeof(kMpfSig)) != 0) {
+        return nullptr;
+    }
+    std::unique_ptr<SkMemoryStream> stream =
+            SkMemoryStream::MakeDirect(segmentParameters->bytes() + sizeof(kMpfSig),
+                                       segmentParameters->size() - sizeof(kMpfSig));
 
+    // The rest of this function reads the structure described in Figure 6 of CIPA DC-x007-2009.
     // Determine the endianness of the values in the structure. See Figure 5 (MP endian tag
     // structure).
     bool streamIsBigEndian = false;
@@ -176,28 +187,14 @@ std::unique_ptr<SkJpegMultiPictureParameters> SkJpegParseMultiPicture(
 }
 
 std::unique_ptr<SkJpegMultiPictureStreams> SkJpegExtractMultiPictureStreams(
-        SkJpegSegmentScan* scan) {
-    // Look through the scanned segments until we arrive at a MultiPicture segment that we can
-    // parse.
-    size_t mpSegmentOffset = 0;
-    std::unique_ptr<SkJpegMultiPictureParameters> mpParams;
-    for (const auto& segment : scan->segments()) {
-        if (segment.marker != kMpfMarker) {
-            continue;
-        }
-        auto parameterData = scan->copyParameters(segment, kMpfSig, sizeof(kMpfSig));
-        if (!parameterData) {
-            continue;
-        }
-        mpParams = SkJpegParseMultiPicture(parameterData);
-        if (mpParams) {
-            mpSegmentOffset = segment.offset;
-            break;
-        }
-    }
-    if (!mpParams) {
-        return nullptr;
-    }
+        const SkJpegMultiPictureParameters* mpParams,
+        const SkJpegSegment& mpParamsSegment,
+        SkJpegSourceMgr* decoderSource) {
+    SkASSERT(mpParamsSegment.marker == kMpfMarker);
+
+    // Ensure that the whole source image has been scanned.
+    // TODO(ccameron): Move this into getSubsetStream.
+    (void)decoderSource->getAllSegments();
 
     // Create streams for each of the specified segments.
     auto result = std::make_unique<SkJpegMultiPictureStreams>();
@@ -208,11 +205,12 @@ std::unique_ptr<SkJpegMultiPictureStreams> SkJpegExtractMultiPictureStreams(
         if (imageParams.dataOffset == 0) {
             continue;
         }
-        size_t imageStreamOffset = mpSegmentOffset + SkJpegSegmentScan::kMarkerCodeSize +
-                                   SkJpegSegmentScan::kParameterLengthSize + sizeof(kMpfSig) +
+        size_t imageStreamOffset = mpParamsSegment.offset + SkJpegSegmentScanner::kMarkerCodeSize +
+                                   SkJpegSegmentScanner::kParameterLengthSize + sizeof(kMpfSig) +
                                    imageParams.dataOffset;
         size_t imageStreamSize = imageParams.size;
-        result->images[i].stream = scan->getSubsetStream(imageStreamOffset, imageStreamSize);
+        result->images[i].stream =
+                decoderSource->getSubsetStream(imageStreamOffset, imageStreamSize);
     }
     return result;
 }

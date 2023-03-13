@@ -10,13 +10,13 @@
 
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkMacros.h"
 #include "include/private/SkSpinlock.h"
+#include "include/private/base/SkMacros.h"
 #include "include/private/base/SkThreadAnnotations.h"
-#include "src/core/SkTHash.h"
 #include "include/private/base/SkTo.h"
-#include "src/core/SkArenaAlloc.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkEnumBitMask.h"
+#include "src/core/SkTHash.h"
 #include "src/gpu/graphite/BuiltInCodeSnippetID.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #include "src/gpu/graphite/Uniform.h"
@@ -160,7 +160,8 @@ public:
     std::string toSkSL(const ResourceBindingRequirements& bindingReqs,
                        const RenderStep* step,
                        const bool useStorageBuffers,
-                       const bool defineLocalCoordsVarying) const;
+                       const bool defineLocalCoordsVarying,
+                       int* numTexturesAndSamplersUsed) const;
 
 private:
     std::vector<PaintParamsKey::BlockReader> fBlockReaders;

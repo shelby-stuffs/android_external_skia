@@ -14,7 +14,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLSampleUsage.h"
-#include "src/core/SkArenaAlloc.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkColorFilterBase.h"
 #include "src/core/SkEffectPriv.h"
 #include "src/core/SkRasterPipeline.h"
@@ -59,7 +59,7 @@ namespace skgpu { class KeyBuilder; }
 #include "include/core/SkSurfaceProps.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "src/gpu/ganesh/GrTestUtils.h"
 #else
 class SkSurfaceProps;
@@ -99,7 +99,7 @@ public:
                   skgpu::graphite::PipelineDataGatherer*) const override;
 #endif
 
-    bool onAppendStages(const SkStageRec& rec, bool shaderIsOpaque) const override {
+    bool appendStages(const SkStageRec& rec, bool shaderIsOpaque) const override {
         SkRasterPipeline* p = rec.fPipeline;
         if (!shaderIsOpaque) {
             p->append(SkRasterPipelineOp::unpremul);

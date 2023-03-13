@@ -26,7 +26,7 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
 #include "include/private/base/SkTo.h"
-#include "src/core/SkMathPriv.h"
+#include "src/base/SkMathPriv.h"
 #include "src/core/SkYUVMath.h"
 #include "tools/Resources.h"
 #include "tools/gpu/YUVUtils.h"
@@ -142,7 +142,8 @@ protected:
         return resultSurface->makeImageSnapshot();
     }
 
-    DrawResult onGpuSetup(GrDirectContext* dContext, SkString* errorMsg) override {
+    DrawResult onGpuSetup(SkCanvas* canvas, SkString* errorMsg) override {
+        auto dContext = GrAsDirectContext(canvas->recordingContext());
         if (!dContext || dContext->abandoned()) {
             *errorMsg = "DirectContext required to create YUV images";
             return DrawResult::kSkip;

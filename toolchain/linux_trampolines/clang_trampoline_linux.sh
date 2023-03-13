@@ -17,10 +17,12 @@ if [[ "$@" != *DSKIA_ENFORCE_IWYU* || "$@" == *use-ld* ]]; then
 fi
 
 supported_files_or_dirs=(
+  "include/private/base/"
   "modules/skunicode/"
   "src/base/"
   "src/codec/"
   "src/effects/"
+  "src/image/"
   "src/images/"
   "src/pathops/"
   "src/sksl/"
@@ -28,7 +30,6 @@ supported_files_or_dirs=(
   "src/utils/"
   "tools/debugger/"
   "tests/"
-  "src/core/SkArenaAlloc.cpp"
   "src/core/SkColor.cpp"
   "src/core/SkColorSpace.cpp"
   "src/core/SkCubicClipper.cpp"
@@ -36,7 +37,6 @@ supported_files_or_dirs=(
   "src/core/SkEdgeBuilder.cpp"
   "src/core/SkEdgeClipper.cpp"
   "src/core/SkFlattenable.cpp"
-  "src/core/SkFloatingPoint.cpp"
   "src/core/SkGeometry.cpp"
   "src/core/SkGlyph.cpp"
   "src/core/SkLineClipper.cpp"
@@ -50,12 +50,11 @@ supported_files_or_dirs=(
   "src/core/SkPoint.cpp"
   "src/core/SkRRect.cpp"
   "src/core/SkRect.cpp"
-  "src/core/SkSafeMath.cpp"
   "src/core/SkScalar.cpp"
   "src/core/SkStream.cpp"
   "src/core/SkString.cpp"
-  "src/core/SkTDArray.cpp"
   "src/gpu/ganesh/GrCaps.cpp"
+  "src/gpu/ganesh/GrMemoryPool.cpp"
   "src/gpu/ganesh/GrProcessor.cpp"
   "src/gpu/ganesh/GrRenderTargetProxy.cpp"
   "src/gpu/ganesh/GrResourceProvider.cpp"
@@ -70,9 +69,10 @@ supported_files_or_dirs=(
 )
 
 excluded_files=(
-# Causes IWYU 8.17 to assert
+# Causes IWYU 8.17 to assert because it includes SkVX.h
 # "iwyu.cc:1977: Assertion failed: TODO(csilvers): for objc and clang lang extensions"
   "tests/SkVxTest.cpp"
+  "src/base/SkHalf.cpp"
 )
 
 function opted_in_to_IWYU_checks() {
@@ -119,6 +119,7 @@ else
   # not consistent with detecting that.
   external/clang_linux_amd64/bin/include-what-you-use $@ \
       -Xiwyu --keep="include/core/SkTypes.h" \
+      -Xiwyu --keep="include/private/base/SkDebug.h" \
       -Xiwyu --no_default_mappings \
       -Xiwyu --error=3 \
       -Xiwyu --mapping_file=$MAPPING_FILE 2>/dev/null
@@ -131,6 +132,7 @@ else
     # analysis. If we aren't sure why IWYU wants to include something, try changing verbose to 3.
     external/clang_linux_amd64/bin/include-what-you-use $@ \
         -Xiwyu --keep="include/core/SkTypes.h" \
+        -Xiwyu --keep="include/private/base/SkDebug.h" \
         -Xiwyu --no_default_mappings \
         -Xiwyu --mapping_file=$MAPPING_FILE -Xiwyu --no_comments \
         -Xiwyu --quoted_includes_first -Xiwyu --verbose=3

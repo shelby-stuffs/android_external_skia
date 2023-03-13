@@ -7,8 +7,8 @@
 
 #include "include/core/SkRect.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTemplates.h"
-#include "include/utils/SkRandom.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkRTree.h"
 #include "tests/Test.h"
 

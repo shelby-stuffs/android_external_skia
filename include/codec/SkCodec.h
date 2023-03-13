@@ -9,7 +9,6 @@
 #define SkCodec_DEFINED
 
 #include "include/codec/SkEncodedOrigin.h"
-#include "include/core/SkData.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkRect.h"
@@ -18,7 +17,7 @@
 #include "include/core/SkTypes.h"
 #include "include/core/SkYUVAPixmaps.h"
 #include "include/private/SkEncodedInfo.h"
-#include "include/private/SkNoncopyable.h"
+#include "include/private/base/SkNoncopyable.h"
 #include "modules/skcms/skcms.h"
 
 #include <cstddef>
@@ -32,6 +31,7 @@
 #include "include/core/SkEncodedImageFormat.h" // IWYU pragma: keep
 
 class SkAndroidCodec;
+class SkData;
 class SkFrameHolder;
 class SkImage;
 class SkPngChunkReader;
@@ -762,16 +762,13 @@ protected:
     SkCodec(SkEncodedInfo&&,
             XformFormat srcFormat,
             std::unique_ptr<SkStream>,
-            SkEncodedOrigin = kTopLeft_SkEncodedOrigin,
-            sk_sp<const SkData> xmpMetadata = nullptr);
+            SkEncodedOrigin = kTopLeft_SkEncodedOrigin);
 
     void setSrcXformFormat(XformFormat pixelFormat);
 
     XformFormat getSrcXformFormat() const {
         return fSrcXformFormat;
     }
-
-    sk_sp<const SkData> getXmpMetadata() const { return fXmpMetadata; }
 
     virtual bool onGetGainmapInfo(SkGainmapInfo*, std::unique_ptr<SkStream>*) { return false; }
 
@@ -896,8 +893,7 @@ private:
     XformFormat                        fSrcXformFormat;
     std::unique_ptr<SkStream>          fStream;
     bool fNeedsRewind = false;
-    const SkEncodedOrigin              fOrigin;
-    const sk_sp<const SkData> fXmpMetadata;
+    const SkEncodedOrigin fOrigin;
 
     SkImageInfo                        fDstInfo;
     Options                            fOptions;
