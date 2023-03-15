@@ -652,6 +652,8 @@ sksl_shared_tests = [
   "shared/SwizzleByConstantIndex.sksl",
   "shared/SwizzleByIndex.sksl",
   "shared/SwizzleConstants.sksl",
+  "shared/SwizzleIndexLookup.sksl",
+  "shared/SwizzleIndexStore.sksl",
   "shared/SwizzleLTRB.sksl",
   "shared/SwizzleOpt.sksl",
   "shared/SwizzleScalar.sksl",
