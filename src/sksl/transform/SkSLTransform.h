@@ -16,13 +16,13 @@ namespace SkSL {
 
 class Context;
 class Expression;
+class IndexExpression;
 struct Modifiers;
 struct Module;
 struct Program;
 class ProgramElement;
 class ProgramUsage;
 class Statement;
-struct IndexExpression;
 class Variable;
 enum class ProgramKind : int8_t;
 
@@ -40,8 +40,8 @@ const Modifiers* AddConstToVarModifiers(const Context& context,
 
 /**
  * Rewrites indexed swizzles of the form `myVec.zyx[i]` by replacing the swizzle with a lookup into
- * a constant vector. e.g., the above expression would be rewritten as `myVec[uvec3(2, 1, 0)[i]]`.
- * This matches glslang's handling of the code.
+ * a constant vector. e.g., the above expression would be rewritten as `myVec[vec3(2, 1, 0)[i]]`.
+ * This roughly matches glslang's handling of the code.
  */
 std::unique_ptr<Expression> RewriteIndexedSwizzle(const Context& context,
                                                   const IndexExpression& swizzle);

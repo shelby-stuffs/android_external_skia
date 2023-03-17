@@ -315,8 +315,8 @@ bool LazyYUVImage::ensureYUVImage(GrRecordingContext* rContext, Type type) {
                             direct,
                             fPixmaps.plane(i),
                             kTopLeft_GrSurfaceOrigin,
-                            GrRenderable::kNo,
-                            GrProtected::kNo);
+                            skgpu::Renderable::kNo,
+                            skgpu::Protected::kNo);
                     if (mbets[i]) {
                         textures[i] = mbets[i]->texture();
                     } else {
@@ -368,7 +368,7 @@ bool LazyYUVImage::ensureYUVImage(skgpu::graphite::Recorder* recorder, Type type
             break;
         }
         case Type::kFromTextures:
-            // TODO: implement this and MakeGraphiteFromYUVATextures()
+            // TODO: implement this
             return false;
     }
     return fYUVImage[idx] != nullptr;
