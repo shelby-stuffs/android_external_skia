@@ -8,50 +8,51 @@
 #ifndef GrDirectContext_DEFINED
 #define GrDirectContext_DEFINED
 
+#include "include/core/SkColor.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/GrTypes.h"
 
-#include "include/gpu/GrBackendSurface.h"
-
-// We shouldn't need this but currently Android is relying on this being include transitively.
-#include "include/core/SkUnPreMultiply.h"
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string_view>
 
 class GrAtlasManager;
 class GrBackendSemaphore;
+class GrBackendFormat;
+class GrBackendTexture;
+class GrBackendRenderTarget;
 class GrClientMappedBufferManager;
-class GrDirectContextPriv;
 class GrContextThreadSafeProxy;
-struct GrD3DBackendContext;
-class GrFragmentProcessor;
+class GrDirectContextPriv;
 class GrGpu;
-struct GrGLInterface;
-struct GrMtlBackendContext;
-struct GrMockOptions;
-class GrPath;
 class GrResourceCache;
 class GrResourceProvider;
-class GrSurfaceProxy;
-class GrTextureProxy;
-struct GrVkBackendContext;
-
-class SkImage;
+class SkData;
 class SkPixmap;
-class SkString;
-class SkSurfaceCharacterization;
-class SkSurfaceProps;
 class SkTaskGroup;
 class SkTraceMemoryDump;
+enum SkColorType : int;
 enum class SkTextureCompressionType;
+struct GrGLInterface;
+struct GrMockOptions;
+struct GrVkBackendContext; // IWYU pragma: keep
+struct GrD3DBackendContext; // IWYU pragma: keep
+struct GrMtlBackendContext; // IWYU pragma: keep
 
 namespace skgpu {
-class Swizzle;
+    class MutableTextureState;
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
-namespace v1 { class SmallPathAtlasMgr; }
+    namespace ganesh { class SmallPathAtlasMgr; }
 #endif
 }
-
-namespace sktext::gpu {
-class StrikeCache;
-}
+namespace sktext { namespace gpu { class StrikeCache; } }
+namespace wgpu { class Device; } // IWYU pragma: keep
 
 class SK_API GrDirectContext : public GrRecordingContext {
 public:
@@ -552,10 +553,7 @@ public:
                                            GrProtected isProtected,
                                            GrGpuFinishedProc finishedProc = nullptr,
                                            GrGpuFinishedContext finishedContext = nullptr,
-                                           std::string_view label = {}) {
-         return this->createBackendTexture(&srcData, 1, textureOrigin, renderable, isProtected,
-                                           finishedProc, finishedContext, label);
-     }
+                                           std::string_view label = {});
 
     // Deprecated versions that do not take origin and assume top-left.
     GrBackendTexture createBackendTexture(const SkPixmap srcData[],
@@ -564,30 +562,14 @@ public:
                                           GrProtected isProtected,
                                           GrGpuFinishedProc finishedProc = nullptr,
                                           GrGpuFinishedContext finishedContext = nullptr,
-                                          std::string_view label = {}) {
-        return this->createBackendTexture(srcData,
-                                          numLevels,
-                                          kTopLeft_GrSurfaceOrigin,
-                                          renderable,
-                                          isProtected,
-                                          finishedProc,
-                                          finishedContext,
-                                          label);
-    }
+                                          std::string_view label = {});
+
     GrBackendTexture createBackendTexture(const SkPixmap& srcData,
                                           GrRenderable renderable,
                                           GrProtected isProtected,
                                           GrGpuFinishedProc finishedProc = nullptr,
                                           GrGpuFinishedContext finishedContext = nullptr,
-                                          std::string_view label = {}) {
-        return this->createBackendTexture(&srcData,
-                                          1,
-                                          renderable,
-                                          isProtected,
-                                          finishedProc,
-                                          finishedContext,
-                                          label);
-    }
+                                          std::string_view label = {});
 
     /**
      * If possible, updates a backend texture to be filled to a particular color. The client should
@@ -666,14 +648,7 @@ public:
                              const SkPixmap srcData[],
                              int numLevels,
                              GrGpuFinishedProc finishedProc,
-                             GrGpuFinishedContext finishedContext) {
-        return this->updateBackendTexture(texture,
-                                          srcData,
-                                          numLevels,
-                                          kTopLeft_GrSurfaceOrigin,
-                                          finishedProc,
-                                          finishedContext);
-    }
+                             GrGpuFinishedContext finishedContext);
 
     /**
      * Retrieve the GrBackendFormat for a given SkTextureCompressionType. This is
@@ -855,7 +830,7 @@ protected:
 
     GrAtlasManager* onGetAtlasManager() { return fAtlasManager.get(); }
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
-    skgpu::v1::SmallPathAtlasMgr* onGetSmallPathAtlasMgr();
+    skgpu::ganesh::SmallPathAtlasMgr* onGetSmallPathAtlasMgr();
 #endif
 
     GrDirectContext* asDirectContext() override { return this; }
@@ -923,12 +898,10 @@ private:
     std::unique_ptr<GrAtlasManager> fAtlasManager;
 
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
-    std::unique_ptr<skgpu::v1::SmallPathAtlasMgr> fSmallPathAtlasMgr;
+    std::unique_ptr<skgpu::ganesh::SmallPathAtlasMgr> fSmallPathAtlasMgr;
 #endif
 
     friend class GrDirectContextPriv;
-
-    using INHERITED = GrRecordingContext;
 };
 
 

@@ -51,9 +51,9 @@ std::optional<SkGlyph> SkGlyph::MakeFromBuffer(SkReadBuffer& buffer) {
     glyph.fAdvanceX = advance.x();
     glyph.fAdvanceY = advance.y();
     glyph.fWidth = dimensions >> 16;
-    glyph.fHeight = dimensions & 0xffff;
+    glyph.fHeight = dimensions & 0xffffu;
     glyph.fLeft = leftTop >> 16;
-    glyph.fTop = leftTop & 0xffff;
+    glyph.fTop = leftTop & 0xffffu;
     glyph.fMaskFormat = format;
     SkDEBUGCODE(glyph.fAdvancesBoundsFormatAndInitialPathDone = true;)
     return std::move(glyph);
@@ -284,9 +284,11 @@ void SkGlyph::flattenMetrics(SkWriteBuffer& buffer) const {
     buffer.writeUInt(fID.value());
     buffer.writePoint({fAdvanceX, fAdvanceY});
     buffer.writeUInt(fWidth << 16 | fHeight);
-    // Note: << has undefined behavior for negative values.
-    const uint32_t left = fLeft;
-    const uint32_t top = fTop;
+    // Note: << has undefined behavior for negative values, so convert everything to the bit
+    // values of uint16_t. Using the cast keeps the signed values fLeft and fTop from sign
+    // extending.
+    const uint32_t left = static_cast<uint16_t>(fLeft);
+    const uint32_t top = static_cast<uint16_t>(fTop);
     buffer.writeUInt(left << 16 | top);
     buffer.writeUInt(SkTo<uint32_t>(fMaskFormat));
 }
@@ -336,6 +338,10 @@ size_t SkGlyph::addPathFromBuffer(SkReadBuffer& buffer, SkArenaAlloc* alloc) {
 
     size_t memoryIncrease = 0;
     const bool hasPath = buffer.readBool();
+    // Check if the buffer is invalid, so as to not make a logical decision on invalid data.
+    if (!buffer.isValid()) {
+        return 0;
+    }
     if (hasPath) {
         const bool pathIsHairline = buffer.readBool();
         SkPath path;

@@ -39,12 +39,13 @@ ExtractPaintData(Recorder* recorder,
     KeyContext keyContext(recorder, local2Dev, targetColorInfo, p.color());
     p.toKey(keyContext, builder, gatherer);
 
-    auto dict = recorder->priv().shaderCodeDictionary();
+    auto entry = recorder->priv().shaderCodeDictionary()->findOrCreate(builder);
+    if (!entry) {
+        return { UniquePaintParamsID::InvalidID(), nullptr, nullptr };
+    }
+
     UniformDataCache* uniformDataCache = recorder->priv().uniformDataCache();
     TextureDataCache* textureDataCache = recorder->priv().textureDataCache();
-
-    auto entry = dict->findOrCreate(builder);
-
     const UniformDataBlock* uniforms =
             gatherer->hasUniforms() ? uniformDataCache->insert(gatherer->finishUniformDataBlock())
                                     : nullptr;
@@ -348,11 +349,12 @@ std::string GetSkSLVS(const ResourceBindingRequirements& bindingReqs,
 }
 
 FragSkSLInfo GetSkSLFS(const ResourceBindingRequirements& bindingReqs,
-                      const ShaderCodeDictionary* dict,
-                      const RuntimeEffectDictionary* rteDict,
-                      const RenderStep* step,
-                      UniquePaintParamsID paintID,
-                      bool useStorageBuffers) {
+                       const ShaderCodeDictionary* dict,
+                       const RuntimeEffectDictionary* rteDict,
+                       const RenderStep* step,
+                       UniquePaintParamsID paintID,
+                       bool useStorageBuffers,
+                       skgpu::Swizzle writeSwizzle) {
     if (!paintID.isValid()) {
         // TODO: we should return the error shader code here
         return {};
@@ -374,7 +376,8 @@ FragSkSLInfo GetSkSLFS(const ResourceBindingRequirements& bindingReqs,
                               step,
                               useStorageBuffers,
                               /*defineLocalCoordsVarying=*/result.fRequiresLocalCoords,
-                              /*numTexturesAndSamplersUsed=*/&result.fNumTexturesAndSamplers);
+                              /*numTexturesAndSamplersUsed=*/&result.fNumTexturesAndSamplers,
+                              writeSwizzle);
 
     return result;
 }
