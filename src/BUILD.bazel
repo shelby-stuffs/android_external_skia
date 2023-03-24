@@ -71,6 +71,7 @@ skia_filegroup(
         "//src/ports:private_hdrs",
         "//src/sfnt:private_hdrs",
         "//src/shaders:private_hdrs",
+        "//src/sksl/tracing:skopts_hdrs",
         "//src/text:private_hdrs",
         "//src/utils:private_hdrs",
     ] + select({
@@ -136,9 +137,9 @@ generate_cpp_files_for_headers(
     to_generate = [
         "src/core/SkColorSpacePriv.h",
         "src/core/SkDrawProcs.h",
-        "src/core/SkICCPriv.h",
         "src/core/SkMatrixPriv.h",
         "src/core/SkPathPriv.h",
+        "src/encode/SkICCPriv.h",
         "src/encode/SkImageEncoderFns.h",
         "src/encode/SkImageEncoderPriv.h",
         "src/image/SkImage_Base.h",

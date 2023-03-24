@@ -46,6 +46,9 @@ ignorelist = [
   # Some node_modules/ files (used by CanvasKit et al) have c++ code which we should ignore.
   'node_modules',
   'include/third_party/skcms',
+  # Temporary shims
+  'SkEncodedImageFormat.h',
+  'SkICC.h',
 ]
 
 assert '/' in [os.sep, os.altsep]
@@ -127,5 +130,5 @@ if need_rewriting:
   for path in need_rewriting:
     print('\t' + path)
   print('To do this automatically, run')
-  print('python tools/rewrite_includes.py ' + ' '.join(need_rewriting))
+  print('python3 tools/rewrite_includes.py ' + ' '.join(need_rewriting))
   sys.exit(1)
