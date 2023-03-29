@@ -72,7 +72,6 @@
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrImageInfo.h"
-#include "src/gpu/ganesh/GrImageUtils.h"
 #include "src/gpu/ganesh/GrPaint.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
@@ -92,7 +91,9 @@
 #include "src/gpu/ganesh/effects/GrRRectEffect.h"
 #include "src/gpu/ganesh/geometry/GrShape.h"
 #include "src/gpu/ganesh/geometry/GrStyledShape.h"
+#include "src/gpu/ganesh/image/GrImageUtils.h"
 #include "src/text/GlyphRun.h"
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -485,10 +486,18 @@ void Device::drawPoints(SkCanvas::PointMode mode,
         }
     }
 
+    const GrCaps* caps = fContext->priv().caps();
     SkScalar scales[2];
-    bool isHairline = (0 == width) ||
-                       (1 == width && this->localToDevice().getMinMaxScales(scales) &&
-                        SkScalarNearlyEqual(scales[0], 1.f) && SkScalarNearlyEqual(scales[1], 1.f));
+    bool isHairline =
+            ((0 == width) ||
+             (1 == width && this->localToDevice().getMinMaxScales(scales) &&
+              SkScalarNearlyEqual(scales[0], 1.f) && SkScalarNearlyEqual(scales[1], 1.f))) &&
+
+            // Don't do this as a hairline draw, which will emit line primitives, if
+            // lines are not permitted by caps.
+            !((mode == SkCanvas::kLines_PointMode || mode == SkCanvas::kPolygon_PointMode) &&
+              caps->avoidLineDraws());
+
     // we only handle non-coverage-aa hairlines and paints without path effects or mask filters,
     // else we let the SkDraw call our drawPath()
     if (!isHairline ||
@@ -1241,7 +1250,7 @@ bool Device::replaceBackingProxy(SkSurface::ContentChangeMode mode) {
     }
 
     GrProxyProvider* proxyProvider = fContext->priv().proxyProvider();
-    // This entry point is used by SkSurface_Gpu::onCopyOnWrite so it must create a
+    // This entry point is used by SkSurface_Ganesh::onCopyOnWrite so it must create a
     // kExact-backed render target proxy
     sk_sp<GrTextureProxy> proxy =
             proxyProvider->createProxy(format,
