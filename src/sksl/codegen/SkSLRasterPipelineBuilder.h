@@ -23,6 +23,7 @@ class SkWStream;
 namespace SkSL {
 
 class DebugTracePriv;
+class TraceHook;
 
 namespace RP {
 
@@ -104,6 +105,7 @@ enum class BuilderOp {
     pop_return_mask,
     push_src_rgba,
     push_dst_rgba,
+    push_device_xy01,
     pop_src_rg,
     pop_src_rgba,
     pop_dst_rgba,
@@ -149,11 +151,12 @@ public:
 
 class Program {
 public:
-    Program(SkTArray<Instruction> instrs,
+    Program(skia_private::TArray<Instruction> instrs,
             int numValueSlots,
             int numUniformSlots,
             int numLabels,
             DebugTracePriv* debugTrace);
+    ~Program();
 
 #if !defined(SKSL_STANDALONE)
     bool appendStages(SkRasterPipeline* pipeline,
@@ -177,7 +180,7 @@ private:
         ProgramOp op;
         void*     ctx;
     };
-    void makeStages(SkTArray<Stage>* pipeline,
+    void makeStages(skia_private::TArray<Stage>* pipeline,
                     SkArenaAlloc* alloc,
                     SkSpan<const float> uniforms,
                     const SlotData& slots) const;
@@ -185,20 +188,20 @@ private:
     StackDepthMap tempStackMaxDepths() const;
 
     // These methods are used to split up large multi-slot operations into multiple ops as needed.
-    void appendCopy(SkTArray<Stage>* pipeline, SkArenaAlloc* alloc,
+    void appendCopy(skia_private::TArray<Stage>* pipeline, SkArenaAlloc* alloc,
                     ProgramOp baseStage,
                     float* dst, int dstStride, const float* src, int srcStride, int numSlots) const;
-    void appendCopySlotsUnmasked(SkTArray<Stage>* pipeline, SkArenaAlloc* alloc,
+    void appendCopySlotsUnmasked(skia_private::TArray<Stage>* pipeline, SkArenaAlloc* alloc,
                                  float* dst, const float* src, int numSlots) const;
-    void appendCopySlotsMasked(SkTArray<Stage>* pipeline, SkArenaAlloc* alloc,
+    void appendCopySlotsMasked(skia_private::TArray<Stage>* pipeline, SkArenaAlloc* alloc,
                                float* dst, const float* src, int numSlots) const;
-    void appendCopyConstants(SkTArray<Stage>* pipeline, SkArenaAlloc* alloc,
+    void appendCopyConstants(skia_private::TArray<Stage>* pipeline, SkArenaAlloc* alloc,
                              float* dst, const float* src, int numSlots) const;
 
     // Appends a single-slot single-input math operation to the pipeline. The op `stage` will
     // appended `numSlots` times, starting at position `dst` and advancing one slot for each
     // subsequent invocation.
-    void appendSingleSlotUnaryOp(SkTArray<Stage>* pipeline, ProgramOp stage,
+    void appendSingleSlotUnaryOp(skia_private::TArray<Stage>* pipeline, ProgramOp stage,
                                  float* dst, int numSlots) const;
 
     // Appends a multi-slot single-input math operation to the pipeline. `baseStage` must refer to
@@ -206,14 +209,14 @@ private:
     // 2-4 slots. For instance, {`zero_slot`, `zero_2_slots`, `zero_3_slots`, `zero_4_slots`}
     // must be contiguous ops in the stage list, listed in that order; pass `zero_slot` and we
     // pick the appropriate op based on `numSlots`.
-    void appendMultiSlotUnaryOp(SkTArray<Stage>* pipeline, ProgramOp baseStage,
+    void appendMultiSlotUnaryOp(skia_private::TArray<Stage>* pipeline, ProgramOp baseStage,
                                 float* dst, int numSlots) const;
 
     // Appends a two-input math operation to the pipeline. `src` must be _immediately_ after `dst`
     // in memory. `baseStage` must refer to an unbounded "apply_to_n_slots" stage. A BinaryOpCtx
     // will be used to pass pointers to the destination and source; the delta between the two
     // pointers implicitly gives the number of slots.
-    void appendAdjacentNWayBinaryOp(SkTArray<Stage>* pipeline, SkArenaAlloc* alloc,
+    void appendAdjacentNWayBinaryOp(skia_private::TArray<Stage>* pipeline, SkArenaAlloc* alloc,
                                     ProgramOp stage,
                                     float* dst, const float* src, int numSlots) const;
 
@@ -223,7 +226,7 @@ private:
     // `add_float`, `add_2_floats`, `add_3_floats`, `add_4_floats`} must be contiguous ops in the
     // stage list, listed in that order; pass `add_n_floats` and we pick the appropriate op based on
     // `numSlots`.
-    void appendAdjacentMultiSlotBinaryOp(SkTArray<Stage>* pipeline, SkArenaAlloc* alloc,
+    void appendAdjacentMultiSlotBinaryOp(skia_private::TArray<Stage>* pipeline, SkArenaAlloc* alloc,
                                          ProgramOp baseStage,
                                          float* dst, const float* src, int numSlots) const;
 
@@ -231,7 +234,8 @@ private:
     // (dst) to the pipeline. The three inputs must be _immediately_ adjacent in memory. `baseStage`
     // must refer to an unbounded "apply_to_n_slots" stage, which must be immediately followed by
     // specializations for 1-4 slots.
-    void appendAdjacentMultiSlotTernaryOp(SkTArray<Stage>* pipeline, SkArenaAlloc* alloc,
+    void appendAdjacentMultiSlotTernaryOp(skia_private::TArray<Stage>* pipeline,
+                                          SkArenaAlloc* alloc,
                                           ProgramOp stage, float* dst,
                                           const float* src0, const float* src1, int numSlots) const;
 
@@ -239,20 +243,21 @@ private:
     // pipeline. The three inputs must be _immediately_ adjacent in memory. `baseStage` must refer
     // to an unbounded "apply_to_n_slots" stage. A TernaryOpCtx will be used to pass pointers to the
     // destination and sources; the delta between the each pointer implicitly gives the slot count.
-    void appendAdjacentNWayTernaryOp(SkTArray<Stage>* pipeline, SkArenaAlloc* alloc,
+    void appendAdjacentNWayTernaryOp(skia_private::TArray<Stage>* pipeline, SkArenaAlloc* alloc,
                                      ProgramOp stage, float* dst,
                                      const float* src0, const float* src1, int numSlots) const;
 
     // Appends a stack_rewind op on platforms where it is needed (when SK_HAS_MUSTTAIL is not set).
-    void appendStackRewind(SkTArray<Stage>* pipeline) const;
+    void appendStackRewind(skia_private::TArray<Stage>* pipeline) const;
 
-    SkTArray<Instruction> fInstructions;
+    skia_private::TArray<Instruction> fInstructions;
     int fNumValueSlots = 0;
     int fNumUniformSlots = 0;
     int fNumTempStackSlots = 0;
     int fNumLabels = 0;
     SkTHashMap<int, int> fTempStackMaxDepths;
     DebugTracePriv* fDebugTrace = nullptr;
+    std::unique_ptr<SkSL::TraceHook> fTraceHook;
 };
 
 class Builder {
@@ -563,6 +568,10 @@ public:
         fInstructions.push_back({BuilderOp::push_dst_rgba, {}});
     }
 
+    void push_device_xy01() {
+        fInstructions.push_back({BuilderOp::push_device_xy01, {}});
+    }
+
     void pop_src_rg() {
         fInstructions.push_back({BuilderOp::pop_src_rg, {}});
     }
@@ -632,8 +641,8 @@ public:
         fInstructions.push_back({BuilderOp::trace_line, {}, traceMaskStackID, line});
     }
 
-    void trace_var(int traceMaskStackID, Slot slot) {
-        fInstructions.push_back({BuilderOp::trace_var, {slot}, traceMaskStackID});
+    void trace_var(int traceMaskStackID, SlotRange r) {
+        fInstructions.push_back({BuilderOp::trace_var, {r.index}, traceMaskStackID, r.count});
     }
 
     void trace_enter(int traceMaskStackID, int funcID) {
@@ -651,7 +660,7 @@ public:
 private:
     void simplifyPopSlotsUnmasked(SlotRange* dst);
 
-    SkTArray<Instruction> fInstructions;
+    skia_private::TArray<Instruction> fInstructions;
     int fNumLabels = 0;
     int fExecutionMaskWritesEnabled = 0;
 };

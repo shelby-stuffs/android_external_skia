@@ -3440,8 +3440,20 @@ STAGE_TAIL(trace_var, SkRasterPipeline_TraceVarCtx* ctx) {
     if (any(mask)) {
         for (size_t lane = 0; lane < N; ++lane) {
             if (select_lane(mask, lane)) {
-                I32 data = *(I32*)ctx->data;
-                ctx->traceHook->var(ctx->slotIdx, select_lane(data, lane));
+                I32* data = (I32*)ctx->data;
+                int slotIdx = ctx->slotIdx, numSlots = ctx->numSlots;
+                if (ctx->indirectOffset) {
+                    // If this was an indirect store, apply the indirect-offset to the data pointer.
+                    uint32_t indirectOffset = select_lane(*(U32*)ctx->indirectOffset, lane);
+                    indirectOffset = std::min<uint32_t>(indirectOffset, ctx->indirectLimit);
+                    data += indirectOffset;
+                    slotIdx += indirectOffset;
+                }
+                while (numSlots--) {
+                    ctx->traceHook->var(slotIdx, select_lane(*data, lane));
+                    ++slotIdx;
+                    ++data;
+                }
                 break;
             }
         }

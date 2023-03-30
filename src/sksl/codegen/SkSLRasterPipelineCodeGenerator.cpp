@@ -73,6 +73,8 @@
 #include <utility>
 #include <vector>
 
+using namespace skia_private;
+
 namespace SkSL {
 namespace RP {
 
@@ -307,14 +309,29 @@ public:
     [[nodiscard]] bool pushVariableReference(const VariableReference& v);
 
     /** Pops an expression from the value stack and copies it into slots. */
-    void popToSlotRange(SlotRange r) { fBuilder.pop_slots(r); }
-    void popToSlotRangeUnmasked(SlotRange r) { fBuilder.pop_slots_unmasked(r); }
+    void popToSlotRange(SlotRange r) {
+        fBuilder.pop_slots(r);
+        if (this->shouldWriteTraceOps()) {
+            fBuilder.trace_var(fTraceMask->stackID(), r);
+        }
+    }
+    void popToSlotRangeUnmasked(SlotRange r) {
+        fBuilder.pop_slots_unmasked(r);
+        if (this->shouldWriteTraceOps()) {
+            fBuilder.trace_var(fTraceMask->stackID(), r);
+        }
+    }
 
     /** Pops an expression from the value stack and discards it. */
     void discardExpression(int slots) { fBuilder.discard_stack(slots); }
 
     /** Zeroes out a range of slots. */
-    void zeroSlotRangeUnmasked(SlotRange r) { fBuilder.zero_slots_unmasked(r); }
+    void zeroSlotRangeUnmasked(SlotRange r) {
+        fBuilder.zero_slots_unmasked(r);
+        if (this->shouldWriteTraceOps()) {
+            fBuilder.trace_var(fTraceMask->stackID(), r);
+        }
+    }
 
     /**
      * Emits a trace_line opcode. writeStatement does this, and statements that alter control flow
@@ -327,6 +344,9 @@ public:
 
     /** Prepares our position-to-line-offset conversion table (stored in `fLineOffsets`). */
     void calculateLineOffsets();
+
+    bool shouldWriteTraceOps() { return fDebugTrace && fWriteTraceOps; }
+    int traceMaskStackID() { return fTraceMask->stackID(); }
 
     /** Expression utilities. */
     struct TypedOps {
@@ -420,7 +440,7 @@ private:
     int fCurrentBreakTarget = -1;
     int fCurrentStack = 0;
     int fNextStackID = 0;
-    SkTArray<int> fRecycledStacks;
+    TArray<int> fRecycledStacks;
 
     SkTHashMap<const FunctionDefinition*, Analysis::ReturnComplexity> fReturnComplexityMap;
 
@@ -430,7 +450,7 @@ private:
 
     // `fLineOffsets` contains the position of each newline in the source, plus a zero at the
     // beginning, and the total source length at the end, as sentinels.
-    SkTArray<int> fLineOffsets;
+    TArray<int> fLineOffsets;
 
     static constexpr auto kAbsOps = TypedOps{BuilderOp::abs_float,
                                              BuilderOp::abs_int,
@@ -765,6 +785,13 @@ public:
                                                                      swizzle.size());
             } else {
                 gen->builder()->swizzle_copy_stack_to_slots(fixedOffset, swizzle, swizzle.size());
+            }
+        }
+        if (gen->shouldWriteTraceOps()) {
+            if (dynamicOffset) {
+                // TODO: trace_var_indirect
+            } else {
+                gen->builder()->trace_var(gen->traceMaskStackID(), fixedOffset);
             }
         }
         return true;
@@ -2515,7 +2542,7 @@ bool Generator::pushFunctionCall(const FunctionCall& c) {
     // Write all the arguments into their parameter's variable slots. Because we never allow
     // recursion, we don't need to worry about overwriting any existing values in those slots.
     // (In fact, we don't even need to apply the write mask.)
-    SkTArray<std::unique_ptr<LValue>> lvalues;
+    TArray<std::unique_ptr<LValue>> lvalues;
     lvalues.resize(c.arguments().size());
 
     for (int index = 0; index < c.arguments().size(); ++index) {
@@ -3507,7 +3534,7 @@ bool Generator::writeProgram(const FunctionDefinition& function) {
             // trace-mask stack.
             fTraceMask.emplace(this);
             fTraceMask->enter();
-            fBuilder.push_src_rgba();
+            fBuilder.push_device_xy01();
             fBuilder.discard_stack(2);
             fBuilder.push_literal_f(fDebugTrace->fTraceCoord.fX + 0.5f);
             fBuilder.push_literal_f(fDebugTrace->fTraceCoord.fY + 0.5f);
