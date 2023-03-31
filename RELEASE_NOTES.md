@@ -2,6 +2,23 @@ Skia Graphics Release Notes
 
 This file includes a list of high level updates for each milestone release.
 
+Milestone 114
+-------------
+  * Gradient shaders support interpolation in several different color spaces, by passing a
+    `SkGradientShader::Interpolation` struct to the shader factory functions. The color space and
+    hue method options are based on the CSS Color Level 4 specfication:
+    * https://www.w3.org/TR/css-color-4/#interpolation-space
+    * https://www.w3.org/TR/css-color-4/#hue-interpolation
+  * `SkImages::GetBackendTextureFromImage` has been renamed `SkImages::MakeBackendTextureFromImage`.
+  * `SkImage::getBackendTexture()` has been moved to `SkImages::GetBackendTextureFromImage()` in
+    `SkImageGanesh.h`.
+  * `SkImage::makeTextureImage()` has been moved to `SkImages::TextureFromImage()` in
+    `SkImageGanesh.h`.
+  * `SkImage::flush()` and `SkImage::flushAndSubmit()` has been moved to
+    `GrDirectContext::flush()` and `GrDirectContext::flushAndSubmit()` in `SkImageGanesh.h`.
+
+* * *
+
 Milestone 113
 -------------
   * The define SK_SUPPORT_GPU is now SK_GANESH. It is no longer detected as a 0 or 1, but
@@ -450,7 +467,7 @@ Milestone 90
   * Fix several minor issues in lighting image filters:
     - The spotlight falloff exponent is no longer clamped to [1, 128]. SVG 1.1 requires the specular
       lighting effect's exponent (shininess) to be clamped; not the spotlight's falloff. Any such
-      parameter clamping is the client's responisibility, which makes Skia's lighting effect easily
+      parameter clamping is the client's responsibility, which makes Skia's lighting effect easily
       adaptable to SVG 1.1 (clamp exponent) or SVG 2 (no clamp).
     - Fix spotlight incorrectly scaling light within the cone angle.
     - Move saturation of RGBA to after multiplying lighting intensity with the lighting color, which
@@ -461,8 +478,11 @@ Milestone 90
     New code should use the new entry point – migration CLs will be coming soon.
     https://review.skia.org/373716
 
+* * *
+
 Milestone 89
 ------------
+
   * Removed SkYUVAIndex and SkYUVASizeInfo. These were no longer used in any
     public APIs.
     https://review.skia.org/352497
