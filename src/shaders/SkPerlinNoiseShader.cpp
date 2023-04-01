@@ -26,6 +26,7 @@
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrProcessorUnitTest.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrShaderCaps.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/effects/GrMatrixEffect.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
@@ -754,16 +755,16 @@ SkString GrPerlinNoise2Effect::Impl::emitHelper(EmitArgs& args) {
     SkString sampleY = this->invokeChild(0, "half4(1)", args, "half2(floorVal.z, 0.5)");
     noiseCode.appendf("half2 latticeIdx = half2(%s.a, %s.a);", sampleX.c_str(), sampleY.c_str());
 
-#if defined(SK_BUILD_FOR_ANDROID)
-    // Android rounding for Tegra devices, like, for example: Xoom (Tegra 2), Nexus 7 (Tegra 3).
-    // The issue is that colors aren't accurate enough on Tegra devices. For example, if an 8 bit
-    // value of 124 (or 0.486275 here) is entered, we can get a texture value of 123.513725
-    // (or 0.484368 here). The following rounding operation prevents these precision issues from
-    // affecting the result of the noise by making sure that we only have multiples of 1/255.
-    // (Note that 1/255 is about 0.003921569, which is the value used here).
-    noiseCode.append(
-            "latticeIdx = floor(latticeIdx * half2(255.0) + half2(0.5)) * half2(0.003921569);");
-#endif
+    if (args.fShaderCaps->fPerlinNoiseRoundingFix) {
+        // Android rounding for Tegra devices, like, for example: Xoom (Tegra 2), Nexus 7 (Tegra 3).
+        // The issue is that colors aren't accurate enough on Tegra devices. For example, if an
+        // 8 bit value of 124 (or 0.486275 here) is entered, we can get a texture value of
+        // 123.513725 (or 0.484368 here). The following rounding operation prevents these precision
+        // issues from affecting the result of the noise by making sure that we only have multiples
+        // of 1/255. (Note that 1/255 is about 0.003921569, which is the value used here).
+        noiseCode.append(
+                "latticeIdx = floor(latticeIdx * half2(255.0) + half2(0.5)) * half2(0.003921569);");
+    }
 
     // Get (x,y) coordinates with the permuted x
     noiseCode.append("half4 bcoords = 256*latticeIdx.xyxy + floorVal.yyww;");
@@ -1038,13 +1039,14 @@ void SkPerlinNoiseShaderImpl::addToKey(const skgpu::graphite::KeyContext& keyCon
                                                                                 fBaseFrequencyY,
                                                                                 totalMatrix);
 
-    sk_sp<SkImage> permImg = RecorderPriv::CreateCachedImage(keyContext.recorder(),
-                                                             paintingData->getPermutationsBitmap());
+    sk_sp<TextureProxy> perm =
+            RecorderPriv::CreateCachedProxy(keyContext.recorder(),
+                                            paintingData->getPermutationsBitmap());
 
-    sk_sp<SkImage> noiseImg = RecorderPriv::CreateCachedImage(keyContext.recorder(),
-                                                              paintingData->getNoiseBitmap());
+    sk_sp<TextureProxy> noise = RecorderPriv::CreateCachedProxy(keyContext.recorder(),
+                                                                paintingData->getNoiseBitmap());
 
-    if (!permImg || !noiseImg) {
+    if (!perm || !noise) {
         SKGPU_LOG_W("Couldn't create tables for PerlinNoiseShader");
 
         SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, {1, 0, 0, 1});
@@ -1058,15 +1060,8 @@ void SkPerlinNoiseShaderImpl::addToKey(const skgpu::graphite::KeyContext& keyCon
                                                  { paintingData->fStitchDataInit.fWidth,
                                                    paintingData->fStitchDataInit.fHeight });
 
-    TextureProxyView view;
-
-    std::tie(view, std::ignore) = as_IB(permImg)->asView(keyContext.recorder(),
-                                                         skgpu::Mipmapped::kNo);
-    data.fPermutationsProxy = view.refProxy();
-
-    std::tie(view, std::ignore) = as_IB(noiseImg)->asView(keyContext.recorder(),
-                                                          skgpu::Mipmapped::kNo);
-    data.fNoiseProxy = view.refProxy();
+    data.fPermutationsProxy = std::move(perm);
+    data.fNoiseProxy = std::move(noise);
 
     // This (1,1) translation is due to WebKit's 1 based coordinates for the noise
     // (as opposed to 0 based, usually). Remember: this matrix (shader2World) is going to be

@@ -37,6 +37,8 @@ enum GrSurfaceOrigin : int;
 struct GrFlushInfo;
 #endif
 
+enum class GrSemaphoresSubmitted : bool; // IWYU pragma: keep
+
 #if defined(SK_GRAPHITE)
 #include "include/gpu/graphite/GraphiteTypes.h"
 class SkYUVAPixmaps;

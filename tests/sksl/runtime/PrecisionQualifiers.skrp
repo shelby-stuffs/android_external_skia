@@ -1,390 +1,417 @@
-    1. store_device_xy01              $16..19 = DeviceCoords.xy01
-    2. copy_constant                  $18 = 0x3F000000 (0.5)
-    3. copy_constant                  $19 = 0x3F000000 (0.5)
-    4. cmpeq_2_floats                 $16..17 = equal($16..17, $18..19)
-    5. bitwise_and_int                $16 &= $17
+    1. store_device_xy01              $18..21 = DeviceCoords.xy01
+    2. copy_constant                  $20 = 0x3F000000 (0.5)
+    3. copy_constant                  $21 = 0x3F000000 (0.5)
+    4. cmpeq_2_floats                 $18..19 = equal($18..19, $20..21)
+    5. bitwise_and_int                $18 &= $19
     6. store_src_rg                   coords = src.rg
     7. init_lane_masks                CondMask = LoopMask = RetMask = true
-    8. trace_enter                    TraceEnter(vec4 main(vec2 coords)) when $16 is true
-    9. trace_scope                    TraceScope(+1) when $16 is true
-   10. trace_line                     TraceLine(58) when $16 is true
-   11. zero_4_slots_unmasked          zero = 0
-   12. trace_var                      TraceVar(zero) when $16 is true
-   13. trace_line                     TraceLine(59) when $16 is true
-   14. copy_constant                  $0 = 0x3F800000 (1.0)
-   15. swizzle_4                      $0..3 = ($0..3).xxxx
-   16. copy_4_slots_unmasked          one = $0..3
-   17. trace_var                      TraceVar(one) when $16 is true
-   18. trace_line                     TraceLine(60) when $16 is true
-   19. copy_4_constants               $0..3 = colorGreen
-   20. copy_4_slots_unmasked          green = $0..3
-   21. trace_var                      TraceVar(green) when $16 is true
-   22. trace_line                     TraceLine(61) when $16 is true
-   23. copy_4_slots_unmasked          $0..3 = green
-   24. copy_4_slots_unmasked          $4..7 = one
-   25. mul_4_floats                   $0..3 *= $4..7
-   26. copy_4_slots_unmasked          $4..7 = zero
-   27. add_4_floats                   $0..3 += $4..7
-   28. copy_4_slots_unmasked          green = $0..3
-   29. trace_var                      TraceVar(green) when $16 is true
-   30. trace_line                     TraceLine(63) when $16 is true
-   31. copy_4_constants               $0..3 = colorRed
-   32. copy_4_slots_unmasked          red = $0..3
-   33. trace_var                      TraceVar(red) when $16 is true
-   34. trace_line                     TraceLine(64) when $16 is true
-   35. copy_4_slots_unmasked          $0..3 = red
-   36. copy_4_slots_unmasked          $4..7 = zero
-   37. add_4_floats                   $0..3 += $4..7
-   38. copy_4_slots_unmasked          $4..7 = one
-   39. mul_4_floats                   $0..3 *= $4..7
-   40. copy_4_slots_unmasked          red = $0..3
-   41. trace_var                      TraceVar(red) when $16 is true
-   42. trace_line                     TraceLine(66) when $16 is true
-   43. store_condition_mask           $27 = CondMask
-   44. store_condition_mask           $31 = CondMask
-   45. store_condition_mask           $20 = CondMask
-   46. store_condition_mask           $46 = CondMask
-   47. store_condition_mask           $35 = CondMask
-   48. store_condition_mask           $12 = CondMask
-   49. branch_if_no_lanes_active      branch_if_no_lanes_active +26 (label 7 at #75)
-   50. trace_enter                    TraceEnter(bool test_scalar()) when $16 is true
-   51. trace_scope                    TraceScope(+1) when $16 is true
-   52. trace_line                     TraceLine(6) when $16 is true
-   53. copy_constant                  mp = 0x3F000000 (0.5)
-   54. trace_var                      TraceVar(mp) when $16 is true
-   55. trace_line                     TraceLine(7) when $16 is true
-   56. copy_slot_unmasked             hp = mp
-   57. trace_var                      TraceVar(hp) when $16 is true
-   58. trace_line                     TraceLine(8) when $16 is true
-   59. copy_constant                  ihp = 0x00000002 (2.802597e-45)
-   60. trace_var                      TraceVar(ihp) when $16 is true
-   61. trace_line                     TraceLine(9) when $16 is true
-   62. copy_slot_unmasked             imp = ihp
-   63. trace_var                      TraceVar(imp) when $16 is true
-   64. trace_line                     TraceLine(11) when $16 is true
-   65. copy_2_slots_unmasked          $13..14 = mp, hp
-   66. cmpeq_float                    $13 = equal($13, $14)
-   67. copy_2_slots_unmasked          $14..15 = ihp, imp
-   68. cmpeq_int                      $14 = equal($14, $15)
-   69. bitwise_and_int                $13 &= $14
-   70. copy_slot_masked               [test_scalar].result = Mask($13)
-   71. trace_var                      TraceVar([test_scalar].result) when $16 is true
-   72. trace_scope                    TraceScope(-1) when $16 is true
-   73. trace_exit                     TraceExit(bool test_scalar()) when $16 is true
-   74. copy_slot_unmasked             $13 = [test_scalar].result
-   75. label                          label 0x00000007
-   76. zero_slot_unmasked             $36 = 0
-   77. merge_condition_mask           CondMask = $12 & $13
-   78. branch_if_no_lanes_active      branch_if_no_lanes_active +91 (label 6 at #169)
-   79. trace_enter                    TraceEnter(bool test_vector()) when $16 is true
-   80. trace_scope                    TraceScope(+1) when $16 is true
-   81. trace_line                     TraceLine(15) when $16 is true
-   82. copy_constant                  $37 = 0x40000000 (2.0)
-   83. copy_slot_unmasked             $38 = $37
-   84. copy_2_slots_unmasked          mp2 = $37..38
-   85. trace_var                      TraceVar(mp2) when $16 is true
-   86. trace_line                     TraceLine(16) when $16 is true
-   87. copy_2_slots_unmasked          hp2 = mp2
-   88. trace_var                      TraceVar(hp2) when $16 is true
-   89. trace_line                     TraceLine(17) when $16 is true
-   90. copy_constant                  $37 = 0x40400000 (3.0)
-   91. swizzle_3                      $37..39 = ($37..39).xxx
-   92. copy_3_slots_unmasked          mp3 = $37..39
-   93. trace_var                      TraceVar(mp3) when $16 is true
-   94. trace_line                     TraceLine(18) when $16 is true
-   95. copy_3_slots_unmasked          hp3 = mp3
-   96. trace_var                      TraceVar(hp3) when $16 is true
-   97. trace_line                     TraceLine(19) when $16 is true
-   98. copy_constant                  $37 = 0x40800000 (4.0)
-   99. swizzle_4                      $37..40 = ($37..40).xxxx
-  100. copy_4_slots_unmasked          mp4 = $37..40
-  101. trace_var                      TraceVar(mp4) when $16 is true
-  102. trace_line                     TraceLine(20) when $16 is true
-  103. copy_4_slots_unmasked          hp4 = mp4
-  104. trace_var                      TraceVar(hp4) when $16 is true
-  105. trace_line                     TraceLine(22) when $16 is true
-  106. copy_constant                  $37 = 0x00000002 (2.802597e-45)
-  107. copy_slot_unmasked             $38 = $37
-  108. copy_2_slots_unmasked          ihp2 = $37..38
-  109. trace_var                      TraceVar(ihp2) when $16 is true
-  110. trace_line                     TraceLine(23) when $16 is true
-  111. copy_2_slots_unmasked          imp2 = ihp2
-  112. trace_var                      TraceVar(imp2) when $16 is true
-  113. trace_line                     TraceLine(24) when $16 is true
-  114. copy_constant                  $37 = 0x00000003 (4.203895e-45)
-  115. swizzle_3                      $37..39 = ($37..39).xxx
-  116. copy_3_slots_unmasked          ihp3 = $37..39
-  117. trace_var                      TraceVar(ihp3) when $16 is true
-  118. trace_line                     TraceLine(25) when $16 is true
-  119. copy_3_slots_unmasked          imp3 = ihp3
-  120. trace_var                      TraceVar(imp3) when $16 is true
-  121. trace_line                     TraceLine(26) when $16 is true
-  122. copy_constant                  $37 = 0x00000004 (5.605194e-45)
-  123. swizzle_4                      $37..40 = ($37..40).xxxx
-  124. copy_4_slots_unmasked          ihp4 = $37..40
-  125. trace_var                      TraceVar(ihp4) when $16 is true
-  126. trace_line                     TraceLine(27) when $16 is true
-  127. copy_4_slots_unmasked          imp4 = ihp4
-  128. trace_var                      TraceVar(imp4) when $16 is true
-  129. trace_line                     TraceLine(29) when $16 is true
-  130. copy_4_slots_unmasked          $37..40 = mp2, hp2
-  131. cmpeq_2_floats                 $37..38 = equal($37..38, $39..40)
-  132. bitwise_and_int                $37 &= $38
-  133. copy_3_slots_unmasked          $38..40 = hp3
-  134. copy_3_slots_unmasked          $41..43 = mp3
-  135. cmpeq_3_floats                 $38..40 = equal($38..40, $41..43)
-  136. bitwise_and_int                $39 &= $40
-  137. bitwise_and_int                $38 &= $39
-  138. bitwise_and_int                $37 &= $38
-  139. copy_4_slots_unmasked          $38..41 = mp4
-  140. copy_4_slots_unmasked          $42..45 = hp4
-  141. cmpeq_4_floats                 $38..41 = equal($38..41, $42..45)
-  142. bitwise_and_2_ints             $38..39 &= $40..41
-  143. bitwise_and_int                $38 &= $39
-  144. bitwise_and_int                $37 &= $38
-  145. copy_2_slots_unmasked          $38..39 = imp2
-  146. copy_2_slots_unmasked          $40..41 = ihp2
-  147. cmpeq_2_ints                   $38..39 = equal($38..39, $40..41)
-  148. bitwise_and_int                $38 &= $39
-  149. bitwise_and_int                $37 &= $38
-  150. copy_4_slots_unmasked          $38..41 = ihp3, imp3(0)
-  151. copy_2_slots_unmasked          $42..43 = imp3(1..2)
-  152. cmpeq_3_ints                   $38..40 = equal($38..40, $41..43)
-  153. bitwise_and_int                $39 &= $40
-  154. bitwise_and_int                $38 &= $39
-  155. bitwise_and_int                $37 &= $38
-  156. copy_4_slots_unmasked          $38..41 = imp4
-  157. copy_4_slots_unmasked          $42..45 = ihp4
-  158. cmpeq_4_ints                   $38..41 = equal($38..41, $42..45)
-  159. bitwise_and_2_ints             $38..39 &= $40..41
-  160. bitwise_and_int                $38 &= $39
-  161. bitwise_and_int                $37 &= $38
-  162. copy_slot_masked               [test_vector].result = Mask($37)
-  163. trace_var                      TraceVar([test_vector].result) when $16 is true
-  164. trace_scope                    TraceScope(-1) when $16 is true
-  165. trace_exit                     TraceExit(bool test_vector()) when $16 is true
-  166. copy_slot_unmasked             $37 = [test_vector].result
-  167. label                          label 0x00000008
-  168. copy_slot_masked               $36 = Mask($37)
-  169. label                          label 0x00000006
-  170. load_condition_mask            CondMask = $12
-  171. zero_slot_unmasked             $47 = 0
-  172. merge_condition_mask           CondMask = $35 & $36
-  173. branch_if_no_lanes_active      branch_if_no_lanes_active +80 (label 5 at #253)
-  174. trace_enter                    TraceEnter(bool test_matrix()) when $16 is true
-  175. trace_scope                    TraceScope(+1) when $16 is true
-  176. trace_line                     TraceLine(34) when $16 is true
-  177. zero_slot_unmasked             $48 = 0
-  178. copy_constant                  $49 = 0x40000000 (2.0)
-  179. swizzle_4                      $48..51 = ($48..51).yxxy
-  180. copy_4_slots_unmasked          mp2₁ = $48..51
-  181. trace_var                      TraceVar(mp2₁) when $16 is true
-  182. trace_line                     TraceLine(35) when $16 is true
-  183. copy_4_slots_unmasked          hp2₁ = mp2₁
-  184. trace_var                      TraceVar(hp2₁) when $16 is true
-  185. trace_line                     TraceLine(36) when $16 is true
-  186. zero_slot_unmasked             $48 = 0
-  187. copy_constant                  $49 = 0x40400000 (3.0)
-  188. shuffle                        $48..56 = ($48..56)[1 0 0 0 1 0 0 0 1]
-  189. copy_4_slots_unmasked          mp3₁(0..3) = $48..51
-  190. copy_4_slots_unmasked          mp3₁(4..7) = $52..55
-  191. copy_slot_unmasked             mp3₁(8) = $56
-  192. trace_var                      TraceVar(mp3₁) when $16 is true
-  193. trace_line                     TraceLine(37) when $16 is true
-  194. copy_4_slots_unmasked          hp3₁(0..3) = mp3₁(0..3)
-  195. copy_4_slots_unmasked          hp3₁(4..7) = mp3₁(4..7)
-  196. copy_slot_unmasked             hp3₁(8) = mp3₁(8)
-  197. trace_var                      TraceVar(hp3₁) when $16 is true
-  198. trace_line                     TraceLine(38) when $16 is true
-  199. zero_slot_unmasked             $48 = 0
-  200. copy_constant                  $49 = 0x40800000 (4.0)
-  201. shuffle                        $48..63 = ($48..63)[1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1]
-  202. copy_4_slots_unmasked          mp4₁(0..3) = $48..51
-  203. copy_4_slots_unmasked          mp4₁(4..7) = $52..55
-  204. copy_4_slots_unmasked          mp4₁(8..11) = $56..59
-  205. copy_4_slots_unmasked          mp4₁(12..15) = $60..63
-  206. trace_var                      TraceVar(mp4₁) when $16 is true
-  207. trace_line                     TraceLine(39) when $16 is true
-  208. copy_4_slots_unmasked          hp4₁(0..3) = mp4₁(0..3)
-  209. copy_4_slots_unmasked          hp4₁(4..7) = mp4₁(4..7)
-  210. copy_4_slots_unmasked          hp4₁(8..11) = mp4₁(8..11)
-  211. copy_4_slots_unmasked          hp4₁(12..15) = mp4₁(12..15)
-  212. trace_var                      TraceVar(hp4₁) when $16 is true
-  213. trace_line                     TraceLine(41) when $16 is true
-  214. copy_4_slots_unmasked          $48..51 = mp2₁
-  215. copy_4_slots_unmasked          $52..55 = hp2₁
-  216. cmpeq_4_floats                 $48..51 = equal($48..51, $52..55)
-  217. bitwise_and_2_ints             $48..49 &= $50..51
-  218. bitwise_and_int                $48 &= $49
-  219. copy_4_slots_unmasked          $49..52 = hp3₁(0..3)
-  220. copy_4_slots_unmasked          $53..56 = hp3₁(4..7)
-  221. copy_slot_unmasked             $57 = hp3₁(8)
-  222. copy_4_slots_unmasked          $58..61 = mp3₁(0..3)
-  223. copy_4_slots_unmasked          $62..65 = mp3₁(4..7)
-  224. copy_slot_unmasked             $66 = mp3₁(8)
-  225. cmpeq_n_floats                 $49..57 = equal($49..57, $58..66)
-  226. bitwise_and_4_ints             $50..53 &= $54..57
-  227. bitwise_and_2_ints             $50..51 &= $52..53
-  228. bitwise_and_int                $50 &= $51
-  229. bitwise_and_int                $49 &= $50
-  230. bitwise_and_int                $48 &= $49
-  231. copy_4_slots_unmasked          $49..52 = mp4₁(0..3)
-  232. copy_4_slots_unmasked          $53..56 = mp4₁(4..7)
-  233. copy_4_slots_unmasked          $57..60 = mp4₁(8..11)
-  234. copy_4_slots_unmasked          $61..64 = mp4₁(12..15)
-  235. copy_4_slots_unmasked          $65..68 = hp4₁(0..3)
-  236. copy_4_slots_unmasked          $69..72 = hp4₁(4..7)
-  237. copy_4_slots_unmasked          $73..76 = hp4₁(8..11)
-  238. copy_4_slots_unmasked          $77..80 = hp4₁(12..15)
-  239. cmpeq_n_floats                 $49..64 = equal($49..64, $65..80)
-  240. bitwise_and_4_ints             $57..60 &= $61..64
-  241. bitwise_and_4_ints             $53..56 &= $57..60
-  242. bitwise_and_4_ints             $49..52 &= $53..56
-  243. bitwise_and_2_ints             $49..50 &= $51..52
-  244. bitwise_and_int                $49 &= $50
-  245. bitwise_and_int                $48 &= $49
-  246. copy_slot_masked               [test_matrix].result = Mask($48)
-  247. trace_var                      TraceVar([test_matrix].result) when $16 is true
-  248. trace_scope                    TraceScope(-1) when $16 is true
-  249. trace_exit                     TraceExit(bool test_matrix()) when $16 is true
-  250. copy_slot_unmasked             $48 = [test_matrix].result
-  251. label                          label 0x00000009
-  252. copy_slot_masked               $47 = Mask($48)
-  253. label                          label 0x00000005
-  254. load_condition_mask            CondMask = $35
-  255. zero_slot_unmasked             $21 = 0
-  256. merge_condition_mask           CondMask = $46 & $47
-  257. branch_if_no_lanes_active      branch_if_no_lanes_active +63 (label 4 at #320)
-  258. trace_enter                    TraceEnter(bool test_array()) when $16 is true
-  259. trace_scope                    TraceScope(+1) when $16 is true
-  260. trace_line                     TraceLine(45) when $16 is true
-  261. zero_slot_unmasked             mf[0] = 0
-  262. trace_var                      TraceVar(mf[0]) when $16 is true
-  263. trace_line                     TraceLine(45) when $16 is true
-  264. copy_constant                  $22 = 0x3F800000 (1.0)
-  265. copy_slot_masked               mf[0] = Mask($22)
-  266. trace_var                      TraceVar(mf[0]) when $16 is true
-  267. trace_line                     TraceLine(46) when $16 is true
-  268. zero_slot_unmasked             hf[0] = 0
-  269. trace_var                      TraceVar(hf[0]) when $16 is true
-  270. trace_line                     TraceLine(46) when $16 is true
-  271. copy_constant                  $22 = 0x3F800000 (1.0)
-  272. copy_slot_masked               hf[0] = Mask($22)
-  273. trace_var                      TraceVar(hf[0]) when $16 is true
-  274. trace_line                     TraceLine(47) when $16 is true
-  275. zero_4_slots_unmasked          mv[0], mv[1] = 0
-  276. trace_var                      TraceVar(mv[0], mv[1]) when $16 is true
-  277. trace_line                     TraceLine(47) when $16 is true
-  278. zero_slot_unmasked             $22 = 0
-  279. copy_constant                  $23 = 0x3F800000 (1.0)
-  280. copy_2_slots_masked            mv[0] = Mask($22..23)
-  281. trace_var                      TraceVar(mv[0]) when $16 is true
-  282. trace_line                     TraceLine(47) when $16 is true
-  283. copy_constant                  $22 = 0x40000000 (2.0)
-  284. copy_constant                  $23 = 0x40400000 (3.0)
-  285. copy_2_slots_masked            mv[1] = Mask($22..23)
-  286. trace_var                      TraceVar(mv[1]) when $16 is true
-  287. trace_line                     TraceLine(48) when $16 is true
-  288. zero_4_slots_unmasked          hv[0], hv[1] = 0
-  289. trace_var                      TraceVar(hv[0], hv[1]) when $16 is true
-  290. trace_line                     TraceLine(48) when $16 is true
-  291. zero_slot_unmasked             $22 = 0
-  292. copy_constant                  $23 = 0x3F800000 (1.0)
-  293. copy_2_slots_masked            hv[0] = Mask($22..23)
-  294. trace_var                      TraceVar(hv[0]) when $16 is true
-  295. trace_line                     TraceLine(48) when $16 is true
-  296. copy_constant                  $22 = 0x40000000 (2.0)
-  297. copy_constant                  $23 = 0x40400000 (3.0)
-  298. copy_2_slots_masked            hv[1] = Mask($22..23)
-  299. trace_var                      TraceVar(hv[1]) when $16 is true
-  300. trace_line                     TraceLine(50) when $16 is true
-  301. copy_2_slots_unmasked          $22..23 = mf[0], hf[0]
-  302. cmpeq_float                    $22 = equal($22, $23)
-  303. copy_2_slots_unmasked          $23..24 = hv[0]
-  304. copy_2_slots_unmasked          $25..26 = mv[0]
-  305. cmpeq_2_floats                 $23..24 = equal($23..24, $25..26)
-  306. bitwise_and_int                $23 &= $24
-  307. bitwise_and_int                $22 &= $23
-  308. copy_2_slots_unmasked          $23..24 = mv[1]
-  309. copy_2_slots_unmasked          $25..26 = hv[1]
-  310. cmpeq_2_floats                 $23..24 = equal($23..24, $25..26)
-  311. bitwise_and_int                $23 &= $24
-  312. bitwise_and_int                $22 &= $23
-  313. copy_slot_masked               [test_array].result = Mask($22)
-  314. trace_var                      TraceVar([test_array].result) when $16 is true
-  315. trace_scope                    TraceScope(-1) when $16 is true
-  316. trace_exit                     TraceExit(bool test_array()) when $16 is true
-  317. copy_slot_unmasked             $22 = [test_array].result
-  318. label                          label 0x0000000A
-  319. copy_slot_masked               $21 = Mask($22)
-  320. label                          label 0x00000004
-  321. load_condition_mask            CondMask = $46
-  322. zero_slot_unmasked             $32 = 0
-  323. merge_condition_mask           CondMask = $20 & $21
-  324. branch_if_no_lanes_active      branch_if_no_lanes_active +16 (label 3 at #340)
-  325. copy_constant                  value = 0x3F800000 (1.0)
-  326. trace_var                      TraceVar(value) when $16 is true
-  327. trace_enter                    TraceEnter(bool highp_param(float value)) when $16 is true
-  328. trace_scope                    TraceScope(+1) when $16 is true
-  329. trace_line                     TraceLine(53) when $16 is true
-  330. copy_slot_unmasked             $33 = value
-  331. copy_constant                  $34 = 0x3F800000 (1.0)
-  332. cmpeq_float                    $33 = equal($33, $34)
-  333. copy_slot_masked               [highp_param].result = Mask($33)
-  334. trace_var                      TraceVar([highp_param].result) when $16 is true
-  335. trace_scope                    TraceScope(-1) when $16 is true
-  336. trace_exit                     TraceExit(bool highp_param(float value)) when $16 is true
-  337. copy_slot_unmasked             $33 = [highp_param].result
-  338. label                          label 0x0000000B
-  339. copy_slot_masked               $32 = Mask($33)
-  340. label                          label 0x00000003
-  341. load_condition_mask            CondMask = $20
-  342. zero_slot_unmasked             $28 = 0
-  343. merge_condition_mask           CondMask = $31 & $32
-  344. branch_if_no_lanes_active      branch_if_no_lanes_active +16 (label 2 at #360)
-  345. copy_constant                  value₁ = 0x40000000 (2.0)
-  346. trace_var                      TraceVar(value₁) when $16 is true
-  347. trace_enter                    TraceEnter(bool mediump_param(half value)) when $16 is true
-  348. trace_scope                    TraceScope(+1) when $16 is true
-  349. trace_line                     TraceLine(54) when $16 is true
-  350. copy_slot_unmasked             $29 = value₁
-  351. copy_constant                  $30 = 0x40000000 (2.0)
-  352. cmpeq_float                    $29 = equal($29, $30)
-  353. copy_slot_masked               [mediump_param].result = Mask($29)
-  354. trace_var                      TraceVar([mediump_param].result) when $16 is true
-  355. trace_scope                    TraceScope(-1) when $16 is true
-  356. trace_exit                     TraceExit(bool mediump_param(half value)) when $16 is true
-  357. copy_slot_unmasked             $29 = [mediump_param].result
-  358. label                          label 0x0000000C
-  359. copy_slot_masked               $28 = Mask($29)
-  360. label                          label 0x00000002
-  361. load_condition_mask            CondMask = $31
-  362. zero_slot_unmasked             $0 = 0
-  363. merge_condition_mask           CondMask = $27 & $28
-  364. branch_if_no_lanes_active      branch_if_no_lanes_active +16 (label 1 at #380)
-  365. copy_constant                  value₂ = 0x40400000 (3.0)
-  366. trace_var                      TraceVar(value₂) when $16 is true
-  367. trace_enter                    TraceEnter(bool lowp_param(half value)) when $16 is true
-  368. trace_scope                    TraceScope(+1) when $16 is true
-  369. trace_line                     TraceLine(55) when $16 is true
-  370. copy_slot_unmasked             $1 = value₂
-  371. copy_constant                  $2 = 0x40400000 (3.0)
-  372. cmpeq_float                    $1 = equal($1, $2)
-  373. copy_slot_masked               [lowp_param].result = Mask($1)
-  374. trace_var                      TraceVar([lowp_param].result) when $16 is true
-  375. trace_scope                    TraceScope(-1) when $16 is true
-  376. trace_exit                     TraceExit(bool lowp_param(half value)) when $16 is true
-  377. copy_slot_unmasked             $1 = [lowp_param].result
-  378. label                          label 0x0000000D
-  379. copy_slot_masked               $0 = Mask($1)
-  380. label                          label 0x00000001
-  381. load_condition_mask            CondMask = $27
-  382. swizzle_4                      $0..3 = ($0..3).xxxx
-  383. copy_4_slots_unmasked          $4..7 = red
-  384. copy_4_slots_unmasked          $8..11 = green
-  385. mix_4_ints                     $0..3 = mix($4..7, $8..11, $0..3)
-  386. copy_4_slots_unmasked          [main].result = $0..3
-  387. trace_var                      TraceVar([main].result) when $16 is true
-  388. trace_scope                    TraceScope(-1) when $16 is true
-  389. trace_exit                     TraceExit(vec4 main(vec2 coords)) when $16 is true
-  390. load_src                       src.rgba = [main].result
+    8. copy_4_constants               colorGreen = colorGreen
+    9. trace_var                      TraceVar(colorGreen) when $18 is true
+   10. copy_4_constants               colorRed = colorRed
+   11. trace_var                      TraceVar(colorRed) when $18 is true
+   12. trace_enter                    TraceEnter(vec4 main(vec2 coords)) when $18 is true
+   13. trace_var                      TraceVar(coords) when $18 is true
+   14. zero_slot_unmasked             $0 = 0
+   15. copy_slot_unmasked             $1 = $18
+   16. copy_slot_masked               $0 = Mask($1)
+   17. trace_scope                    TraceScope(+1) when $0 is true
+   18. trace_line                     TraceLine(58) when $18 is true
+   19. zero_4_slots_unmasked          zero = 0
+   20. trace_var                      TraceVar(zero) when $18 is true
+   21. trace_line                     TraceLine(59) when $18 is true
+   22. copy_constant                  $1 = 0x3F800000 (1.0)
+   23. swizzle_4                      $1..4 = ($1..4).xxxx
+   24. copy_4_slots_unmasked          one = $1..4
+   25. trace_var                      TraceVar(one) when $18 is true
+   26. trace_line                     TraceLine(60) when $18 is true
+   27. copy_4_constants               green = colorGreen
+   28. trace_var                      TraceVar(green) when $18 is true
+   29. trace_line                     TraceLine(61) when $18 is true
+   30. copy_4_slots_unmasked          $1..4 = green
+   31. copy_4_slots_unmasked          $5..8 = one
+   32. mul_4_floats                   $1..4 *= $5..8
+   33. copy_4_slots_unmasked          $5..8 = zero
+   34. add_4_floats                   $1..4 += $5..8
+   35. copy_4_slots_unmasked          green = $1..4
+   36. trace_var                      TraceVar(green) when $18 is true
+   37. trace_line                     TraceLine(63) when $18 is true
+   38. copy_4_constants               red = colorRed
+   39. trace_var                      TraceVar(red) when $18 is true
+   40. trace_line                     TraceLine(64) when $18 is true
+   41. copy_4_slots_unmasked          $1..4 = red
+   42. copy_4_slots_unmasked          $5..8 = zero
+   43. add_4_floats                   $1..4 += $5..8
+   44. copy_4_slots_unmasked          $5..8 = one
+   45. mul_4_floats                   $1..4 *= $5..8
+   46. copy_4_slots_unmasked          red = $1..4
+   47. trace_var                      TraceVar(red) when $18 is true
+   48. trace_line                     TraceLine(66) when $18 is true
+   49. store_condition_mask           $30 = CondMask
+   50. store_condition_mask           $35 = CondMask
+   51. store_condition_mask           $22 = CondMask
+   52. store_condition_mask           $52 = CondMask
+   53. store_condition_mask           $40 = CondMask
+   54. store_condition_mask           $13 = CondMask
+   55. branch_if_no_lanes_active      branch_if_no_lanes_active +29 (label 7 at #84)
+   56. trace_enter                    TraceEnter(bool test_scalar()) when $18 is true
+   57. zero_slot_unmasked             $14 = 0
+   58. copy_slot_unmasked             $15 = $18
+   59. copy_slot_masked               $14 = Mask($15)
+   60. trace_scope                    TraceScope(+1) when $14 is true
+   61. trace_line                     TraceLine(6) when $18 is true
+   62. copy_constant                  mp = 0x3F000000 (0.5)
+   63. trace_var                      TraceVar(mp) when $18 is true
+   64. trace_line                     TraceLine(7) when $18 is true
+   65. copy_slot_unmasked             hp = mp
+   66. trace_var                      TraceVar(hp) when $18 is true
+   67. trace_line                     TraceLine(8) when $18 is true
+   68. copy_constant                  ihp = 0x00000002 (2.802597e-45)
+   69. trace_var                      TraceVar(ihp) when $18 is true
+   70. trace_line                     TraceLine(9) when $18 is true
+   71. copy_slot_unmasked             imp = ihp
+   72. trace_var                      TraceVar(imp) when $18 is true
+   73. trace_line                     TraceLine(11) when $18 is true
+   74. copy_2_slots_unmasked          $15..16 = mp, hp
+   75. cmpeq_float                    $15 = equal($15, $16)
+   76. copy_2_slots_unmasked          $16..17 = ihp, imp
+   77. cmpeq_int                      $16 = equal($16, $17)
+   78. bitwise_and_int                $15 &= $16
+   79. copy_slot_masked               [test_scalar].result = Mask($15)
+   80. trace_var                      TraceVar([test_scalar].result) when $18 is true
+   81. trace_scope                    TraceScope(-1) when $14 is true
+   82. trace_exit                     TraceExit(bool test_scalar()) when $18 is true
+   83. copy_slot_unmasked             $14 = [test_scalar].result
+   84. label                          label 0x00000007
+   85. zero_slot_unmasked             $41 = 0
+   86. merge_condition_mask           CondMask = $13 & $14
+   87. branch_if_no_lanes_active      branch_if_no_lanes_active +94 (label 6 at #181)
+   88. trace_enter                    TraceEnter(bool test_vector()) when $18 is true
+   89. zero_slot_unmasked             $42 = 0
+   90. copy_slot_unmasked             $43 = $18
+   91. copy_slot_masked               $42 = Mask($43)
+   92. trace_scope                    TraceScope(+1) when $42 is true
+   93. trace_line                     TraceLine(15) when $18 is true
+   94. copy_constant                  $43 = 0x40000000 (2.0)
+   95. copy_slot_unmasked             $44 = $43
+   96. copy_2_slots_unmasked          mp2 = $43..44
+   97. trace_var                      TraceVar(mp2) when $18 is true
+   98. trace_line                     TraceLine(16) when $18 is true
+   99. copy_2_slots_unmasked          hp2 = mp2
+  100. trace_var                      TraceVar(hp2) when $18 is true
+  101. trace_line                     TraceLine(17) when $18 is true
+  102. copy_constant                  $43 = 0x40400000 (3.0)
+  103. swizzle_3                      $43..45 = ($43..45).xxx
+  104. copy_3_slots_unmasked          mp3 = $43..45
+  105. trace_var                      TraceVar(mp3) when $18 is true
+  106. trace_line                     TraceLine(18) when $18 is true
+  107. copy_3_slots_unmasked          hp3 = mp3
+  108. trace_var                      TraceVar(hp3) when $18 is true
+  109. trace_line                     TraceLine(19) when $18 is true
+  110. copy_constant                  $43 = 0x40800000 (4.0)
+  111. swizzle_4                      $43..46 = ($43..46).xxxx
+  112. copy_4_slots_unmasked          mp4 = $43..46
+  113. trace_var                      TraceVar(mp4) when $18 is true
+  114. trace_line                     TraceLine(20) when $18 is true
+  115. copy_4_slots_unmasked          hp4 = mp4
+  116. trace_var                      TraceVar(hp4) when $18 is true
+  117. trace_line                     TraceLine(22) when $18 is true
+  118. copy_constant                  $43 = 0x00000002 (2.802597e-45)
+  119. copy_slot_unmasked             $44 = $43
+  120. copy_2_slots_unmasked          ihp2 = $43..44
+  121. trace_var                      TraceVar(ihp2) when $18 is true
+  122. trace_line                     TraceLine(23) when $18 is true
+  123. copy_2_slots_unmasked          imp2 = ihp2
+  124. trace_var                      TraceVar(imp2) when $18 is true
+  125. trace_line                     TraceLine(24) when $18 is true
+  126. copy_constant                  $43 = 0x00000003 (4.203895e-45)
+  127. swizzle_3                      $43..45 = ($43..45).xxx
+  128. copy_3_slots_unmasked          ihp3 = $43..45
+  129. trace_var                      TraceVar(ihp3) when $18 is true
+  130. trace_line                     TraceLine(25) when $18 is true
+  131. copy_3_slots_unmasked          imp3 = ihp3
+  132. trace_var                      TraceVar(imp3) when $18 is true
+  133. trace_line                     TraceLine(26) when $18 is true
+  134. copy_constant                  $43 = 0x00000004 (5.605194e-45)
+  135. swizzle_4                      $43..46 = ($43..46).xxxx
+  136. copy_4_slots_unmasked          ihp4 = $43..46
+  137. trace_var                      TraceVar(ihp4) when $18 is true
+  138. trace_line                     TraceLine(27) when $18 is true
+  139. copy_4_slots_unmasked          imp4 = ihp4
+  140. trace_var                      TraceVar(imp4) when $18 is true
+  141. trace_line                     TraceLine(29) when $18 is true
+  142. copy_4_slots_unmasked          $43..46 = mp2, hp2
+  143. cmpeq_2_floats                 $43..44 = equal($43..44, $45..46)
+  144. bitwise_and_int                $43 &= $44
+  145. copy_3_slots_unmasked          $44..46 = hp3
+  146. copy_3_slots_unmasked          $47..49 = mp3
+  147. cmpeq_3_floats                 $44..46 = equal($44..46, $47..49)
+  148. bitwise_and_int                $45 &= $46
+  149. bitwise_and_int                $44 &= $45
+  150. bitwise_and_int                $43 &= $44
+  151. copy_4_slots_unmasked          $44..47 = mp4
+  152. copy_4_slots_unmasked          $48..51 = hp4
+  153. cmpeq_4_floats                 $44..47 = equal($44..47, $48..51)
+  154. bitwise_and_2_ints             $44..45 &= $46..47
+  155. bitwise_and_int                $44 &= $45
+  156. bitwise_and_int                $43 &= $44
+  157. copy_2_slots_unmasked          $44..45 = imp2
+  158. copy_2_slots_unmasked          $46..47 = ihp2
+  159. cmpeq_2_ints                   $44..45 = equal($44..45, $46..47)
+  160. bitwise_and_int                $44 &= $45
+  161. bitwise_and_int                $43 &= $44
+  162. copy_4_slots_unmasked          $44..47 = ihp3, imp3(0)
+  163. copy_2_slots_unmasked          $48..49 = imp3(1..2)
+  164. cmpeq_3_ints                   $44..46 = equal($44..46, $47..49)
+  165. bitwise_and_int                $45 &= $46
+  166. bitwise_and_int                $44 &= $45
+  167. bitwise_and_int                $43 &= $44
+  168. copy_4_slots_unmasked          $44..47 = imp4
+  169. copy_4_slots_unmasked          $48..51 = ihp4
+  170. cmpeq_4_ints                   $44..47 = equal($44..47, $48..51)
+  171. bitwise_and_2_ints             $44..45 &= $46..47
+  172. bitwise_and_int                $44 &= $45
+  173. bitwise_and_int                $43 &= $44
+  174. copy_slot_masked               [test_vector].result = Mask($43)
+  175. trace_var                      TraceVar([test_vector].result) when $18 is true
+  176. trace_scope                    TraceScope(-1) when $42 is true
+  177. trace_exit                     TraceExit(bool test_vector()) when $18 is true
+  178. copy_slot_unmasked             $42 = [test_vector].result
+  179. label                          label 0x00000008
+  180. copy_slot_masked               $41 = Mask($42)
+  181. label                          label 0x00000006
+  182. load_condition_mask            CondMask = $13
+  183. zero_slot_unmasked             $53 = 0
+  184. merge_condition_mask           CondMask = $40 & $41
+  185. branch_if_no_lanes_active      branch_if_no_lanes_active +83 (label 5 at #268)
+  186. trace_enter                    TraceEnter(bool test_matrix()) when $18 is true
+  187. zero_slot_unmasked             $54 = 0
+  188. copy_slot_unmasked             $55 = $18
+  189. copy_slot_masked               $54 = Mask($55)
+  190. trace_scope                    TraceScope(+1) when $54 is true
+  191. trace_line                     TraceLine(34) when $18 is true
+  192. zero_slot_unmasked             $55 = 0
+  193. copy_constant                  $56 = 0x40000000 (2.0)
+  194. swizzle_4                      $55..58 = ($55..58).yxxy
+  195. copy_4_slots_unmasked          mp2₁ = $55..58
+  196. trace_var                      TraceVar(mp2₁) when $18 is true
+  197. trace_line                     TraceLine(35) when $18 is true
+  198. copy_4_slots_unmasked          hp2₁ = mp2₁
+  199. trace_var                      TraceVar(hp2₁) when $18 is true
+  200. trace_line                     TraceLine(36) when $18 is true
+  201. zero_slot_unmasked             $55 = 0
+  202. copy_constant                  $56 = 0x40400000 (3.0)
+  203. shuffle                        $55..63 = ($55..63)[1 0 0 0 1 0 0 0 1]
+  204. copy_4_slots_unmasked          mp3₁(0..3) = $55..58
+  205. copy_4_slots_unmasked          mp3₁(4..7) = $59..62
+  206. copy_slot_unmasked             mp3₁(8) = $63
+  207. trace_var                      TraceVar(mp3₁) when $18 is true
+  208. trace_line                     TraceLine(37) when $18 is true
+  209. copy_4_slots_unmasked          hp3₁(0..3) = mp3₁(0..3)
+  210. copy_4_slots_unmasked          hp3₁(4..7) = mp3₁(4..7)
+  211. copy_slot_unmasked             hp3₁(8) = mp3₁(8)
+  212. trace_var                      TraceVar(hp3₁) when $18 is true
+  213. trace_line                     TraceLine(38) when $18 is true
+  214. zero_slot_unmasked             $55 = 0
+  215. copy_constant                  $56 = 0x40800000 (4.0)
+  216. shuffle                        $55..70 = ($55..70)[1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1]
+  217. copy_4_slots_unmasked          mp4₁(0..3) = $55..58
+  218. copy_4_slots_unmasked          mp4₁(4..7) = $59..62
+  219. copy_4_slots_unmasked          mp4₁(8..11) = $63..66
+  220. copy_4_slots_unmasked          mp4₁(12..15) = $67..70
+  221. trace_var                      TraceVar(mp4₁) when $18 is true
+  222. trace_line                     TraceLine(39) when $18 is true
+  223. copy_4_slots_unmasked          hp4₁(0..3) = mp4₁(0..3)
+  224. copy_4_slots_unmasked          hp4₁(4..7) = mp4₁(4..7)
+  225. copy_4_slots_unmasked          hp4₁(8..11) = mp4₁(8..11)
+  226. copy_4_slots_unmasked          hp4₁(12..15) = mp4₁(12..15)
+  227. trace_var                      TraceVar(hp4₁) when $18 is true
+  228. trace_line                     TraceLine(41) when $18 is true
+  229. copy_4_slots_unmasked          $55..58 = mp2₁
+  230. copy_4_slots_unmasked          $59..62 = hp2₁
+  231. cmpeq_4_floats                 $55..58 = equal($55..58, $59..62)
+  232. bitwise_and_2_ints             $55..56 &= $57..58
+  233. bitwise_and_int                $55 &= $56
+  234. copy_4_slots_unmasked          $56..59 = hp3₁(0..3)
+  235. copy_4_slots_unmasked          $60..63 = hp3₁(4..7)
+  236. copy_slot_unmasked             $64 = hp3₁(8)
+  237. copy_4_slots_unmasked          $65..68 = mp3₁(0..3)
+  238. copy_4_slots_unmasked          $69..72 = mp3₁(4..7)
+  239. copy_slot_unmasked             $73 = mp3₁(8)
+  240. cmpeq_n_floats                 $56..64 = equal($56..64, $65..73)
+  241. bitwise_and_4_ints             $57..60 &= $61..64
+  242. bitwise_and_2_ints             $57..58 &= $59..60
+  243. bitwise_and_int                $57 &= $58
+  244. bitwise_and_int                $56 &= $57
+  245. bitwise_and_int                $55 &= $56
+  246. copy_4_slots_unmasked          $56..59 = mp4₁(0..3)
+  247. copy_4_slots_unmasked          $60..63 = mp4₁(4..7)
+  248. copy_4_slots_unmasked          $64..67 = mp4₁(8..11)
+  249. copy_4_slots_unmasked          $68..71 = mp4₁(12..15)
+  250. copy_4_slots_unmasked          $72..75 = hp4₁(0..3)
+  251. copy_4_slots_unmasked          $76..79 = hp4₁(4..7)
+  252. copy_4_slots_unmasked          $80..83 = hp4₁(8..11)
+  253. copy_4_slots_unmasked          $84..87 = hp4₁(12..15)
+  254. cmpeq_n_floats                 $56..71 = equal($56..71, $72..87)
+  255. bitwise_and_4_ints             $64..67 &= $68..71
+  256. bitwise_and_4_ints             $60..63 &= $64..67
+  257. bitwise_and_4_ints             $56..59 &= $60..63
+  258. bitwise_and_2_ints             $56..57 &= $58..59
+  259. bitwise_and_int                $56 &= $57
+  260. bitwise_and_int                $55 &= $56
+  261. copy_slot_masked               [test_matrix].result = Mask($55)
+  262. trace_var                      TraceVar([test_matrix].result) when $18 is true
+  263. trace_scope                    TraceScope(-1) when $54 is true
+  264. trace_exit                     TraceExit(bool test_matrix()) when $18 is true
+  265. copy_slot_unmasked             $54 = [test_matrix].result
+  266. label                          label 0x00000009
+  267. copy_slot_masked               $53 = Mask($54)
+  268. label                          label 0x00000005
+  269. load_condition_mask            CondMask = $40
+  270. zero_slot_unmasked             $23 = 0
+  271. merge_condition_mask           CondMask = $52 & $53
+  272. branch_if_no_lanes_active      branch_if_no_lanes_active +66 (label 4 at #338)
+  273. trace_enter                    TraceEnter(bool test_array()) when $18 is true
+  274. zero_slot_unmasked             $24 = 0
+  275. copy_slot_unmasked             $25 = $18
+  276. copy_slot_masked               $24 = Mask($25)
+  277. trace_scope                    TraceScope(+1) when $24 is true
+  278. trace_line                     TraceLine(45) when $18 is true
+  279. zero_slot_unmasked             mf[0] = 0
+  280. trace_var                      TraceVar(mf[0]) when $18 is true
+  281. trace_line                     TraceLine(45) when $18 is true
+  282. copy_constant                  $25 = 0x3F800000 (1.0)
+  283. copy_slot_masked               mf[0] = Mask($25)
+  284. trace_var                      TraceVar(mf[0]) when $18 is true
+  285. trace_line                     TraceLine(46) when $18 is true
+  286. zero_slot_unmasked             hf[0] = 0
+  287. trace_var                      TraceVar(hf[0]) when $18 is true
+  288. trace_line                     TraceLine(46) when $18 is true
+  289. copy_constant                  $25 = 0x3F800000 (1.0)
+  290. copy_slot_masked               hf[0] = Mask($25)
+  291. trace_var                      TraceVar(hf[0]) when $18 is true
+  292. trace_line                     TraceLine(47) when $18 is true
+  293. zero_4_slots_unmasked          mv[0], mv[1] = 0
+  294. trace_var                      TraceVar(mv[0], mv[1]) when $18 is true
+  295. trace_line                     TraceLine(47) when $18 is true
+  296. zero_slot_unmasked             $25 = 0
+  297. copy_constant                  $26 = 0x3F800000 (1.0)
+  298. copy_2_slots_masked            mv[0] = Mask($25..26)
+  299. trace_var                      TraceVar(mv[0]) when $18 is true
+  300. trace_line                     TraceLine(47) when $18 is true
+  301. copy_constant                  $25 = 0x40000000 (2.0)
+  302. copy_constant                  $26 = 0x40400000 (3.0)
+  303. copy_2_slots_masked            mv[1] = Mask($25..26)
+  304. trace_var                      TraceVar(mv[1]) when $18 is true
+  305. trace_line                     TraceLine(48) when $18 is true
+  306. zero_4_slots_unmasked          hv[0], hv[1] = 0
+  307. trace_var                      TraceVar(hv[0], hv[1]) when $18 is true
+  308. trace_line                     TraceLine(48) when $18 is true
+  309. zero_slot_unmasked             $25 = 0
+  310. copy_constant                  $26 = 0x3F800000 (1.0)
+  311. copy_2_slots_masked            hv[0] = Mask($25..26)
+  312. trace_var                      TraceVar(hv[0]) when $18 is true
+  313. trace_line                     TraceLine(48) when $18 is true
+  314. copy_constant                  $25 = 0x40000000 (2.0)
+  315. copy_constant                  $26 = 0x40400000 (3.0)
+  316. copy_2_slots_masked            hv[1] = Mask($25..26)
+  317. trace_var                      TraceVar(hv[1]) when $18 is true
+  318. trace_line                     TraceLine(50) when $18 is true
+  319. copy_2_slots_unmasked          $25..26 = mf[0], hf[0]
+  320. cmpeq_float                    $25 = equal($25, $26)
+  321. copy_2_slots_unmasked          $26..27 = hv[0]
+  322. copy_2_slots_unmasked          $28..29 = mv[0]
+  323. cmpeq_2_floats                 $26..27 = equal($26..27, $28..29)
+  324. bitwise_and_int                $26 &= $27
+  325. bitwise_and_int                $25 &= $26
+  326. copy_2_slots_unmasked          $26..27 = mv[1]
+  327. copy_2_slots_unmasked          $28..29 = hv[1]
+  328. cmpeq_2_floats                 $26..27 = equal($26..27, $28..29)
+  329. bitwise_and_int                $26 &= $27
+  330. bitwise_and_int                $25 &= $26
+  331. copy_slot_masked               [test_array].result = Mask($25)
+  332. trace_var                      TraceVar([test_array].result) when $18 is true
+  333. trace_scope                    TraceScope(-1) when $24 is true
+  334. trace_exit                     TraceExit(bool test_array()) when $18 is true
+  335. copy_slot_unmasked             $24 = [test_array].result
+  336. label                          label 0x0000000A
+  337. copy_slot_masked               $23 = Mask($24)
+  338. label                          label 0x00000004
+  339. load_condition_mask            CondMask = $52
+  340. zero_slot_unmasked             $36 = 0
+  341. merge_condition_mask           CondMask = $22 & $23
+  342. branch_if_no_lanes_active      branch_if_no_lanes_active +19 (label 3 at #361)
+  343. trace_enter                    TraceEnter(bool highp_param(float value)) when $18 is true
+  344. copy_constant                  value = 0x3F800000 (1.0)
+  345. trace_var                      TraceVar(value) when $18 is true
+  346. zero_slot_unmasked             $37 = 0
+  347. copy_slot_unmasked             $38 = $18
+  348. copy_slot_masked               $37 = Mask($38)
+  349. trace_scope                    TraceScope(+1) when $37 is true
+  350. trace_line                     TraceLine(53) when $18 is true
+  351. copy_slot_unmasked             $38 = value
+  352. copy_constant                  $39 = 0x3F800000 (1.0)
+  353. cmpeq_float                    $38 = equal($38, $39)
+  354. copy_slot_masked               [highp_param].result = Mask($38)
+  355. trace_var                      TraceVar([highp_param].result) when $18 is true
+  356. trace_scope                    TraceScope(-1) when $37 is true
+  357. trace_exit                     TraceExit(bool highp_param(float value)) when $18 is true
+  358. copy_slot_unmasked             $37 = [highp_param].result
+  359. label                          label 0x0000000B
+  360. copy_slot_masked               $36 = Mask($37)
+  361. label                          label 0x00000003
+  362. load_condition_mask            CondMask = $22
+  363. zero_slot_unmasked             $31 = 0
+  364. merge_condition_mask           CondMask = $35 & $36
+  365. branch_if_no_lanes_active      branch_if_no_lanes_active +19 (label 2 at #384)
+  366. trace_enter                    TraceEnter(bool mediump_param(half value)) when $18 is true
+  367. copy_constant                  value₁ = 0x40000000 (2.0)
+  368. trace_var                      TraceVar(value₁) when $18 is true
+  369. zero_slot_unmasked             $32 = 0
+  370. copy_slot_unmasked             $33 = $18
+  371. copy_slot_masked               $32 = Mask($33)
+  372. trace_scope                    TraceScope(+1) when $32 is true
+  373. trace_line                     TraceLine(54) when $18 is true
+  374. copy_slot_unmasked             $33 = value₁
+  375. copy_constant                  $34 = 0x40000000 (2.0)
+  376. cmpeq_float                    $33 = equal($33, $34)
+  377. copy_slot_masked               [mediump_param].result = Mask($33)
+  378. trace_var                      TraceVar([mediump_param].result) when $18 is true
+  379. trace_scope                    TraceScope(-1) when $32 is true
+  380. trace_exit                     TraceExit(bool mediump_param(half value)) when $18 is true
+  381. copy_slot_unmasked             $32 = [mediump_param].result
+  382. label                          label 0x0000000C
+  383. copy_slot_masked               $31 = Mask($32)
+  384. label                          label 0x00000002
+  385. load_condition_mask            CondMask = $35
+  386. zero_slot_unmasked             $1 = 0
+  387. merge_condition_mask           CondMask = $30 & $31
+  388. branch_if_no_lanes_active      branch_if_no_lanes_active +19 (label 1 at #407)
+  389. trace_enter                    TraceEnter(bool lowp_param(half value)) when $18 is true
+  390. copy_constant                  value₂ = 0x40400000 (3.0)
+  391. trace_var                      TraceVar(value₂) when $18 is true
+  392. zero_slot_unmasked             $2 = 0
+  393. copy_slot_unmasked             $3 = $18
+  394. copy_slot_masked               $2 = Mask($3)
+  395. trace_scope                    TraceScope(+1) when $2 is true
+  396. trace_line                     TraceLine(55) when $18 is true
+  397. copy_slot_unmasked             $3 = value₂
+  398. copy_constant                  $4 = 0x40400000 (3.0)
+  399. cmpeq_float                    $3 = equal($3, $4)
+  400. copy_slot_masked               [lowp_param].result = Mask($3)
+  401. trace_var                      TraceVar([lowp_param].result) when $18 is true
+  402. trace_scope                    TraceScope(-1) when $2 is true
+  403. trace_exit                     TraceExit(bool lowp_param(half value)) when $18 is true
+  404. copy_slot_unmasked             $2 = [lowp_param].result
+  405. label                          label 0x0000000D
+  406. copy_slot_masked               $1 = Mask($2)
+  407. label                          label 0x00000001
+  408. load_condition_mask            CondMask = $30
+  409. swizzle_4                      $1..4 = ($1..4).xxxx
+  410. copy_4_slots_unmasked          $5..8 = red
+  411. copy_4_slots_unmasked          $9..12 = green
+  412. mix_4_ints                     $1..4 = mix($5..8, $9..12, $1..4)
+  413. copy_4_slots_unmasked          [main].result = $1..4
+  414. trace_var                      TraceVar([main].result) when $18 is true
+  415. trace_scope                    TraceScope(-1) when $0 is true
+  416. trace_exit                     TraceExit(vec4 main(vec2 coords)) when $18 is true
+  417. load_src                       src.rgba = [main].result

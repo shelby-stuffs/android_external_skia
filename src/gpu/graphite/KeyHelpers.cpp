@@ -295,21 +295,19 @@ void GradientShaderBlocks::BeginBlock(const KeyContext& keyContext,
     if (gradData.fNumStops > GradientData::kNumInternalStorageStops && gatherer) {
         // TODO: for caching to work in this manner we would have to create the cache key by
         // hashing the bitmap's contents.
-        sk_sp<SkImage> image = RecorderPriv::CreateCachedImage(keyContext.recorder(),
-                                                               gradData.fColorsAndOffsetsBitmap);
-        if (!image) {
+        sk_sp<TextureProxy> proxy =
+                RecorderPriv::CreateCachedProxy(keyContext.recorder(),
+                                                gradData.fColorsAndOffsetsBitmap);
+        if (!proxy) {
             SKGPU_LOG_W("Couldn't create Texture-based gradient's texture");
 
             SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, kErrorColor);
             return;
         }
 
-        auto [view, _] = as_IB(image)->asView(keyContext.recorder(), skgpu::Mipmapped::kNo);
-        sk_sp<skgpu::graphite::TextureProxy> textureProxy = view.refProxy();
-
         static constexpr SkSamplingOptions kNearest(SkFilterMode::kNearest, SkMipmapMode::kNone);
         static constexpr SkTileMode kClampTiling[2] = {SkTileMode::kClamp, SkTileMode::kClamp};
-        gatherer->add(kNearest, kClampTiling, std::move(textureProxy));
+        gatherer->add(kNearest, kClampTiling, std::move(proxy));
     }
 
     BuiltInCodeSnippetID codeSnippetID = BuiltInCodeSnippetID::kSolidColorShader;
@@ -555,8 +553,8 @@ void DitherShaderBlock::BeginBlock(const KeyContext& keyContext,
     if (gatherer) {
         static const SkBitmap gLUT = skgpu::MakeDitherLUT();
 
-        sk_sp<SkImage> image = RecorderPriv::CreateCachedImage(keyContext.recorder(), gLUT);
-        if (!image) {
+        sk_sp<TextureProxy> proxy = RecorderPriv::CreateCachedProxy(keyContext.recorder(), gLUT);
+        if (!proxy) {
             SKGPU_LOG_W("Couldn't create dither shader's LUT");
 
             PassthroughShaderBlock::BeginBlock(keyContext, builder, gatherer);
@@ -565,13 +563,10 @@ void DitherShaderBlock::BeginBlock(const KeyContext& keyContext,
 
         add_dither_uniform_data(dict, *ditherData, gatherer);
 
-        auto [view, _] = as_IB(image)->asView(keyContext.recorder(), skgpu::Mipmapped::kNo);
-        sk_sp<skgpu::graphite::TextureProxy> textureProxy = view.refProxy();
-
         static constexpr SkSamplingOptions kNearest(SkFilterMode::kNearest, SkMipmapMode::kNone);
         static constexpr SkTileMode kRepeatTiling[2] = { SkTileMode::kRepeat, SkTileMode::kRepeat };
 
-        gatherer->add(kNearest, kRepeatTiling, std::move(textureProxy));
+        gatherer->add(kNearest, kRepeatTiling, std::move(proxy));
     }
 
     builder->beginBlock(BuiltInCodeSnippetID::kDitherShader);
@@ -766,8 +761,6 @@ void add_table_colorfilter_uniform_data(const ShaderCodeDictionary* dict,
 
 } // anonymous namespace
 
-TableColorFilterBlock::TableColorFilterData::TableColorFilterData() {}
-
 void TableColorFilterBlock::BeginBlock(const KeyContext& keyContext,
                                        PaintParamsKeyBuilder* builder,
                                        PipelineDataGatherer* gatherer,
@@ -823,43 +816,6 @@ void ColorSpaceTransformBlock::BeginBlock(const KeyContext& keyContext,
 //--------------------------------------------------------------------------------------------------
 namespace {
 
-constexpr skgpu::BlendInfo make_simple_blendInfo(skgpu::BlendCoeff srcCoeff,
-                                                 skgpu::BlendCoeff dstCoeff) {
-    return { skgpu::BlendEquation::kAdd,
-             srcCoeff,
-             dstCoeff,
-             SK_PMColor4fTRANSPARENT,
-             skgpu::BlendModifiesDst(skgpu::BlendEquation::kAdd, srcCoeff, dstCoeff) };
-}
-
-static constexpr int kNumCoeffModes = (int)SkBlendMode::kLastCoeffMode + 1;
-/*>> No coverage, input color unknown <<*/
-static constexpr skgpu::BlendInfo gBlendTable[kNumCoeffModes] = {
-        /* clear */      make_simple_blendInfo(skgpu::BlendCoeff::kZero, skgpu::BlendCoeff::kZero),
-        /* src */        make_simple_blendInfo(skgpu::BlendCoeff::kOne,  skgpu::BlendCoeff::kZero),
-        /* dst */        make_simple_blendInfo(skgpu::BlendCoeff::kZero, skgpu::BlendCoeff::kOne),
-        /* src-over */   make_simple_blendInfo(skgpu::BlendCoeff::kOne,  skgpu::BlendCoeff::kISA),
-        /* dst-over */   make_simple_blendInfo(skgpu::BlendCoeff::kIDA,  skgpu::BlendCoeff::kOne),
-        /* src-in */     make_simple_blendInfo(skgpu::BlendCoeff::kDA,   skgpu::BlendCoeff::kZero),
-        /* dst-in */     make_simple_blendInfo(skgpu::BlendCoeff::kZero, skgpu::BlendCoeff::kSA),
-        /* src-out */    make_simple_blendInfo(skgpu::BlendCoeff::kIDA,  skgpu::BlendCoeff::kZero),
-        /* dst-out */    make_simple_blendInfo(skgpu::BlendCoeff::kZero, skgpu::BlendCoeff::kISA),
-        /* src-atop */   make_simple_blendInfo(skgpu::BlendCoeff::kDA,   skgpu::BlendCoeff::kISA),
-        /* dst-atop */   make_simple_blendInfo(skgpu::BlendCoeff::kIDA,  skgpu::BlendCoeff::kSA),
-        /* xor */        make_simple_blendInfo(skgpu::BlendCoeff::kIDA,  skgpu::BlendCoeff::kISA),
-        /* plus */       make_simple_blendInfo(skgpu::BlendCoeff::kOne,  skgpu::BlendCoeff::kOne),
-        /* modulate */   make_simple_blendInfo(skgpu::BlendCoeff::kZero, skgpu::BlendCoeff::kSC),
-        /* screen */     make_simple_blendInfo(skgpu::BlendCoeff::kOne,  skgpu::BlendCoeff::kISC)
-};
-
-const skgpu::BlendInfo& get_blend_info(SkBlendMode bm) {
-    if (bm <= SkBlendMode::kLastCoeffMode) {
-        return gBlendTable[(int) bm];
-    }
-
-    return gBlendTable[(int) SkBlendMode::kSrc];
-}
-
 void add_shaderbasedblender_uniform_data(const ShaderCodeDictionary* dict,
                                          SkBlendMode bm,
                                          PipelineDataGatherer* gatherer) {
@@ -880,15 +836,10 @@ void BlendModeBlock::BeginBlock(const KeyContext& keyContext,
     auto dict = keyContext.dict();
 
     if (bm <= SkBlendMode::kLastCoeffMode) {
-        builder->setBlendInfo(get_blend_info(bm));
-
-        builder->beginBlock(BuiltInCodeSnippetID::kFixedFunctionBlender);
-        static_assert(SkTFitsIn<uint8_t>(SkBlendMode::kLastMode));
-        builder->addByte(static_cast<uint8_t>(bm));
+        BuiltInCodeSnippetID fixedFuncBlendModeID = static_cast<BuiltInCodeSnippetID>(
+                kFixedFunctionBlendModeIDOffset + (int) bm);
+        builder->beginBlock(fixedFuncBlendModeID);
     } else {
-        // TODO: set up the correct blend info
-        builder->setBlendInfo({});
-
         if (gatherer) {
             add_shaderbasedblender_uniform_data(dict, bm, gatherer);
         }

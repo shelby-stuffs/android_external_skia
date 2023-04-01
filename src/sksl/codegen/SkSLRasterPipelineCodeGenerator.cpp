@@ -91,7 +91,7 @@ class SlotManager {
 public:
     SlotManager(std::vector<SlotDebugInfo>* i) : fSlotDebugInfo(i) {}
 
-    /** Used by `create` to add this variable to SlotDebugInfo inside the DebugTrace. */
+    /** Used by `createSlots` to add this variable to SlotDebugInfo inside the DebugTrace. */
     void addSlotDebugInfoForGroup(const std::string& varName,
                                   const Type& type,
                                   Position pos,
@@ -145,13 +145,13 @@ public:
     /** Returns the stack ID of this AutoStack. */
     int stackID() { return fStackID; }
 
-    /** Clones values from the top of the active stack onto this one. */
+    /** Clones values from this stack onto the top of the active stack. */
     void pushClone(int slots);
 
-    /** Clones values from a fixed range of the active stack onto this one. */
+    /** Clones values from a fixed range of this stack onto the top of the active stack. */
     void pushClone(SlotRange range, int offsetFromStackTop);
 
-    /** Clones values from a dynamic range of the active stack onto this one. */
+    /** Clones values from a dynamic range of this stack onto the top of the active stack. */
     void pushCloneIndirect(SlotRange range, int dynamicStackID, int offsetFromStackTop);
 
 private:
@@ -193,7 +193,8 @@ public:
      * contained unsupported statements or expressions.
      */
     std::optional<SlotRange> writeFunction(const IRNode& callSite,
-                                           const FunctionDefinition& function);
+                                           const FunctionDefinition& function,
+                                           SkSpan<std::unique_ptr<Expression> const> arguments);
 
     /**
      * Returns the slot index of this function inside the FunctionDebugInfo array in DebugTracePriv.
@@ -339,7 +340,13 @@ public:
      */
     void emitTraceLine(Position pos);
 
-    /** Emits a trace_scope opcode, which alters the SkSL variable-scope depth. */
+    /**
+     * Emits a trace_scope opcode, which alters the SkSL variable-scope depth.
+     * Unlike the other trace ops, trace_scope takes a dedicated mask instead of the trace-scope
+     * mask. Call `pushTraceScopeMask` to synthesize this mask; discard it when you're done.
+     */
+    void pushTraceScopeMask();
+    void discardTraceScopeMask();
     void emitTraceScope(int delta);
 
     /** Prepares our position-to-line-offset conversion table (stored in `fLineOffsets`). */
@@ -1258,8 +1265,10 @@ void Generator::setCurrentStack(int stackID) {
     }
 }
 
-std::optional<SlotRange> Generator::writeFunction(const IRNode& callSite,
-                                                  const FunctionDefinition& function) {
+std::optional<SlotRange> Generator::writeFunction(
+        const IRNode& callSite,
+        const FunctionDefinition& function,
+        SkSpan<std::unique_ptr<Expression> const> arguments) {
     // Generate debug information and emit a trace-enter op.
     int funcIndex = -1;
     if (fDebugTrace) {
@@ -1267,6 +1276,55 @@ std::optional<SlotRange> Generator::writeFunction(const IRNode& callSite,
         SkASSERT(funcIndex >= 0);
         if (this->shouldWriteTraceOps()) {
             fBuilder.trace_enter(fTraceMask->stackID(), funcIndex);
+        }
+    }
+
+    // Handle parameter lvalues.
+    SkSpan<Variable* const> parameters = function.declaration().parameters();
+    TArray<std::unique_ptr<LValue>> lvalues;
+    if (function.declaration().isMain()) {
+        // For main(), the parameter slots have already been populated by `writeProgram`, but we
+        // still need to explicitly emit trace ops for the variables in main(), since they are
+        // initialized before it is safe to use trace-var. (We can't invoke init-lane-masks until
+        // after we've copied the inputs from main into slots, because dst.rgba is used to pass in a
+        // blend-destination color, but we clobber it and put in the execution mask instead.)
+        if (this->shouldWriteTraceOps()) {
+            for (const Variable* var : parameters) {
+                fBuilder.trace_var(fTraceMask->stackID(), this->getVariableSlots(*var));
+            }
+        }
+    } else {
+        // Write all the arguments into their parameter's variable slots. Because we never allow
+        // recursion, we don't need to worry about overwriting any existing values in those slots.
+        // (In fact, we don't even need to apply the write mask.)
+        lvalues.resize(arguments.size());
+
+        for (size_t index = 0; index < arguments.size(); ++index) {
+            const Expression& arg = *arguments[index];
+            const Variable& param = *parameters[index];
+
+            // Use LValues for out-parameters and inout-parameters, so we can store back to them
+            // later.
+            if (IsInoutParameter(param) || IsOutParameter(param)) {
+                lvalues[index] = this->makeLValue(arg);
+                if (!lvalues[index]) {
+                    return std::nullopt;
+                }
+                // There are no guarantees on the starting value of an out-parameter, so we only
+                // need to store the lvalues associated with an inout parameter.
+                if (IsInoutParameter(param)) {
+                    if (!this->push(*lvalues[index])) {
+                        return std::nullopt;
+                    }
+                    this->popToSlotRangeUnmasked(this->getVariableSlots(param));
+                }
+            } else {
+                // Copy input arguments into their respective parameter slots.
+                if (!this->pushExpression(arg)) {
+                    return std::nullopt;
+                }
+                this->popToSlotRangeUnmasked(this->getVariableSlots(param));
+            }
         }
     }
 
@@ -1304,6 +1362,22 @@ std::optional<SlotRange> Generator::writeFunction(const IRNode& callSite,
         fBuilder.trace_exit(fTraceMask->stackID(), funcIndex);
     }
 
+    // Copy out-parameters and inout-parameters back to their homes.
+    for (int index = 0; index < lvalues.size(); ++index) {
+        if (lvalues[index]) {
+            // Only out- and inout-parameters should have an associated lvalue.
+            const Variable& param = *parameters[index];
+            SkASSERT(IsInoutParameter(param) || IsOutParameter(param));
+
+            // Copy the parameter's slots directly into the lvalue.
+            fBuilder.push_slots(this->getVariableSlots(param));
+            if (!this->store(*lvalues[index])) {
+                return std::nullopt;
+            }
+            this->discardExpression(param.type().slotCount());
+        }
+    }
+
     return functionResult;
 }
 
@@ -1321,9 +1395,26 @@ void Generator::emitTraceLine(Position pos) {
     }
 }
 
+void Generator::pushTraceScopeMask() {
+    if (this->shouldWriteTraceOps()) {
+        // Take the intersection of the trace mask and the execution mask. To do this, start with an
+        // all-zero mask, then use select to overwrite those zeros with the trace mask across all
+        // executing lanes. We'll get the trace mask in executing lanes, and zero in dead lanes.
+        fBuilder.push_literal_i(0);
+        fTraceMask->pushClone(/*slots=*/1);
+        fBuilder.select(/*slots=*/1);
+    }
+}
+
+void Generator::discardTraceScopeMask() {
+    if (this->shouldWriteTraceOps()) {
+        this->discardExpression(/*slots=*/1);
+    }
+}
+
 void Generator::emitTraceScope(int delta) {
-    if (fDebugTrace && fWriteTraceOps) {
-        fBuilder.trace_scope(fTraceMask->stackID(), delta);
+    if (this->shouldWriteTraceOps()) {
+        fBuilder.trace_scope(this->currentStack(), delta);
     }
 }
 
@@ -1370,7 +1461,19 @@ bool Generator::writeGlobals() {
 
             if (IsUniform(*var)) {
                 // Create the uniform slot map in first-to-last order.
-                (void)this->getUniformSlots(*var);
+                SlotRange uniformSlotRange = this->getUniformSlots(*var);
+
+                if (this->shouldWriteTraceOps()) {
+                    // We expect uniform values to show up in the debug trace. To make this happen
+                    // without updating the file format, we synthesize a value-slot range for the
+                    // uniform here, and copy the uniform data into the value slots. This allows
+                    // trace_var to work naturally. This wastes a bit of memory, but debug traces
+                    // don't need to be hyper-efficient.
+                    SlotRange copyRange = fProgramSlots.getVariableSlots(*var);
+                    fBuilder.push_uniform(uniformSlotRange);
+                    this->popToSlotRangeUnmasked(copyRange);
+                }
+
                 continue;
             }
 
@@ -1444,6 +1547,7 @@ bool Generator::writeBlock(const Block& b) {
         this->emitTraceLine(b.fPosition);
         ++fInsideCompoundStatement;
     } else {
+        this->pushTraceScopeMask();
         this->emitTraceScope(+1);
     }
 
@@ -1457,6 +1561,7 @@ bool Generator::writeBlock(const Block& b) {
         --fInsideCompoundStatement;
     } else {
         this->emitTraceScope(-1);
+        this->discardTraceScopeMask();
     }
 
     return true;
@@ -1549,6 +1654,7 @@ bool Generator::writeMasklessForStatement(const ForStatement& f) {
 
     // We want the loop index to disappear at the end of the loop, so wrap the for statement in a
     // trace scope.
+    this->pushTraceScopeMask();
     this->emitTraceScope(+1);
 
     // If no lanes are active, skip over the loop entirely. This guards against looping forever;
@@ -1603,6 +1709,7 @@ bool Generator::writeMasklessForStatement(const ForStatement& f) {
     fBuilder.label(loopExitID);
 
     this->emitTraceScope(-1);
+    this->discardTraceScopeMask();
     return true;
 }
 
@@ -1622,6 +1729,7 @@ bool Generator::writeForStatement(const ForStatement& f) {
 
     // We want the loop index to disappear at the end of the loop, so wrap the for statement in a
     // trace scope.
+    this->pushTraceScopeMask();
     this->emitTraceScope(+1);
 
     // Set up a break target.
@@ -1704,6 +1812,7 @@ bool Generator::writeForStatement(const ForStatement& f) {
     fBuilder.disableExecutionMaskWrites();
 
     this->emitTraceScope(-1);
+    this->discardTraceScopeMask();
     return true;
 }
 
@@ -2570,41 +2679,8 @@ bool Generator::pushFunctionCall(const FunctionCall& c) {
     int skipLabelID = fBuilder.nextLabelID();
     fBuilder.branch_if_no_lanes_active(skipLabelID);
 
-    // Write all the arguments into their parameter's variable slots. Because we never allow
-    // recursion, we don't need to worry about overwriting any existing values in those slots.
-    // (In fact, we don't even need to apply the write mask.)
-    TArray<std::unique_ptr<LValue>> lvalues;
-    lvalues.resize(c.arguments().size());
-
-    for (int index = 0; index < c.arguments().size(); ++index) {
-        const Expression& arg = *c.arguments()[index];
-        const Variable& param = *c.function().parameters()[index];
-
-        // Use LValues for out-parameters and inout-parameters, so we can store back to them later.
-        if (IsInoutParameter(param) || IsOutParameter(param)) {
-            lvalues[index] = this->makeLValue(arg);
-            if (!lvalues[index]) {
-                return unsupported();
-            }
-            // There are no guarantees on the starting value of an out-parameter, so we only need to
-            // store the lvalues associated with an inout parameter.
-            if (IsInoutParameter(param)) {
-                if (!this->push(*lvalues[index])) {
-                    return unsupported();
-                }
-                this->popToSlotRangeUnmasked(this->getVariableSlots(param));
-            }
-        } else {
-            // Copy input arguments into their respective parameter slots.
-            if (!this->pushExpression(arg)) {
-                return unsupported();
-            }
-            this->popToSlotRangeUnmasked(this->getVariableSlots(param));
-        }
-    }
-
     // Emit the function body.
-    std::optional<SlotRange> r = this->writeFunction(c, *fCurrentFunction);
+    std::optional<SlotRange> r = this->writeFunction(c, *fCurrentFunction, c.arguments());
     if (!r.has_value()) {
         return unsupported();
     }
@@ -2616,22 +2692,6 @@ bool Generator::pushFunctionCall(const FunctionCall& c) {
 
     // We've returned back to the last function.
     fCurrentFunction = lastFunction;
-
-    // Copy out-parameters and inout-parameters back to their homes.
-    for (int index = 0; index < c.arguments().size(); ++index) {
-        if (lvalues[index]) {
-            // Only out- and inout-parameters should have an associated lvalue.
-            const Variable& param = *c.function().parameters()[index];
-            SkASSERT(IsInoutParameter(param) || IsOutParameter(param));
-
-            // Copy the parameter's slots directly into the lvalue.
-            fBuilder.push_slots(this->getVariableSlots(param));
-            if (!this->store(*lvalues[index])) {
-                return unsupported();
-            }
-            this->discardExpression(param.type().slotCount());
-        }
-    }
 
     // Copy the function result from its slots onto the stack.
     fBuilder.label(skipLabelID);
@@ -3612,7 +3672,7 @@ bool Generator::writeProgram(const FunctionDefinition& function) {
     }
 
     // Invoke main().
-    std::optional<SlotRange> mainResult = this->writeFunction(function, function);
+    std::optional<SlotRange> mainResult = this->writeFunction(function, function, /*arguments=*/{});
     if (!mainResult.has_value()) {
         return unsupported();
     }
