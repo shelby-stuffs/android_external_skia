@@ -170,6 +170,20 @@ struct SkRasterPipeline_ShuffleCtx {
     uint16_t offsets[16];  // values must be byte offsets (4 * highp-stride * component-index)
 };
 
+struct SkRasterPipeline_SwizzleCopyCtx {
+    float *dst;
+    float *src;           // src values must _not_ overlap dst values
+    uint16_t offsets[4];  // values must be byte offsets (4 * highp-stride * component-index)
+};
+
+struct SkRasterPipeline_CopyIndirectCtx {
+    float *dst;
+    const float *src;
+    const uint32_t *indirectOffset;  // this applies to `src` or `dst` based on the op
+    uint32_t indirectLimit;          // the indirect offset is clamped to this upper bound
+    uint32_t slots;                  // the number of slots to copy
+};
+
 struct SkRasterPipeline_BranchCtx {
     int offset;  // contains the label ID during compilation, and the program offset when compiled
 };
@@ -177,6 +191,11 @@ struct SkRasterPipeline_BranchCtx {
 struct SkRasterPipeline_BranchIfEqualCtx : public SkRasterPipeline_BranchCtx {
     int value;
     const int *ptr;
+};
+
+struct SkRasterPipeline_CaseOpCtx {
+    int expectedValue;
+    int* ptr;  // points to a pair of adjacent I32s: {I32 actualValue, I32 defaultMask}
 };
 
 #endif  // SkRasterPipelineOpContexts_DEFINED
