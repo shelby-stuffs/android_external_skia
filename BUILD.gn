@@ -1555,7 +1555,6 @@ skia_component("skia") {
   if (is_win) {
     sources += [
       "src/ports/SkDebug_win.cpp",
-      "src/ports/SkImageEncoder_WIC.cpp",
       "src/ports/SkImageGeneratorWIC.cpp",
       "src/ports/SkOSFile_win.cpp",
       "src/ports/SkOSLibrary_win.cpp",
@@ -1604,7 +1603,6 @@ skia_component("skia") {
     public += [ "include/ports/SkCFObject.h" ]
     sources += [
       "src/ports/SkDebug_stdio.cpp",
-      "src/ports/SkImageEncoder_CG.cpp",
       "src/ports/SkImageGeneratorCG.cpp",
     ]
     frameworks = [
@@ -1617,7 +1615,6 @@ skia_component("skia") {
     public += [ "include/ports/SkCFObject.h" ]
     sources += [
       "src/ports/SkDebug_stdio.cpp",
-      "src/ports/SkImageEncoder_CG.cpp",
       "src/ports/SkImageGeneratorCG.cpp",
     ]
     frameworks = [
@@ -3587,5 +3584,30 @@ if (is_ios && skia_use_metal && skia_enable_ganesh &&
 if (is_ios && skia_enable_skottie && !skia_enable_flutter_defines) {
   group("skottie_ios") {
     deps = [ "tools/skottie_ios_app" ]
+  }
+}
+
+if (skia_build_rust_targets) {
+  action("rust_hello_world") {
+    script = "gn/bazel_build.py"
+    sources = [ "experimental/rust_cxx/hello-world.rs" ]
+    outputs = [ "$root_out_dir/rust_hello_world" ]
+    args = [
+      "//experimental/rust_cxx:rust_hello_world",
+      "../../bazel-bin/experimental/rust_cxx/rust_hello_world",
+    ]
+  }
+
+  action("cpp_with_rust") {
+    script = "gn/bazel_build.py"
+    sources = [
+      "experimental/rust_cxx/hype-bridge.rs",
+      "experimental/rust_cxx/main.cpp",
+    ]
+    outputs = [ "$root_out_dir/cpp_with_rust" ]
+    args = [
+      "//experimental/rust_cxx:cpp_with_rust",
+      "../../bazel-bin/experimental/rust_cxx/cpp_with_rust",
+    ]
   }
 }
