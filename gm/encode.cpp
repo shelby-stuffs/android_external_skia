@@ -6,19 +6,17 @@
  */
 
 #include "gm/gm.h"
-
+#include "include/codec/SkEncodedImageFormat.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkData.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkImageEncoder.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
-#include "include/core/SkStream.h"
 #include "include/core/SkString.h"
-#include "include/encode/SkJpegEncoder.h"
-#include "include/encode/SkPngEncoder.h"
 #include "tools/Resources.h"
 
 namespace skiagm {
@@ -39,13 +37,8 @@ protected:
     void onDraw(SkCanvas* canvas) override {
         SkBitmap orig;
         GetResourceAsBitmap("images/mandrill_512_q075.jpg", &orig);
-        SkDynamicMemoryWStream stream;
-        SkASSERT_RELEASE(SkPngEncoder::Encode(&stream, orig.pixmap(), {}));
-        sk_sp<SkData> pngData = stream.detachAsData();
-        stream.reset();
-
-        SkASSERT_RELEASE(SkJpegEncoder::Encode(&stream, orig.pixmap(), {}));
-        sk_sp<SkData> jpgData = stream.detachAsData();
+        auto pngData = SkEncodeBitmap(orig, SkEncodedImageFormat::kPNG, 100);
+        auto jpgData = SkEncodeBitmap(orig, SkEncodedImageFormat::kJPEG, 100);
 
         sk_sp<SkImage> pngImage = SkImages::DeferredFromEncodedData(pngData);
         sk_sp<SkImage> jpgImage = SkImages::DeferredFromEncodedData(jpgData);

@@ -11,8 +11,6 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
 
-#if !defined(SK_DISABLE_LEGACY_IMAGE_ENCODER)
-
 class SkBitmap;
 class SkData;
 class SkPixmap;
@@ -69,7 +67,5 @@ SK_API sk_sp<SkData> SkEncodePixmap(const SkPixmap& src, SkEncodedImageFormat fo
  *  Helper that extracts the pixmap from the bitmap, and then calls SkEncodePixmap()
  */
 SK_API sk_sp<SkData> SkEncodeBitmap(const SkBitmap& src, SkEncodedImageFormat format, int quality);
-
-#endif
 
 #endif  // SkImageEncoder_DEFINED

@@ -8,9 +8,7 @@ void draw(SkCanvas* canvas) {
     SkIRect subset = {0, 0, 16, 64};
     int x = 0;
     for (int quality : { 0, 10, 50, 100 } ) {
-        SkJpegEncoder::Options options;
-        options.fQuality = quality;
-        sk_sp<SkData> data(SkJpegEncoder::Encode(nullptr, image.get(), options));
+        sk_sp<SkData> data(image->encodeToData(SkEncodedImageFormat::kJPEG, quality));
         sk_sp<SkImage> filtered = SkImages::DeferredFromEncodedData(data)->makeSubset(subset);
         canvas->drawImage(filtered, x, 0);
         x += 16;

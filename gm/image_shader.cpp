@@ -26,7 +26,6 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
-#include "include/encode/SkPngEncoder.h"
 #include "include/gpu/GpuTypes.h"
 
 #include <utility>
@@ -87,7 +86,7 @@ static sk_sp<SkImage> make_encode_gen(GrRecordingContext* ctx,
     if (!src) {
         return nullptr;
     }
-    sk_sp<SkData> encoded = SkPngEncoder::Encode(nullptr, src.get(), {});
+    sk_sp<SkData> encoded = src->encodeToData(SkEncodedImageFormat::kPNG, 100);
     if (!encoded) {
         return nullptr;
     }

@@ -53,9 +53,6 @@
 #include "include/effects/SkPerlinNoiseShader.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/effects/SkTrimPathEffect.h"
-#include "include/encode/SkJpegEncoder.h"
-#include "include/encode/SkPngEncoder.h"
-#include "include/encode/SkWebpEncoder.h"
 #include "include/private/SkShadowFlags.h"
 #include "include/utils/SkParsePath.h"
 #include "include/utils/SkShadowUtils.h"
@@ -920,35 +917,6 @@ sk_sp<SkImage> MakeImageFromGenerator(SimpleImageInfo ii, JSObject callbackObj) 
 }
 #endif // CK_ENABLE_WEBGL
 
-
-static Uint8Array encodeImage(GrDirectContext* dContext,
-                              sk_sp<SkImage> img,
-                              SkEncodedImageFormat fmt,
-                              int quality) {
-    sk_sp<SkData> data = nullptr;
-    if (fmt == SkEncodedImageFormat::kJPEG) {
-        SkJpegEncoder::Options opts;
-        opts.fQuality = quality;
-        data = SkJpegEncoder::Encode(dContext, img.get(), opts);
-    } else if (fmt == SkEncodedImageFormat::kPNG) {
-        data = SkPngEncoder::Encode(dContext, img.get(), {});
-    } else {
-        SkWebpEncoder::Options opts;
-        if (quality >= 100) {
-            opts.fCompression = SkWebpEncoder::Compression::kLossless;
-            opts.fQuality = 75; // This is effort to compress
-        } else {
-            opts.fCompression = SkWebpEncoder::Compression::kLossy;
-            opts.fQuality = quality;
-        }
-        data = SkWebpEncoder::Encode(dContext, img.get(), opts);
-    }
-    if (!data) {
-        return emscripten::val::null();
-    }
-    return toBytes(data);
-}
-
 EMSCRIPTEN_BINDINGS(Skia) {
 #ifdef ENABLE_GPU
     constant("gpu", true);
@@ -1534,14 +1502,22 @@ EMSCRIPTEN_BINDINGS(Skia) {
        .function("_encodeToBytes", optional_override([](sk_sp<SkImage> self,
                                                         SkEncodedImageFormat fmt,
                                                         int quality) -> Uint8Array {
-            return encodeImage(nullptr, self, fmt, quality);
+            sk_sp<SkData> data = self->encodeToData(fmt, quality);
+            if (!data) {
+                return emscripten::val::null();
+            }
+            return toBytes(data);
         }))
 #if defined(ENABLE_GPU)
         .function("_encodeToBytes", optional_override([](sk_sp<SkImage> self,
                                                          SkEncodedImageFormat fmt,
                                                          int quality,
                                                          GrDirectContext* dContext) -> Uint8Array {
-            return encodeImage(dContext, self, fmt, quality);
+            sk_sp<SkData> data = self->encodeToData(dContext, fmt, quality);
+            if (!data) {
+                return emscripten::val::null();
+            }
+            return toBytes(data);
         }), allow_raw_pointers())
 #endif
         .function("makeCopyWithDefaultMipmaps", optional_override([](sk_sp<SkImage> self)->sk_sp<SkImage> {

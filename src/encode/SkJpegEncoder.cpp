@@ -5,10 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "src/encode/SkJpegEncoderImpl.h"
+#include "include/core/SkTypes.h"
+
+#ifdef SK_ENCODE_JPEG
 
 #include "include/core/SkAlphaType.h"
-#include "include/core/SkBitmap.h"
 #include "include/core/SkColorType.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImageInfo.h"
@@ -19,7 +20,6 @@
 #include "include/core/SkYUVAPixmaps.h"
 #include "include/encode/SkEncoder.h"
 #include "include/encode/SkJpegEncoder.h"
-#include "include/private/base/SkAssert.h"
 #include "include/private/base/SkNoncopyable.h"
 #include "include/private/base/SkTemplates.h"
 #include "src/base/SkMSAN.h"
@@ -28,7 +28,6 @@
 #include "src/encode/SkImageEncoderFns.h"
 #include "src/encode/SkImageEncoderPriv.h"
 #include "src/encode/SkJPEGWriteUtility.h"
-#include "src/image/SkImage_Base.h"
 
 #include <csetjmp>
 #include <cstdint>
@@ -36,13 +35,11 @@
 #include <memory>
 #include <utility>
 
-class GrDirectContext;
 class SkColorSpace;
-class SkImage;
 
 extern "C" {
-#include "jmorecfg.h"
-#include "jpeglib.h"
+    #include "jpeglib.h"
+    #include "jmorecfg.h"
 }
 
 class SkJpegEncoderMgr final : SkNoncopyable {
@@ -64,7 +61,9 @@ public:
 
     transform_scanline_proc proc() const { return fProc; }
 
-    ~SkJpegEncoderMgr() { jpeg_destroy_compress(&fCInfo); }
+    ~SkJpegEncoderMgr() {
+        jpeg_destroy_compress(&fCInfo);
+    }
 
 private:
     SkJpegEncoderMgr(SkWStream* stream) : fDstMgr(stream), fProc(nullptr) {
@@ -74,17 +73,17 @@ private:
         fCInfo.dest = &fDstMgr;
     }
 
-    jpeg_compress_struct fCInfo;
-    skjpeg_error_mgr fErrMgr;
-    skjpeg_destination_mgr fDstMgr;
+    jpeg_compress_struct    fCInfo;
+    skjpeg_error_mgr        fErrMgr;
+    skjpeg_destination_mgr  fDstMgr;
     transform_scanline_proc fProc;
 };
 
-bool SkJpegEncoderMgr::setParams(const SkImageInfo& srcInfo,
-                                 const SkJpegEncoder::Options& options) {
+bool SkJpegEncoderMgr::setParams(const SkImageInfo& srcInfo, const SkJpegEncoder::Options& options)
+{
     auto chooseProc8888 = [&]() {
         if (kUnpremul_SkAlphaType == srcInfo.alphaType() &&
-            options.fAlphaOption == SkJpegEncoder::AlphaOption::kBlendOnBlack) {
+                options.fAlphaOption == SkJpegEncoder::AlphaOption::kBlendOnBlack) {
             return transform_scanline_to_premul_legacy;
         }
         return (transform_scanline_proc) nullptr;
@@ -125,7 +124,7 @@ bool SkJpegEncoderMgr::setParams(const SkImageInfo& srcInfo,
             break;
         case kRGBA_F16_SkColorType:
             if (kUnpremul_SkAlphaType == srcInfo.alphaType() &&
-                options.fAlphaOption == SkJpegEncoder::AlphaOption::kBlendOnBlack) {
+                    options.fAlphaOption == SkJpegEncoder::AlphaOption::kBlendOnBlack) {
                 fProc = transform_scanline_F16_to_premul_8888;
             } else {
                 fProc = transform_scanline_F16_to_8888;
@@ -257,11 +256,24 @@ bool SkJpegEncoderMgr::setParams(const SkYUVAPixmapInfo& srcInfo,
     return true;
 }
 
-static std::unique_ptr<SkEncoder> Make(SkWStream* dst,
-                                       const SkPixmap* src,
-                                       const SkYUVAPixmaps* srcYUVA,
-                                       const SkColorSpace* srcYUVAColorSpace,
-                                       const SkJpegEncoder::Options& options) {
+std::unique_ptr<SkEncoder> SkJpegEncoder::Make(SkWStream* dst,
+                                               const SkPixmap& src,
+                                               const Options& options) {
+    return Make(dst, &src, nullptr, nullptr, options);
+}
+
+std::unique_ptr<SkEncoder> SkJpegEncoder::Make(SkWStream* dst,
+                                               const SkYUVAPixmaps& src,
+                                               const SkColorSpace* srcColorSpace,
+                                               const Options& options) {
+    return Make(dst, nullptr, &src, srcColorSpace, options);
+}
+
+std::unique_ptr<SkEncoder> SkJpegEncoder::Make(SkWStream* dst,
+                                               const SkPixmap* src,
+                                               const SkYUVAPixmaps* srcYUVA,
+                                               const SkColorSpace* srcYUVAColorSpace,
+                                               const Options& options) {
     // Exactly one of |src| or |srcYUVA| should be specified.
     if (srcYUVA) {
         SkASSERT(!src);
@@ -313,38 +325,37 @@ static std::unique_ptr<SkEncoder> Make(SkWStream* dst,
                                              options.fICCProfileDescription);
     if (icc) {
         // Create a contiguous block of memory with the icc signature followed by the profile.
-        sk_sp<SkData> markerData = SkData::MakeUninitialized(kICCMarkerHeaderSize + icc->size());
-        uint8_t* ptr = (uint8_t*)markerData->writable_data();
+        sk_sp<SkData> markerData =
+                SkData::MakeUninitialized(kICCMarkerHeaderSize + icc->size());
+        uint8_t* ptr = (uint8_t*) markerData->writable_data();
         memcpy(ptr, kICCSig, sizeof(kICCSig));
         ptr += sizeof(kICCSig);
-        *ptr++ = 1;  // This is the first marker.
-        *ptr++ = 1;  // Out of one total markers.
+        *ptr++ = 1; // This is the first marker.
+        *ptr++ = 1; // Out of one total markers.
         memcpy(ptr, icc->data(), icc->size());
 
         jpeg_write_marker(encoderMgr->cinfo(), kICCMarker, markerData->bytes(), markerData->size());
     }
 
     if (srcYUVA) {
-        return std::make_unique<SkJpegEncoderImpl>(std::move(encoderMgr), srcYUVA);
+        return std::unique_ptr<SkJpegEncoder>(new SkJpegEncoder(std::move(encoderMgr), srcYUVA));
     }
-    return std::make_unique<SkJpegEncoderImpl>(std::move(encoderMgr), *src);
+    return std::unique_ptr<SkJpegEncoder>(new SkJpegEncoder(std::move(encoderMgr), *src));
 }
 
-SkJpegEncoderImpl::SkJpegEncoderImpl(std::unique_ptr<SkJpegEncoderMgr> encoderMgr,
-                                     const SkPixmap& src)
-        : SkEncoder(src,
+SkJpegEncoder::SkJpegEncoder(std::unique_ptr<SkJpegEncoderMgr> encoderMgr, const SkPixmap& src)
+        : INHERITED(src,
                     encoderMgr->proc() ? encoderMgr->cinfo()->input_components * src.width() : 0)
         , fEncoderMgr(std::move(encoderMgr)) {}
 
-SkJpegEncoderImpl::SkJpegEncoderImpl(std::unique_ptr<SkJpegEncoderMgr> encoderMgr,
-                                     const SkYUVAPixmaps* src)
-        : SkEncoder(src->plane(0), encoderMgr->cinfo()->input_components * src->yuvaInfo().width())
+SkJpegEncoder::SkJpegEncoder(std::unique_ptr<SkJpegEncoderMgr> encoderMgr, const SkYUVAPixmaps* src)
+        : INHERITED(src->plane(0), encoderMgr->cinfo()->input_components * src->yuvaInfo().width())
         , fEncoderMgr(std::move(encoderMgr))
         , fSrcYUVA(src) {}
 
-SkJpegEncoderImpl::~SkJpegEncoderImpl() {}
+SkJpegEncoder::~SkJpegEncoder() {}
 
-bool SkJpegEncoderImpl::onEncodeRows(int numRows) {
+bool SkJpegEncoder::onEncodeRows(int numRows) {
     skjpeg_error_mgr::AutoPushJmpBuf jmp(fEncoderMgr->errorMgr());
     if (setjmp(jmp)) {
         return false;
@@ -392,45 +403,17 @@ bool SkJpegEncoderImpl::onEncodeRows(int numRows) {
     return true;
 }
 
-namespace SkJpegEncoder {
-
-bool Encode(SkWStream* dst, const SkPixmap& src, const Options& options) {
-    auto encoder = Make(dst, src, options);
+bool SkJpegEncoder::Encode(SkWStream* dst, const SkPixmap& src, const Options& options) {
+    auto encoder = SkJpegEncoder::Make(dst, src, options);
     return encoder.get() && encoder->encodeRows(src.height());
 }
 
-bool Encode(SkWStream* dst,
-            const SkYUVAPixmaps& src,
-            const SkColorSpace* srcColorSpace,
-            const Options& options) {
-    auto encoder = Make(dst, src, srcColorSpace, options);
+bool SkJpegEncoder::Encode(SkWStream* dst,
+                           const SkYUVAPixmaps& src,
+                           const SkColorSpace* srcColorSpace,
+                           const Options& options) {
+    auto encoder = SkJpegEncoder::Make(dst, src, srcColorSpace, options);
     return encoder.get() && encoder->encodeRows(src.yuvaInfo().height());
 }
 
-sk_sp<SkData> Encode(GrDirectContext* ctx, const SkImage* img, const Options& options) {
-    if (!img) {
-        return nullptr;
-    }
-    SkBitmap bm;
-    if (!as_IB(img)->getROPixels(ctx, &bm)) {
-        return nullptr;
-    }
-    SkDynamicMemoryWStream stream;
-    if (Encode(&stream, bm.pixmap(), options)) {
-        return stream.detachAsData();
-    }
-    return nullptr;
-}
-
-std::unique_ptr<SkEncoder> Make(SkWStream* dst, const SkPixmap& src, const Options& options) {
-    return Make(dst, &src, nullptr, nullptr, options);
-}
-
-std::unique_ptr<SkEncoder> Make(SkWStream* dst,
-                                const SkYUVAPixmaps& src,
-                                const SkColorSpace* srcColorSpace,
-                                const Options& options) {
-    return Make(dst, nullptr, &src, srcColorSpace, options);
-}
-
-}  // namespace SkJpegEncoder
+#endif

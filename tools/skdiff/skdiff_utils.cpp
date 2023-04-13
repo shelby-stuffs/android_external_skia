@@ -7,6 +7,7 @@
 #include "include/codec/SkCodec.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkData.h"
+#include "include/core/SkImageEncoder.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypes.h"
 #include "tools/ToolUtils.h"
@@ -93,7 +94,7 @@ bool write_bitmap(const SkString& path, const SkBitmap& bitmap) {
     SkBitmap copy;
     ToolUtils::copy_to(&copy, kN32_SkColorType, bitmap);
     force_all_opaque(copy);
-    return ToolUtils::EncodeImageToPngFile(path.c_str(), copy);
+    return ToolUtils::EncodeImageToFile(path.c_str(), copy, SkEncodedImageFormat::kPNG, 100);
 }
 
 /// Return a copy of the "input" string, within which we have replaced all instances

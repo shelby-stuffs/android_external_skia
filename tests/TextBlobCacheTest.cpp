@@ -5,17 +5,19 @@
  * found in the LICENSE file.
  */
 
+#include "include/codec/SkEncodedImageFormat.h"
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorType.h"
-#include "include/core/SkDataTable.h"
+#include "include/core/SkData.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkFontStyle.h"
 #include "include/core/SkFontTypes.h"
+#include "include/core/SkImageEncoder.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPoint.h"
@@ -29,7 +31,6 @@
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/encode/SkPngEncoder.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/private/SkSpinlock.h"
@@ -316,8 +317,9 @@ static const bool kDumpPngs = true;
 // skdiff tool to visualize the differences.
 
 void write_png(const std::string& filename, const SkBitmap& bitmap) {
+    auto data = SkEncodeBitmap(bitmap, SkEncodedImageFormat::kPNG, 0);
     SkFILEWStream w{filename.c_str()};
-    SkASSERT_RELEASE(SkPngEncoder::Encode(&w, bitmap.pixmap(), {}));
+    w.write(data->data(), data->size());
     w.fsync();
 }
 

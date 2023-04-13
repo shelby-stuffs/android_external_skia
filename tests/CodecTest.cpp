@@ -16,8 +16,8 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkColorType.h"
 #include "include/core/SkData.h"
-#include "include/core/SkDataTable.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkImageEncoder.h"
 #include "include/core/SkImageGenerator.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPixmap.h"
@@ -1125,10 +1125,9 @@ static void check_round_trip(skiatest::Reporter* r, SkCodec* origCodec, const Sk
     REPORTER_ASSERT(r, SkCodec::kSuccess == result);
 
     // Encode the image to png.
-    SkDynamicMemoryWStream stream;
-    SkASSERT_RELEASE(SkPngEncoder::Encode(&stream, bm1.pixmap(), {}));
+    auto data = SkEncodeBitmap(bm1, SkEncodedImageFormat::kPNG, 100);
 
-    std::unique_ptr<SkCodec> codec(SkCodec::MakeFromData(stream.detachAsData()));
+    std::unique_ptr<SkCodec> codec(SkCodec::MakeFromData(data));
     REPORTER_ASSERT(r, color_type_match(info.colorType(), codec->getInfo().colorType()));
     REPORTER_ASSERT(r, alpha_type_match(info.alphaType(), codec->getInfo().alphaType()));
 
@@ -1951,9 +1950,8 @@ DEF_TEST(Codec_kBGR_101010x_XR_SkColorType_supported, r) {
             .makeAlphaType(kOpaque_SkAlphaType);
     SkImageInfo dstInfo = srcInfo.makeColorType(kBGR_101010x_XR_SkColorType);
     srcBm.allocPixels(srcInfo);
-    SkDynamicMemoryWStream stream;
-    SkASSERT_RELEASE(SkPngEncoder::Encode(&stream, srcBm.pixmap(), {}));
-    std::unique_ptr<SkCodec> codec(SkCodec::MakeFromData(stream.detachAsData()));
+    auto data = SkEncodeBitmap(srcBm, SkEncodedImageFormat::kPNG, 100);
+    std::unique_ptr<SkCodec> codec(SkCodec::MakeFromData(data));
     SkBitmap dstBm;
     dstBm.allocPixels(dstInfo);
     bool success = codec->getPixels(dstInfo, dstBm.getPixels(), dstBm.rowBytes());

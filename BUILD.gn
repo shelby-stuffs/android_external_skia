@@ -1238,10 +1238,11 @@ optional("jpeg_decode") {
 }
 
 optional("jpeg_encode") {
-  enabled = skia_use_libjpeg_turbo_encode && !skia_use_ndk_images
+  enabled = skia_use_libjpeg_turbo_encode
+  public_defines = [ "SK_ENCODE_JPEG" ]
 
   deps = [ "//third_party/libjpeg-turbo:libjpeg" ]
-  public = skia_encode_jpeg_public
+  public = [ "include/encode/SkJpegEncoder.h" ]
   sources = skia_encode_jpeg_srcs
 
   if (skia_use_jpeg_gainmaps) {
@@ -1352,8 +1353,8 @@ optional("png_decode") {
 }
 
 optional("png_encode") {
-  enabled = skia_use_libpng_encode && !skia_use_ndk_images
-  public = skia_encode_png_public
+  enabled = skia_use_libpng_encode
+  public_defines = [ "SK_ENCODE_PNG" ]
 
   deps = [ "//third_party/libpng" ]
   sources = skia_encode_png_srcs
@@ -1397,8 +1398,8 @@ optional("webp_decode") {
 }
 
 optional("webp_encode") {
-  enabled = skia_use_libwebp_encode && !skia_use_ndk_images
-  public = skia_encode_webp_public
+  enabled = skia_use_libwebp_encode
+  public_defines = [ "SK_ENCODE_WEBP" ]
 
   deps = [ "//third_party/libwebp" ]
   sources = skia_encode_webp_srcs
@@ -1546,16 +1547,6 @@ skia_component("skia") {
 
   if (skia_build_for_debugger) {
     defines += [ "SK_BUILD_FOR_DEBUGGER" ]
-  }
-
-  if (skia_use_no_jpeg_encode) {
-    sources += skia_no_encode_jpeg_srcs
-  }
-  if (skia_use_no_png_encode) {
-    sources += skia_no_encode_png_srcs
-  }
-  if (skia_use_no_webp_encode) {
-    sources += skia_no_encode_webp_srcs
   }
 
   if (is_win) {
