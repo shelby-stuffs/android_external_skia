@@ -95,9 +95,8 @@ sk_sp<SkSurface> DawnWindowContext::getBackbufferSurface() {
     return fSurface;
 }
 
-void DawnWindowContext::swapBuffers() {
+void DawnWindowContext::onSwapBuffers() {
     fSwapChain.Present();
-    this->onSwapBuffers();
 }
 
 void DawnWindowContext::resize(int w, int h) {
@@ -110,7 +109,6 @@ void DawnWindowContext::resize(int w, int h) {
         fContext.reset();
         return;
     }
-    fSwapChain.Configure(fSwapChainFormat, kUsage, fWidth, fHeight);
 }
 
 void DawnWindowContext::setDisplayParams(const DisplayParams& params) {

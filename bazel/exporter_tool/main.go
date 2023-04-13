@@ -31,6 +31,11 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/codec:decode_bmp_srcs",
 			},
 		},
+		{Var: "skia_codec_jpeg_xmp",
+			Rules: []string{
+				"//src/codec:jpeg_xmp",
+			},
+		},
 	}},
 	{GNI: "gn/core.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skia_core_public",
@@ -80,15 +85,27 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/core:skpicture_srcs",
 				"//src/shaders:skpicture_srcs",
 			}},
+		{Var: "skia_encode_public",
+			Rules: []string{"//include/encode:encode_hdrs"}},
 		{Var: "skia_encode_srcs",
 			Rules: []string{
 				"//src/encode:srcs",
 				"//src/encode:private_hdrs",
 			}},
+		{Var: "skia_encode_jpeg_public",
+			Rules: []string{"//include/encode:jpeg_hdrs"}},
 		{Var: "skia_encode_jpeg_srcs",
-			Rules: []string{"//src/encode:jpeg_encode_srcs", "//src/encode:jpeg_encode_hdrs"}},
+			Rules: []string{"//src/encode:jpeg_encode_srcs",
+				"//src/encode:jpeg_encode_hdrs"}},
+		{Var: "skia_encode_png_public",
+			Rules: []string{"//include/encode:png_hdrs"}},
 		{Var: "skia_encode_png_srcs",
-			Rules: []string{"//src/encode:png_encode_srcs"}},
+			Rules: []string{
+				"//src/encode:png_encode_srcs",
+				"//src/encode:png_encode_hdrs",
+			}},
+		{Var: "skia_encode_webp_public",
+			Rules: []string{"//include/encode:webp_hdrs"}},
 		{Var: "skia_encode_webp_srcs",
 			Rules: []string{"//src/encode:webp_encode_srcs"}},
 		{Var: "skia_no_encode_jpeg_srcs",
@@ -226,6 +243,13 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			Rules: []string{
 				"//src/xps:core_hdrs",
 				"//src/xps:core_srcs",
+			}}},
+	},
+	{GNI: "gn/xml.gni", Vars: []exporter.GNIFileListExportDesc{
+		{Var: "skia_xml_sources",
+			Rules: []string{
+				"//src/xml:xml_hdrs",
+				"//src/xml:xml_srcs",
 			}}},
 	},
 	{GNI: "gn/gpu.gni", Vars: []exporter.GNIFileListExportDesc{
