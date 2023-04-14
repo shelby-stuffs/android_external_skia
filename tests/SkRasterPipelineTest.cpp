@@ -10,6 +10,7 @@
 #include "src/base/SkUtils.h"
 #include "src/core/SkOpts.h"
 #include "src/core/SkRasterPipeline.h"
+#include "src/core/SkRasterPipelineContextUtils.h"
 #include "src/gpu/Swizzle.h"
 #include "src/sksl/tracing/SkSLTraceHook.h"
 #include "tests/Test.h"
@@ -42,6 +43,65 @@ DEF_TEST(SkRasterPipeline, r) {
     REPORTER_ASSERT(r, ((result >> 16) & 0xffff) == 0x0000);
     REPORTER_ASSERT(r, ((result >> 32) & 0xffff) == 0x3800);
     REPORTER_ASSERT(r, ((result >> 48) & 0xffff) == 0x3c00);
+}
+
+DEF_TEST(SkRasterPipeline_PackSmallContext, r) {
+    struct PackableObject {
+        std::array<uint8_t, sizeof(void*)> data;
+    };
+
+    // Create an arena with storage.
+    using StorageArray = std::array<char, 128>;
+    StorageArray storage = {};
+    SkArenaAllocWithReset alloc(storage.data(), storage.size(), 500);
+
+    // Construct and pack one PackableObject.
+    PackableObject object;
+    std::fill(object.data.begin(), object.data.end(), 123);
+
+    const void* packed = SkRPCtxUtils::Pack(object, &alloc);
+
+    // The alloc should still be empty.
+    REPORTER_ASSERT(r, alloc.isEmpty());
+
+    // `packed` should now contain a bitwise cast of the raw object data.
+    uintptr_t objectBits = sk_bit_cast<uintptr_t>(packed);
+    for (size_t index = 0; index < sizeof(void*); ++index) {
+        REPORTER_ASSERT(r, (objectBits & 0xFF) == 123);
+        objectBits >>= 8;
+    }
+
+    // Now unpack it.
+    auto unpacked = SkRPCtxUtils::Unpack((const PackableObject*)packed);
+
+    // The data should be identical to the original.
+    REPORTER_ASSERT(r, unpacked.data == object.data);
+}
+
+DEF_TEST(SkRasterPipeline_PackBigContext, r) {
+    struct BigObject {
+        std::array<uint8_t, sizeof(void*) + 1> data;
+    };
+
+    // Create an arena with storage.
+    using StorageArray = std::array<char, 128>;
+    StorageArray storage = {};
+    SkArenaAllocWithReset alloc(storage.data(), storage.size(), 500);
+
+    // Construct and pack one BigObject.
+    BigObject object;
+    std::fill(object.data.begin(), object.data.end(), 123);
+
+    const void* packed = SkRPCtxUtils::Pack(object, &alloc);
+
+    // The alloc should not be empty any longer.
+    REPORTER_ASSERT(r, !alloc.isEmpty());
+
+    // Now unpack it.
+    auto unpacked = SkRPCtxUtils::Unpack((const BigObject*)packed);
+
+    // The data should be identical to the original.
+    REPORTER_ASSERT(r, unpacked.data == object.data);
 }
 
 DEF_TEST(SkRasterPipeline_LoadStoreConditionMask, r) {
@@ -1048,13 +1108,14 @@ DEF_TEST(SkRasterPipeline_CopySlotsMasked, r) {
             // Run `copy_slots_masked` over our data.
             SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
             SkRasterPipeline p(&alloc);
-            auto* ctx = alloc.make<SkRasterPipeline_BinaryOpCtx>();
-            ctx->dst = &slots[N * dstIndex];
-            ctx->src = &slots[N * srcIndex];
+            SkRasterPipeline_BinaryOpCtx ctx;
+            ctx.dst = N * dstIndex * sizeof(float);
+            ctx.src = N * srcIndex * sizeof(float);
 
             p.append(SkRasterPipelineOp::init_lane_masks);
+            p.append(SkRasterPipelineOp::set_base_pointer, &slots[0]);
             p.append(SkRasterPipelineOp::load_condition_mask, mask);
-            p.append(op.stage, ctx);
+            p.append(op.stage, SkRPCtxUtils::Pack(ctx, &alloc));
             p.run(0,0,N,1);
 
             // Verify that the destination has been overwritten in the mask-on fields, and has not
@@ -1104,10 +1165,11 @@ DEF_TEST(SkRasterPipeline_CopySlotsUnmasked, r) {
         // Run `copy_slots_unmasked` over our data.
         SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
         SkRasterPipeline p(&alloc);
-        auto* ctx = alloc.make<SkRasterPipeline_BinaryOpCtx>();
-        ctx->dst = &slots[N * dstIndex];
-        ctx->src = &slots[N * srcIndex];
-        p.append(op.stage, ctx);
+        SkRasterPipeline_BinaryOpCtx ctx;
+        ctx.dst = N * dstIndex * sizeof(float);
+        ctx.src = N * srcIndex * sizeof(float);
+        p.append(SkRasterPipelineOp::set_base_pointer, &slots[0]);
+        p.append(op.stage, SkRPCtxUtils::Pack(ctx, &alloc));
         p.run(0,0,1,1);
 
         // Verify that the destination has been overwritten in each slot.
@@ -1124,51 +1186,6 @@ DEF_TEST(SkRasterPipeline_CopySlotsUnmasked, r) {
                 ++destPtr;
                 expectedUnchanged += 1.0f;
                 expectedChanged += 1.0f;
-            }
-        }
-    }
-}
-
-DEF_TEST(SkRasterPipeline_ZeroSlotsUnmasked, r) {
-    // Allocate space for 5 dest slots.
-    alignas(64) float slots[5 * SkRasterPipeline_kMaxStride_highp];
-    const int N = SkOpts::raster_pipeline_highp_stride;
-
-    struct ZeroSlotsOp {
-        SkRasterPipelineOp stage;
-        int numSlotsAffected;
-    };
-
-    static const ZeroSlotsOp kZeroOps[] = {
-        {SkRasterPipelineOp::zero_slot_unmasked,    1},
-        {SkRasterPipelineOp::zero_2_slots_unmasked, 2},
-        {SkRasterPipelineOp::zero_3_slots_unmasked, 3},
-        {SkRasterPipelineOp::zero_4_slots_unmasked, 4},
-    };
-
-    for (const ZeroSlotsOp& op : kZeroOps) {
-        // Initialize the destination slots to 1,2,3...
-        std::iota(&slots[0], &slots[5 * N], 1.0f);
-
-        // Run `zero_slots_unmasked` over our data.
-        SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
-        SkRasterPipeline p(&alloc);
-        p.append(op.stage, &slots[0]);
-        p.run(0,0,1,1);
-
-        // Verify that the destination has been zeroed out in each slot.
-        float expectedUnchanged = 1.0f;
-        float* destPtr = &slots[0];
-        for (int checkSlot = 0; checkSlot < 5; ++checkSlot) {
-            for (int checkLane = 0; checkLane < N; ++checkLane) {
-                if (checkSlot < op.numSlotsAffected) {
-                    REPORTER_ASSERT(r, *destPtr == 0.0f);
-                } else {
-                    REPORTER_ASSERT(r, *destPtr == expectedUnchanged);
-                }
-
-                ++destPtr;
-                expectedUnchanged += 1.0f;
             }
         }
     }
@@ -1239,10 +1256,11 @@ DEF_TEST(SkRasterPipeline_CopyConstant, r) {
         // Overwrite one destination slot with a constant (1000 + the slot number).
         SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
         SkRasterPipeline p(&alloc);
-        auto* ctx = alloc.make<SkRasterPipeline_ConstantCtx>();
-        ctx->dst = &slots[N * index];
-        ctx->value = 1000.0f + index;
-        p.append(SkRasterPipelineOp::copy_constant, ctx);
+        SkRasterPipeline_ConstantCtx ctx;
+        ctx.dst = N * index * sizeof(float);
+        ctx.value = 1000.0f + index;
+        p.append(SkRasterPipelineOp::set_base_pointer, &slots[0]);
+        p.append(SkRasterPipelineOp::copy_constant, SkRPCtxUtils::Pack(ctx, &alloc));
         p.run(0,0,1,1);
 
         // Verify that our constant value has been broadcast into exactly one slot.
@@ -1251,7 +1269,7 @@ DEF_TEST(SkRasterPipeline_CopyConstant, r) {
         for (int checkSlot = 0; checkSlot < 5; ++checkSlot) {
             for (int checkLane = 0; checkLane < N; ++checkLane) {
                 if (checkSlot == index) {
-                    REPORTER_ASSERT(r, *destPtr == ctx->value);
+                    REPORTER_ASSERT(r, *destPtr == ctx.value);
                 } else {
                     REPORTER_ASSERT(r, *destPtr == expectedUnchanged);
                 }
@@ -1450,10 +1468,11 @@ DEF_TEST(SkRasterPipeline_FloatArithmeticWithNSlots, r) {
             // Run the arithmetic op over our data.
             SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
             SkRasterPipeline p(&alloc);
-            auto* ctx = alloc.make<SkRasterPipeline_BinaryOpCtx>();
-            ctx->dst = &slots[0];
-            ctx->src = &slots[numSlotsAffected * N];
-            p.append(op.stage, ctx);
+            SkRasterPipeline_BinaryOpCtx ctx;
+            ctx.dst = 0;
+            ctx.src = numSlotsAffected * N * sizeof(float);
+            p.append(SkRasterPipelineOp::set_base_pointer, &slots[0]);
+            p.append(op.stage, SkRPCtxUtils::Pack(ctx, &alloc));
             p.run(0,0,1,1);
 
             // Verify that the affected slots now equal (1,2,3...) op (4,5,6...).
@@ -1579,10 +1598,11 @@ DEF_TEST(SkRasterPipeline_IntArithmeticWithNSlots, r) {
             // Run the op (e.g. `add_n_ints`) over our data.
             SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
             SkRasterPipeline p(&alloc);
-            auto* ctx = alloc.make<SkRasterPipeline_BinaryOpCtx>();
-            ctx->dst = (float*)&slots[0];
-            ctx->src = (float*)&slots[numSlotsAffected * N];
-            p.append(op.stage, ctx);
+            SkRasterPipeline_BinaryOpCtx ctx;
+            ctx.dst = 0;
+            ctx.src = numSlotsAffected * N * sizeof(float);
+            p.append(SkRasterPipelineOp::set_base_pointer, &slots[0]);
+            p.append(op.stage, SkRPCtxUtils::Pack(ctx, &alloc));
             p.run(0,0,1,1);
 
             // Verify that the affected slots now equal (1,2,3...) op (4,5,6...).
@@ -1729,10 +1749,11 @@ DEF_TEST(SkRasterPipeline_CompareFloatsWithNSlots, r) {
             // Run the comparison op over our data.
             SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
             SkRasterPipeline p(&alloc);
-            auto* ctx = alloc.make<SkRasterPipeline_BinaryOpCtx>();
-            ctx->dst = &slots[0];
-            ctx->src = &slots[numSlotsAffected * N];
-            p.append(op.stage, ctx);
+            SkRasterPipeline_BinaryOpCtx ctx;
+            ctx.dst = 0;
+            ctx.src = numSlotsAffected * N * sizeof(float);
+            p.append(SkRasterPipelineOp::set_base_pointer, &slots[0]);
+            p.append(op.stage, SkRPCtxUtils::Pack(ctx, &alloc));
             p.run(0, 0, 1, 1);
 
             // Verify that the affected slots now contain "(0,1,2,0...) op (1,2,0,1...)".
@@ -1857,10 +1878,11 @@ DEF_TEST(SkRasterPipeline_CompareIntsWithNSlots, r) {
             // Run the comparison op over our data.
             SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
             SkRasterPipeline p(&alloc);
-            auto* ctx = alloc.make<SkRasterPipeline_BinaryOpCtx>();
-            ctx->dst = (float*)&slots[0];
-            ctx->src = (float*)&slots[numSlotsAffected * N];
-            p.append(op.stage, ctx);
+            SkRasterPipeline_BinaryOpCtx ctx;
+            ctx.dst = 0;
+            ctx.src = sizeof(float) * numSlotsAffected * N;
+            p.append(SkRasterPipelineOp::set_base_pointer, &slots[0]);
+            p.append(op.stage, SkRPCtxUtils::Pack(ctx, &alloc));
             p.run(0, 0, 1, 1);
 
             // Verify that the affected slots now contain "(-1,0,1,-1...) op (0,1,-1,0...)".

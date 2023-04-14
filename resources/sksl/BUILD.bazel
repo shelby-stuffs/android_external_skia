@@ -197,7 +197,7 @@ skia_filegroup(
         "errors/ArrayTypeTooManyDimensionsInStructUnsized2.rts",
         "errors/ArrayTypeTooManyDimensionsUnsized1.rts",
         "errors/ArrayTypeTooManyDimensionsUnsized2.rts",
-        "errors/ArrayUnspecifiedDimensions.rts",
+        "errors/ArrayUnspecifiedDimensions.sksl",
         "errors/AssignmentTypeMismatch.rts",
         "errors/BadCaps.sksl",
         "errors/BadConstInitializers.rts",
@@ -351,6 +351,7 @@ skia_filegroup(
         "errors/PrivateTypes.rts",
         "errors/PrivateVariables.rts",
         "errors/ProgramTooLarge_Globals.rts",
+        "errors/ProgramTooLarge_Parameters.rts",
         "errors/ProgramTooLarge_Stack.rts",
         "errors/PrototypeInFuncBody.rts",
         "errors/RTAdjustType.sksl",
@@ -560,6 +561,7 @@ skia_filegroup(
         "compute/Raytrace.compute",
         "compute/Uniforms.compute",
         "compute/Workgroup.compute",
+        "errors/ArrayUnspecifiedDimensions.sksl",
         "errors/InvalidInOutType.compute",
         "errors/InvalidMainParameters.compute",
         "errors/InvalidMainReturn.compute",
@@ -985,6 +987,7 @@ skia_filegroup(
 skia_filegroup(
     name = "sksl_spirv_tests",
     srcs = [
+        "errors/ArrayUnspecifiedDimensions.sksl",
         "errors/LayoutInInterfaceBlock.sksl",
         "errors/LayoutInStruct.sksl",
         "errors/Ossfuzz36850.sksl",

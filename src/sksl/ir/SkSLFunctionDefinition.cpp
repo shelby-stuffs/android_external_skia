@@ -37,6 +37,7 @@
 #include <cstddef>
 #include <forward_list>
 #include <string_view>
+#include <vector>
 
 namespace SkSL {
 
@@ -88,9 +89,33 @@ std::unique_ptr<FunctionDefinition> FunctionDefinition::Convert(const Context& c
                                                                 bool builtin) {
     class Finalizer : public ProgramWriter {
     public:
-        Finalizer(const Context& context, const FunctionDeclaration& function)
+        Finalizer(const Context& context, const FunctionDeclaration& function, Position pos)
             : fContext(context)
-            , fFunction(function) {}
+            , fFunction(function) {
+            // Function parameters count as local variables.
+            for (const Variable* var : function.parameters()) {
+                this->addLocalVariable(var, pos);
+            }
+        }
+
+        void addLocalVariable(const Variable* var, Position pos) {
+            if (var->type().isOrContainsUnsizedArray()) {
+                fContext.fErrors->error(pos, "unsized arrays are not permitted here");
+                return;
+            }
+            // We count the number of slots used, but don't consider the precision of the base type.
+            // In practice, this reflects what GPUs actually do pretty well. (i.e., RelaxedPrecision
+            // math doesn't mean your variable takes less space.) We also don't attempt to reclaim
+            // slots at the end of a Block.
+            size_t prevSlotsUsed = fSlotsUsed;
+            fSlotsUsed = SkSafeMath::Add(fSlotsUsed, var->type().slotCount());
+            // To avoid overzealous error reporting, only trigger the error at the first
+            // place where the stack limit is exceeded.
+            if (prevSlotsUsed < kVariableSlotLimit && fSlotsUsed >= kVariableSlotLimit) {
+                fContext.fErrors->error(pos, "variable '" + std::string(var->name()) +
+                                             "' exceeds the stack size limit");
+            }
+        }
 
         ~Finalizer() override {
             SkASSERT(fBreakableLevel == 0);
@@ -108,28 +133,10 @@ std::unique_ptr<FunctionDefinition> FunctionDefinition::Convert(const Context& c
 
         bool visitStatement(Statement& stmt) override {
             switch (stmt.kind()) {
-                case Statement::Kind::kVarDeclaration: {
-                    // We count the number of slots used, but don't consider the precision of the
-                    // base type. In practice, this reflects what GPUs really do pretty well.
-                    // (i.e., RelaxedPrecision math doesn't mean your variable takes less space.)
-                    // We also don't attempt to reclaim slots at the end of a Block.
-                    size_t prevSlotsUsed = fSlotsUsed;
-                    const Variable* var = stmt.as<VarDeclaration>().var();
-                    if (var->type().isOrContainsUnsizedArray()) {
-                        fContext.fErrors->error(stmt.fPosition,
-                                                "unsized arrays are not permitted here");
-                        break;
-                    }
-                    fSlotsUsed = SkSafeMath::Add(fSlotsUsed, var->type().slotCount());
-                    // To avoid overzealous error reporting, only trigger the error at the first
-                    // place where the stack limit is exceeded.
-                    if (prevSlotsUsed < kVariableSlotLimit && fSlotsUsed >= kVariableSlotLimit) {
-                        fContext.fErrors->error(stmt.fPosition,
-                                                "variable '" + std::string(var->name()) +
-                                                "' exceeds the stack size limit");
-                    }
+                case Statement::Kind::kVarDeclaration:
+                    this->addLocalVariable(stmt.as<VarDeclaration>().var(), stmt.fPosition);
                     break;
-                }
+
                 case Statement::Kind::kReturn: {
                     // Early returns from a vertex main() function will bypass sk_Position
                     // normalization, so SkASSERT that we aren't doing that. If this becomes an
@@ -219,7 +226,7 @@ std::unique_ptr<FunctionDefinition> FunctionDefinition::Convert(const Context& c
         using INHERITED = ProgramWriter;
     };
 
-    Finalizer(context, function).visitStatement(*body);
+    Finalizer(context, function, pos).visitStatement(*body);
     if (function.isMain() && ProgramConfig::IsVertex(context.fConfig->fKind)) {
         append_rtadjust_fixup_to_vertex_main(context, function, body->as<Block>());
     }
