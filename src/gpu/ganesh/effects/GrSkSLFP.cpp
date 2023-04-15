@@ -8,9 +8,9 @@
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
 
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/private/SkSLString.h"
 #include "include/private/gpu/ganesh/GrContext_Base.h"
 #include "src/core/SkColorSpacePriv.h"
+#include "src/core/SkFilterColorProgram.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/core/SkVM.h"
@@ -20,6 +20,7 @@
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/ganesh/glsl/GrGLSLProgramBuilder.h"
+#include "src/sksl/SkSLString.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
 #include "src/sksl/ir/SkSLProgram.h"
