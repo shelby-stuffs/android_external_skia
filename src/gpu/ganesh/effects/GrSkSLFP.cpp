@@ -11,6 +11,9 @@
 #include "include/private/gpu/ganesh/GrContext_Base.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkFilterColorProgram.h"
+#include "src/core/SkRasterPipeline.h"
+#include "src/core/SkRasterPipelineOpContexts.h"
+#include "src/core/SkRasterPipelineOpList.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/core/SkVM.h"
@@ -23,6 +26,8 @@
 #include "src/sksl/SkSLString.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
+#include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
+#include "src/sksl/codegen/SkSLRasterPipelineCodeGenerator.h"
 #include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 
@@ -294,12 +299,19 @@ std::unique_ptr<GrSkSLFP> GrSkSLFP::MakeWithData(
     return fp;
 }
 
+GrFragmentProcessor::OptimizationFlags GrSkSLFP::DetermineOptimizationFlags(
+        OptFlags of, SkRuntimeEffect* effect) {
+    OptimizationFlags optFlags = static_cast<OptimizationFlags>(of);
+    if (effect->allowColorFilter() &&
+        effect->children().empty() &&
+        effect->getFilterColorProgram()) {
+        optFlags |= kConstantOutputForConstantInput_OptimizationFlag;
+    }
+    return optFlags;
+}
+
 GrSkSLFP::GrSkSLFP(sk_sp<SkRuntimeEffect> effect, const char* name, OptFlags optFlags)
-        : INHERITED(kGrSkSLFP_ClassID,
-                    static_cast<OptimizationFlags>(optFlags) |
-                            (effect->getFilterColorProgram()
-                                     ? kConstantOutputForConstantInput_OptimizationFlag
-                                     : kNone_OptimizationFlags))
+        : INHERITED(kGrSkSLFP_ClassID, DetermineOptimizationFlags(optFlags, effect.get()))
         , fEffect(std::move(effect))
         , fName(name)
         , fUniformSize(SkToU32(fEffect->uniformSize())) {
@@ -333,6 +345,7 @@ void GrSkSLFP::addChild(std::unique_ptr<GrFragmentProcessor> child, bool mergeOp
     if (mergeOptFlags) {
         this->mergeOptimizationFlags(ProcessorOptimizationFlags(child.get()));
     }
+    this->clearConstantOutputForConstantInputFlag();
     this->registerChild(std::move(child), fEffect->fSampleUsages[childIndex]);
 }
 
@@ -422,18 +435,59 @@ std::unique_ptr<GrFragmentProcessor> GrSkSLFP::clone() const {
 }
 
 SkPMColor4f GrSkSLFP::constantOutputForConstantInput(const SkPMColor4f& inputColor) const {
+    SkPMColor4f color = (fInputChildIndex >= 0)
+            ? ConstantOutputForConstantInput(this->childProcessor(fInputChildIndex), inputColor)
+            : inputColor;
+
+#ifdef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
+    class ConstantOutputForConstantInput_SkRPCallbacks : public SkSL::RP::Callbacks {
+    public:
+        bool appendShader(int index) override {
+           SkDEBUGFAIL("constant-output-for-constant-input unsupported when child shaders present");
+           return false;
+        }
+        bool appendColorFilter(int index) override {
+           SkDEBUGFAIL("constant-output-for-constant-input unsupported when child shaders present");
+           return false;
+        }
+        bool appendBlender(int index) override {
+           SkDEBUGFAIL("constant-output-for-constant-input unsupported when child shaders present");
+           return false;
+        }
+        void toLinearSrgb() override { /* identity color conversion */ }
+        void fromLinearSrgb() override { /* identity color conversion */ }
+    };
+
+    if (const SkSL::RP::Program* program = fEffect->getRPProgram(/*debugTrace=*/nullptr)) {
+        // No color conversion is happening here, so we can use untransformed uniforms.
+        SkSpan<const float> uniforms{reinterpret_cast<const float*>(this->uniformData()),
+                                     fUniformSize / sizeof(float)};
+        SkSTArenaAlloc<2048> alloc;  // sufficient for a tiny SkSL program
+        SkRasterPipeline pipeline(&alloc);
+        pipeline.append_constant_color(&alloc, color.vec());
+        ConstantOutputForConstantInput_SkRPCallbacks callbacks;
+        if (program->appendStages(&pipeline, &alloc, &callbacks, uniforms)) {
+            SkPMColor4f outputColor;
+            SkRasterPipeline_MemoryCtx outputCtx = {&outputColor, 0};
+            pipeline.append(SkRasterPipelineOp::store_f32, &outputCtx);
+            pipeline.run(0, 0, 1, 1);
+            return outputColor;
+        }
+    }
+
+    // We weren't able to run the Raster Pipeline program.
+    return inputColor;
+#else
     const SkFilterColorProgram* program = fEffect->getFilterColorProgram();
     SkASSERT(program);
 
     auto evalChild = [&](int index, SkPMColor4f color) {
-        return ConstantOutputForConstantInput(this->childProcessor(index), color);
+        SkDEBUGFAIL("constant-output-for-constant-input unsupported when child shaders present");
+        return inputColor;
     };
 
-    SkPMColor4f color = (fInputChildIndex >= 0)
-                                ? ConstantOutputForConstantInput(
-                                          this->childProcessor(fInputChildIndex), inputColor)
-                                : inputColor;
     return program->eval(color, this->uniformData(), evalChild);
+#endif
 }
 
 /**************************************************************************************************/

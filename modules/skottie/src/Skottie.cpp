@@ -101,10 +101,9 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachOpacity(const skjson::ObjectValu
         return nullptr;
 
     auto adapter = OpacityAdapter::Make(jobject, child_node, *this);
-    const auto dispatched = this->dispatchOpacityProperty(adapter->node());
-
+    adapter->seek(0);
+    const auto dispatched = this->dispatchOpacityProperty(adapter->node(), jobject["o"]);
     if (adapter->isStatic()) {
-        adapter->seek(0);
         if (!dispatched && adapter->node()->getOpacity() >= 1) {
             // No obeservable effects - we can discard.
             return child_node;
@@ -196,11 +195,18 @@ void AnimationBuilder::dispatchMarkers(const skjson::ArrayValue* jmarkers) const
     }
 }
 
-bool AnimationBuilder::dispatchColorProperty(const sk_sp<sksg::Color>& c) const {
+bool AnimationBuilder::dispatchColorProperty(const sk_sp<sksg::Color>& c,
+                                             const skjson::ObjectValue* jcolor) const {
     bool dispatched = false;
 
     if (fPropertyObserver) {
-        fPropertyObserver->onColorProperty(fPropertyObserverContext,
+        const char * node_name = fPropertyObserverContext;
+        if (jcolor) {
+            if (const skjson::StringValue* slotID = (*jcolor)["sid"]) {
+                node_name = slotID->begin();
+            }
+        }
+        fPropertyObserver->onColorProperty(node_name,
             [&]() {
                 dispatched = true;
                 return std::make_unique<ColorPropertyHandle>(c);
@@ -210,11 +216,18 @@ bool AnimationBuilder::dispatchColorProperty(const sk_sp<sksg::Color>& c) const 
     return dispatched;
 }
 
-bool AnimationBuilder::dispatchOpacityProperty(const sk_sp<sksg::OpacityEffect>& o) const {
+bool AnimationBuilder::dispatchOpacityProperty(const sk_sp<sksg::OpacityEffect>& o,
+                                               const skjson::ObjectValue* jopacity) const {
     bool dispatched = false;
 
     if (fPropertyObserver) {
-        fPropertyObserver->onOpacityProperty(fPropertyObserverContext,
+        const char * node_name = fPropertyObserverContext;
+        if (jopacity) {
+            if (const skjson::StringValue* slotID = (*jopacity)["sid"]) {
+                node_name = slotID->begin();
+            }
+        }
+        fPropertyObserver->onOpacityProperty(node_name,
             [&]() {
                 dispatched = true;
                 return std::make_unique<OpacityPropertyHandle>(o);
@@ -224,11 +237,18 @@ bool AnimationBuilder::dispatchOpacityProperty(const sk_sp<sksg::OpacityEffect>&
     return dispatched;
 }
 
-bool AnimationBuilder::dispatchTextProperty(const sk_sp<TextAdapter>& t) const {
+bool AnimationBuilder::dispatchTextProperty(const sk_sp<TextAdapter>& t,
+                                            const skjson::ObjectValue* jtext) const {
     bool dispatched = false;
 
     if (fPropertyObserver) {
-        fPropertyObserver->onTextProperty(fPropertyObserverContext,
+        const char * node_name = fPropertyObserverContext;
+        if (jtext) {
+            if (const skjson::StringValue* slotID = (*jtext)["sid"]) {
+                node_name = slotID->begin();
+            }
+        }
+        fPropertyObserver->onTextProperty(node_name,
             [&]() {
                 dispatched = true;
                 return std::make_unique<TextPropertyHandle>(t);
@@ -258,10 +278,8 @@ sk_sp<ExpressionManager> AnimationBuilder::expression_manager() const {
 
 void AnimationBuilder::AutoPropertyTracker::updateContext(PropertyObserver* observer,
                                                           const skjson::ObjectValue& obj) {
-
     const skjson::StringValue* name = obj["nm"];
-
-    fBuilder->fPropertyObserverContext = name ? name->begin() : nullptr;
+    fBuilder->fPropertyObserverContext = name ? name->begin() : fPrevContext;
 }
 
 } // namespace internal

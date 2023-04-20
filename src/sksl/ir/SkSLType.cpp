@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <string_view>
@@ -512,7 +513,7 @@ public:
             , fFields(std::move(fields))
             , fInterfaceBlock(interfaceBlock) {}
 
-    const std::vector<Field>& fields() const override {
+    SkSpan<const Field> fields() const override {
         return fFields;
     }
 
@@ -664,6 +665,7 @@ std::unique_ptr<Type> Type::MakeStructType(const Context& context,
                                            std::string_view name,
                                            std::vector<Field> fields,
                                            bool interfaceBlock) {
+    size_t slots = 0;
     for (const Field& field : fields) {
         if (field.fModifiers.fFlags != Modifiers::kNo_Flag) {
             std::string desc = field.fModifiers.description();
@@ -687,21 +689,25 @@ std::unique_ptr<Type> Type::MakeStructType(const Context& context,
             context.fErrors->error(field.fPosition, "opaque type '" + field.fType->displayName() +
                                                     "' is not permitted in a struct");
         }
+        if (field.fType->isOrContainsUnsizedArray()) {
+            if (!interfaceBlock) {
+                // Reject unsized arrays anywhere in structs.
+                context.fErrors->error(field.fPosition, "unsized arrays are not permitted here");
+            }
+        } else {
+            // If we haven't already exceeded the struct size limit...
+            if (slots < kVariableSlotLimit) {
+                // ... see if this field causes us to exceed the size limit.
+                slots = SkSafeMath::Add(slots, field.fType->slotCount());
+                if (slots >= kVariableSlotLimit) {
+                    context.fErrors->error(pos, "struct is too large");
+                }
+            }
+        }
     }
     for (const Field& field : fields) {
         if (is_too_deeply_nested(field.fType, kMaxStructDepth)) {
             context.fErrors->error(pos, "struct '" + std::string(name) + "' is too deeply nested");
-            break;
-        }
-    }
-    size_t slots = 0;
-    for (const Field& field : fields) {
-        if (field.fType->isUnsizedArray()) {
-            continue;
-        }
-        slots = SkSafeMath::Add(slots, field.fType->slotCount());
-        if (slots >= kVariableSlotLimit) {
-            context.fErrors->error(pos, "struct is too large");
             break;
         }
     }
@@ -1029,8 +1035,12 @@ const Type* Type::clone(SymbolTable* symbolTable) const {
             // We are cloning an existing struct, so there's no need to call MakeStructType and
             // fully error-check it again.
             const std::string* name = symbolTable->takeOwnershipOfString(std::string(this->name()));
-            return symbolTable->add(std::make_unique<StructType>(
-                    this->fPosition, *name, this->fields(), this->isInterfaceBlock()));
+            SkSpan<const Field> fieldSpan = this->fields();
+            return symbolTable->add(
+                    std::make_unique<StructType>(this->fPosition,
+                                                 *name,
+                                                 std::vector(fieldSpan.begin(), fieldSpan.end()),
+                                                 this->isInterfaceBlock()));
         }
         default:
             SkDEBUGFAILF("don't know how to clone type '%s'", this->description().c_str());

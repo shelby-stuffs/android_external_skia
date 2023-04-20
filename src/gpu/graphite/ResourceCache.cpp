@@ -84,6 +84,7 @@ void ResourceCache::insertResource(Resource* resource) {
     // We must set the timestamp before adding to the array in case the timestamp wraps and we wind
     // up iterating over all the resources that already have timestamps.
     this->setResourceTimestamp(resource, this->getNextTimestamp());
+    resource->updateAccessTime();
 
     this->addToNonpurgeableArray(resource);
 
@@ -321,8 +322,8 @@ void ResourceCache::purgeAsNeeded() {
 
     this->processReturnedResources();
 
-    if (this->overbudget()) {
-        // TODO: Call out to image cache to free uniquely owned resources
+    if (this->overbudget() && fProxyCache) {
+        fProxyCache->freeUniquelyHeld();
 
         // After the image cache frees resources we need to return those resources to the cache
         this->processReturnedResources();
