@@ -44,9 +44,17 @@ public:
                                               const SkMatrix* localMatrix = nullptr);
 
     // Helper function when creating an effect for a GrSkSLFP that verifies an effect will
-    // implement the constant output for constant input optimization flag.
+    // implement the GrFragmentProcessor "constant output for constant input" optimization flag.
     static bool SupportsConstantOutputForConstantInput(const SkRuntimeEffect* effect) {
+        // This optimization is only implemented for color filters without any children.
+        if (!effect->allowColorFilter() || !effect->children().empty()) {
+            return false;
+        }
+#if defined(SK_ENABLE_SKSL_IN_RASTER_PIPELINE)
+        return true;
+#else
         return effect->getFilterColorProgram();
+#endif
     }
 
     static uint32_t Hash(const SkRuntimeEffect& effect) {

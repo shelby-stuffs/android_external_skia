@@ -950,6 +950,7 @@ void Viewer::initSlides() {
         }
     }
 
+#ifdef SKSL_ENABLE_TRACING
     // Runtime shader debugger
     {
         auto slide = sk_make_sp<SkSLDebuggerSlide>();
@@ -957,6 +958,7 @@ void Viewer::initSlides() {
             fSlides.push_back(std::move(slide));
         }
     }
+#endif
 
     for (const auto& info : gExternalSlidesInfo) {
         for (const auto& flag : info.fFlags) {
@@ -1959,6 +1961,8 @@ static std::string build_glsl_highlight_shader(const GrShaderCaps& shaderCaps) {
     return highlight;
 }
 
+#ifdef SK_ENABLE_SKVM
+
 static skvm::Program build_skvm_highlight_program(SkColorType ct, int nargs) {
     // Code here is heavily tied to (and inspired by) SkVMBlitter::BuildProgram
     skvm::Builder b;
@@ -1981,6 +1985,8 @@ static skvm::Program build_skvm_highlight_program(SkColorType ct, int nargs) {
 
     return b.done();
 }
+
+#endif
 
 void Viewer::drawImGui() {
     // Support drawing the ImGui demo window. Superfluous, but gives a good idea of what's possible
@@ -2757,6 +2763,7 @@ void Viewer::drawImGui() {
                 }
             }
 
+#ifdef SK_ENABLE_SKVM
             if (ImGui::CollapsingHeader("SkVM")) {
                 auto* cache = SkVMBlitter::TryAcquireProgramCache();
                 SkASSERT(cache);
@@ -2808,7 +2815,7 @@ void Viewer::drawImGui() {
                                     std::string((const char*)asmData->data(), asmData->size()));
                         }
                         stringBox("##ASM", asmString);
-#endif
+#endif  // defined(SKVM_JIT)
 
                         ImGui::TreePop();
                     }
@@ -2826,6 +2833,7 @@ void Viewer::drawImGui() {
 
                 SkVMBlitter::ReleaseProgramCache();
             }
+#endif  // SK_ENABLE_SKVM
         }
         if (displayParamsChanged || uiParamsChanged) {
             fDeferredActions.push_back([=]() {
