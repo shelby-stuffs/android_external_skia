@@ -5,6 +5,9 @@
  * found in the LICENSE file.
  */
 
+#ifndef SKSL_RASTERPIPELINEBUILDER
+#define SKSL_RASTERPIPELINEBUILDER
+
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkTArray.h"
@@ -555,6 +558,11 @@ public:
         fInstructions.push_back({BuilderOp::pop_loop_mask, {}});
     }
 
+    // Exchanges src.rgba with the four values at the top of the stack.
+    void exchange_src() {
+        fInstructions.push_back({BuilderOp::exchange_src, {}});
+    }
+
     void push_src_rgba() {
         fInstructions.push_back({BuilderOp::push_src_rgba, {}});
     }
@@ -671,3 +679,5 @@ private:
 
 }  // namespace RP
 }  // namespace SkSL
+
+#endif  // SKSL_RASTERPIPELINEBUILDER
