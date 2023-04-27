@@ -1887,7 +1887,8 @@ bool Generator::writeIfStatement(const IfStatement& i) {
     if (i.ifFalse()) {
         // Negate the test-condition, then reapply it to the condition-mask.
         // Then, run the if-false branch.
-        fBuilder.unary_op(BuilderOp::bitwise_not_int, /*slots=*/1);
+        fBuilder.push_constant_u(~0);
+        fBuilder.binary_op(BuilderOp::bitwise_xor_n_ints, /*slots=*/1);
         fBuilder.merge_condition_mask();
         if (!this->writeStatement(*i.ifFalse())) {
             return unsupported();
@@ -2250,6 +2251,15 @@ bool Generator::pushBinaryExpression(const Expression& left, Operator op, const 
                 std::unique_ptr<LValue> lvLeft = this->makeLValue(left, /*allowScratch=*/true);
                 std::unique_ptr<LValue> lvRight = this->makeLValue(right, /*allowScratch=*/true);
                 return this->pushStructuredComparison(lvLeft.get(), op, lvRight.get(), left.type());
+            }
+            [[fallthrough]];
+
+        // Rewrite commutative ops so that the literal is on the right-hand side. This gives the
+        // Builder more opportunities to use immediate-mode ops.
+        case OperatorKind::PLUS:
+        case OperatorKind::STAR:
+            if (left.is<Literal>() && !right.is<Literal>()) {
+                return this->pushBinaryExpression(right, op, left);
             }
             break;
 
@@ -3191,7 +3201,7 @@ bool Generator::pushIntrinsic(IntrinsicKind intrinsic,
             // Stack: N, (0 <= dot(I,NRef))
             fBuilder.binary_op(BuilderOp::cmple_n_floats, 1);
             // Stack: N, (0 <= dot(I,NRef)), 0x80000000
-            fBuilder.push_constant_i(0x80000000);
+            fBuilder.push_constant_u(0x80000000);
             // Stack: N, (0 <= dot(I,NRef)) & 0x80000000)
             fBuilder.binary_op(BuilderOp::bitwise_and_n_ints, 1);
             // Stack: N, vec(0 <= dot(I,NRef)) & 0x80000000)
@@ -3353,26 +3363,34 @@ bool Generator::pushPrefixExpression(Operator op, const Expression& expr) {
             if (!this->pushExpression(expr)) {
                 return unsupported();
             }
-            fBuilder.unary_op(BuilderOp::bitwise_not_int, expr.type().slotCount());
+            fBuilder.push_constant_u(~0, expr.type().slotCount());
+            fBuilder.binary_op(BuilderOp::bitwise_xor_n_ints, expr.type().slotCount());
             return true;
 
-        case OperatorKind::MINUS:
-            // Handle negation as a componentwise `0 - expr`.
-            fBuilder.push_zeros(expr.type().slotCount());
+        case OperatorKind::MINUS: {
             if (!this->pushExpression(expr)) {
                 return unsupported();
             }
-            return this->binaryOp(expr.type(), kSubtractOps);
-
+            if (expr.type().componentType().isFloat()) {
+                // Handle float negation as an integer `x ^ 0x80000000`. This toggles the sign bit.
+                fBuilder.push_constant_u(0x80000000, expr.type().slotCount());
+                fBuilder.binary_op(BuilderOp::bitwise_xor_n_ints, expr.type().slotCount());
+            } else {
+                // Handle integer negation as a componentwise `expr * -1`.
+                fBuilder.push_constant_i(-1, expr.type().slotCount());
+                fBuilder.binary_op(BuilderOp::mul_n_ints, expr.type().slotCount());
+            }
+            return true;
+        }
         case OperatorKind::PLUSPLUS: {
             // Rewrite as `expr += 1`.
             Literal oneLiteral{Position{}, 1.0, &expr.type().componentType()};
             return this->pushBinaryExpression(expr, OperatorKind::PLUSEQ, oneLiteral);
         }
         case OperatorKind::MINUSMINUS: {
-            // Rewrite as `expr -= 1`.
-            Literal oneLiteral{Position{}, 1.0, &expr.type().componentType()};
-            return this->pushBinaryExpression(expr, OperatorKind::MINUSEQ, oneLiteral);
+            // Rewrite as `expr += -1`.
+            Literal minusOneLiteral{expr.fPosition, -1.0, &expr.type().componentType()};
+            return this->pushBinaryExpression(expr, OperatorKind::PLUSEQ, minusOneLiteral);
         }
         default:
             break;
@@ -3546,7 +3564,8 @@ bool Generator::pushTernaryExpression(const Expression& test,
 
         // Switch back to the test-expression stack temporarily, and negate the test condition.
         testStack.enter();
-        fBuilder.unary_op(BuilderOp::bitwise_not_int, /*slots=*/1);
+        fBuilder.push_constant_u(~0);
+        fBuilder.binary_op(BuilderOp::bitwise_xor_n_ints, /*slots=*/1);
         fBuilder.merge_condition_mask();
         testStack.exit();
 
@@ -3570,8 +3589,18 @@ bool Generator::pushTernaryExpression(const Expression& test,
     return true;
 }
 
-bool Generator::pushVariableReference(const VariableReference& v) {
-    return this->pushVariableReferencePartial(v, SlotRange{0, (int)v.type().slotCount()});
+bool Generator::pushVariableReference(const VariableReference& var) {
+    // If we are pushing a constant-value variable, and it's a scalar or splat-vector, just push
+    // the value directly. This shouldn't consume extra ops, and literal values are more amenable to
+    // optimization.
+    if (var.type().isScalar() || var.type().isVector()) {
+        if (const Expression* expr = ConstantFolder::GetConstantValueOrNullForVariable(var)) {
+            if (ConstantFolder::IsConstantSplat(*expr, *expr->getConstantValue(0))) {
+                return this->pushExpression(*expr);
+            }
+        }
+    }
+    return this->pushVariableReferencePartial(var, SlotRange{0, (int)var.type().slotCount()});
 }
 
 bool Generator::pushVariableReferencePartial(const VariableReference& v, SlotRange subset) {
