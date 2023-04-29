@@ -502,6 +502,11 @@ public:
         fInstructions.push_back({BuilderOp::case_op, {}, value});
     }
 
+    // Performs a `continue` in a loop.
+    void continue_op(int continueMaskStackID) {
+        fInstructions.push_back({BuilderOp::continue_op, {}, continueMaskStackID});
+    }
+
     void select(int slots) {
         // Overlays the top two entries on the stack, making one hybrid entry. The execution mask
         // is used to select which lanes are preserved.
@@ -678,6 +683,8 @@ public:
 
 private:
     void simplifyPopSlotsUnmasked(SlotRange* dst);
+    bool simplifyImmediateUnmaskedOp();
+    void simplifyOverwrittenRange(SlotRange dst);
 
     skia_private::TArray<Instruction> fInstructions;
     int fNumLabels = 0;

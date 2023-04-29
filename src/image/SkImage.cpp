@@ -33,6 +33,7 @@
 #include "include/gpu/GrRecordingContext.h"
 #include "include/private/gpu/ganesh/GrImageContext.h"
 #include "src/gpu/ganesh/GrImageContextPriv.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #endif
 
 #if defined(SK_GRAPHITE)
@@ -203,32 +204,6 @@ sk_sp<SkData> SkImage::refEncodedData() const {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-sk_sp<SkImage> SkImage::makeSubset(const SkIRect& subset, GrDirectContext* direct) const {
-    if (subset.isEmpty()) {
-        return nullptr;
-    }
-
-    const SkIRect bounds = SkIRect::MakeWH(this->width(), this->height());
-    if (!bounds.contains(subset)) {
-        return nullptr;
-    }
-
-#if defined(SK_GANESH)
-    auto myContext = as_IB(this)->context();
-    // This check is also performed in the subclass, but we do it here for the short-circuit below.
-    if (myContext && !myContext->priv().matches(direct)) {
-        return nullptr;
-    }
-#endif
-
-    // optimization : return self if the subset == our bounds
-    if (bounds == subset) {
-        return sk_ref_sp(const_cast<SkImage*>(this));
-    }
-
-    return as_IB(this)->onMakeSubset(subset, direct);
-}
-
 bool SkImage::readPixels(GrDirectContext* dContext, const SkPixmap& pmap, int srcX, int srcY,
                          CachingHint chint) const {
     return this->readPixels(dContext, pmap.info(), pmap.writable_addr(), pmap.rowBytes(), srcX,
@@ -280,12 +255,31 @@ sk_sp<SkImage> SkImage::makeWithFilter(GrRecordingContext* rContext, const SkIma
     // subset's top left corner. But the clip bounds and any crop rects on the filters are in the
     // original coordinate system, so configure the CTM to correct crop rects and explicitly adjust
     // the clip bounds (since it is assumed to already be in image space).
-    SkImageFilter_Base::Context context(SkMatrix::Translate(-subset.x(), -subset.y()),
-                                        clipBounds.makeOffset(-subset.topLeft()),
-                                        cache.get(), fInfo.colorType(), fInfo.colorSpace(),
-                                        srcSpecialImage.get());
+    // TODO: Once all image filters support it, we can just use the subset's top left corner as
+    // the source FilterResult's origin.
+    skif::ContextInfo ctxInfo = {skif::Mapping(SkMatrix::Translate(-subset.x(), -subset.y())),
+                                 skif::LayerSpace<SkIRect>(clipBounds.makeOffset(-subset.topLeft())),
+                                 skif::FilterResult(srcSpecialImage),
+                                 fInfo.colorType(),
+                                 fInfo.colorSpace(),
+                                 /*fSurfaceProps=*/{},
+                                 cache.get()};
 
-    sk_sp<SkSpecialImage> result = as_IFB(filter)->filterImage(context).imageAndOffset(offset);
+    // TODO: Handle graphite as well once graphite evaluates image filters, but that may very well
+    // be a separate function that takes a Recorder in directly.
+    skif::Context context;
+#if defined(SK_GANESH)
+    if (rContext) {
+        auto view = srcSpecialImage->view(rContext);
+        context = skif::Context::MakeGanesh(rContext, view.origin(), ctxInfo);
+    } else
+#endif
+    {
+        context = skif::Context::MakeRaster(ctxInfo);
+    }
+
+    sk_sp<SkSpecialImage> result = as_IFB(filter)->filterImage(context)
+                                                  .imageAndOffset(context, offset);
     if (!result) {
         return nullptr;
     }
@@ -366,14 +360,14 @@ sk_sp<SkImage> SkImage::reinterpretColorSpace(sk_sp<SkColorSpace> target) const 
     return as_IB(this)->onReinterpretColorSpace(std::move(target));
 }
 
-sk_sp<SkImage> SkImage::makeNonTextureImage() const {
+sk_sp<SkImage> SkImage::makeNonTextureImage(GrDirectContext* dContext) const {
     if (!this->isTextureBacked()) {
         return sk_ref_sp(const_cast<SkImage*>(this));
     }
-    return this->makeRasterImage();
+    return this->makeRasterImage(dContext, kDisallow_CachingHint);
 }
 
-sk_sp<SkImage> SkImage::makeRasterImage(CachingHint chint) const {
+sk_sp<SkImage> SkImage::makeRasterImage(GrDirectContext* dContext, CachingHint chint) const {
     SkPixmap pm;
     if (this->peekPixels(&pm)) {
         return sk_ref_sp(const_cast<SkImage*>(this));
@@ -385,8 +379,10 @@ sk_sp<SkImage> SkImage::makeRasterImage(CachingHint chint) const {
         return nullptr;
     }
 
-    // Context TODO: Elevate GrDirectContext requirement to public API.
-    auto dContext = as_IB(this)->directContext();
+    if (!dContext) {
+        // Try to get the saved context if the client didn't pass it in (but they really should).
+        dContext = as_IB(this)->directContext();
+    }
     sk_sp<SkData> data = SkData::MakeUninitialized(size);
     pm = {fInfo.makeColorSpace(nullptr), data->writable_data(), fInfo.minRowBytes()};
     if (!this->readPixels(dContext, pm, 0, 0, chint)) {
@@ -410,4 +406,3 @@ sk_sp<SkImage> SkImage::withMipmaps(sk_sp<SkMipmap> mips) const {
 sk_sp<SkImage> SkImage::withDefaultMipmaps() const {
     return this->withMipmaps(nullptr);
 }
-
