@@ -16,6 +16,7 @@
 #include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/ResourceProvider.h"
+#include "src/gpu/graphite/Texture.h"
 #include "src/gpu/graphite/UniformManager.h"
 
 namespace skgpu::graphite {
@@ -54,6 +55,9 @@ bool DispatchGroup::prepareResources(ResourceProvider* resourceProvider) {
 void DispatchGroup::addResourceRefs(CommandBuffer* commandBuffer) const {
     for (int i = 0; i < fPipelines.size(); ++i) {
         commandBuffer->trackResource(fPipelines[i]);
+    }
+    for (int i = 0; i < fTextures.size(); ++i) {
+        commandBuffer->trackResource(fTextures[i]->refTexture());
     }
 }
 
@@ -153,6 +157,11 @@ bool Builder::appendStep(const ComputeStep* step,
             return false;
         }
         dispatch.fBindings.push_back({static_cast<BindingIndex>(bindingIndex), dispatchResource});
+    }
+
+    auto wgBufferDescs = step->workgroupBuffers();
+    if (!wgBufferDescs.empty()) {
+        dispatch.fWorkgroupBuffers.push_back_n(wgBufferDescs.size(), wgBufferDescs.data());
     }
 
     // We need to switch pipelines if this step uses a different pipeline from the previous step.
