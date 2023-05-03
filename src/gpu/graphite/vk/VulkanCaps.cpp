@@ -43,6 +43,10 @@ void VulkanCaps::init(const skgpu::VulkanInterface* vkInterface,
     // Graphite requires Vulkan version 1.1 or later, which has protected support.
     fProtectedSupport = true;
 
+    // We could actually query and get a max size for each config, however maxImageDimension2D will
+    // give the minimum max size across all configs. So for simplicity we will use that for now.
+    fMaxTextureSize = std::min(physDevProperties.limits.maxImageDimension2D, (uint32_t)INT_MAX);
+
     fRequiredUniformBufferAlignment = 1;
     fRequiredStorageBufferAlignment = 1;
     fRequiredTransferBufferAlignment = 4;
@@ -997,6 +1001,18 @@ const Caps::ColorTypeInfo* VulkanCaps::getColorTypeInfo(SkColorType ct,
     }
 
     return nullptr;
+}
+
+bool VulkanCaps::onIsTexturable(const TextureInfo& texInfo) const {
+    VulkanTextureInfo vkInfo;
+    texInfo.getVulkanTextureInfo(&vkInfo);
+
+    // TODO:
+    // Once we support external formats with associated YCbCr conversion info, check for that
+    // and return true here because we can always texture from an external format.
+
+    const FormatInfo& info = this->getFormatInfo(vkInfo.fFormat);
+    return info.isTexturable(vkInfo.fImageTiling);
 }
 
 bool VulkanCaps::supportsWritePixels(const TextureInfo& texInfo) const {

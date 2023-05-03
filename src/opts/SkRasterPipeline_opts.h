@@ -3819,8 +3819,7 @@ SI void cast_to_uint_from_fn(F* dst) {
 }
 #endif
 
-template <typename T>
-SI void abs_fn(T* dst) {
+SI void abs_fn(I32* dst) {
     *dst = abs_(*dst);
 }
 
@@ -3857,10 +3856,10 @@ SI void invsqrt_fn(F* dst) {
 DECLARE_UNARY_INT(cast_to_float_from) DECLARE_UNARY_UINT(cast_to_float_from)
 DECLARE_UNARY_FLOAT(cast_to_int_from)
 DECLARE_UNARY_FLOAT(cast_to_uint_from)
-DECLARE_UNARY_FLOAT(abs) DECLARE_UNARY_INT(abs)
 DECLARE_UNARY_FLOAT(floor)
 DECLARE_UNARY_FLOAT(ceil)
 DECLARE_UNARY_FLOAT(invsqrt)
+DECLARE_UNARY_INT(abs)
 
 #undef DECLARE_UNARY_FLOAT
 #undef DECLARE_UNARY_INT
@@ -4148,6 +4147,7 @@ DECLARE_N_WAY_BINARY_FLOAT(pow)
 
 DECLARE_IMM_BINARY_FLOAT(add)   DECLARE_IMM_BINARY_INT(add)
 DECLARE_IMM_BINARY_FLOAT(mul)   DECLARE_IMM_BINARY_INT(mul)
+                                DECLARE_IMM_BINARY_INT(bitwise_and)
                                 DECLARE_IMM_BINARY_INT(bitwise_xor)
 DECLARE_IMM_BINARY_FLOAT(cmplt) DECLARE_IMM_BINARY_INT(cmplt) DECLARE_IMM_BINARY_UINT(cmplt)
 DECLARE_IMM_BINARY_FLOAT(cmple) DECLARE_IMM_BINARY_INT(cmple) DECLARE_IMM_BINARY_UINT(cmple)

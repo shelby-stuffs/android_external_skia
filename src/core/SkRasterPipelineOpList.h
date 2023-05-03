@@ -65,6 +65,7 @@
     M(load_return_mask)     M(store_return_mask)    M(mask_off_return_mask)                   \
     M(branch_if_all_lanes_active) M(branch_if_any_lanes_active) M(branch_if_no_lanes_active)  \
     M(branch_if_no_active_lanes_eq) M(jump)                                                   \
+    M(bitwise_and_imm_int)                                                                    \
     M(bitwise_and_n_ints)                                                                     \
     M(bitwise_and_int) M(bitwise_and_2_ints) M(bitwise_and_3_ints) M(bitwise_and_4_ints)      \
     M(bitwise_or_n_ints)                                                                      \
@@ -80,7 +81,6 @@
     M(cast_to_int_from_3_floats)  M(cast_to_int_from_4_floats)                                \
     M(cast_to_uint_from_float)    M(cast_to_uint_from_2_floats)                               \
     M(cast_to_uint_from_3_floats) M(cast_to_uint_from_4_floats)                               \
-    M(abs_float)        M(abs_2_floats)        M(abs_3_floats)        M(abs_4_floats)         \
     M(abs_int)          M(abs_2_ints)          M(abs_3_ints)          M(abs_4_ints)           \
     M(floor_float)      M(floor_2_floats)      M(floor_3_floats)      M(floor_4_floats)       \
     M(ceil_float)       M(ceil_2_floats)       M(ceil_3_floats)       M(ceil_4_floats)        \

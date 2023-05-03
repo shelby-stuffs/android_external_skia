@@ -57,8 +57,7 @@ namespace SkSL::RP {
     case BuilderOp::tan_float
 
 #define ALL_MULTI_SLOT_UNARY_OP_CASES        \
-         BuilderOp::abs_float:               \
-    case BuilderOp::abs_int:                 \
+         BuilderOp::abs_int:                 \
     case BuilderOp::cast_to_float_from_int:  \
     case BuilderOp::cast_to_float_from_uint: \
     case BuilderOp::cast_to_int_from_float:  \
@@ -107,6 +106,7 @@ namespace SkSL::RP {
     case BuilderOp::add_imm_int:         \
     case BuilderOp::mul_imm_float:       \
     case BuilderOp::mul_imm_int:         \
+    case BuilderOp::bitwise_and_imm_int: \
     case BuilderOp::bitwise_xor_imm_int: \
     case BuilderOp::cmple_imm_float:     \
     case BuilderOp::cmple_imm_int:       \
@@ -2655,7 +2655,7 @@ void Program::dump(SkWStream* out) const {
             case POp::continue_op:
             case POp::cast_to_float_from_int: case POp::cast_to_float_from_uint:
             case POp::cast_to_int_from_float: case POp::cast_to_uint_from_float:
-            case POp::abs_float:              case POp::abs_int:
+            case POp::abs_int:
             case POp::acos_float:
             case POp::asin_float:
             case POp::atan_float:
@@ -2676,7 +2676,7 @@ void Program::dump(SkWStream* out) const {
             case POp::load_src_rg:               case POp::store_src_rg:
             case POp::cast_to_float_from_2_ints: case POp::cast_to_float_from_2_uints:
             case POp::cast_to_int_from_2_floats: case POp::cast_to_uint_from_2_floats:
-            case POp::abs_2_floats:              case POp::abs_2_ints:
+            case POp::abs_2_ints:
             case POp::ceil_2_floats:
             case POp::floor_2_floats:
             case POp::invsqrt_2_floats:
@@ -2685,7 +2685,7 @@ void Program::dump(SkWStream* out) const {
 
             case POp::cast_to_float_from_3_ints: case POp::cast_to_float_from_3_uints:
             case POp::cast_to_int_from_3_floats: case POp::cast_to_uint_from_3_floats:
-            case POp::abs_3_floats:              case POp::abs_3_ints:
+            case POp::abs_3_ints:
             case POp::ceil_3_floats:
             case POp::floor_3_floats:
             case POp::invsqrt_3_floats:
@@ -2700,7 +2700,7 @@ void Program::dump(SkWStream* out) const {
             case POp::store_device_xy01:
             case POp::cast_to_float_from_4_ints: case POp::cast_to_float_from_4_uints:
             case POp::cast_to_int_from_4_floats: case POp::cast_to_uint_from_4_floats:
-            case POp::abs_4_floats:              case POp::abs_4_ints:
+            case POp::abs_4_ints:
             case POp::ceil_4_floats:
             case POp::floor_4_floats:
             case POp::invsqrt_4_floats:
@@ -2728,6 +2728,7 @@ void Program::dump(SkWStream* out) const {
 
             case POp::add_imm_int:
             case POp::mul_imm_int:
+            case POp::bitwise_and_imm_int:
             case POp::bitwise_xor_imm_int:
             case POp::cmple_imm_int:
             case POp::cmple_imm_uint:
@@ -3089,6 +3090,7 @@ void Program::dump(SkWStream* out) const {
             case POp::bitwise_and_3_ints:
             case POp::bitwise_and_4_ints:
             case POp::bitwise_and_n_ints:
+            case POp::bitwise_and_imm_int:
                 opText = opArg1 + " &= " + opArg2;
                 break;
 
@@ -3170,10 +3172,10 @@ void Program::dump(SkWStream* out) const {
                          opArg2 + ")";
                 break;
 
-            case POp::abs_float:    case POp::abs_int:
-            case POp::abs_2_floats: case POp::abs_2_ints:
-            case POp::abs_3_floats: case POp::abs_3_ints:
-            case POp::abs_4_floats: case POp::abs_4_ints:
+            case POp::abs_int:
+            case POp::abs_2_ints:
+            case POp::abs_3_ints:
+            case POp::abs_4_ints:
                 opText = opArg1 + " = abs(" + opArg1 + ")";
                 break;
 
