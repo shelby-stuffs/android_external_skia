@@ -139,6 +139,7 @@ SKIA_PUBLIC_HDRS = [
     "include/gpu/d3d/GrD3DTypes.h",
     "include/gpu/dawn/GrDawnTypes.h",
     "include/gpu/ganesh/SkImageGanesh.h",
+    "include/gpu/ganesh/SkSurfaceGanesh.h",
     "include/gpu/ganesh/GrTextureGenerator.h",
     "include/gpu/gl/egl/GrGLMakeEGLInterface.h",
     "include/gpu/gl/glx/GrGLMakeGLXInterface.h",
