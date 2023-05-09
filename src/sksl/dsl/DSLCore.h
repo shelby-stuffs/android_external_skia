@@ -10,9 +10,7 @@
 
 #include "include/private/SkSLDefines.h"
 #include "include/private/base/SkTArray.h"
-#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLProgramKind.h"
-#include "src/sksl/dsl/DSLCase.h"
 #include "src/sksl/dsl/DSLExpression.h"
 #include "src/sksl/dsl/DSLStatement.h"
 #include "src/sksl/dsl/DSLVar.h"  // IWYU pragma: keep
@@ -20,12 +18,12 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <utility>
 
 namespace SkSL {
 
 class Compiler;
 class ErrorReporter;
+class Position;
 struct Program;
 struct ProgramSettings;
 
@@ -79,16 +77,6 @@ void SetErrorReporter(ErrorReporter* errorReporter);
 void AddExtension(std::string_view name, Position pos = {});
 
 /**
- * break;
- */
-DSLStatement Break(Position pos = {});
-
-/**
- * continue;
- */
-DSLStatement Continue(Position pos = {});
-
-/**
  * Adds a modifiers declaration to the current program.
  */
 void Declare(const DSLModifiers& modifiers, Position pos = {});
@@ -113,71 +101,15 @@ void Declare(DSLGlobalVar& var, Position pos = {});
  */
 void Declare(skia_private::TArray<DSLGlobalVar>& vars, Position pos = {});
 
-/**
- * default: statements
- */
-template<class... Statements>
-DSLCase Default(Statements... statements) {
-    return DSLCase(DSLExpression(), std::move(statements)...);
-}
-
-/**
- * discard;
- */
-DSLStatement Discard(Position pos = {});
-
-/**
- * do stmt; while (test);
- */
-DSLStatement Do(DSLStatement stmt, DSLExpression test, Position pos = {});
-
-/**
- * for (initializer; test; next) stmt;
- */
-DSLStatement For(DSLStatement initializer, DSLExpression test, DSLExpression next,
-                 DSLStatement stmt, Position pos = {}, ForLoopPositions positions = {});
-
-/**
- * if (test) ifTrue; [else ifFalse;]
- */
-DSLStatement If(DSLExpression test, DSLStatement ifTrue, DSLStatement ifFalse = DSLStatement(),
-                Position pos = {});
-
 DSLExpression InterfaceBlock(const DSLModifiers& modifiers,  std::string_view typeName,
                              skia_private::TArray<DSLField> fields, std::string_view varName = "",
                              int arraySize = 0, Position pos = {});
-
-/**
- * return [value];
- */
-DSLStatement Return(DSLExpression value = DSLExpression(),
-                    Position pos = {});
 
 /**
  * test ? ifTrue : ifFalse
  */
 DSLExpression Select(DSLExpression test, DSLExpression ifTrue, DSLExpression ifFalse,
                      Position  = {});
-
-// Internal use only
-DSLStatement Switch(DSLExpression value, skia_private::TArray<DSLCase> cases, Position pos = {});
-
-/**
- * switch (value) { cases }
- */
-template<class... Cases>
-DSLStatement Switch(DSLExpression value, Cases... cases) {
-    skia_private::TArray<DSLCase> caseArray;
-    caseArray.reserve_back(sizeof...(cases));
-    (caseArray.push_back(std::move(cases)), ...);
-    return Switch(std::move(value), std::move(caseArray), Position{});
-}
-
-/**
- * while (test) stmt;
- */
-DSLStatement While(DSLExpression test, DSLStatement stmt,
-                   Position pos = {});
 
 /**
  * expression.xyz1

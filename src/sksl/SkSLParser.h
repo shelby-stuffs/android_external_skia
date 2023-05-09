@@ -33,14 +33,13 @@
 namespace SkSL {
 
 class Compiler;
+class Expression;
 class SymbolTable;
 enum class ProgramKind : int8_t;
 struct Module;
 struct Program;
 
 namespace dsl {
-class DSLBlock;
-class DSLCase;
 class DSLGlobalVar;
 class DSLParameter;
 class DSLVarBase;
@@ -211,7 +210,11 @@ private:
 
     dsl::DSLStatement forStatement();
 
-    std::optional<dsl::DSLCase> switchCase();
+    bool switchCaseBody(ExpressionArray* values,
+                        StatementArray* caseBlocks,
+                        std::unique_ptr<Expression> value);
+
+    bool switchCase(ExpressionArray* values, StatementArray* caseBlocks);
 
     dsl::DSLStatement switchStatement();
 
@@ -223,13 +226,13 @@ private:
 
     dsl::DSLStatement discardStatement();
 
-    std::optional<dsl::DSLBlock> block();
+    std::optional<dsl::DSLStatement> block();
 
     dsl::DSLStatement expressionStatement();
 
     using BinaryParseFn = dsl::DSLExpression (Parser::*)();
     bool SK_WARN_UNUSED_RESULT operatorRight(AutoDepth& depth, Operator::Kind op,
-                                             BinaryParseFn rightFn, dsl::DSLExpression& result);
+                                             BinaryParseFn rightFn, dsl::DSLExpression& expr);
 
     dsl::DSLExpression expression();
 
