@@ -35,6 +35,7 @@ skia_filegroup(
     srcs = select({
         "//bazel/common_config_settings:use_fontations_true": [
             "SkTypeface_fontations.cpp",
+            "//src/ports/fontations:srcs",
         ],
         "//conditions:default": [],
     }),
@@ -341,8 +342,7 @@ skia_cc_deps(
         "//bazel/common_config_settings:uses_android_fontmgr": ["@expat"],
         "//conditions:default": [],
     }) + select({
-        "//bazel/common_config_settings:use_fontations_true": [
-        ],
+        "//bazel/common_config_settings:use_fontations_true": ["//src/ports/fontations:deps"],
         "//conditions:default": [],
     }),
 )
