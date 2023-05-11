@@ -9,6 +9,7 @@
 
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
+#include "include/gpu/graphite/Surface.h"
 #include "src/gpu/AtlasTypes.h"
 #include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/Caps.h"
@@ -344,7 +345,7 @@ SkBaseDevice* Device::onCreateDevice(const CreateInfo& info, const SkPaint*) {
 }
 
 sk_sp<SkSurface> Device::makeSurface(const SkImageInfo& ii, const SkSurfaceProps& props) {
-    return SkSurface::MakeGraphite(fRecorder, ii, Mipmapped::kNo, &props);
+    return SkSurfaces::RenderTarget(fRecorder, ii, Mipmapped::kNo, &props);
 }
 
 TextureProxyView Device::createCopy(const SkIRect* subset, Mipmapped mipmapped) {
@@ -1170,7 +1171,16 @@ void Device::flushPendingWorkToRecorder() {
     }
 
     fClip.recordDeferredClipDraws();
+
+    // Snap the render pass task before snapping the compute task because creating a DrawPass may
+    // record DispatchGroups that it depends on (e.g. to process geometry).
     auto drawTask = fDC->snapRenderPassTask(fRecorder);
+    auto computeTask = fDC->snapComputeTask(fRecorder);
+
+    // Execute the compute task before the draw task.
+    if (computeTask) {
+        fRecorder->priv().add(std::move(computeTask));
+    }
     if (drawTask) {
         fRecorder->priv().add(std::move(drawTask));
     }
