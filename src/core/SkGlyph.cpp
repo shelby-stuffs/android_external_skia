@@ -12,6 +12,7 @@
 #include "include/core/SkDrawable.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkSerialProcs.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkTFitsIn.h"
 #include "include/private/base/SkTemplates.h"
@@ -46,7 +47,11 @@ SkPictureBackedGlyphDrawable::MakeFromBuffer(SkReadBuffer& buffer) {
         return nullptr;
     }
 
-    sk_sp<SkPicture> picture = SkPicture::MakeFromData(pictureData.get());
+    // Propagate the outer buffer's allow-SkSL setting to the picture decoder, using the flag on
+    // the deserial procs.
+    SkDeserialProcs procs;
+    procs.fAllowSkSL = buffer.allowSkSL();
+    sk_sp<SkPicture> picture = SkPicture::MakeFromData(pictureData.get(), &procs);
     if (!buffer.validate(picture != nullptr)) {
         return nullptr;
     }
@@ -60,7 +65,7 @@ void SkPictureBackedGlyphDrawable::FlattenDrawable(SkWriteBuffer& buffer, SkDraw
         return;
     }
 
-    sk_sp<SkPicture> picture{drawable->newPictureSnapshot()};
+    sk_sp<SkPicture> picture = drawable->makePictureSnapshot();
     sk_sp<SkData> data = picture->serialize();
 
     // If the picture is too big, or there is no picture, then drop by sending an empty byte array.

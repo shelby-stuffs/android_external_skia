@@ -432,7 +432,7 @@ void RemoteStrike::writeGlyphDrawable(const SkGlyph& glyph, Serializer* serializ
         return;
     }
 
-    sk_sp<SkPicture> picture(drawable->newPictureSnapshot());
+    sk_sp<SkPicture> picture = drawable->makePictureSnapshot();
     sk_sp<SkData> data = picture->serialize();
     serializer->write<uint64_t>(data->size());
     memcpy(serializer->allocate(data->size(), kDrawableAlignment), data->data(), data->size());
@@ -1094,6 +1094,8 @@ bool SkStrikeClientImpl::readStrikeData(const volatile void* memory, size_t memo
     SkASSERT(memory != nullptr);
 
     SkReadBuffer buffer{const_cast<const void*>(memory), memorySize};
+    // Limit the kinds of effects that appear in a glyph's drawable (crbug.com/1442140):
+    buffer.setAllowSkSL(false);
 
     int curTypeface = 0,
         curStrike = 0;
