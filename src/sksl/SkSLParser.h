@@ -18,10 +18,10 @@
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/dsl/DSLCore.h"
 #include "src/sksl/dsl/DSLExpression.h"
-#include "src/sksl/dsl/DSLLayout.h"
 #include "src/sksl/dsl/DSLModifiers.h"
 #include "src/sksl/dsl/DSLStatement.h"
 #include "src/sksl/dsl/DSLType.h"
+#include "src/sksl/ir/SkSLLayout.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -190,7 +190,7 @@ private:
     dsl::DSLStatement localVarDeclarationEnd(Position position, const dsl::DSLModifiers& mods,
                                              dsl::DSLType baseType, Token name);
 
-    bool modifiersDeclarationEnd(Position pos, const dsl::DSLModifiers& mods);
+    bool modifiersDeclarationEnd(const dsl::DSLModifiers& mods);
 
     std::optional<dsl::DSLParameter> parameter(size_t paramIndex);
 
@@ -198,7 +198,7 @@ private:
 
     std::string_view layoutIdentifier();
 
-    dsl::DSLLayout layout();
+    SkSL::Layout layout();
 
     dsl::DSLModifiers modifiers();
 
