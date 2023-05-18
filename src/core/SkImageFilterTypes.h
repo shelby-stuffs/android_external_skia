@@ -21,6 +21,7 @@ class GrRecordingContext;
 enum GrSurfaceOrigin : int;
 class SkImageFilter;
 class SkImageFilterCache;
+class SkPicture;
 class SkSpecialSurface;
 class SkSurfaceProps;
 
@@ -653,6 +654,21 @@ public:
                     fTransform.mapRect(LayerSpace<SkIRect>(fImage ? fImage->dimensions()
                                                                   : SkISize{0, 0}))) {}
 
+    // Renders the 'pic', clipped by 'cullRect', into an optimally sized surface (depending on
+    // picture bounds and 'ctx's desired output). The picture is transformed by the context's
+    // layer matrix. Treats null pictures as fully transparent.
+    static FilterResult MakeFromPicture(const Context& ctx,
+                                        sk_sp<SkPicture> pic,
+                                        ParameterSpace<SkRect> cullRect);
+
+    // Renders 'shader' into a surface that fills the context's desired output bounds. Treats null
+    // shaders as fully transparent.
+    // TODO: Update 'dither' to SkImageFilters::Dither, but that cannot be forward declared at the
+    // moment because SkImageFilters is a class and not a namespace.
+    static FilterResult MakeFromShader(const Context& ctx,
+                                       sk_sp<SkShader> shader,
+                                       bool dither);
+
     // Bilinear is used as the default because it can be downgraded to nearest-neighbor when the
     // final transform is pixel-aligned, and chaining multiple bilinear samples and transforms is
     // assumed to be visually close enough to sampling once at highest quality and final transform.
@@ -718,6 +734,10 @@ private:
     // with 'xtraTransform' restricted to 'dstBounds'.
     bool isCropped(const LayerSpace<SkMatrix>& xtraTransform,
                    const LayerSpace<SkIRect>& dstBounds) const;
+
+    // Draw directly to the canvas, which draws the same image as produced by resolve() but can be
+    // useful if multiple operations need to be performed on the canvas.
+    void draw(SkCanvas* canvas) const;
 
     // The effective image of a FilterResult is 'fImage' sampled by 'fSamplingOptions' and
     // respecting 'fTileMode' (on the SkSpecialImage's subset), transformed by 'fTransform',

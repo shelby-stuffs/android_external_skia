@@ -11,6 +11,7 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkM44.h"
+#include "include/core/SkPoint3.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkSpan.h"
@@ -57,11 +58,17 @@ struct PriorOutputBlock {
                            PipelineDataGatherer*);
 };
 
-struct DstReadBlock {
+struct DstReadSampleBlock {
     static void BeginBlock(const KeyContext&,
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*,
                            sk_sp<TextureProxy> dst);
+};
+
+struct DstReadFetchBlock {
+    static void BeginBlock(const KeyContext&,
+                           PaintParamsKeyBuilder*,
+                           PipelineDataGatherer*);
 };
 
 struct SolidColorShaderBlock {
@@ -175,11 +182,13 @@ struct YUVImageShaderBlock {
                   SkTileMode tileModeY,
                   SkRect subset);
 
+        SkPoint fImgSize;
         SkSamplingOptions fSampling;
         SkTileMode fTileModes[2];
         SkRect fSubset;
         SkColor4f fChannelSelect[4];
-        SkM44 fYUVtoRGBTransform;
+        SkMatrix fYUVtoRGBMatrix;
+        SkPoint3 fYUVtoRGBTranslate;
 
         SkColorSpaceXformSteps fSteps;
 

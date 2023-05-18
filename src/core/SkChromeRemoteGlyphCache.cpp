@@ -11,9 +11,9 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/SkChecksum.h"
 #include "include/private/base/SkDebug.h"
 #include "src/base/SkTLazy.h"
+#include "src/core/SkChecksum.h"
 #include "src/core/SkDescriptor.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkDistanceFieldGen.h"
@@ -44,6 +44,7 @@
 
 #if defined(SK_GANESH)
 #include "include/gpu/GrContextOptions.h"
+#include "include/private/chromium/Slug.h"
 #include "src/gpu/ganesh/GrDrawOpAtlas.h"
 #include "src/text/gpu/SDFTControl.h"
 #include "src/text/gpu/SubRunAllocator.h"
