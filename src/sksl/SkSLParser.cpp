@@ -8,19 +8,20 @@
 #include "src/sksl/SkSLParser.h"
 
 #include "include/core/SkSpan.h"
+#include "include/private/base/SkTArray.h"
 #include "include/sksl/SkSLVersion.h"
 #include "src/base/SkNoDestructor.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLString.h"
 #include "src/sksl/SkSLThreadContext.h"
+#include "src/sksl/dsl/DSLCore.h"
 #include "src/sksl/dsl/DSLFunction.h"
 #include "src/sksl/dsl/DSLVar.h"
-#include "src/sksl/dsl/priv/DSLWriter.h"
-#include "src/sksl/dsl/priv/DSL_priv.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLBreakStatement.h"
@@ -52,6 +53,7 @@
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLTernaryExpression.h"
 #include "src/sksl/ir/SkSLType.h"
+#include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
 
 #include <algorithm>
@@ -131,6 +133,72 @@ private:
     Parser* fParser;
 };
 
+class Parser::Checkpoint {
+public:
+    Checkpoint(Parser* p) : fParser(p) {
+        fPushbackCheckpoint = fParser->fPushback;
+        fLexerCheckpoint = fParser->fLexer.getCheckpoint();
+        fOldErrorReporter = &dsl::GetErrorReporter();
+        fOldEncounteredFatalError = fParser->fEncounteredFatalError;
+        SkASSERT(fOldErrorReporter);
+        dsl::SetErrorReporter(&fErrorReporter);
+    }
+
+    ~Checkpoint() {
+        SkASSERTF(!fOldErrorReporter, "Checkpoint was not accepted or rewound before destruction");
+    }
+
+    void accept() {
+        this->restoreErrorReporter();
+        // Parser errors should have been fatal, but we can encounter other errors like type
+        // mismatches despite accepting the parse. Forward those messages to the actual error
+        // handler now.
+        fErrorReporter.forwardErrors();
+    }
+
+    void rewind() {
+        this->restoreErrorReporter();
+        fParser->fPushback = fPushbackCheckpoint;
+        fParser->fLexer.rewindToCheckpoint(fLexerCheckpoint);
+        fParser->fEncounteredFatalError = fOldEncounteredFatalError;
+    }
+
+private:
+    class ForwardingErrorReporter : public ErrorReporter {
+    public:
+        void handleError(std::string_view msg, Position pos) override {
+            fErrors.push_back({std::string(msg), pos});
+        }
+
+        void forwardErrors() {
+            for (Error& error : fErrors) {
+                dsl::GetErrorReporter().error(error.fPos, error.fMsg);
+            }
+        }
+
+    private:
+        struct Error {
+            std::string fMsg;
+            Position fPos;
+        };
+
+        skia_private::TArray<Error> fErrors;
+    };
+
+    void restoreErrorReporter() {
+        SkASSERT(fOldErrorReporter);
+        dsl::SetErrorReporter(fOldErrorReporter);
+        fOldErrorReporter = nullptr;
+    }
+
+    Parser* fParser;
+    Token fPushbackCheckpoint;
+    SkSL::Lexer::Checkpoint fLexerCheckpoint;
+    ForwardingErrorReporter fErrorReporter;
+    ErrorReporter* fOldErrorReporter;
+    bool fOldEncounteredFatalError;
+};
+
 Parser::Parser(Compiler* compiler,
                const ProgramSettings& settings,
                ProgramKind kind,
@@ -145,12 +213,6 @@ Parser::Parser(Compiler* compiler,
 
 std::shared_ptr<SymbolTable>& Parser::symbolTable() {
     return fCompiler.symbolTable();
-}
-
-void Parser::addToSymbolTable(DSLVarBase& var, Position pos) {
-    if (var.fVar) {
-        this->symbolTable()->addWithoutOwnership(var.fVar);
-    }
 }
 
 Token Parser::nextRawToken() {
@@ -332,7 +394,7 @@ std::unique_ptr<Program> Parser::program() {
     this->declarations();
     std::unique_ptr<Program> result;
     if (!GetErrorReporter().errorCount()) {
-        result = dsl::ReleaseProgram(std::move(fText));
+        result = fCompiler.releaseProgram(std::move(fText));
     }
     errorReporter->setSource(std::string_view());
     End();
@@ -622,13 +684,19 @@ bool Parser::parseInitializer(Position pos, DSLExpression* initializer) {
     return true;
 }
 
+void Parser::addGlobalVarDeclaration(std::unique_ptr<SkSL::VarDeclaration> decl) {
+    if (decl) {
+        ThreadContext::ProgramElements().push_back(
+                std::make_unique<SkSL::GlobalVarDeclaration>(std::move(decl)));
+    }
+}
+
 /* (LBRACKET expression? RBRACKET)* (EQ assignmentExpression)? (COMMA IDENTIFER
    (LBRACKET expression? RBRACKET)* (EQ assignmentExpression)?)* SEMICOLON */
 void Parser::globalVarDeclarationEnd(Position pos,
                                      const dsl::DSLModifiers& mods,
                                      dsl::DSLType baseType,
                                      Token name) {
-    using namespace dsl;
     DSLType type = baseType;
     DSLExpression initializer;
     if (!this->parseArrayDimensions(pos, &type)) {
@@ -637,11 +705,15 @@ void Parser::globalVarDeclarationEnd(Position pos,
     if (!this->parseInitializer(pos, &initializer)) {
         return;
     }
-    DSLGlobalVar first(mods, type, this->text(name), std::move(initializer), this->rangeFrom(pos),
-                       this->position(name));
-    Declare(first);
-    this->addToSymbolTable(first);
-
+    this->addGlobalVarDeclaration(VarDeclaration::Convert(fCompiler.context(),
+                                                          this->rangeFrom(pos),
+                                                          mods.fPosition,
+                                                          mods.fModifiers,
+                                                          type.skslType(),
+                                                          this->position(name),
+                                                          this->text(name),
+                                                          VariableStorage::kGlobal,
+                                                          initializer.releaseIfPossible()));
     while (this->checkNext(Token::Kind::TK_COMMA)) {
         type = baseType;
         Token identifierName;
@@ -655,10 +727,16 @@ void Parser::globalVarDeclarationEnd(Position pos,
         if (!this->parseInitializer(pos, &anotherInitializer)) {
             return;
         }
-        DSLGlobalVar next(mods, type, this->text(identifierName), std::move(anotherInitializer),
-                          this->rangeFrom(identifierName));
-        Declare(next);
-        this->addToSymbolTable(next, this->position(identifierName));
+        this->addGlobalVarDeclaration(
+                VarDeclaration::Convert(fCompiler.context(),
+                                        this->rangeFrom(identifierName),
+                                        mods.fPosition,
+                                        mods.fModifiers,
+                                        type.skslType(),
+                                        this->position(identifierName),
+                                        this->text(identifierName),
+                                        VariableStorage::kGlobal,
+                                        anotherInitializer.releaseIfPossible()));
     }
     this->expect(Token::Kind::TK_SEMICOLON, "';'");
 }
@@ -669,7 +747,6 @@ DSLStatement Parser::localVarDeclarationEnd(Position pos,
                                             const dsl::DSLModifiers& mods,
                                             dsl::DSLType baseType,
                                             Token name) {
-    using namespace dsl;
     DSLType type = baseType;
     DSLExpression initializer;
     if (!this->parseArrayDimensions(pos, &type)) {
@@ -678,32 +755,46 @@ DSLStatement Parser::localVarDeclarationEnd(Position pos,
     if (!this->parseInitializer(pos, &initializer)) {
         return {};
     }
-    DSLVar first(mods, type, this->text(name), std::move(initializer), this->rangeFrom(pos),
-                 this->position(name));
-    DSLStatement result = DSLWriter::Declaration(first);
-    this->addToSymbolTable(first);
-
-    while (this->checkNext(Token::Kind::TK_COMMA)) {
+    std::unique_ptr<Statement> result = VarDeclaration::Convert(fCompiler.context(),
+                                                                this->rangeFrom(pos),
+                                                                mods.fPosition,
+                                                                mods.fModifiers,
+                                                                type.skslType(),
+                                                                this->position(name),
+                                                                this->text(name),
+                                                                VariableStorage::kLocal,
+                                                                initializer.releaseIfPossible());
+    for (;;) {
+        if (!this->checkNext(Token::Kind::TK_COMMA)) {
+            this->expect(Token::Kind::TK_SEMICOLON, "';'");
+            break;
+        }
         type = baseType;
         Token identifierName;
         if (!this->expectIdentifier(&identifierName)) {
-            return result;
+            break;
         }
         if (!this->parseArrayDimensions(pos, &type)) {
-            return result;
+            break;
         }
         DSLExpression anotherInitializer;
         if (!this->parseInitializer(pos, &anotherInitializer)) {
-            return result;
+            break;
         }
-        DSLVar next(mods, type, this->text(identifierName), std::move(anotherInitializer),
-                    this->rangeFrom(identifierName), this->position(identifierName));
-        DSLWriter::AddVarDeclaration(result, next);
-        this->addToSymbolTable(next, this->position(identifierName));
+        std::unique_ptr<Statement> next =
+                VarDeclaration::Convert(fCompiler.context(),
+                                        this->rangeFrom(identifierName),
+                                        mods.fPosition,
+                                        mods.fModifiers,
+                                        type.skslType(),
+                                        this->position(identifierName),
+                                        this->text(identifierName),
+                                        VariableStorage::kLocal,
+                                        anotherInitializer.releaseIfPossible());
+
+        result = Block::MakeCompoundStatement(std::move(result), std::move(next));
     }
-    this->expect(Token::Kind::TK_SEMICOLON, "';'");
-    result.setPosition(this->rangeFrom(pos));
-    return result;
+    return DSLStatement(std::move(result), this->rangeFrom(pos));
 }
 
 /* (varDeclarations | expressionStatement) */
