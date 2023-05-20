@@ -783,7 +783,7 @@ static SkColorType image_filter_color_type(SkImageInfo dstInfo) {
     }
 }
 
-static bool draw_layer_as_sprite(const SkMatrix& matrix, const SkISize& size) {
+static bool can_layer_be_drawn_as_sprite(const SkMatrix& matrix, const SkISize& size) {
     // Assume anti-aliasing and highest valid filter mode (linear) for drawing layers and image
     // filters. If the layer can be drawn as a sprite, these can be downgraded.
     SkPaint paint;
@@ -857,7 +857,7 @@ void SkCanvas::internalDrawDeviceWithFilter(SkBaseDevice* src,
             return;
         }
         srcToIntermediate.postConcat(mapping.layerMatrix());
-        if (draw_layer_as_sprite(srcToIntermediate, srcDims)) {
+        if (can_layer_be_drawn_as_sprite(srcToIntermediate, srcDims)) {
             // src differs from intermediate by just an integer translation, so it can be applied
             // automatically when taking a subset of src if we update the mapping.
             skif::LayerSpace<SkIPoint> srcOrigin({(int) srcToIntermediate.getTranslateX(),
@@ -951,9 +951,9 @@ void SkCanvas::internalDrawDeviceWithFilter(SkBaseDevice* src,
     }
 
     if (filterInput) {
-        const bool use_nn =
-                draw_layer_as_sprite(mapping.layerToDevice(), filterInput->subset().size());
-        SkSamplingOptions sampling{use_nn ? SkFilterMode::kNearest : SkFilterMode::kLinear};
+        const bool useNN = can_layer_be_drawn_as_sprite(mapping.layerToDevice(),
+                                                        filterInput->subset().size());
+        SkSamplingOptions sampling{useNN ? SkFilterMode::kNearest : SkFilterMode::kLinear};
         if (filter) {
             dst->drawFilteredImage(mapping, filterInput.get(), filterColorType, filter,
                                    sampling, paint);
@@ -1079,16 +1079,20 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
         // produce output, or that the filter DAG has no references to the dynamic source image.
         // In this case it still has an output that we need to render, but do so now since there is
         // no new layer pushed on the stack and the paired restore() will be a no-op.
-        if (filter) {
+        if (filter && !priorDevice->isNoPixelsDevice()) {
             skif::ParameterSpace<SkRect> emptyInput{SkRect::MakeEmpty()};
             skif::DeviceSpace<SkIRect> output =
                     as_IFB(filter)->getOutputBounds(newLayerMapping, emptyInput);
             if (SkIRect::Intersects(SkIRect(output), priorDevice->devClipBounds())) {
+                const bool useNN = can_layer_be_drawn_as_sprite(newLayerMapping.layerToDevice(),
+                                                                SkIRect(output).size());
+
+                SkSamplingOptions sampling{useNN ? SkFilterMode::kNearest : SkFilterMode::kLinear};
                 priorDevice->drawFilteredImage(newLayerMapping,
                                                /*src=*/nullptr,
                                                image_filter_color_type(priorDevice->imageInfo()),
                                                filter,
-                                               /*sampling=*/{},
+                                               sampling,
                                                restorePaint);
             }
         }
