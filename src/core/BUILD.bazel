@@ -7,6 +7,8 @@ exports_files_legacy()
 # In separate file list because these files are exported to
 # core.gni:skia_core_sources as well as sksl.gni:skslc_deps.
 CORE_SKSLC_FILES = [
+    "SkChecksum.cpp",
+    "SkChecksum.h",
     "SkCpu.cpp",
     "SkCpu.h",
     "SkData.cpp",
@@ -64,9 +66,10 @@ CORE_FILES = [
     "SkBlitter_A8.h",
     "SkBlitter_ARGB32.cpp",
     "SkBlitter_Sprite.cpp",
-    "SkBlurMF.cpp",
     "SkBlurMask.cpp",
     "SkBlurMask.h",
+    "SkBlurMaskFilterImpl.cpp",
+    "SkBlurMaskFilterImpl.h",
     "SkCachedData.cpp",
     "SkCachedData.h",
     "SkCanvas.cpp",
@@ -74,7 +77,6 @@ CORE_FILES = [
     "SkCanvasPriv.h",
     "SkCanvas_Raster.cpp",
     "SkCapabilities.cpp",
-    "SkChecksum.h",
     "SkChromeRemoteGlyphCache.cpp",
     "SkClipStack.cpp",
     "SkClipStack.h",
