@@ -10,12 +10,15 @@
 
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkTLogic.h"
+#include "include/private/base/SkAPI.h"
 
 #include <string>
 #include <string_view>
 #include <type_traits>
 
+/**
+ * Our hash functions are exposed as SK_SPI (e.g. SkParagraph)
+ */
 namespace SkChecksum {
     /**
      * uint32_t -> uint32_t hash, useful for when you're about to truncate this hash but you
@@ -52,7 +55,7 @@ namespace SkChecksum {
      * For now, this is a 64-bit wyhash, truncated to 32-bits.
      * See: https://github.com/wangyi-fudan/wyhash
      */
-    uint32_t Hash32(const void* data, size_t bytes, uint32_t seed = 0);
+    uint32_t SK_SPI Hash32(const void* data, size_t bytes, uint32_t seed = 0);
 
     /**
      * This is a fast, high-quality 64-bit hash. We make no guarantees about this remaining stable
@@ -61,7 +64,7 @@ namespace SkChecksum {
      * For now, this is a 64-bit wyhash.
      * See: https://github.com/wangyi-fudan/wyhash
      */
-    uint64_t Hash64(const void* data, size_t bytes, uint64_t seed = 0);
+    uint64_t SK_SPI Hash64(const void* data, size_t bytes, uint64_t seed = 0);
 
 }  // namespace SkChecksum
 
