@@ -34,9 +34,7 @@
 
 namespace skgpu::graphite {
 
-namespace { // Anonymous namespace
-
-VkDescriptorSetLayout desc_type_count_to_desc_set_layout(
+VkDescriptorSetLayout VulkanResourceProvider::DescTypeAndCountToVkDescSetLayout(
         const VulkanSharedContext* ctxt,
         SkSpan<DescTypeAndCount> requestedDescriptors) {
 
@@ -79,8 +77,6 @@ VkDescriptorSetLayout desc_type_count_to_desc_set_layout(
     }
     return layout;
 }
-
-} // Anonymous namespace
 
 VulkanResourceProvider::VulkanResourceProvider(SharedContext* sharedContext,
                                                SingleOwner* singleOwner,
@@ -169,6 +165,13 @@ sk_sp<GraphicsPipeline> VulkanResourceProvider::createGraphicsPipeline(
         return {};
     }
 
+    // for now, clean up shader modules
+    VULKAN_CALL(this->vulkanSharedContext()->interface(),
+                DestroyShaderModule(this->vulkanSharedContext()->device(), vsModule, nullptr));
+    VULKAN_CALL(this->vulkanSharedContext()->interface(),
+                DestroyShaderModule(this->vulkanSharedContext()->device(), fsModule, nullptr));
+
+
     // TODO: Generate depth-stencil state, blend info
     return VulkanGraphicsPipeline::Make(this->vulkanSharedContext());
 }
@@ -235,7 +238,7 @@ VulkanDescriptorSet* VulkanResourceProvider::findOrCreateDescriptorSet(
     // If we did not find an existing avilable desc set, allocate sets with the appropriate layout
     // and add them to the cache.
     auto pool = VulkanDescriptorPool::Make(this->vulkanSharedContext(), requestedDescriptors);
-    VkDescriptorSetLayout layout = desc_type_count_to_desc_set_layout(
+    VkDescriptorSetLayout layout = DescTypeAndCountToVkDescSetLayout(
             this->vulkanSharedContext(),
             requestedDescriptors);
 
