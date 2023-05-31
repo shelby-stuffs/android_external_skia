@@ -239,6 +239,7 @@ BASE_SRCS_ALL = [
     "include/private/SkGainmapInfo.h",
     "include/private/SkGainmapShader.h",
     "include/private/SkIDChangeListener.h",
+    "include/private/SkJpegMetadataDecoder.h",
     "include/private/SkPathRef.h",
     "include/private/SkSLDefines.h",
     "include/private/SkSLSampleUsage.h",
@@ -739,7 +740,6 @@ BASE_SRCS_ALL = [
     "src/effects/SkTrimPE.h",
     "src/effects/SkTrimPathEffect.cpp",
     "src/effects/imagefilters/SkAlphaThresholdImageFilter.cpp",
-    "src/effects/imagefilters/SkArithmeticImageFilter.cpp",
     "src/effects/imagefilters/SkBlendImageFilter.cpp",
     "src/effects/imagefilters/SkBlurImageFilter.cpp",
     "src/effects/imagefilters/SkColorFilterImageFilter.cpp",
@@ -1808,7 +1808,7 @@ base_gl_srcs = [
     "src/gpu/ganesh/gl/GrGLCaps.h",
     "src/gpu/ganesh/gl/GrGLContext.cpp",
     "src/gpu/ganesh/gl/GrGLContext.h",
-    "src/gpu/ganesh/gl/GrGLDefines_impl.h",
+    "src/gpu/ganesh/gl/GrGLDefines.h",
     "src/gpu/ganesh/gl/GrGLExtensions.cpp",
     "src/gpu/ganesh/gl/GrGLGLSL.cpp",
     "src/gpu/ganesh/gl/GrGLGLSL.h",
@@ -2298,6 +2298,7 @@ SKOTTIE_LIB_HDRS = [
     "modules/skottie/include/ExternalLayer.h",
     "modules/skottie/include/Skottie.h",
     "modules/skottie/include/SkottieProperty.h",
+    "modules/skottie/include/SlotManager.h",
 ]
 
 # We omit SkottieTool and SkottieTest as they are not needed for production code.
@@ -2379,6 +2380,7 @@ SKOTTIE_LIB_SRCS = [
     "modules/skottie/src/SkottiePriv.h",
     "modules/skottie/src/SkottieProperty.cpp",
     "modules/skottie/src/SkottieValue.h",
+    "modules/skottie/src/SlotManager.cpp",
     "modules/skottie/src/text/Font.cpp",
     "modules/skottie/src/text/Font.h",
     "modules/skottie/src/text/RangeSelector.cpp",
