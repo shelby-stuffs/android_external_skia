@@ -44,6 +44,7 @@
 #include "src/sksl/ir/SkSLLayout.h"
 #include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLProgramElement.h"
@@ -641,6 +642,21 @@ void WGSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) {
 void WGSLCodeGenerator::writeEntryPoint(const FunctionDefinition& main) {
     SkASSERT(main.declaration().isMain());
 
+#if defined(SKSL_STANDALONE)
+    if (ProgramConfig::IsRuntimeShader(fProgram.fConfig->fKind)) {
+        // Synthesize a basic entrypoint which just calls straight through to main.
+        // This is only used by skslc and just needs to pass the WGSL validator; Skia won't ever
+        // emit functions like this.
+        this->writeLine("@fragment fn runtimeShaderMain(@location(0) _coords: vec2<f32>) -> "
+                                     "@location(0) vec4<f32> {");
+        ++fIndentation;
+        this->writeLine("return main(_coords);");
+        --fIndentation;
+        this->writeLine("}");
+        return;
+    }
+#endif
+
     // The input and output parameters for a vertex/fragment stage entry point function have the
     // FSIn/FSOut/VSIn/VSOut struct types that have been synthesized in generateCode(). An entry
     // point always has the same signature and acts as a trampoline to the user-defined main
@@ -836,9 +852,11 @@ std::string WGSLCodeGenerator::assembleExpression(const Expression& e,
         case Expression::Kind::kConstructorCompound:
             return this->assembleConstructorCompound(e.as<ConstructorCompound>(), parentPrecedence);
 
+        case Expression::Kind::kConstructorArray:
         case Expression::Kind::kConstructorCompoundCast:
         case Expression::Kind::kConstructorScalarCast:
         case Expression::Kind::kConstructorSplat:
+        case Expression::Kind::kConstructorStruct:
             return this->assembleAnyConstructor(e.asAnyConstructor(), parentPrecedence);
 
         case Expression::Kind::kConstructorDiagonalMatrix:
@@ -863,6 +881,9 @@ std::string WGSLCodeGenerator::assembleExpression(const Expression& e,
 
         case Expression::Kind::kPrefix:
             return this->assemblePrefixExpression(e.as<PrefixExpression>(), parentPrecedence);
+
+        case Expression::Kind::kPostfix:
+            return this->assemblePostfixExpression(e.as<PostfixExpression>(), parentPrecedence);
 
         case Expression::Kind::kSwizzle:
             return this->assembleSwizzle(e.as<Swizzle>());
@@ -1137,28 +1158,55 @@ std::string WGSLCodeGenerator::assembleLiteral(const Literal& l) {
     }
 }
 
+static std::string make_increment_expr(const std::string& operand, Operator op, const Type& type) {
+    // `(*lvalue) += type(`
+    std::string stmt = operand;
+    stmt += (op.kind() == Operator::Kind::PLUSPLUS) ? " += " : " -= ";
+    stmt += to_wgsl_type(type);
+    stmt.push_back('(');
+
+    // `1, 1, 1...)`
+    auto separator = SkSL::String::Separator();
+    for (int slots = type.slotCount(); slots > 0; --slots) {
+        stmt += separator();
+        stmt += "1";
+    }
+    stmt.push_back(')');
+
+    return stmt;
+}
+
 std::string WGSLCodeGenerator::assemblePrefixExpression(const PrefixExpression& p,
                                                         Precedence parentPrecedence) {
-    // The only prefix expression that WGSL supports is unary negation (!,-,~). We make some
-    // assumptions about the input IR when translating prefix expressions:
-    //   1. A unary '+' is treated as NOP.
-    //   2. Prefix increment ('++x') and decrement ('--x') expressions must be rewritten in terms of
-    //      a postfix increment statement and assignment to a temporary variable to hold the result
-    //      (WGSL only supports a postfix increment statement, which is not an expression).
-    //
-    //      TODO(skia:14082): The following assertions may be hit until the proposed transforms have
-    //      been implemented. The IR should be transformed such that prefix increment/decrement
-    //      expressions never appear in the IR.
+    // Unary + does nothing, so we omit it from the output.
     Operator op = p.getOperator();
-    if (op.kind() == Operator::Kind::PLUSPLUS || op.kind() == Operator::Kind::MINUSMINUS) {
-        fContext.fErrors->error(p.fPosition,
-                                "prefix '++' and '--' not yet supported in WGSL backend");
-        return {};
-    }
-
     if (op.kind() == Operator::Kind::PLUS) {
         return this->assembleExpression(*p.operand(), Precedence::kPrefix);
     }
+
+    // Preincrement/decrement has no direct equivalent in WGSL; instead, we use a scratch pointer
+    // and emit a separate stand-alone statement to increment the lvalue.
+    if (op.kind() == Operator::Kind::PLUSPLUS || op.kind() == Operator::Kind::MINUSMINUS) {
+        // Generate an increment statement: `(*lvalue) += type(1, 1, 1...)`.
+        std::string operand = this->writeScratchPtr(*p.operand());
+        std::string stmt = make_increment_expr(operand, op, p.operand()->type());
+
+        if (parentPrecedence == Precedence::kStatement) {
+            // At the statement level, emit the increment directly.
+            return stmt;
+        } else {
+            // At the expression level, emit the increment as a separate statement, and return the
+            // (dereferenced) pointer as the expression.
+            this->write(stmt);
+            this->writeLine(";");
+            return operand;
+        }
+    }
+
+    // WGSL natively supports unary negation/not expressions (!,~,-).
+    SkASSERT(op.kind() == OperatorKind::LOGICALNOT ||
+             op.kind() == OperatorKind::BITWISENOT ||
+             op.kind() == OperatorKind::MINUS);
 
     // The unary negation operator only applies to scalars and vectors. For other mathematical
     // objects (such as matrices) we can express it as a multiplication by -1.
@@ -1184,6 +1232,42 @@ std::string WGSLCodeGenerator::assemblePrefixExpression(const PrefixExpression& 
     }
 
     return expr;
+}
+
+std::string WGSLCodeGenerator::assemblePostfixExpression(const PostfixExpression& p,
+                                                         Precedence parentPrecedence) {
+    SkASSERT(p.getOperator().kind() == Operator::Kind::PLUSPLUS ||
+             p.getOperator().kind() == Operator::Kind::MINUSMINUS);
+
+    // Postincrement/decrement expressions have no direct equivalent in WGSL; instead, we copy the
+    // value into a temp variable, and emit a separate stand-alone statement to increment the
+    // lvalue.
+
+    // Generate an increment statement: `(*lvalue) += type(1, 1, 1...)`.
+    std::string operand = this->writeScratchPtr(*p.operand());
+    std::string stmt = make_increment_expr(operand, p.getOperator(), p.operand()->type());
+
+    if (parentPrecedence == Precedence::kStatement) {
+        // At the statement level, we can just return the increment-statement directly.
+        return stmt;
+    }
+
+    // At the expression level, copy the value before incrementing it, and return that copy
+    // as the expression.
+    std::string originalValue = this->writeScratchVar(p.operand()->type());
+
+    // _skTemp123 = (*lvalue);
+    this->write(originalValue);
+    this->write(" = ");
+    this->write(operand);
+    this->writeLine(";");
+
+    // (*lvalue) += type(1, 1, 1...);
+    this->write(stmt);
+    this->writeLine(";");
+
+    // Return `_skTemp123` for use in the containing expression.
+    return originalValue;
 }
 
 std::string WGSLCodeGenerator::assembleSwizzle(const Swizzle& swizzle) {
