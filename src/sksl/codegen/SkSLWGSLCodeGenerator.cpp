@@ -1271,13 +1271,8 @@ std::string WGSLCodeGenerator::assemblePostfixExpression(const PostfixExpression
 }
 
 std::string WGSLCodeGenerator::assembleSwizzle(const Swizzle& swizzle) {
-    std::string expr = this->assembleExpression(*swizzle.base(), Precedence::kPostfix);
-    expr.push_back('.');
-    for (int c : swizzle.components()) {
-        SkASSERT(c >= 0 && c <= 3);
-        expr.push_back("xyzw"[c]);
-    }
-    return expr;
+    return this->assembleExpression(*swizzle.base(), Precedence::kPostfix) + "." +
+           Swizzle::MaskString(swizzle.components());
 }
 
 std::string WGSLCodeGenerator::writeScratchVar(const Type& type) {
@@ -1291,6 +1286,15 @@ std::string WGSLCodeGenerator::writeScratchVar(const Type& type) {
 }
 
 std::string WGSLCodeGenerator::writeScratchPtr(const Expression& lvalue) {
+    if (lvalue.is<Swizzle>()) {
+        // We can't take the address of a swizzle in WGSL. Instead, we take the address of the inner
+        // expression and tack on the swizzle to the returned expression. i.e., getting a scratch
+        // pointer to `foo.xy` would take the address of `foo` and return `(*_skTemp123).xy` as
+        // the substitute expression.
+        const Swizzle& swizzle = lvalue.as<Swizzle>();
+        return this->writeScratchPtr(*swizzle.base()) + "." +
+               Swizzle::MaskString(swizzle.components());
+    }
     std::string lvalueExpr = this->assembleExpression(lvalue, Precedence::kAssignment);
     std::string scratchVarName = "_skTemp" + std::to_string(fScratchCount++);
     this->write("let ");
