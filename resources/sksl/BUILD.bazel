@@ -9,7 +9,6 @@ skia_filegroup(
         ":sksl_folding_tests",
         ":sksl_glsl_tests",
         ":sksl_inliner_tests",
-        ":sksl_inverse_hyperbolic_intrinsics_tests",
         ":sksl_metal_tests",
         ":sksl_rte_error_tests",
         ":sksl_rte_tests",
@@ -41,7 +40,6 @@ skia_filegroup(
         ":sksl_folding_tests",
         ":sksl_glsl_tests",
         ":sksl_inliner_tests",
-        ":sksl_inverse_hyperbolic_intrinsics_tests",
         ":sksl_shared_tests",
     ],
     visibility = ["//tools/skslc:__pkg__"],
@@ -64,7 +62,6 @@ skia_filegroup(
     name = "sksl_metal_tests_sources",
     srcs = [
         ":sksl_blend_tests",
-        ":sksl_inverse_hyperbolic_intrinsics_tests",
         ":sksl_metal_tests",
         ":sksl_shared_tests",
     ],
@@ -99,7 +96,6 @@ skia_filegroup(
     name = "sksl_spirv_tests_sources",
     srcs = [
         ":sksl_blend_tests",
-        ":sksl_inverse_hyperbolic_intrinsics_tests",
         ":sksl_shared_tests",
         ":sksl_spirv_tests",
     ],
@@ -731,27 +727,19 @@ skia_filegroup(
     ],
 )
 
-# TODO(skia:12352): HLSL doesn't support inverse hyperbolic functions as intrinsics. These tests are
-# grouped separately for HLSL tests until there is a reasonable workaround in place.
-skia_filegroup(
-    name = "sksl_inverse_hyperbolic_intrinsics_tests",
-    srcs = [
-        "intrinsics/Acosh.sksl",
-        "intrinsics/Asinh.sksl",
-        "intrinsics/Atanh.sksl",
-    ],
-)
-
 skia_filegroup(
     name = "sksl_shared_tests",
     srcs = [
         "intrinsics/AbsFloat.sksl",
         "intrinsics/AbsInt.sksl",
         "intrinsics/Acos.sksl",
+        "intrinsics/Acosh.sksl",
         "intrinsics/All.sksl",
         "intrinsics/Any.sksl",
         "intrinsics/Asin.sksl",
+        "intrinsics/Asinh.sksl",
         "intrinsics/Atan.sksl",
+        "intrinsics/Atanh.sksl",
         "intrinsics/BitCount.sksl",
         "intrinsics/Ceil.sksl",
         "intrinsics/ClampFloat.sksl",
@@ -939,8 +927,8 @@ skia_filegroup(
         "shared/OutParams.sksl",
         "shared/OutParamsAreDistinct.sksl",
         "shared/OutParamsAreDistinctFromGlobal.sksl",
+        "shared/OutParamsDoubleSwizzle.sksl",
         "shared/OutParamsFunctionCallInArgument.sksl",
-        "shared/OutParamsTricky.sksl",
         "shared/Overflow.sksl",
         "shared/PostfixExpressions.sksl",
         "shared/PrefixExpressionsES2.sksl",
@@ -1071,9 +1059,13 @@ skia_filegroup(
         "wgsl/VertexPositionOutputIsAlwaysDeclared.vert",
 
         # Shared tests that are supported so far:
+        "runtime/LoopFloat.rts",
+        "runtime/LoopInt.rts",
         "runtime/GlobalVariables.rts",
         "runtime/GLSLTypeNames.rts",
+        "runtime/LargeProgram_BlocklessLoops.rts",
         "runtime/LargeProgram_FlatLoop.rts",
+        "runtime/LargeProgram_Functions.rts",
         "runtime/LargeProgram_NestedLoops.rts",
         "runtime/LargeProgram_SplitLoops.rts",
         "runtime/LargeProgram_ZeroIterFor.rts",
@@ -1084,7 +1076,9 @@ skia_filegroup(
         "shared/CommaMixedTypes.sksl",
         "shared/CommaSideEffects.sksl",
         "shared/ConstArray.sksl",
+        "shared/ConstGlobal.sksl",
         "shared/ConstantIf.sksl",
+        "shared/ForLoopMultipleInit.sksl",
         "shared/FunctionAnonymousParameters.sksl",
         "shared/HelloWorld.sksl",
         "shared/InoutParameters.sksl",
@@ -1099,7 +1093,10 @@ skia_filegroup(
         "shared/MatrixEquality.sksl",
         "shared/MatrixIndexLookup.sksl",
         "shared/MatrixIndexStore.sksl",
+        "shared/OutParams.sksl",
         "shared/OutParamsAreDistinct.sksl",
+        "shared/OutParamsAreDistinctFromGlobal.sksl",
+        "shared/OutParamsDoubleSwizzle.sksl",
         "shared/OutParamsFunctionCallInArgument.sksl",
         "shared/PostfixExpressions.sksl",
         "shared/PrefixExpressionsES2.sksl",
@@ -1123,8 +1120,10 @@ skia_filegroup(
         "shared/TernaryNesting.sksl",
         "shared/TernaryTrueFalseOptimization.sksl",
         "shared/UnaryPositiveNegative.sksl",
+        "shared/UnusedVariables.sksl",
         "shared/UniformMatrixResize.sksl",
         "shared/VectorConstructors.sksl",
         "shared/VertexID.vert",
+        "shared/WhileLoopControlFlow.sksl",
     ],
 )
