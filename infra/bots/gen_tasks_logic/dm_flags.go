@@ -855,6 +855,12 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		}
 	}
 
+	if !b.matchOs("Win", "Debian11", "Ubuntu18") {
+		// This test requires a decent max texture size so just run it on the desktops.
+		// The OS list should include Mac but Mac10.13 doesn't work correctly.
+		skip(ALL, "test", ALL, "BigImageTest_Ganesh")
+	}
+
 	if b.matchOs("Win", "Mac") {
 		// WIC and CG fail on arithmetic jpegs
 		skip(ALL, "image", "gen_platf", "testimgari.jpg")
@@ -1077,11 +1083,11 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		skip(ALL, "tests", ALL, "SkSLStructFieldFolding_GPU") // skia:13393
 	}
 
-	if b.matchGpu("Adreno[56]") && b.extraConfig("Vulkan") { // disable broken tests on Adreno 5/6xx Vulkan
-		skip(ALL, "tests", ALL, "SkSLInoutParameters_GPU")   // skia:12869
-		skip(ALL, "tests", ALL, "SkSLOutParams_GPU")         // skia:11919
-		skip(ALL, "tests", ALL, "SkSLOutParamsTricky_GPU")   // skia:11919
-		skip(ALL, "tests", ALL, "SkSLOutParamsNoInline_GPU") // skia:11919
+	if b.matchGpu("Adreno[56]") && b.extraConfig("Vulkan") {        // disable broken tests on Adreno 5/6xx Vulkan
+		skip(ALL, "tests", ALL, "SkSLInoutParameters_GPU")          // skia:12869
+		skip(ALL, "tests", ALL, "SkSLOutParams_GPU")                // skia:11919
+		skip(ALL, "tests", ALL, "SkSLOutParamsDoubleSwizzle_GPU")   // skia:11919
+		skip(ALL, "tests", ALL, "SkSLOutParamsNoInline_GPU")        // skia:11919
 		skip(ALL, "tests", ALL, "SkSLOutParamsFunctionCallInArgument")
 	}
 

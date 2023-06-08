@@ -1,41 +1,37 @@
-### Compilation failed:
-
-error: :14:1 error: missing return at end of function
-fn fn_hh4(v: vec4<f32>) -> f32 {
-^^
-
-
 struct FSIn {
-    @builtin(front_facing) sk_Clockwise: bool,
-    @builtin(position) sk_FragCoord: vec4<f32>,
+  @builtin(front_facing) sk_Clockwise: bool,
+  @builtin(position) sk_FragCoord: vec4<f32>,
 };
 struct FSOut {
-    @location(0) sk_FragColor: vec4<f32>,
+  @location(0) sk_FragColor: vec4<f32>,
 };
 struct _GlobalUniforms {
-    colorRed: vec4<f32>,
-    colorGreen: vec4<f32>,
-    testInputs: vec4<f32>,
+  colorRed: vec4<f32>,
+  colorGreen: vec4<f32>,
+  testInputs: vec4<f32>,
 };
 @binding(0) @group(0) var<uniform> _globalUniforms: _GlobalUniforms;
-fn fn_hh4(v: vec4<f32>) -> f32 {
+fn fn_hh4(_skParam0: vec4<f32>) -> f32 {
+  let v = _skParam0;
+  {
     {
-        var x: i32 = 1;
-        loop {
-            if x <= 2 {
-                {
-                    return v.x;
-                }
-            } else {
-                break;
-            }
-            continuing {
-                x = x + i32(1);
-            }
+      var x: i32 = 1;
+      loop {
+        {
+          return v.x;
         }
+        continuing {
+          x = x + i32(1);
+          break if !(x <= 2);
+        }
+      }
     }
+  }
+  return f32();
 }
-fn main(coords: vec2<f32>) -> vec4<f32> {
+fn main(_skParam0: vec2<f32>) -> vec4<f32> {
+  let coords = _skParam0;
+  {
     var v: vec4<f32> = _globalUniforms.testInputs;
     v = vec4<f32>(0.0, v.zyx);
     v = vec4<f32>(0.0, 0.0, v.xw);
@@ -62,11 +58,10 @@ fn main(coords: vec2<f32>) -> vec4<f32> {
     v = vec4<f32>((v.yz), v.yz).xzwy;
     v = vec4<f32>((vec3<f32>(v.ww, 1.0)), v.w).zyxw;
     return select(_globalUniforms.colorRed, _globalUniforms.colorGreen, vec4<bool>(all(v == vec4<f32>(1.0))));
+  }
 }
 @fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
-    var _stageOut: FSOut;
-    _stageOut.sk_FragColor = main(_stageIn.sk_FragCoord.xy);
-    return _stageOut;
+  var _stageOut: FSOut;
+  _stageOut.sk_FragColor = main(_stageIn.sk_FragCoord.xy);
+  return _stageOut;
 }
-
-1 error

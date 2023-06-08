@@ -24,6 +24,7 @@
 #include "src/sksl/SkSLString.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/SkSLUtil.h"
+#include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/analysis/SkSLProgramVisitor.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
@@ -31,6 +32,7 @@
 #include "src/sksl/ir/SkSLConstructorCompound.h"
 #include "src/sksl/ir/SkSLConstructorDiagonalMatrix.h"
 #include "src/sksl/ir/SkSLConstructorMatrixResize.h"
+#include "src/sksl/ir/SkSLDoStatement.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
@@ -62,6 +64,7 @@
 #include "src/sksl/ir/SkSLVariableReference.h"
 #include "src/sksl/transform/SkSLTransform.h"
 
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
@@ -635,7 +638,7 @@ void WGSLCodeGenerator::write(std::string_view s) {
     }
     if (fAtLineStart) {
         for (int i = 0; i < fIndentation; i++) {
-            fOut->writeText("    ");
+            fOut->writeText("  ");
         }
     }
     fOut->writeText(std::string(s).c_str());
@@ -730,9 +733,46 @@ void WGSLCodeGenerator::writeBuiltinIODecl(const Type& type,
 }
 
 void WGSLCodeGenerator::writeFunction(const FunctionDefinition& f) {
-    this->writeFunctionDeclaration(f.declaration());
-    this->write(" ");
+    const FunctionDeclaration& decl = f.declaration();
+    fHasUnconditionalReturn = false;
+    fConditionalScopeDepth = 0;
+
+    this->writeFunctionDeclaration(decl);
+    this->writeLine(" {");
+    ++fIndentation;
+
+    // The parameters were given generic names like `_skParam1`, because WGSL parameters don't have
+    // storage and are immutable. If mutability is required, we create variables here; otherwise, we
+    // create properly-named `let` aliases.
+    for (size_t index = 0; index < decl.parameters().size(); ++index) {
+        const Variable& param = *decl.parameters()[index];
+        if (!param.name().empty()) {
+            const ProgramUsage::VariableCounts counts = fProgram.fUsage->get(param);
+            // Variables which are never written-to don't need dedicated storage and can use `let`.
+            // Out-parameters are passed as pointers; the pointer itself is never modified, so it
+            // doesn't need a dedicated variable and can use `let`.
+            this->write(((param.modifiers().fFlags & Modifiers::kOut_Flag) || counts.fWrite == 0)
+                                ? "let "
+                                : "var ");
+            this->write(this->assembleName(param.mangledName()));
+            this->write(" = _skParam");
+            this->write(std::to_string(index));
+            this->writeLine(";");
+        }
+    }
+
     this->writeBlock(f.body()->as<Block>());
+
+    // If fConditionalScopeDepth isn't zero, we have an unbalanced +1 or -1 when updating the depth.
+    SkASSERT(fConditionalScopeDepth == 0);
+    if (!fHasUnconditionalReturn && !f.declaration().returnType().isVoid()) {
+        this->write("return ");
+        this->write(to_wgsl_type(f.declaration().returnType()));
+        this->writeLine("();");
+    }
+
+    --fIndentation;
+    this->writeLine("}");
 
     if (f.declaration().isMain()) {
         // We just emitted the user-defined main function. Next, we generate a program entry point
@@ -741,30 +781,31 @@ void WGSLCodeGenerator::writeFunction(const FunctionDefinition& f) {
     }
 }
 
-void WGSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) {
+void WGSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& decl) {
     this->write("fn ");
-    this->write(f.mangledName());
+    this->write(decl.mangledName());
     this->write("(");
     auto separator = SkSL::String::Separator();
-    if (this->writeFunctionDependencyParams(f)) {
+    if (this->writeFunctionDependencyParams(decl)) {
         separator();  // update the separator as parameters have been written
     }
-    for (const Variable* param : f.parameters()) {
+    for (size_t index = 0; index < decl.parameters().size(); ++index) {
+        const Variable& param = *decl.parameters()[index];
         this->write(separator());
-        this->write(this->assembleName(param->mangledName()));
+        this->write("_skParam" + std::to_string(index));
         this->write(": ");
 
         // Declare an "out" function parameter as a pointer.
-        if (param->modifiers().fFlags & Modifiers::kOut_Flag) {
-            this->write(to_ptr_type(param->type()));
+        if (param.modifiers().fFlags & Modifiers::kOut_Flag) {
+            this->write(to_ptr_type(param.type()));
         } else {
-            this->write(to_wgsl_type(param->type()));
+            this->write(to_wgsl_type(param.type()));
         }
     }
     this->write(")");
-    if (!f.returnType().isVoid()) {
+    if (!decl.returnType().isVoid()) {
         this->write(" -> ");
-        this->write(to_wgsl_type(f.returnType()));
+        this->write(to_wgsl_type(decl.returnType()));
     }
 }
 
@@ -875,6 +916,12 @@ void WGSLCodeGenerator::writeStatement(const Statement& s) {
         case Statement::Kind::kContinue:
             this->writeLine("continue;");
             break;
+        case Statement::Kind::kDiscard:
+            this->writeLine("discard;");
+            break;
+        case Statement::Kind::kDo:
+            this->writeDoStatement(s.as<DoStatement>());
+            break;
         case Statement::Kind::kExpression:
             this->writeExpressionStatement(*s.as<ExpressionStatement>().expression());
             break;
@@ -932,24 +979,47 @@ void WGSLCodeGenerator::writeExpressionStatement(const Expression& expr) {
     (void)this->assembleExpression(expr, Precedence::kStatement);
 }
 
-void WGSLCodeGenerator::writeForStatement(const ForStatement& s) {
+void WGSLCodeGenerator::writeDoStatement(const DoStatement& s) {
     // Generate a loop structure like this:
-    //   {
-    //       initializer-statement;
-    //       loop {
-    //           if test-expression {
-    //               body-statement;
-    //           } else {
-    //               break;
-    //           }
-    //           continuing {
-    //               next-expression;
-    //           }
+    //   loop {
+    //       body-statement;
+    //       continuing {
+    //           break if !(test-expression);
     //       }
+    //   }
+
+    ++fConditionalScopeDepth;
+
+    this->writeLine("loop {");
+    fIndentation++;
+    this->writeStatement(*s.statement());
+    this->finishLine();
+
+    this->writeLine("continuing {");
+    fIndentation++;
+    std::string testExpr = this->assembleExpression(*s.test(), Precedence::kExpression);
+    this->write("break if !(");
+    this->write(testExpr);
+    this->writeLine(");");
+    fIndentation--;
+    this->writeLine("}");
+    fIndentation--;
+    this->writeLine("}");
+
+    --fConditionalScopeDepth;
+}
+
+void WGSLCodeGenerator::writeForStatement(const ForStatement& s) {
+    // Generate a loop structure wrapped in an extra scope:
+    //   {
+    //     initializer-statement;
+    //     loop;
     //   }
     // The outer scope is necessary to prevent the initializer-variable from leaking out into the
     // rest of the code. In practice, the generated code actually tends to be scoped even more
     // deeply, as the body-statement almost always contributes an extra block.
+
+    ++fConditionalScopeDepth;
 
     if (s.initializer()) {
         this->writeLine("{");
@@ -961,37 +1031,87 @@ void WGSLCodeGenerator::writeForStatement(const ForStatement& s) {
     this->writeLine("loop {");
     fIndentation++;
 
-    if (s.test()) {
-        std::string testExpr = this->assembleExpression(*s.test(), Precedence::kExpression);
-        this->write("if ");
-        this->write(testExpr);
-        this->writeLine(" {");
+    if (s.unrollInfo()) {
+        if (s.unrollInfo()->fCount <= 0) {
+            // Loops which are known to never execute don't need to be emitted at all.
+            // (However, the front end should have already replaced this loop with a Nop.)
+        } else {
+            // Loops which are known to execute at least once can use this form:
+            //
+            //     loop {
+            //         body-statement;
+            //         continuing {
+            //             next-expression;
+            //             break if !(test-expression);
+            //         }
+            //     }
 
-        fIndentation++;
-        this->writeStatement(*s.statement());
-        this->finishLine();
-        fIndentation--;
+            this->writeStatement(*s.statement());
+            this->finishLine();
+            this->writeLine("continuing {");
+            ++fIndentation;
 
-        this->writeLine("} else {");
+            if (s.next()) {
+                this->writeExpressionStatement(*s.next());
+                this->finishLine();
+            }
 
-        fIndentation++;
-        this->writeLine("break;");
-        fIndentation--;
+            if (s.test()) {
+                std::string testExpr = this->assembleExpression(*s.test(), Precedence::kExpression);
+                this->write("break if !(");
+                this->write(testExpr);
+                this->writeLine(");");
+            }
 
-        this->writeLine("}");
-    }
-    else {
-        this->writeStatement(*s.statement());
-        this->finishLine();
-    }
+            --fIndentation;
+            this->writeLine("}");
+        }
+    } else {
+        // Loops without a known execution count are emitted in this form:
+        //
+        //     loop {
+        //         if test-expression {
+        //             body-statement;
+        //         } else {
+        //             break;
+        //         }
+        //         continuing {
+        //             next-expression;
+        //         }
+        //     }
 
-    if (s.next()) {
-        this->writeLine("continuing {");
-        fIndentation++;
-        this->writeExpressionStatement(*s.next());
-        this->finishLine();
-        fIndentation--;
-        this->writeLine("}");
+        if (s.test()) {
+            std::string testExpr = this->assembleExpression(*s.test(), Precedence::kExpression);
+            this->write("if ");
+            this->write(testExpr);
+            this->writeLine(" {");
+
+            fIndentation++;
+            this->writeStatement(*s.statement());
+            this->finishLine();
+            fIndentation--;
+
+            this->writeLine("} else {");
+
+            fIndentation++;
+            this->writeLine("break;");
+            fIndentation--;
+
+            this->writeLine("}");
+        }
+        else {
+            this->writeStatement(*s.statement());
+            this->finishLine();
+        }
+
+        if (s.next()) {
+            this->writeLine("continuing {");
+            fIndentation++;
+            this->writeExpressionStatement(*s.next());
+            this->finishLine();
+            fIndentation--;
+            this->writeLine("}");
+        }
     }
 
     // This matches an open-brace at the top of the loop.
@@ -1003,9 +1123,13 @@ void WGSLCodeGenerator::writeForStatement(const ForStatement& s) {
         fIndentation--;
         this->writeLine("}");
     }
+
+    --fConditionalScopeDepth;
 }
 
 void WGSLCodeGenerator::writeIfStatement(const IfStatement& s) {
+    ++fConditionalScopeDepth;
+
     std::string testExpr = this->assembleExpression(*s.test(), Precedence::kExpression);
     this->write("if (");
     this->write(testExpr);
@@ -1022,9 +1146,13 @@ void WGSLCodeGenerator::writeIfStatement(const IfStatement& s) {
         fIndentation--;
     }
     this->writeLine("}");
+
+    --fConditionalScopeDepth;
 }
 
 void WGSLCodeGenerator::writeReturnStatement(const ReturnStatement& s) {
+    fHasUnconditionalReturn |= (fConditionalScopeDepth == 0);
+
     std::string expr = s.expression()
                                ? this->assembleExpression(*s.expression(), Precedence::kExpression)
                                : std::string();
@@ -2084,7 +2212,7 @@ void WGSLCodeGenerator::writeNonBlockUniformsForTests() {
                     this->write("struct _GlobalUniforms {\n");
                     fDeclaredUniformsStruct = true;
                 }
-                this->write("    ");
+                this->write("  ");
                 this->writeVariableDecl(var.type(), var.mangledName(), Delimiter::kComma);
             }
         }
