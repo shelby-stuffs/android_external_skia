@@ -4,6 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "src/gpu/ganesh/Device.h"
 
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
@@ -49,7 +50,6 @@
 #include "include/private/chromium/Slug.h"  // IWYU pragma: keep
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkTLazy.h"
-#include "src/core/SkBlendModePriv.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkDrawBase.h"
 #include "src/core/SkImageFilterCache.h"
@@ -65,7 +65,6 @@
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/ClipStack.h"
-#include "src/gpu/ganesh/Device_v1.h"
 #include "src/gpu/ganesh/GrAuditTrail.h"
 #include "src/gpu/ganesh/GrBlurUtils.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -85,6 +84,7 @@
 #include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/GrTracing.h"
 #include "src/gpu/ganesh/GrUserStencilSettings.h"
+#include "src/gpu/ganesh/GrXferProcessor.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/SurfaceContext.h"
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
@@ -104,10 +104,8 @@
 #include <utility>
 
 class GrBackendSemaphore;
-enum class SkFilterMode;
 struct GrShaderCaps;
 struct SkDrawShadowRec;
-struct SkSamplingOptions;
 
 #define ASSERT_SINGLE_OWNER SKGPU_ASSERT_SINGLE_OWNER(fContext->priv().singleOwner())
 
@@ -581,7 +579,7 @@ void Device::drawEdgeAAQuad(const SkRect& rect,
     GrPaint grPaint;
     grPaint.setColor4f(dstColor);
     if (mode != SkBlendMode::kSrcOver) {
-        grPaint.setXPFactory(SkBlendMode_AsXPFactory(mode));
+        grPaint.setXPFactory(GrXPFactory::FromBlendMode(mode));
     }
 
     if (clip) {

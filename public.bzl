@@ -44,8 +44,6 @@ SKIA_PUBLIC_HDRS = [
     "include/core/SkCubicMap.h",
     "include/core/SkData.h",
     "include/core/SkDataTable.h",
-    "include/core/SkDeferredDisplayList.h",
-    "include/core/SkDeferredDisplayListRecorder.h",
     "include/core/SkDocument.h",
     "include/core/SkDrawLooper.h",
     "include/core/SkDrawable.h",
@@ -101,7 +99,6 @@ SKIA_PUBLIC_HDRS = [
     "include/core/SkString.h",
     "include/core/SkStrokeRec.h",
     "include/core/SkSurface.h",
-    "include/core/SkSurfaceCharacterization.h",
     "include/core/SkSurfaceProps.h",
     "include/core/SkSwizzle.h",
     "include/core/SkTextBlob.h",
@@ -233,6 +230,7 @@ SKIA_PUBLIC_HDRS = [
 # All platform-independent sources and private headers.
 BASE_SRCS_ALL = [
     "include/android/SkImageAndroid.h",
+    "include/android/SkCanvasAndroid.h",
     "include/core/SkOpenTypeSVGDecoder.h",
     "include/private/SkBitmaskEnum.h",
     "include/private/SkColorData.h",
@@ -246,6 +244,7 @@ BASE_SRCS_ALL = [
     "include/private/SkSLSampleUsage.h",
     "include/private/SkShadowFlags.h",
     "include/private/SkWeakRefCnt.h",
+    "include/private/SkXmp.h",
     "include/private/base/SingleOwner.h",
     "include/private/base/SkAPI.h",
     "include/private/base/SkAlign.h",
@@ -281,6 +280,9 @@ BASE_SRCS_ALL = [
     "include/private/base/SkThreadID.h",
     "include/private/base/SkTo.h",
     "include/private/base/SkTypeTraits.h",
+    "include/private/chromium/GrDeferredDisplayList.h",
+    "include/private/chromium/GrDeferredDisplayListRecorder.h",
+    "include/private/chromium/GrSurfaceCharacterization.h",
     "include/private/chromium/SkChromeRemoteGlyphCache.h",
     "include/private/chromium/SkDiscardableMemory.h",
     "include/private/chromium/Slug.h",
@@ -349,8 +351,8 @@ BASE_SRCS_ALL = [
     "src/base/SkZip.h",
     "src/codec/SkJpegConstants.h",
     "src/codec/SkPixmapUtils.cpp",
-    "src/codec/SkPixmapUtilsPriv.h",
-    "src/codec/SkStubHeifDecoderAPI.h",
+    "src/codec/SkPixmapUtilsPriv.h",  # TODO(kjlubick) delete
+    "src/codec/SkStubHeifDecoderAPI.h",  # TODO(kjlubick) delete
     "src/core/Sk4px.h",
     "src/core/SkAAClip.cpp",
     "src/core/SkAAClip.h",
@@ -430,9 +432,6 @@ BASE_SRCS_ALL = [
     "src/core/SkDataTable.cpp",
     "src/core/SkDebug.cpp",
     "src/core/SkDebugUtils.h",
-    "src/core/SkDeferredDisplayList.cpp",
-    "src/core/SkDeferredDisplayListPriv.h",
-    "src/core/SkDeferredDisplayListRecorder.cpp",
     "src/core/SkDescriptor.cpp",
     "src/core/SkDescriptor.h",
     "src/core/SkDevice.cpp",
@@ -664,7 +663,6 @@ BASE_SRCS_ALL = [
     "src/core/SkStrokeRec.cpp",
     "src/core/SkStrokerPriv.cpp",
     "src/core/SkStrokerPriv.h",
-    "src/core/SkSurfaceCharacterization.cpp",
     "src/core/SkSurfacePriv.h",
     "src/core/SkSwizzle.cpp",
     "src/core/SkSwizzlePriv.h",
@@ -703,9 +701,6 @@ BASE_SRCS_ALL = [
     "src/core/SkWritePixelsRec.h",
     "src/core/SkWriter32.cpp",
     "src/core/SkWriter32.h",
-    "src/core/SkXfermode.cpp",
-    "src/core/SkXfermodeInterpretation.cpp",
-    "src/core/SkXfermodeInterpretation.h",
     "src/core/SkYUVAInfo.cpp",
     "src/core/SkYUVAInfoLocation.h",
     "src/core/SkYUVAPixmaps.cpp",
@@ -811,7 +806,7 @@ BASE_SRCS_ALL = [
     "src/gpu/ganesh/ClipStack.h",
     "src/gpu/ganesh/Device.cpp",
     "src/gpu/ganesh/Device_drawTexture.cpp",
-    "src/gpu/ganesh/Device_v1.h",
+    "src/gpu/ganesh/Device.h",
     "src/gpu/ganesh/GrAHardwareBufferImageGenerator.cpp",
     "src/gpu/ganesh/GrAHardwareBufferImageGenerator.h",
     "src/gpu/ganesh/GrAHardwareBufferUtils.cpp",
@@ -840,6 +835,8 @@ BASE_SRCS_ALL = [
     "src/gpu/ganesh/GrBufferUpdateRenderTask.h",
     "src/gpu/ganesh/GrCaps.cpp",
     "src/gpu/ganesh/GrCaps.h",
+    "src/gpu/ganesh/GrCanvas.cpp",
+    "src/gpu/ganesh/GrCanvas.h",
     "src/gpu/ganesh/GrClientMappedBufferManager.cpp",
     "src/gpu/ganesh/GrClientMappedBufferManager.h",
     "src/gpu/ganesh/GrClip.h",
@@ -861,6 +858,9 @@ BASE_SRCS_ALL = [
     "src/gpu/ganesh/GrDataUtils.h",
     "src/gpu/ganesh/GrDefaultGeoProcFactory.cpp",
     "src/gpu/ganesh/GrDefaultGeoProcFactory.h",
+    "src/gpu/ganesh/GrDeferredDisplayList.cpp",
+    "src/gpu/ganesh/GrDeferredDisplayListPriv.h",
+    "src/gpu/ganesh/GrDeferredDisplayListRecorder.cpp",
     "src/gpu/ganesh/GrDeferredProxyUploader.h",
     "src/gpu/ganesh/GrDeferredUpload.h",
     "src/gpu/ganesh/GrDirectContext.cpp",
@@ -986,6 +986,7 @@ BASE_SRCS_ALL = [
     "src/gpu/ganesh/GrStyle.h",
     "src/gpu/ganesh/GrSurface.cpp",
     "src/gpu/ganesh/GrSurface.h",
+    "src/gpu/ganesh/GrSurfaceCharacterization.cpp",
     "src/gpu/ganesh/GrSurfaceInfo.cpp",
     "src/gpu/ganesh/GrSurfaceProxy.cpp",
     "src/gpu/ganesh/GrSurfaceProxy.h",
@@ -1617,6 +1618,7 @@ BASE_SRCS_ALL = [
     "src/sksl/ir/SkSLIndexExpression.h",
     "src/sksl/ir/SkSLInterfaceBlock.cpp",
     "src/sksl/ir/SkSLInterfaceBlock.h",
+    "src/sksl/ir/SkSLIRHelpers.h",
     "src/sksl/ir/SkSLIRNode.h",
     "src/sksl/ir/SkSLLayout.cpp",
     "src/sksl/ir/SkSLLayout.h",
@@ -1793,6 +1795,67 @@ ENCODE_WEBP_SRCS = [
 
 NO_ENCODE_WEBP_SRCS = [
     "src/encode/SkWebpEncoder_none.cpp",
+]
+
+CODEC_SRCS_LIMITED = [
+    "src/codec/SkAndroidCodec.cpp",
+    "src/codec/SkAndroidCodecAdapter.cpp",
+    "src/codec/SkAndroidCodecAdapter.h",
+    "src/codec/SkBmpBaseCodec.cpp",
+    "src/codec/SkBmpBaseCodec.h",
+    "src/codec/SkBmpCodec.cpp",
+    "src/codec/SkBmpCodec.h",
+    "src/codec/SkBmpMaskCodec.cpp",
+    "src/codec/SkBmpMaskCodec.h",
+    "src/codec/SkPixmapUtilsPriv.h",
+    "src/codec/SkBmpRLECodec.cpp",
+    "src/codec/SkBmpRLECodec.h",
+    "src/codec/SkBmpStandardCodec.cpp",
+    "src/codec/SkBmpStandardCodec.h",
+    "src/codec/SkCodec.cpp",
+    "src/codec/SkCodecImageGenerator.cpp",
+    "src/codec/SkCodecImageGenerator.h",
+    "src/codec/SkCodecPriv.h",
+    "src/codec/SkColorPalette.cpp",
+    "src/codec/SkColorPalette.h",
+    "src/codec/SkEncodedInfo.cpp",
+    "src/codec/SkFrameHolder.h",
+    "src/codec/SkJpegCodec.cpp",
+    "src/codec/SkJpegCodec.h",
+    "src/codec/SkJpegDecoderMgr.cpp",
+    "src/codec/SkJpegDecoderMgr.h",
+    "src/codec/SkJpegPriv.h",
+    "src/codec/SkJpegSourceMgr.cpp",
+    "src/codec/SkJpegSourceMgr.h",
+    "src/codec/SkJpegUtility.cpp",
+    "src/codec/SkJpegUtility.h",
+    "src/codec/SkMasks.cpp",
+    "src/codec/SkMasks.h",
+    "src/codec/SkMaskSwizzler.cpp",
+    "src/codec/SkMaskSwizzler.h",
+    "src/codec/SkParseEncodedOrigin.cpp",
+    "src/codec/SkParseEncodedOrigin.h",
+    "src/codec/SkPngPriv.h",
+    "src/codec/SkSampledCodec.cpp",
+    "src/codec/SkSampledCodec.h",
+    "src/codec/SkScalingCodec.h",
+    "src/codec/SkSampler.cpp",
+    "src/codec/SkSampler.h",
+    "src/codec/SkSwizzler.cpp",
+    "src/codec/SkSwizzler.h",
+    "src/codec/SkWbmpCodec.cpp",
+    "src/codec/SkWbmpCodec.h",
+    "src/codec/SkWuffsCodec.cpp",
+    "src/codec/SkWuffsCodec.h",
+]
+
+CODEC_SRCS_ALL = CODEC_SRCS_LIMITED + [
+    "src/codec/SkIcoCodec.cpp",
+    "src/codec/SkIcoCodec.h",
+    "src/codec/SkPngCodec.cpp",
+    "src/codec/SkPngCodec.h",
+    "src/codec/SkWebpCodec.cpp",
+    "src/codec/SkWebpCodec.h",
 ]
 
 TEXTUAL_HDRS = [
@@ -2625,6 +2688,21 @@ SVG_LIB_SRCS = [
     "modules/svg/src/SkSVGTransformableNode.cpp",
     "modules/svg/src/SkSVGUse.cpp",
     "modules/svg/src/SkSVGValue.cpp",
+]
+
+################################################################################
+## xml_lib
+################################################################################
+
+XML_SRCS = [
+    "src/xml/SkDOM.cpp",
+    "src/xml/SkXMLParser.cpp",
+    "src/xml/SkXMLWriter.cpp",
+]
+XML_HDRS = [
+    "src/xml/SkDOM.h",
+    "src/xml/SkXMLParser.h",
+    "src/xml/SkXMLWriter.h",
 ]
 
 ################################################################################
