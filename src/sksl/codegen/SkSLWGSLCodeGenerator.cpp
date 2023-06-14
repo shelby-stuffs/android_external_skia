@@ -17,6 +17,7 @@
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLIntrinsicList.h"
 #include "src/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLOutputStream.h"
 #include "src/sksl/SkSLPosition.h"
@@ -52,6 +53,7 @@
 #include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLSetting.h"
 #include "src/sksl/ir/SkSLStatement.h"
 #include "src/sksl/ir/SkSLStructDefinition.h"
 #include "src/sksl/ir/SkSLSwizzle.h"
@@ -737,6 +739,9 @@ void WGSLCodeGenerator::writeFunction(const FunctionDefinition& f) {
     fHasUnconditionalReturn = false;
     fConditionalScopeDepth = 0;
 
+    SkASSERT(!fAtFunctionScope);
+    fAtFunctionScope = true;
+
     this->writeFunctionDeclaration(decl);
     this->writeLine(" {");
     ++fIndentation;
@@ -779,6 +784,9 @@ void WGSLCodeGenerator::writeFunction(const FunctionDefinition& f) {
         // that calls the user-defined main.
         this->writeEntryPoint(f);
     }
+
+    SkASSERT(fAtFunctionScope);
+    fAtFunctionScope = false;
 }
 
 void WGSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& decl) {
@@ -1173,9 +1181,12 @@ void WGSLCodeGenerator::writeVarDeclaration(const VarDeclaration& varDecl) {
             varDecl.value() ? this->assembleExpression(*varDecl.value(), Precedence::kAssignment)
                             : std::string();
 
-    bool isConst = varDecl.var()->modifiers().fFlags & Modifiers::kConst_Flag;
-    if (isConst) {
-        this->write("let ");
+    if (varDecl.var()->modifiers().fFlags & Modifiers::kConst_Flag) {
+        // Use `const` at global scope, or if the value is a compile-time constant.
+        SkASSERTF(varDecl.value(), "a constant variable must specify a value");
+        this->write((!fAtFunctionScope || Analysis::IsCompileTimeConstant(*varDecl.value()))
+                            ? "const "
+                            : "let ");
     } else {
         this->write("var ");
     }
@@ -1186,8 +1197,6 @@ void WGSLCodeGenerator::writeVarDeclaration(const VarDeclaration& varDecl) {
     if (varDecl.value()) {
         this->write(" = ");
         this->write(initialValue);
-    } else if (isConst) {
-        SkDEBUGFAILF("A let-declared constant must specify a value");
     }
 
     this->write(";");
@@ -1274,6 +1283,9 @@ std::string WGSLCodeGenerator::assembleExpression(const Expression& e,
         case Expression::Kind::kPostfix:
             return this->assemblePostfixExpression(e.as<PostfixExpression>(), parentPrecedence);
 
+        case Expression::Kind::kSetting:
+            return this->assembleExpression(*e.as<Setting>().toLiteral(fContext), parentPrecedence);
+
         case Expression::Kind::kSwizzle:
             return this->assembleSwizzle(e.as<Swizzle>());
 
@@ -1302,7 +1314,6 @@ std::string WGSLCodeGenerator::assembleBinaryExpression(const Expression& left,
                                                         const Expression& right,
                                                         const Type& resultType,
                                                         Precedence parentPrecedence) {
-
     // If the operator is && or ||, we need to handle short-circuiting properly. Specifically, we
     // sometimes need to emit extra statements to paper over functionality that WGSL lacks, like
     // assignment in the middle of an expression. We need to guard those extra statements, to ensure
@@ -1471,11 +1482,112 @@ std::string WGSLCodeGenerator::assembleFieldAccess(const FieldAccess& f) {
     return expr;
 }
 
+std::string WGSLCodeGenerator::assembleSimpleIntrinsic(std::string_view intrinsicName,
+                                                       const FunctionCall& call) {
+    SkASSERT(!call.type().isVoid());
+
+    // Invoke the function, passing each function argument.
+    std::string expr = std::string(intrinsicName);
+    expr.push_back('(');
+    const ExpressionArray& args = call.arguments();
+    auto separator = SkSL::String::Separator();
+    for (int index = 0; index < args.size(); ++index) {
+        expr += separator();
+        expr += this->assembleExpression(*args[index], Precedence::kSequence);
+    }
+    expr.push_back(')');
+
+    return this->writeScratchLet(expr);
+}
+
+std::string WGSLCodeGenerator::assembleBinaryOpIntrinsic(Operator op,
+                                                         const FunctionCall& call,
+                                                         Precedence parentPrecedence) {
+    SkASSERT(!call.type().isVoid());
+
+    Precedence precedence = op.getBinaryPrecedence();
+    bool needParens = precedence >= parentPrecedence;
+
+    std::string expr;
+    if (needParens) {
+        expr.push_back('(');
+    }
+
+    expr += this->assembleExpression(*call.arguments()[0], precedence);
+    expr += op.operatorName();
+    expr += this->assembleExpression(*call.arguments()[1], precedence);
+
+    if (needParens) {
+        expr.push_back(')');
+    }
+
+    return expr;
+}
+
+std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
+                                                     IntrinsicKind kind,
+                                                     Precedence parentPrecedence) {
+    const ExpressionArray& arguments = call.arguments();
+    switch (kind) {
+        // GLSL includes scalar versions of some geometric intrinsics that aren't included in WGSL
+        case k_dot_IntrinsicKind: {
+            if (arguments[0]->type().columns() == 1) {
+                return this->assembleBinaryOpIntrinsic(OperatorKind::STAR, call, parentPrecedence);
+            }
+            return this->assembleSimpleIntrinsic("dot", call);
+        }
+        case k_faceforward_IntrinsicKind: {
+            if (arguments[0]->type().columns() == 1) {
+                // (select(-1.0, 1.0, (I * Nref) < 0) * N)
+                return this->writeScratchLet(
+                        "(select(-1.0, 1.0, (" +
+                        this->assembleExpression(*arguments[1], Precedence::kMultiplicative) +
+                        " * " +
+                        this->assembleExpression(*arguments[2], Precedence::kMultiplicative) +
+                        ") < 0) * " +
+                        this->assembleExpression(*arguments[0], Precedence::kMultiplicative) + ")");
+            }
+            return this->assembleSimpleIntrinsic("faceForward", call);
+        }
+        case k_normalize_IntrinsicKind: {
+            const char* name = arguments[0]->type().columns() == 1 ? "sign" : "normalize";
+            return this->assembleSimpleIntrinsic(name, call);
+        }
+        case k_equal_IntrinsicKind:
+            return this->assembleBinaryOpIntrinsic(OperatorKind::EQEQ, call, parentPrecedence);
+
+        case k_greaterThan_IntrinsicKind:
+            return this->assembleBinaryOpIntrinsic(OperatorKind::GT, call, parentPrecedence);
+
+        case k_greaterThanEqual_IntrinsicKind:
+            return this->assembleBinaryOpIntrinsic(OperatorKind::GTEQ, call, parentPrecedence);
+
+        case k_lessThan_IntrinsicKind:
+            return this->assembleBinaryOpIntrinsic(OperatorKind::LT, call, parentPrecedence);
+
+        case k_lessThanEqual_IntrinsicKind:
+            return this->assembleBinaryOpIntrinsic(OperatorKind::LTEQ, call, parentPrecedence);
+
+        case k_notEqual_IntrinsicKind:
+            return this->assembleBinaryOpIntrinsic(OperatorKind::NEQ, call, parentPrecedence);
+
+        default:
+            return "";
+    }
+}
+
 std::string WGSLCodeGenerator::assembleFunctionCall(const FunctionCall& call,
                                                     Precedence parentPrecedence) {
     const FunctionDeclaration& func = call.function();
+    std::string result;
 
-    // TODO(skia:13092): Handle intrinsic calls--many of them need to be rewritten.
+    // Many intrinsics need to be rewritten in WGSL.
+    if (func.isIntrinsic()) {
+        result = this->assembleIntrinsicCall(call, func.intrinsicKind(), parentPrecedence);
+        if (!result.empty()) {
+            return result;
+        }
+    }
 
     // We implement function out-parameters by declaring them as pointers. SkSL follows GLSL's
     // out-parameter semantics, in which out-parameters are only written back to the original
@@ -1538,7 +1650,6 @@ std::string WGSLCodeGenerator::assembleFunctionCall(const FunctionCall& call,
     }
     expr.push_back(')');
 
-    std::string result;
     if (call.type().isVoid()) {
         // Making function calls that result in `void` is only valid in on the left side of a
         // comma-sequence, or in a top-level statement. Emit the function call as a top-level
@@ -1700,7 +1811,7 @@ std::string WGSLCodeGenerator::writeScratchVar(const Type& type, const std::stri
 
 std::string WGSLCodeGenerator::writeScratchLet(const std::string& expr) {
     std::string scratchVarName = "_skTemp" + std::to_string(fScratchCount++);
-    this->write("let ");
+    this->write(fAtFunctionScope ? "let " : "const ");
     this->write(scratchVarName);
     this->write(" = ");
     this->write(expr);
@@ -2133,7 +2244,7 @@ void WGSLCodeGenerator::writeGlobalVarDeclaration(const GlobalVarDeclaration& d)
                                                 Precedence::kAssignment);
     }
     this->write((var.modifiers().fFlags & Modifiers::kConst_Flag) ? "const " : "var<private> ");
-    this->write(this->assembleName(var.name()));
+    this->write(this->assembleName(var.mangledName()));
     this->write(": " + to_wgsl_type(var.type()));
     this->write(initializer);
     this->writeLine(";");
