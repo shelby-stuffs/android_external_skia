@@ -468,6 +468,7 @@ private:
     THashMap<const FunctionDefinition*, Analysis::ReturnComplexity> fReturnComplexityMap;
 
     THashMap<ImmutableBits, THashSet<Slot>> fImmutableSlotMap;
+    THashSet<const Variable*> fImmutableVariables;
 
     // `fInsideCompoundStatement` will be nonzero if we are currently writing statements inside of a
     // compound-statement Block. (Conceptually those statements should all count as one.)
@@ -830,6 +831,51 @@ private:
     const Variable* fVariable;
 };
 
+class ImmutableLValue final : public LValue {
+public:
+    explicit ImmutableLValue(const Variable* v) : fVariable(v) {}
+
+    bool isWritable() const override {
+        return false;
+    }
+
+    SlotRange fixedSlotRange(Generator* gen) override {
+        // TODO(skia:14396): immutable variables should be stored in a separate slot range
+        return gen->getVariableSlots(*fVariable);
+    }
+
+    AutoStack* dynamicSlotRange() override {
+        return nullptr;
+    }
+
+    [[nodiscard]] bool push(Generator* gen,
+                            SlotRange fixedOffset,
+                            AutoStack* dynamicOffset,
+                            SkSpan<const int8_t> swizzle) override {
+        if (dynamicOffset) {
+            gen->builder()->push_immutable_indirect(fixedOffset, dynamicOffset->stackID(),
+                                                    this->fixedSlotRange(gen));
+        } else {
+            gen->builder()->push_immutable(fixedOffset);
+        }
+        if (!swizzle.empty()) {
+            gen->builder()->swizzle(fixedOffset.count, swizzle);
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool store(Generator* gen,
+                             SlotRange fixedOffset,
+                             AutoStack* dynamicOffset,
+                             SkSpan<const int8_t> swizzle) override {
+        SkDEBUGFAIL("immutable values cannot be stored into");
+        return unsupported();
+    }
+
+private:
+    const Variable* fVariable;
+};
+
 class SwizzleLValue final : public LValue {
 public:
     explicit SwizzleLValue(std::unique_ptr<LValue> p, const ComponentArray& c)
@@ -1158,7 +1204,11 @@ static bool is_sliceable_swizzle(SkSpan<const int8_t> components) {
 
 std::unique_ptr<LValue> Generator::makeLValue(const Expression& e, bool allowScratch) {
     if (e.is<VariableReference>()) {
-        return std::make_unique<VariableLValue>(e.as<VariableReference>().variable());
+        const Variable* variable = e.as<VariableReference>().variable();
+        if (fImmutableVariables.contains(variable)) {
+            return std::make_unique<ImmutableLValue>(variable);
+        }
+        return std::make_unique<VariableLValue>(variable);
     }
     if (e.is<Swizzle>()) {
         const Swizzle& swizzleExpr = e.as<Swizzle>();
@@ -2009,6 +2059,8 @@ bool Generator::writeImmutableVarDeclaration(const VarDeclaration& d) {
     }
 
     // Write out the constant value back to slots immutably. (This generates no runtime code.)
+    fImmutableVariables.add(d.var());
+    // TODO(skia:14396): immutable variables should be stored in a separate slot range
     SlotRange varSlots = this->getVariableSlots(*d.var());
     this->storeImmutableValueToSlots(immutableValues, varSlots);
 
@@ -2598,7 +2650,7 @@ bool Generator::pushPreexistingImmutableData(const TArray<ImmutableBits>& immuta
         }
         if (found) {
             // We've found an exact match for the input value; push its slot-range onto the stack.
-            fBuilder.push_slots({firstSlot, slotArray.size()});
+            fBuilder.push_immutable({firstSlot, slotArray.size()});
             return true;
         }
     }
@@ -2620,7 +2672,7 @@ bool Generator::pushImmutableData(const Expression& e) {
                                                 e.fPosition,
                                                 /*isFunctionReturnValue=*/false);
     this->storeImmutableValueToSlots(immutableValues, range);
-    fBuilder.push_slots(range);
+    fBuilder.push_immutable(range);
     return true;
 }
 
@@ -3771,6 +3823,13 @@ bool Generator::pushVariableReferencePartial(const VariableReference& v, SlotRan
         r.index += subset.index;
         r.count = subset.count;
         fBuilder.push_uniform(r);
+    } else if (fImmutableVariables.contains(&var)) {
+        // TODO(skia:14396): immutable variables should be stored in a separate slot range
+        r = this->getVariableSlots(var);
+        SkASSERT(r.count == (int)var.type().slotCount());
+        r.index += subset.index;
+        r.count = subset.count;
+        fBuilder.push_immutable(r);
     } else {
         r = this->getVariableSlots(var);
         SkASSERT(r.count == (int)var.type().slotCount());
