@@ -24,12 +24,14 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTDArray.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkRandom.h"
 #include "src/core/SkMessageBus.h"
+#include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/ResourceKey.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -72,7 +74,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ResourceCacheCache,
                                        CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     SkImageInfo info = SkImageInfo::MakeN32Premul(gWidth, gHeight);
-    auto surface(SkSurface::MakeRenderTarget(context, skgpu::Budgeted::kNo, info));
+    auto surface(SkSurfaces::RenderTarget(context, skgpu::Budgeted::kNo, info));
     SkCanvas* canvas = surface->getCanvas();
 
     const SkIRect size = SkIRect::MakeWH(gWidth, gHeight);
@@ -1294,16 +1296,16 @@ static void test_time_purge(skiatest::Reporter* reporter) {
     auto nowish = []() {
         // We sleep so that we ensure we get a value that is greater than the last call to
         // GrStdSteadyClock::now().
-        std::this_thread::sleep_for(GrStdSteadyClock::duration(5));
-        auto result = GrStdSteadyClock::now();
+        std::this_thread::sleep_for(skgpu::StdSteadyClock::duration(5));
+        auto result = skgpu::StdSteadyClock::now();
         // Also sleep afterwards so we don't get this value again.
-        std::this_thread::sleep_for(GrStdSteadyClock::duration(5));
+        std::this_thread::sleep_for(skgpu::StdSteadyClock::duration(5));
         return result;
     };
 
     for (int cnt : kCnts) {
-        std::unique_ptr<GrStdSteadyClock::time_point[]> timeStamps(
-                new GrStdSteadyClock::time_point[cnt]);
+        std::unique_ptr<skgpu::StdSteadyClock::time_point[]> timeStamps(
+                new skgpu::StdSteadyClock::time_point[cnt]);
         {
             // Insert resources and get time points between each addition.
             for (int i = 0; i < cnt; ++i) {
@@ -1887,15 +1889,15 @@ DEF_GANESH_TEST_FOR_MOCK_CONTEXT(OverbudgetFlush, reporter, ctxInfo) {
     };
 
     auto info = SkImageInfo::Make(10, 10, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    auto surf1 = SkSurface::MakeRenderTarget(context, skgpu::Budgeted::kYes, info, 1, nullptr);
-    auto surf2 = SkSurface::MakeRenderTarget(context, skgpu::Budgeted::kYes, info, 1, nullptr);
+    auto surf1 = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kYes, info, 1, nullptr);
+    auto surf2 = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kYes, info, 1, nullptr);
 
     drawToSurf(surf1.get());
     drawToSurf(surf2.get());
 
     // Flush each surface once to ensure that their backing stores are allocated.
-    surf1->flushAndSubmit();
-    surf2->flushAndSubmit();
+    context->flushAndSubmit(surf1);
+    context->flushAndSubmit(surf2);
     REPORTER_ASSERT(reporter, overbudget());
     getFlushCountDelta();
 
@@ -1907,7 +1909,7 @@ DEF_GANESH_TEST_FOR_MOCK_CONTEXT(OverbudgetFlush, reporter, ctxInfo) {
     REPORTER_ASSERT(reporter, overbudget());
 
     // Make surf1 purgeable. Drawing to surf2 should flush.
-    surf1->flushAndSubmit();
+    context->flushAndSubmit(surf1);
     surf1.reset();
     drawToSurf(surf2.get());
     REPORTER_ASSERT(reporter, getFlushCountDelta());

@@ -27,6 +27,7 @@
 #include "include/utils/SkPaintFilterCanvas.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkRectPriv.h"
+#include "src/core/SkStringUtils.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/GrRenderTargetProxy.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
@@ -47,6 +48,8 @@ struct SkDrawShadowRec;
 #if defined(SK_GANESH)
 #include "src/gpu/ganesh/GrAuditTrail.h"
 #endif
+
+using namespace skia_private;
 
 #define SKDEBUGCANVAS_VERSION 1
 #define SKDEBUGCANVAS_ATTRIBUTE_VERSION "version"
@@ -245,7 +248,7 @@ void DebugCanvas::drawTo(SkCanvas* originalCanvas, int index, int m) {
         GrSurfaceProxy::UniqueID proxyID = rtp->uniqueID();
 
         // get the bounding boxes to draw
-        SkTArray<GrAuditTrail::OpInfo> childrenBounds;
+        TArray<GrAuditTrail::OpInfo> childrenBounds;
         if (m == -1) {
             at->getBoundsByClientID(&childrenBounds, index);
         } else {
@@ -422,7 +425,7 @@ void DebugCanvas::didTranslate(SkScalar x, SkScalar y) {
 void DebugCanvas::onDrawAnnotation(const SkRect& rect, const char key[], SkData* value) {
     // Parse layer-releated annotations added in SkiaPipeline.cpp and RenderNodeDrawable.cpp
     // the format of the annotations is <Indicator|RenderNodeId>
-    SkTArray<SkString> tokens;
+    TArray<SkString> tokens;
     SkStrSplit(key, "|", kStrict_SkStrSplitMode, &tokens);
     if (tokens.size() == 2) {
         if (tokens[0].equals(kOffscreenLayerDraw)) {

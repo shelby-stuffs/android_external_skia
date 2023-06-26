@@ -17,6 +17,7 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
 #include "include/effects/SkRuntimeEffect.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/base/SkRandom.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkRuntimeEffectPriv.h"
@@ -95,7 +96,7 @@ static sk_sp<SkShader> make_shader(sk_sp<SkImage> img, SkISize size) {
 static sk_sp<SkShader> make_threshold(SkISize size) {
     auto info = SkImageInfo::Make(size.width(), size.height(), kAlpha_8_SkColorType,
                                   kPremul_SkAlphaType);
-    auto surf = SkSurface::MakeRaster(info);
+    auto surf = SkSurfaces::Raster(info);
     auto canvas = surf->getCanvas();
 
     const SkScalar rad = 50;
@@ -664,7 +665,7 @@ public:
                     256, 64, kN32_SkColorType, kPremul_SkAlphaType, sk_ref_sp(cs));
             auto surface = canvas->makeSurface(info);
             if (!surface) {
-                surface = SkSurface::MakeRaster(info);
+                surface = SkSurfaces::Raster(info);
             }
 
             surface->getCanvas()->drawRect({0, 0, 256, 64}, paint);
@@ -690,7 +691,7 @@ DEF_SIMPLE_GM(child_sampling_rt, canvas, 256,256) {
     p.setStyle(SkPaint::kStroke_Style);
     p.setStrokeWidth(1);
 
-    auto surf = SkSurface::MakeRasterN32Premul(100,100);
+    auto surf = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(100, 100));
     surf->getCanvas()->drawLine(0, 0, 100, 100, p);
     auto shader = surf->makeImageSnapshot()->makeShader(SkSamplingOptions(SkFilterMode::kLinear));
 
@@ -718,7 +719,7 @@ static sk_sp<SkShader> normal_map_shader() {
 static sk_sp<SkImage> normal_map_image() {
     // Above, baked into an image:
     auto info = SkImageInfo::Make(256, 256, kN32_SkColorType, kPremul_SkAlphaType);
-    auto surface = SkSurface::MakeRaster(info);
+    auto surface = SkSurfaces::Raster(info);
     SkPaint p;
     p.setShader(normal_map_shader());
     surface->getCanvas()->drawPaint(p);
@@ -726,11 +727,11 @@ static sk_sp<SkImage> normal_map_image() {
 }
 
 static sk_sp<SkShader> normal_map_image_shader() {
-    return normal_map_image()->makeShader(SkSamplingOptions{});
+    return normal_map_image()->makeShader(SkFilterMode::kNearest);
 }
 
 static sk_sp<SkShader> normal_map_raw_image_shader() {
-    return normal_map_image()->makeRawShader(SkSamplingOptions{});
+    return normal_map_image()->makeRawShader(SkFilterMode::kNearest);
 }
 
 static sk_sp<SkImage> normal_map_unpremul_image() {
@@ -749,11 +750,11 @@ static sk_sp<SkImage> normal_map_unpremul_image() {
 }
 
 static sk_sp<SkShader> normal_map_unpremul_image_shader() {
-    return normal_map_unpremul_image()->makeShader(SkSamplingOptions{});
+    return normal_map_unpremul_image()->makeShader(SkFilterMode::kNearest);
 }
 
 static sk_sp<SkShader> normal_map_raw_unpremul_image_shader() {
-    return normal_map_unpremul_image()->makeRawShader(SkSamplingOptions{});
+    return normal_map_unpremul_image()->makeRawShader(SkFilterMode::kNearest);
 }
 
 static sk_sp<SkShader> lit_shader(sk_sp<SkShader> normals) {
@@ -819,7 +820,7 @@ DEF_SIMPLE_GM(raw_image_shader_normals_rt, canvas, 768, 512) {
                                       SkColorSpace::MakeSRGB()->makeColorSpin());
     auto surface = canvas->makeSurface(surfInfo);
     if (!surface) {
-        surface = SkSurface::MakeRaster(surfInfo);
+        surface = SkSurfaces::Raster(surfInfo);
     }
 
     auto draw_shader = [](int x, int y, sk_sp<SkShader> shader, SkCanvas* canvas) {
@@ -869,7 +870,7 @@ DEF_SIMPLE_GM(lit_shader_linear_rt, canvas, 512, 256) {
                                       SkColorSpace::MakeSRGB());
     auto surface = canvas->makeSurface(surfInfo);
     if (!surface) {
-        surface = SkSurface::MakeRaster(surfInfo);
+        surface = SkSurfaces::Raster(surfInfo);
     }
 
     auto draw_shader = [](int x, int y, sk_sp<SkShader> shader, SkCanvas* canvas) {
@@ -905,7 +906,7 @@ DEF_SIMPLE_GM(local_matrix_shader_rt, canvas, 256, 256) {
     }
 
     auto image     = GetResourceAsImage("images/mandrill_128.png");
-    auto imgShader = image->makeShader(SkSamplingOptions{});
+    auto imgShader = image->makeShader(SkFilterMode::kNearest);
 
     auto r = SkRect::MakeWH(image->width(), image->height());
 
@@ -939,7 +940,7 @@ DEF_SIMPLE_GM(local_matrix_shader_rt, canvas, 256, 256) {
     canvas->restore();
 }
 
-DEF_SIMPLE_GM(null_child_rt, canvas, 150, 100) {
+DEF_SIMPLE_GM(null_child_rt, canvas, 150, 150) {
     using ChildPtr = SkRuntimeEffect::ChildPtr;
 
     // Every swatch should evaluate to the same shade of purple.
@@ -1050,6 +1051,52 @@ DEF_SIMPLE_GM(null_child_rt, canvas, 150, 100) {
     }
 
     canvas->translate(-150, 50);
+
+    // Paint with a shader evaluating a null shader.
+    // Point passed to eval() is ignored; paint color is returned.
+    // We draw to an offscreen surface in a different color space, then draw that surface back to
+    // the main canvas. This ensures the paint color is correctly transformed. (skbug.com/14153)
+    {
+        const SkString kEvalShader{R"(
+            uniform shader s;
+            half4 main(float2 p) { return s.eval(p); }
+        )"};
+        auto [rtShader, error] = SkRuntimeEffect::MakeForShader(kEvalShader);
+        SkASSERT(rtShader);
+
+        sk_sp<SkColorSpace> spin = SkColorSpace::MakeSRGB()->makeColorSpin();
+        SkImageInfo spinInfo =
+                SkImageInfo::Make(50, 50, kN32_SkColorType, kPremul_SkAlphaType, spin);
+        auto surface = canvas->makeSurface(spinInfo);
+        if (!surface) {
+            surface = SkSurfaces::Raster(spinInfo);
+        }
+
+        SkPaint paint;
+        ChildPtr children[1] = {ChildPtr{sk_sp<SkShader>{nullptr}}};
+        paint.setShader(rtShader->makeShader(/*uniforms=*/nullptr, children));
+        paint.setColor(SkColorSetARGB(0xFF, 0x80, 0x00, 0x80));  // purple (contributes)
+        surface->getCanvas()->clear(SK_ColorTRANSPARENT);
+        surface->getCanvas()->drawRect({0, 0, 48, 48}, paint);
+
+        // Ideally, we'd just draw the offscreen surface back to the canvas. But if `canvas` isn't
+        // color managed, we won't convert it BACK, so we'll still see a color-spin happen.
+        // Instead, convert the image back to sRGB, and the resulting image will look correct for
+        // all modes (assuming the paint color was handled correctly above):
+        auto image = surface->makeImageSnapshot();
+#if defined(SK_GRAPHITE)
+        if (auto recorder = canvas->recorder()) {
+            image = image->makeColorSpace(recorder, SkColorSpace::MakeSRGB(), {});
+        } else
+#endif
+        {
+            auto direct = GrAsDirectContext(canvas->recordingContext());
+            image = image->makeColorSpace(SkColorSpace::MakeSRGB(), direct);
+        }
+
+        canvas->drawImage(image, 0, 0);
+        canvas->translate(50, 0);
+    }
 }
 
 DEF_SIMPLE_GM_CAN_FAIL(deferred_shader_rt, canvas, errorMsg, 150, 50) {

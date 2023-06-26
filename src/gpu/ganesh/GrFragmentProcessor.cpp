@@ -7,6 +7,8 @@
 
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 
+#include "include/core/SkM44.h"
+#include "src/base/SkVx.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/gpu/KeyBuilder.h"
 #include "src/gpu/ganesh/GrPipeline.h"
@@ -326,7 +328,6 @@ std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::OverrideInput(
             "return fp.eval(color);"
         "}"
     );
-    SkASSERT(SkRuntimeEffectPriv::SupportsConstantOutputForConstantInput(effect));
     return GrSkSLFP::Make(effect, "OverrideInput", /*inputFP=*/nullptr,
                           color.isOpaque() ? GrSkSLFP::OptFlags::kPreservesOpaqueInput
                                            : GrSkSLFP::OptFlags::kNone,

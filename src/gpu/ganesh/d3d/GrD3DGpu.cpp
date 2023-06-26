@@ -8,13 +8,16 @@
 #include "src/gpu/ganesh/d3d/GrD3DGpu.h"
 
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkTextureCompressionType.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/d3d/GrD3DBackendContext.h"
+#include "src/base/SkRectMemcpy.h"
 #include "src/core/SkCompressedDataUtils.h"
-#include "src/core/SkConvertPixels.h"
 #include "src/core/SkMipmap.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
 #include "src/gpu/ganesh/GrDataUtils.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrResourceProvider.h"
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrThreadSafePipelineBuilder.h"
 #include "src/gpu/ganesh/d3d/GrD3DAMDMemoryAllocator.h"
@@ -136,7 +139,7 @@ GrOpsRenderPass* GrD3DGpu::onGetOpsRenderPass(
         const SkIRect& bounds,
         const GrOpsRenderPass::LoadAndStoreInfo& colorInfo,
         const GrOpsRenderPass::StencilLoadAndStoreInfo& stencilInfo,
-        const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
+        const TArray<GrSurfaceProxy*, true>& sampledProxies,
         GrXferBarrierFlags renderPassXferBarriers) {
     if (!fCachedOpsRenderPass) {
         fCachedOpsRenderPass.reset(new GrD3DOpsRenderPass(this));
@@ -358,7 +361,7 @@ sk_sp<GrTexture> GrD3DGpu::onCreateCompressedTexture(SkISize dimensions,
     SkAssertResult(format.asDxgiFormat(&dxgiFormat));
     SkASSERT(GrDxgiFormatIsCompressed(dxgiFormat));
 
-    SkDEBUGCODE(SkImage::CompressionType compression = GrBackendFormatToCompressionType(format));
+    SkDEBUGCODE(SkTextureCompressionType compression = GrBackendFormatToCompressionType(format));
     SkASSERT(dataSize == SkCompressedFormatDataSize(compression, dimensions,
                                                     mipmapped == GrMipmapped::kYes));
 
@@ -605,10 +608,16 @@ bool GrD3DGpu::onReadPixels(GrSurface* surface,
     fDevice->GetCopyableFootprints(&desc, 0, 1, 0, &placedFootprint,
                                    nullptr, nullptr, &transferTotalBytes);
     SkASSERT(transferTotalBytes);
-    // TODO: implement some way of reusing buffers instead of making a new one every time.
-    sk_sp<GrGpuBuffer> transferBuffer = this->createBuffer(transferTotalBytes,
-                                                           GrGpuBufferType::kXferGpuToCpu,
-                                                           kDynamic_GrAccessPattern);
+    GrResourceProvider* resourceProvider =
+        this->getContext()->priv().resourceProvider();
+    sk_sp<GrGpuBuffer> transferBuffer = resourceProvider->createBuffer(
+            transferTotalBytes,
+            GrGpuBufferType::kXferGpuToCpu,
+            kDynamic_GrAccessPattern,
+            GrResourceProvider::ZeroInit::kNo);
+    if (!transferBuffer) {
+        return false;
+    }
 
     this->readOrTransferPixels(texResource, rect, transferBuffer, placedFootprint);
     this->submitDirectCommandList(SyncQueue::kForce);
@@ -621,6 +630,9 @@ bool GrD3DGpu::onReadPixels(GrSurface* surface,
     size_t tightRowBytes = bpp * rect.width();
 
     const void* mappedMemory = transferBuffer->map();
+    if (!mappedMemory) {
+        return false;
+    }
 
     SkRectMemcpy(buffer,
                  rowBytes,
@@ -1174,7 +1186,9 @@ bool GrD3DGpu::onRegenerateMipMapLevels(GrTexture * tex) {
 
     // TODO: use linear vs. srgb shader based on texture format
     sk_sp<GrD3DPipeline> pipeline = this->resourceProvider().findOrCreateMipmapPipeline();
-    SkASSERT(pipeline);
+    if (!pipeline) {
+        return false;
+    }
     this->currentCommandList()->setPipelineState(std::move(pipeline));
 
     // set sampler
@@ -1711,13 +1725,12 @@ void GrD3DGpu::addBufferResourceBarriers(GrD3DBuffer* buffer,
     fCurrentDirectCommandList->addGrBuffer(sk_ref_sp<const GrBuffer>(buffer));
 }
 
-
 void GrD3DGpu::prepareSurfacesForBackendAccessAndStateUpdates(
         SkSpan<GrSurfaceProxy*> proxies,
-        SkSurface::BackendSurfaceAccess access,
+        SkSurfaces::BackendSurfaceAccess access,
         const skgpu::MutableTextureState* newState) {
     // prepare proxies by transitioning to PRESENT renderState
-    if (!proxies.empty() && access == SkSurface::BackendSurfaceAccess::kPresent) {
+    if (!proxies.empty() && access == SkSurfaces::BackendSurfaceAccess::kPresent) {
         GrD3DTextureResource* resource;
         for (GrSurfaceProxy* proxy : proxies) {
             SkASSERT(proxy->isInstantiated());

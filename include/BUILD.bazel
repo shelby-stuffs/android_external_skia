@@ -34,9 +34,10 @@ skia_filegroup(
 
 skia_filegroup(
     name = "private_hdrs",
-    srcs = [
-        "//include/private:private_hdrs",
-    ],
+    srcs = ["//include/private:private_hdrs"] + select({
+        "//src/gpu:has_gpu_backend": ["//include/android:private_hdrs"],
+        "//conditions:default": [],
+    }),
     visibility = [
         "//:__pkg__",
         "//src/opts:__pkg__",
@@ -77,6 +78,7 @@ generate_cpp_files_for_headers(
         "include/core/SkPathTypes.h",
         "include/core/SkRefCnt.h",
         "include/core/SkScalar.h",
+        "include/core/SkSerialProcs.h",
         "include/core/SkSize.h",
         "include/core/SkTypes.h",
         "include/encode/SkEncoder.h",
@@ -84,6 +86,10 @@ generate_cpp_files_for_headers(
         "include/encode/SkPngEncoder.h",
         "include/encode/SkWebpEncoder.h",
         "include/gpu/GrTypes.h",
+        "include/gpu/ganesh/GrExternalTextureGenerator.h",
+        "include/gpu/ganesh/SkImageGanesh.h",
+        "include/gpu/ganesh/SkSurfaceGanesh.h",
+        "include/private/gpu/ganesh/GrTextureGenerator.h",
         "include/private/SkIDChangeListener.h",
         "include/private/SkWeakRefCnt.h",
     ],

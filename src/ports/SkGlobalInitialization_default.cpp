@@ -78,7 +78,7 @@
         SkRegisterMatrixColorFilterFlattenable();
         SkRegisterComposeColorFilterFlattenable();
         SkRegisterModeColorFilterFlattenable();
-        SkRegisterColorSpaceXformColorFilterFlattenable();
+        SkRegisterSkColorSpaceXformColorFilterFlattenable();
         SkRegisterWorkingFormatColorFilterFlattenable();
         SkRegisterTableColorFilterFlattenable();
 
@@ -125,7 +125,6 @@
      */
     void SkFlattenable::PrivateInitializer::InitImageFilters() {
         SkRegisterAlphaThresholdImageFilterFlattenable();
-        SkRegisterArithmeticImageFilterFlattenable();
         SkRegisterBlendImageFilterFlattenable();
         SkRegisterBlurImageFilterFlattenable();
         SkRegisterColorFilterImageFilterFlattenable();

@@ -19,12 +19,12 @@
 
 namespace skiatest::graphite {
 
-std::unique_ptr<GraphiteTestContext> DawnTestContext::Make() {
+std::unique_ptr<GraphiteTestContext> DawnTestContext::Make(std::optional<wgpu::BackendType> backend) {
     static std::unique_ptr<dawn::native::Instance> gInstance;
     static dawn::native::Adapter gAdapter;
     static SkOnce gOnce;
 
-    gOnce([]{
+    gOnce([&]{
         gInstance = std::make_unique<dawn::native::Instance>();
 
         gInstance->DiscoverDefaultAdapters();
@@ -46,7 +46,20 @@ std::unique_ptr<GraphiteTestContext> DawnTestContext::Make() {
                        std::tuple(propB.adapterType, propB.backendType);
             });
 
-        gAdapter = adapters.front();
+        for (auto adapter : adapters) {
+            wgpu::AdapterProperties props;
+            adapter.GetProperties(&props);
+            if (backend.has_value() && backend.value() == props.backendType) {
+                gAdapter = adapter;
+                break;
+            }
+            // Skip Dawn D3D11 backend for now.
+            if (props.backendType != wgpu::BackendType::D3D11) {
+                gAdapter = adapter;
+                break;
+            }
+        }
+        SkASSERT(gAdapter);
 
 #if LOG_ADAPTER
         wgpu::AdapterProperties properties;
@@ -55,9 +68,8 @@ std::unique_ptr<GraphiteTestContext> DawnTestContext::Make() {
 #endif
     });
 
-    std::array<wgpu::FeatureName, 2> features = {
+    std::array<wgpu::FeatureName, 1> features = {
         wgpu::FeatureName::DepthClipControl,
-        wgpu::FeatureName::Depth32FloatStencil8,
     };
     wgpu::DeviceDescriptor desc;
     desc.requiredFeaturesCount = features.size();

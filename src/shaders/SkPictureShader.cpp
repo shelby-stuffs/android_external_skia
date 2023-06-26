@@ -28,6 +28,7 @@
 #if defined(SK_GANESH)
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/gpu/ganesh/GrFPArgs.h"
@@ -35,11 +36,13 @@
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
+#include "src/gpu/ganesh/image/GrImageUtils.h"
 #include "src/image/SkImage_Base.h"
 #include "src/shaders/SkLocalMatrixShader.h"
 #endif
 
 #if defined(SK_GRAPHITE)
+#include "include/gpu/graphite/Surface.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
@@ -291,7 +294,7 @@ sk_sp<SkShader> SkPictureShader::rasterShader(const SkMatrix& totalM,
 
     sk_sp<SkImage> image;
     if (!SkResourceCache::Find(key, ImageFromPictureRec::Visitor, &image)) {
-        image = info.makeImage(SkSurface::MakeRaster(info.imageInfo, &info.props), fPicture.get());
+        image = info.makeImage(SkSurfaces::Raster(info.imageInfo, &info.props), fPicture.get());
         if (!image) {
             return nullptr;
         }
@@ -321,6 +324,7 @@ bool SkPictureShader::appendStages(const SkStageRec& rec, const MatrixRec& mRec)
     return as_SB(bitmapShader)->appendStages(rec, mRec);
 }
 
+#if defined(SK_ENABLE_SKVM)
 skvm::Color SkPictureShader::program(skvm::Builder* p,
                                      skvm::Coord device,
                                      skvm::Coord local,
@@ -341,6 +345,7 @@ skvm::Color SkPictureShader::program(skvm::Builder* p,
 
     return as_SB(bitmapShader)->program(p, device, local, paint, mRec, dst, uniforms, alloc);
 }
+#endif
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -414,18 +419,19 @@ std::unique_ptr<GrFragmentProcessor> SkPictureShader::asFragmentProcessor(
     } else {
         const int msaaSampleCount = 0;
         const bool createWithMips = false;
-        auto image = info.makeImage(SkSurface::MakeRenderTarget(ctx,
-                                                                skgpu::Budgeted::kYes,
-                                                                info.imageInfo,
-                                                                msaaSampleCount,
-                                                                kTopLeft_GrSurfaceOrigin,
-                                                                &info.props,
-                                                                createWithMips),
+        auto image = info.makeImage(SkSurfaces::RenderTarget(ctx,
+                                                             skgpu::Budgeted::kYes,
+                                                             info.imageInfo,
+                                                             msaaSampleCount,
+                                                             kTopLeft_GrSurfaceOrigin,
+                                                             &info.props,
+                                                             createWithMips),
                                     fPicture.get());
         if (!image) {
             return nullptr;
         }
-        auto [v, ct] = as_IB(image)->asView(ctx, GrMipmapped::kNo);
+
+        auto [v, ct] = skgpu::ganesh::AsView(ctx, image, GrMipmapped::kNo);
         view = std::move(v);
         provider->assignUniqueKeyToProxy(key, view.asTextureProxy());
     }
@@ -479,9 +485,9 @@ void SkPictureShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
     // TODO: right now we're explicitly not caching here. We could expand the ImageProvider
     // API to include already Graphite-backed images, add a Recorder-local cache or add
     // rendered-picture images to the global cache.
-    sk_sp<SkImage> img = info.makeImage(SkSurface::MakeGraphite(recorder, info.imageInfo,
-                                                                skgpu::Mipmapped::kNo, &info.props),
-                                        fPicture.get());
+    sk_sp<SkImage> img = info.makeImage(
+            SkSurfaces::RenderTarget(recorder, info.imageInfo, skgpu::Mipmapped::kNo, &info.props),
+            fPicture.get());
     if (!img) {
         SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, {1, 0, 0, 1});
         builder->endBlock();

@@ -9,6 +9,7 @@
 #include "src/base/SkArenaAlloc.h"
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlenderBase.h"
+#include "src/core/SkChecksum.h"
 #include "src/core/SkColorFilterBase.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
@@ -16,7 +17,6 @@
 #include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkLRUCache.h"
 #include "src/core/SkMatrixProvider.h"
-#include "src/core/SkOpts.h"
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkVM.h"
 #include "src/core/SkVMBlitter.h"
@@ -24,8 +24,7 @@
 
 #include <cinttypes>
 
-#define SK_BLITTER_TRACE_IS_SKVM
-#include "src/utils/SkBlitterTrace.h"
+#ifdef SK_ENABLE_SKVM
 
 namespace {
 
@@ -53,6 +52,8 @@ namespace {
                               const SkColorInfo&, skvm::Uniforms*, SkArenaAlloc*) const override {
             return c;
         }
+
+        SkColorFilterBase::Type type() const override { return SkColorFilterBase::Type::kNoop; }
 
         bool appendStages(const SkStageRec&, bool) const override { return true; }
 
@@ -481,7 +482,7 @@ SkVMBlitter::Key SkVMBlitter::CacheKey(
                 outColor->b.id,
                 outColor->a.id
             };
-            hash ^= SkOpts::hash(outputs, sizeof(outputs));
+            hash ^= SkChecksum::Hash32(outputs, sizeof(outputs));
         } else {
             *ok = false;
         }
@@ -530,7 +531,7 @@ SkVMBlitter::Key SkVMBlitter::CacheKey(
                 outColor.b.id,
                 outColor.a.id
             };
-            blendHash ^= SkOpts::hash(outputs, sizeof(outputs));
+            blendHash ^= SkChecksum::Hash32(outputs, sizeof(outputs));
         } else {
             *ok = false;
         }
@@ -679,10 +680,8 @@ void SkVMBlitter::blitH(int x, int y, int w) {
     skvm::Program* blit_h = this->buildProgram(Coverage::Full);
     this->updateUniforms(x+w, y);
     if (const void* sprite = this->isSprite(x,y)) {
-        SK_BLITTER_TRACE_STEP(blitH1, true, /*scanlines=*/1, /*pixels=*/w);
         blit_h->eval(w, fUniforms.buf.data(), fDevice.addr(x,y), sprite);
     } else {
-        SK_BLITTER_TRACE_STEP(blitH2, true, /*scanlines=*/1, /*pixels=*/w);
         blit_h->eval(w, fUniforms.buf.data(), fDevice.addr(x,y));
     }
 }
@@ -691,9 +690,7 @@ void SkVMBlitter::blitAntiH(int x, int y, const SkAlpha cov[], const int16_t run
     skvm::Program* blit_anti_h = this->buildProgram(Coverage::UniformF);
     skvm::Program* blit_h = this->buildProgram(Coverage::Full);
 
-    SK_BLITTER_TRACE_STEP(blitAntiH, true, /*scanlines=*/1ul, /*pixels=*/0ul);
     for (int16_t run = *runs; run > 0; run = *runs) {
-        SK_BLITTER_TRACE_STEP_ACCUMULATE(blitAntiH, /*pixels=*/run);
         const SkAlpha coverage = *cov;
         if (coverage != 0x00) {
             this->updateUniforms(x+run, y);
@@ -743,11 +740,6 @@ void SkVMBlitter::blitMask(const SkMask& mask, const SkIRect& clip) {
 
     SkASSERT(program);
     if (program) {
-        SK_BLITTER_TRACE_STEP(blitMask,
-                           true,
-                           /*scanlines=*/clip.height(),
-                           /*pixels=*/clip.width() * clip.height());
-
         for (int y = clip.top(); y < clip.bottom(); y++) {
              int x = clip.left(),
                  w = clip.width();
@@ -813,3 +805,5 @@ SkVMBlitter* SkVMBlitter::Make(const SkPixmap& device,
                                             &ok);
     return ok ? blitter : nullptr;
 }
+
+#endif  // SK_ENABLE_SKVM

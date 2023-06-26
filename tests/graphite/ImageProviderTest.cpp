@@ -12,7 +12,9 @@
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkSpan.h"
 #include "include/gpu/graphite/Context.h"
+#include "include/gpu/graphite/Image.h"
 #include "include/gpu/graphite/Recording.h"
+#include "include/gpu/graphite/Surface.h"
 #include "src/core/SkMipmapBuilder.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/RecorderPriv.h"
@@ -67,7 +69,7 @@ sk_sp<SkImage> create_raster(Mipmapped mipmapped) {
 
     bm.eraseColor(kBaseImageColor);
 
-    sk_sp<SkImage> img = SkImage::MakeFromBitmap(bm);
+    sk_sp<SkImage> img = SkImages::RasterFromBitmap(bm);
 
     if (mipmapped == Mipmapped::kYes) {
         img = create_and_attach_mipmaps(std::move(img));
@@ -89,13 +91,13 @@ sk_sp<SkImage> create_raster_backed_image_with_mipmaps(Recorder*) {
 /* 2 */
 sk_sp<SkImage> create_gpu_backed_image_no_mipmaps(Recorder* recorder) {
     sk_sp<SkImage> raster = create_raster(Mipmapped::kNo);
-    return raster->makeTextureImage(recorder, { Mipmapped::kNo });
+    return SkImages::TextureFromImage(recorder, raster, {false});
 }
 
 /* 3 */
 sk_sp<SkImage> create_gpu_backed_image_with_mipmaps(Recorder* recorder) {
     sk_sp<SkImage> raster = create_raster(Mipmapped::kYes);
-    return raster->makeTextureImage(recorder, { Mipmapped::kYes });
+    return SkImages::TextureFromImage(recorder, raster, {true});
 }
 
 /* 4 */
@@ -109,12 +111,12 @@ sk_sp<SkImage> create_picture_backed_image(Recorder*) {
     canvas->drawIRect(r, paint);
     sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
 
-    return SkImage::MakeFromPicture(std::move(picture),
-                                    r.size(),
-                                    /* matrix= */ nullptr,
-                                    /* paint= */ nullptr,
-                                    SkImage::BitDepth::kU8,
-                                    SkColorSpace::MakeSRGB());
+    return SkImages::DeferredFromPicture(std::move(picture),
+                                         r.size(),
+                                         /* matrix= */ nullptr,
+                                         /* paint= */ nullptr,
+                                         SkImages::BitDepth::kU8,
+                                         SkColorSpace::MakeSRGB());
 }
 
 /* 5 */
@@ -151,7 +153,7 @@ sk_sp<SkImage> create_bitmap_generator_backed_image(Recorder*) {
 
     std::unique_ptr<SkImageGenerator> gen(new BitmapBackedGenerator());
 
-    return SkImage::MakeFromGenerator(std::move(gen));
+    return SkImages::DeferredFromGenerator(std::move(gen));
 }
 
 bool check_img(skiatest::Reporter* reporter,
@@ -170,7 +172,7 @@ bool check_img(skiatest::Reporter* reporter,
     SkAssertResult(result.peekPixels(&pm));
 
     {
-        sk_sp<SkSurface> surface = SkSurface::MakeGraphite(recorder, ii);
+        sk_sp<SkSurface> surface = SkSurfaces::RenderTarget(recorder, ii);
         if (!surface) {
             ERRORF(reporter, "Surface creation failed");
             return false;
@@ -328,65 +330,88 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(ImageProviderTest_Graphite_Testing, rep
 // works as expected.
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(Make_TextureImage_Subset_Test, reporter, context) {
     static const struct {
+        std::string name;
         // Some of the factories don't correctly create mipmaps through makeTextureImage
         // bc Graphite's mipmap regeneration isn't implemented yet (b/238754357).
         bool     fMipmapsBlockedByBug;
         FactoryT fFactory;
     } testcases[] = {
-        { false, create_raster_backed_image_no_mipmaps   },
-        { false, create_raster_backed_image_with_mipmaps },
-        { false, create_gpu_backed_image_no_mipmaps      },
-        { false, create_gpu_backed_image_with_mipmaps    },
-        { true,  create_picture_backed_image             },
-        { true,  create_bitmap_generator_backed_image    },
+        { "raster_no_mips",    false, create_raster_backed_image_no_mipmaps   },
+        { "raster_with_mips",  false, create_raster_backed_image_with_mipmaps },
+        { "texture_no_mips",   false, create_gpu_backed_image_no_mipmaps      },
+        { "texture_with_mips", false, create_gpu_backed_image_with_mipmaps    },
+        { "picture_backed",    true,  create_picture_backed_image             },
+        { "image_generator",   true,  create_bitmap_generator_backed_image    },
     };
 
     const SkIRect kFakeSubset = SkIRect::MakeWH(kImageSize.width(), kImageSize.height());
     const SkIRect kTrueSubset = kFakeSubset.makeInset(4, 4);
 
-    std::unique_ptr<Recorder> recorder = context->makeRecorder();
+    std::unique_ptr<Recorder> recorderUP = context->makeRecorder();
+    auto recorder = recorderUP.get();
 
     for (auto test : testcases) {
-        sk_sp<SkImage> orig = test.fFactory(recorder.get());
-
-        for (Mipmapped mm : { Mipmapped::kNo, Mipmapped::kYes }) {
-            sk_sp<SkImage> i = orig->makeTextureImage(recorder.get(), { mm });
+        sk_sp<SkImage> orig = test.fFactory(recorder);
+        skiatest::ReporterContext subtest(reporter, test.name);
+        for (bool mipmapped : {false, true}) {
+            skiatest::ReporterContext subtest2(reporter,
+                                               SkStringPrintf("mipmaps: %d", (int)mipmapped));
+            sk_sp<SkImage> i = SkImages::TextureFromImage(recorder, orig, {mipmapped});
 
             // makeTextureImage has an optimization which allows Mipmaps on an Image if it
             // would take extra work to remove them.
-            bool mipmapOptAllowed = orig->hasMipmaps() && mm == Mipmapped::kNo;
+            bool mipmapOptAllowed = orig->hasMipmaps() && !mipmapped;
 
             REPORTER_ASSERT(reporter, i->isTextureBacked());
-            if (!test.fMipmapsBlockedByBug || mm == Mipmapped::kNo) {
-                REPORTER_ASSERT(reporter, (i->hasMipmaps() == (mm == Mipmapped::kYes)) ||
-                                          (i->hasMipmaps() && mipmapOptAllowed));
+            if (!test.fMipmapsBlockedByBug || !mipmapped) {
+                REPORTER_ASSERT(
+                        reporter,
+                        (i->hasMipmaps() == mipmapped) || (i->hasMipmaps() && mipmapOptAllowed));
             }
 
-            i = orig->makeSubset(kTrueSubset, recorder.get(), { mm });
+            // SkImage::makeSubset should "leave an image where it is", that is, return a
+            // texture backed image iff the original image was texture backed. Otherwise,
+            // it will return a raster image.
+            i = orig->makeSubset(recorder, kTrueSubset, {mipmapped});
+            REPORTER_ASSERT(reporter, orig->isTextureBacked() == i->isTextureBacked(),
+                            "orig texture status %d != subset texture status %d",
+                            orig->isTextureBacked(), i->isTextureBacked());
+            if (i->isTextureBacked()) {
+                REPORTER_ASSERT(reporter, i->dimensions() == kTrueSubset.size());
+                REPORTER_ASSERT(reporter, i->hasMipmaps() == mipmapped);
+            }
+
+            i = orig->makeSubset(recorder, kFakeSubset, {mipmapped});
+            REPORTER_ASSERT(reporter, orig->isTextureBacked() == i->isTextureBacked(),
+                            "orig texture status %d != subset texture status %d",
+                            orig->isTextureBacked(), i->isTextureBacked());
+            if (i->isTextureBacked()) {
+                REPORTER_ASSERT(reporter, i->dimensions() == kFakeSubset.size());
+                REPORTER_ASSERT(
+                        reporter,
+                        i->hasMipmaps() == mipmapped || (i->hasMipmaps() && mipmapOptAllowed));
+            }
+
+            // SubsetTextureFrom should always return a texture-backed image
+            i = SkImages::SubsetTextureFrom(recorder, orig.get(), kTrueSubset, {mipmapped});
             REPORTER_ASSERT(reporter, i->isTextureBacked());
             REPORTER_ASSERT(reporter, i->dimensions() == kTrueSubset.size());
-            REPORTER_ASSERT(reporter, i->hasMipmaps() == (mm == Mipmapped::kYes));
-
-            i = orig->makeSubset(kFakeSubset, recorder.get(), { mm });
-            REPORTER_ASSERT(reporter, i->isTextureBacked());
-            REPORTER_ASSERT(reporter, i->dimensions() == kFakeSubset.size());
-            REPORTER_ASSERT(reporter, i->hasMipmaps() == (mm == Mipmapped::kYes) ||
-                                      (i->hasMipmaps() && mipmapOptAllowed));
+            REPORTER_ASSERT(reporter, i->hasMipmaps() == mipmapped);
 
             if (!orig->isTextureBacked()) {
-                i = orig->makeTextureImage(nullptr, mm);
+                i = SkImages::TextureFromImage(nullptr, orig, {mipmapped});
                 REPORTER_ASSERT(reporter, !i);
 
                 // Make sure makeSubset w/o a recorder works as expected
-                i = orig->makeSubset(kTrueSubset, nullptr, { mm });
+                i = orig->makeSubset(nullptr, kTrueSubset, {mipmapped});
                 REPORTER_ASSERT(reporter, !i->isTextureBacked());
                 REPORTER_ASSERT(reporter, i->dimensions() == kTrueSubset.size());
-                REPORTER_ASSERT(reporter, i->hasMipmaps() == (mm == Mipmapped::kYes));
+                REPORTER_ASSERT(reporter, i->hasMipmaps() == mipmapped);
 
-                i = orig->makeSubset(kFakeSubset, nullptr, { mm });
+                i = orig->makeSubset(nullptr, kFakeSubset, {mipmapped});
                 REPORTER_ASSERT(reporter, !i->isTextureBacked());
                 REPORTER_ASSERT(reporter, i->dimensions() == kFakeSubset.size());
-                REPORTER_ASSERT(reporter, i->hasMipmaps() == (mm == Mipmapped::kYes));
+                REPORTER_ASSERT(reporter, i->hasMipmaps() == mipmapped);
             }
         }
     }
@@ -394,19 +419,16 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(Make_TextureImage_Subset_Test, reporter
 
 namespace {
 
-SkColorType pick_colortype(const Caps* caps, Mipmapped mipmapped) {
-    TextureInfo info = caps->getDefaultSampledTextureInfo(kRGB_565_SkColorType,
-                                                          mipmapped,
-                                                          skgpu::Protected::kNo,
-                                                          Renderable::kYes);
+SkColorType pick_colortype(const Caps* caps, bool mipmapped) {
+    auto mm = mipmapped ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
+    TextureInfo info = caps->getDefaultSampledTextureInfo(
+            kRGB_565_SkColorType, mm, skgpu::Protected::kNo, skgpu::Renderable::kYes);
     if (info.isValid()) {
         return kRGB_565_SkColorType;
     }
 
-    info = caps->getDefaultSampledTextureInfo(kRGBA_F16_SkColorType,
-                                              mipmapped,
-                                              skgpu::Protected::kNo,
-                                              Renderable::kYes);
+    info = caps->getDefaultSampledTextureInfo(
+            kRGBA_F16_SkColorType, mm, skgpu::Protected::kNo, skgpu::Renderable::kYes);
     if (info.isValid()) {
         return kRGBA_F16_SkColorType;
     }
@@ -422,17 +444,19 @@ SkColorType pick_colortype(const Caps* caps, Mipmapped mipmapped) {
 // works as expected.
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(MakeColorSpace_Test, reporter, context) {
     static const struct {
-        // Some of the factories don't correctly create mipmaps through makeTextureImage
+        std::string name;
+        // Some of the factories don't correctly create mipmaps through SkImage::TextureFromImage
         // bc Graphite's mipmap regeneration isn't implemented yet (b/238754357).
         bool     fMipmapsBlockedByBug;
         FactoryT fFactory;
+        bool     fTextureBacked;
     } testcases[] = {
-            { false, create_raster_backed_image_no_mipmaps   },
-            { false, create_raster_backed_image_with_mipmaps },
-            { false, create_gpu_backed_image_no_mipmaps      },
-            { false, create_gpu_backed_image_with_mipmaps    },
-            { true,  create_picture_backed_image             },
-            { true,  create_bitmap_generator_backed_image    },
+            { "raster_no_mips",    false, create_raster_backed_image_no_mipmaps,   false },
+            { "raster_with_mips",  false, create_raster_backed_image_with_mipmaps, false },
+            { "texture_no_mips",   false, create_gpu_backed_image_no_mipmaps,      true  },
+            { "texture_with_mips", false, create_gpu_backed_image_with_mipmaps,    true  },
+            { "picture_backed",    true,  create_picture_backed_image,             false },
+            { "image_generator",   true,  create_bitmap_generator_backed_image,    false },
     };
 
     sk_sp<SkColorSpace> spin = SkColorSpace::MakeSRGB()->makeColorSpin();
@@ -442,28 +466,41 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(MakeColorSpace_Test, reporter, context)
     const Caps* caps = recorder->priv().caps();
 
     for (auto testcase : testcases) {
+        skiatest::ReporterContext subtest(reporter, testcase.name);
         sk_sp<SkImage> orig = testcase.fFactory(recorder.get());
 
         SkASSERT(orig->colorType() == kRGBA_8888_SkColorType);
         SkASSERT(!orig->colorSpace() || orig->colorSpace() == SkColorSpace::MakeSRGB().get());
 
-        for (Mipmapped mm : { Mipmapped::kNo, Mipmapped::kYes }) {
-            sk_sp<SkImage> i = orig->makeColorSpace(spin, recorder.get(), { mm });
+        for (bool mipmapped : {false, true}) {
+            skiatest::ReporterContext subtest2(reporter,
+                                               SkStringPrintf("mipmaps: %d", (int)mipmapped));
+            sk_sp<SkImage> i = orig->makeColorSpace(recorder.get(), spin, {mipmapped});
 
-            REPORTER_ASSERT(reporter, i->isTextureBacked());
+            REPORTER_ASSERT(reporter, i != nullptr);
+            REPORTER_ASSERT(reporter, i->isTextureBacked() == testcase.fTextureBacked);
             REPORTER_ASSERT(reporter, i->colorSpace() == spin.get());
-            if (!testcase.fMipmapsBlockedByBug || mm == Mipmapped::kNo) {
-                REPORTER_ASSERT(reporter, i->hasMipmaps() == (mm == Mipmapped::kYes));
+            if (testcase.fTextureBacked) {
+                if (!testcase.fMipmapsBlockedByBug) {
+                    REPORTER_ASSERT(reporter, i->hasMipmaps() == mipmapped);
+                }
+            } else {
+                REPORTER_ASSERT(reporter, !i->hasMipmaps());
             }
 
-            SkColorType altCT = pick_colortype(caps, mm);
-            i = orig->makeColorTypeAndColorSpace(altCT, spin, recorder.get(), { mm });
+            SkColorType altCT = pick_colortype(caps, mipmapped);
+            i = orig->makeColorTypeAndColorSpace(recorder.get(), altCT, spin, {mipmapped});
 
-            REPORTER_ASSERT(reporter, i->isTextureBacked());
+            REPORTER_ASSERT(reporter, i != nullptr);
+            REPORTER_ASSERT(reporter, i->isTextureBacked() == testcase.fTextureBacked);
             REPORTER_ASSERT(reporter, i->colorType() == altCT);
             REPORTER_ASSERT(reporter, i->colorSpace() == spin.get());
-            if (!testcase.fMipmapsBlockedByBug || mm == Mipmapped::kNo) {
-                REPORTER_ASSERT(reporter, i->hasMipmaps() == (mm == Mipmapped::kYes));
+            if (testcase.fTextureBacked) {
+                if (!testcase.fMipmapsBlockedByBug) {
+                    REPORTER_ASSERT(reporter, i->hasMipmaps() == mipmapped);
+                }
+            } else {
+                REPORTER_ASSERT(reporter, !i->hasMipmaps());
             }
         }
     }

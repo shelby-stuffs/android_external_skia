@@ -757,12 +757,6 @@ bool SkJpegXmp::getGainmapInfoHDRGM(SkGainmapInfo* outGainmapInfo) const {
         return false;
     }
 
-    // If |outGainmapInfo| was not specified, then this function only verifies that the
-    // Version field be 1.0. It does not verify that GainMapMax or HDRCapacityMax be present.
-    if (!outGainmapInfo) {
-        return true;
-    }
-
     // Initialize the parameters to their defaults.
     bool baseRenditionIsHDR = false;
     SkColor4f gainMapMin = {1.f, 1.f, 1.f, 1.f};
@@ -776,18 +770,12 @@ bool SkJpegXmp::getGainmapInfoHDRGM(SkGainmapInfo* outGainmapInfo) const {
     // Read all parameters that are present.
     get_attr_bool(dom, node, hdrgmPrefix, "BaseRenditionIsHDR", &baseRenditionIsHDR);
     get_attr_float3(dom, node, hdrgmPrefix, "GainMapMin", &gainMapMin);
-    if (!get_attr_float3(dom, node, hdrgmPrefix, "GainMapMax", &gainMapMax)) {
-        SkCodecPrintf("GainMapMax attribute is absent.\n");
-        return false;
-    }
+    get_attr_float3(dom, node, hdrgmPrefix, "GainMapMax", &gainMapMax);
     get_attr_float3(dom, node, hdrgmPrefix, "Gamma", &gamma);
     get_attr_float3(dom, node, hdrgmPrefix, "OffsetSDR", &offsetSdr);
     get_attr_float3(dom, node, hdrgmPrefix, "OffsetHDR", &offsetHdr);
     get_attr_float(dom, node, hdrgmPrefix, "HDRCapacityMin", &hdrCapacityMin);
-    if (!get_attr_float(dom, node, hdrgmPrefix, "HDRCapacityMax", &hdrCapacityMax)) {
-        SkCodecPrintf("HDRCapacityMax attribute is absent.\n");
-        return false;
-    }
+    get_attr_float(dom, node, hdrgmPrefix, "HDRCapacityMax", &hdrCapacityMax);
 
     // Translate all parameters to SkGainmapInfo's expected format.
     const float kLog2 = sk_float_log(2.f);

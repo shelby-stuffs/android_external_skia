@@ -19,11 +19,11 @@ class Image_YUVA final : public Image_Base {
 public:
     Image_YUVA(uint32_t uniqueID,
                YUVATextureProxies proxies,
-               const SkColorInfo&);
+               sk_sp<SkColorSpace>);
 
     ~Image_YUVA() override {}
 
-    bool isYUVA() const override { return true; }
+    SkImage_Base::Type type() const override { return SkImage_Base::Type::kGraphiteYUVA; }
 
     bool onHasMipmaps() const override {
         // TODO: Add mipmap support
@@ -34,19 +34,23 @@ public:
         return nullptr;
     }
 
+    const YUVATextureProxies& yuvaProxies() const {
+        return fYUVAProxies;
+    }
+
 private:
-    sk_sp<SkImage> onMakeTextureImage(Recorder*, RequiredImageProperties) const override {
+    sk_sp<SkImage> makeTextureImage(Recorder*, RequiredProperties) const override {
         return nullptr;
     }
     using Image_Base::onMakeSubset;
-    sk_sp<SkImage> onMakeSubset(const SkIRect&, Recorder*, RequiredImageProperties) const override {
+    sk_sp<SkImage> onMakeSubset(Recorder*, const SkIRect&, RequiredProperties) const override {
         return nullptr;
     }
     using Image_Base::onMakeColorTypeAndColorSpace;
-    sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType targetCT,
-                                                sk_sp<SkColorSpace> targetCS,
-                                                Recorder*,
-                                                RequiredImageProperties) const override {
+    sk_sp<SkImage> makeColorTypeAndColorSpace(Recorder*,
+                                              SkColorType targetCT,
+                                              sk_sp<SkColorSpace> targetCS,
+                                              RequiredProperties) const override {
         return nullptr;
     }
 

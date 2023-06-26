@@ -43,16 +43,8 @@
 #define SK_ENABLE_SKSL
 #endif
 
-#ifndef SK_ENCODE_JPEG
-#define SK_ENCODE_JPEG
-#endif
-
-#ifndef SK_ENCODE_PNG
-#define SK_ENCODE_PNG
-#endif
-
-#ifndef SK_ENCODE_WEBP
-#define SK_ENCODE_WEBP
+#ifndef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
+#define SK_ENABLE_SKSL_IN_RASTER_PIPELINE
 #endif
 
 #ifndef SK_GAMMA_APPLY_TO_A8
@@ -73,10 +65,6 @@
 
 #ifndef SK_GL
 #define SK_GL
-#endif
-
-#ifndef SK_HAS_ANDROID_CODEC
-#define SK_HAS_ANDROID_CODEC
 #endif
 
 #ifndef SK_HAS_WUFFS_LIBRARY

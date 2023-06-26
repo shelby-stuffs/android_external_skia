@@ -19,13 +19,14 @@ EFFECTS_FILES = [
     "SkEmbossMaskFilter.cpp",
     "SkEmbossMaskFilter.h",
     "SkHighContrastFilter.cpp",
-    "SkLayerDrawLooper.cpp",
     "SkLumaColorFilter.cpp",
     "SkOpPE.h",
     "SkOpPathEffect.cpp",
     "SkOverdrawColorFilter.cpp",
-    "SkShaderMaskFilter.cpp",
+    "SkShaderMaskFilterImpl.cpp",
+    "SkShaderMaskFilterImpl.h",
     "SkTableColorFilter.cpp",
+    "SkTableColorFilter.h",
     "SkTableMaskFilter.cpp",
     "SkTrimPE.h",
     "SkTrimPathEffect.cpp",
@@ -34,6 +35,11 @@ EFFECTS_FILES = [
 split_srcs_and_hdrs(
     name = "effects",
     files = EFFECTS_FILES,
+)
+
+skia_filegroup(
+    name = "legacy_draw_looper",
+    srcs = ["SkLayerDrawLooper.cpp"],
 )
 
 skia_filegroup(

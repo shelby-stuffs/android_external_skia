@@ -5,10 +5,8 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLProgramElement.h"
-#include "include/private/SkSLStatement.h"
 #include "include/private/base/SkDebug.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLAnalysis.h"
@@ -20,6 +18,9 @@
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
+#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLProgramElement.h"
+#include "src/sksl/ir/SkSLStatement.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/ir/SkSLVariableReference.h"

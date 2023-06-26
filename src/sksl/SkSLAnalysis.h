@@ -13,7 +13,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <set>
 #include <vector>
 
 namespace SkSL {
@@ -69,6 +68,13 @@ bool CallsColorTransformIntrinsics(const Program& program);
 bool ReturnsOpaqueColor(const FunctionDefinition& function);
 
 /**
+ * Determines if `function` is a color filter which returns the alpha component of the input color
+ * unchanged. This is a very conservative analysis, and only supports returning a swizzle of the
+ * input color, or returning a constructor that ends with `input.a`.
+ */
+bool ReturnsInputAlpha(const FunctionDefinition& function, const ProgramUsage& usage);
+
+/**
  * Checks for recursion or overly-deep function-call chains, and rejects programs which have them.
  * Also, computes the size of the program in a completely flattened state--loops fully unrolled,
  * function calls inlined--and rejects programs that exceed an arbitrary upper bound. This is
@@ -79,6 +85,9 @@ bool CheckProgramStructure(const Program& program, bool enforceSizeLimit);
 
 /** Determines if `expr` contains a reference to the variable sk_RTAdjust. */
 bool ContainsRTAdjust(const Expression& expr);
+
+/** Determines if `expr` contains a reference to variable `var`. */
+bool ContainsVariable(const Expression& expr, const Variable& var);
 
 /** Determines if `expr` has any side effects. (Is the expression state-altering or pure?) */
 bool HasSideEffects(const Expression& expr);
@@ -187,14 +196,13 @@ bool IsSameExpressionTree(const Expression& left, const Expression& right);
 bool IsConstantExpression(const Expression& expr);
 
 /**
- * Returns true if expr is a valid constant-index-expression, as defined by GLSL 1.0, Appendix A,
- * Section 5. A constant-index-expression is:
+ * Ensures that any index-expressions inside of for-loops qualify as 'constant-index-expressions' as
+ * defined by GLSL 1.0, Appendix A, Section 5. A constant-index-expression is:
  * - A constant-expression
  * - Loop indices (as defined in Appendix A, Section 4)
  * - Expressions composed of both of the above
  */
-bool IsConstantIndexExpression(const Expression& expr,
-                               const std::set<const Variable*>* loopIndices);
+void ValidateIndexingForES2(const ProgramElement& pe, ErrorReporter& errors);
 
 /**
  * Ensures that a for-loop meets the strict requirements of The OpenGL ES Shading Language 1.00,
@@ -202,16 +210,19 @@ bool IsConstantIndexExpression(const Expression& expr,
  * If the requirements are met, information about the loop's structure is returned.
  * If the requirements are not met, the problem is reported via `errors` (if not nullptr), and
  * null is returned.
+ * The loop test-expression may be altered by this check. For example, a loop like this:
+ *     for (float x = 1.0; x != 0.0; x -= 0.01) {...}
+ * appears to be ES2-safe, but due to floating-point rounding error, it may not actually terminate.
+ * We rewrite the test condition to `x > 0.0` in order to ensure loop termination.
  */
-std::unique_ptr<LoopUnrollInfo> GetLoopUnrollInfo(Position pos,
+std::unique_ptr<LoopUnrollInfo> GetLoopUnrollInfo(const Context& context,
+                                                  Position pos,
                                                   const ForLoopPositions& positions,
                                                   const Statement* loopInitializer,
-                                                  const Expression* loopTest,
+                                                  std::unique_ptr<Expression>* loopTestPtr,
                                                   const Expression* loopNext,
                                                   const Statement* loopStatement,
                                                   ErrorReporter* errors);
-
-void ValidateIndexingForES2(const ProgramElement& pe, ErrorReporter& errors);
 
 /** Detects functions that fail to return a value on at least one path. */
 bool CanExitWithoutReturningValue(const FunctionDeclaration& funcDecl, const Statement& body);
@@ -234,8 +245,8 @@ void DoFinalizationChecks(const Program& program);
 /**
  * Error checks compute shader in/outs and returns a vector containing them ordered by location.
  */
-SkTArray<const SkSL::Variable*> GetComputeShaderMainParams(const Context& context,
-                                                           const Program& program);
+skia_private::TArray<const SkSL::Variable*> GetComputeShaderMainParams(
+        const Context& context, const Program& program);
 
 /**
  * Tracks the symbol table stack, in conjunction with a ProgramVisitor. Inside `visitStatement`,

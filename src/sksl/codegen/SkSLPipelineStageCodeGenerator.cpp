@@ -12,20 +12,15 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkSLIRNode.h"
-#include "include/private/SkSLLayout.h"
-#include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLProgramElement.h"
-#include "include/private/SkSLProgramKind.h"
-#include "include/private/SkSLStatement.h"
-#include "include/private/SkSLString.h"
 #include "include/private/base/SkTArray.h"
-#include "include/sksl/SkSLOperator.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLIntrinsicList.h"
+#include "src/sksl/SkSLOperator.h"
+#include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/SkSLString.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
@@ -39,12 +34,17 @@
 #include "src/sksl/ir/SkSLFunctionCall.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
+#include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
+#include "src/sksl/ir/SkSLLayout.h"
+#include "src/sksl/ir/SkSLModifiers.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLStatement.h"
 #include "src/sksl/ir/SkSLStructDefinition.h"
 #include "src/sksl/ir/SkSLSwitchCase.h"
 #include "src/sksl/ir/SkSLSwitchStatement.h"
@@ -58,7 +58,8 @@
 #include <memory>
 #include <string_view>
 #include <utility>
-#include <vector>
+
+using namespace skia_private;
 
 namespace SkSL {
 namespace PipelineStage {
@@ -146,9 +147,9 @@ private:
     const char*    fDestColor;
     Callbacks*     fCallbacks;
 
-    SkTHashMap<const Variable*, std::string>            fVariableNames;
-    SkTHashMap<const FunctionDeclaration*, std::string> fFunctionNames;
-    SkTHashMap<const Type*, std::string>                fStructNames;
+    THashMap<const Variable*, std::string>            fVariableNames;
+    THashMap<const FunctionDeclaration*, std::string> fFunctionNames;
+    THashMap<const Type*, std::string>                fStructNames;
 
     StringStream* fBuffer = nullptr;
     bool          fCastReturnsToHalf = false;
@@ -293,7 +294,7 @@ void PipelineStageCodeGenerator::writeVariableReference(const VariableReference&
 
 void PipelineStageCodeGenerator::writeIfStatement(const IfStatement& stmt) {
     this->write("if (");
-    this->writeExpression(*stmt.test(), Precedence::kTopLevel);
+    this->writeExpression(*stmt.test(), Precedence::kExpression);
     this->write(") ");
     this->writeStatement(*stmt.ifTrue());
     if (stmt.ifFalse()) {
@@ -309,7 +310,7 @@ void PipelineStageCodeGenerator::writeReturnStatement(const ReturnStatement& r) 
         if (fCastReturnsToHalf) {
             this->write("half4(");
         }
-        this->writeExpression(*r.expression(), Precedence::kTopLevel);
+        this->writeExpression(*r.expression(), Precedence::kExpression);
         if (fCastReturnsToHalf) {
             this->write(")");
         }
@@ -319,7 +320,7 @@ void PipelineStageCodeGenerator::writeReturnStatement(const ReturnStatement& r) 
 
 void PipelineStageCodeGenerator::writeSwitchStatement(const SwitchStatement& s) {
     this->write("switch (");
-    this->writeExpression(*s.value(), Precedence::kTopLevel);
+    this->writeExpression(*s.value(), Precedence::kExpression);
     this->writeLine(") {");
     for (const std::unique_ptr<Statement>& stmt : s.cases()) {
         const SwitchCase& c = stmt->as<SwitchCase>();
@@ -429,7 +430,7 @@ void PipelineStageCodeGenerator::writeGlobalVarDeclaration(const GlobalVarDeclar
                                                  std::string_view(mangledName.c_str()));
         if (decl.value()) {
             AutoOutputBuffer outputToBuffer(this);
-            this->writeExpression(*decl.value(), Precedence::kTopLevel);
+            this->writeExpression(*decl.value(), Precedence::kExpression);
             declaration += " = ";
             declaration += outputToBuffer.fBuffer.str();
         }
@@ -570,7 +571,7 @@ void PipelineStageCodeGenerator::writeAnyConstructor(const AnyConstructor& c,
 void PipelineStageCodeGenerator::writeIndexExpression(const IndexExpression& expr) {
     this->writeExpression(*expr.base(), Precedence::kPostfix);
     this->write("[");
-    this->writeExpression(*expr.index(), Precedence::kTopLevel);
+    this->writeExpression(*expr.index(), Precedence::kExpression);
     this->write("]");
 }
 
@@ -681,7 +682,7 @@ void PipelineStageCodeGenerator::writeVarDeclaration(const VarDeclaration& var) 
     this->write(this->typedVariable(var.var()->type(), var.var()->name()));
     if (var.value()) {
         this->write(" = ");
-        this->writeExpression(*var.value(), Precedence::kTopLevel);
+        this->writeExpression(*var.value(), Precedence::kExpression);
     }
     this->write(";");
 }
@@ -698,7 +699,8 @@ void PipelineStageCodeGenerator::writeStatement(const Statement& s) {
             this->write("continue;");
             break;
         case Statement::Kind::kExpression:
-            this->writeExpression(*s.as<ExpressionStatement>().expression(), Precedence::kTopLevel);
+            this->writeExpression(*s.as<ExpressionStatement>().expression(),
+                                  Precedence::kStatement);
             this->write(";");
             break;
         case Statement::Kind::kDo:
@@ -753,7 +755,7 @@ void PipelineStageCodeGenerator::writeDoStatement(const DoStatement& d) {
     this->write("do ");
     this->writeStatement(*d.statement());
     this->write(" while (");
-    this->writeExpression(*d.test(), Precedence::kTopLevel);
+    this->writeExpression(*d.test(), Precedence::kExpression);
     this->write(");");
     return;
 }
@@ -762,7 +764,7 @@ void PipelineStageCodeGenerator::writeForStatement(const ForStatement& f) {
     // Emit loops of the form 'for(;test;)' as 'while(test)', which is probably how they started
     if (!f.initializer() && f.test() && !f.next()) {
         this->write("while (");
-        this->writeExpression(*f.test(), Precedence::kTopLevel);
+        this->writeExpression(*f.test(), Precedence::kExpression);
         this->write(") ");
         this->writeStatement(*f.statement());
         return;
@@ -775,11 +777,11 @@ void PipelineStageCodeGenerator::writeForStatement(const ForStatement& f) {
         this->write("; ");
     }
     if (f.test()) {
-        this->writeExpression(*f.test(), Precedence::kTopLevel);
+        this->writeExpression(*f.test(), Precedence::kExpression);
     }
     this->write("; ");
     if (f.next()) {
-        this->writeExpression(*f.next(), Precedence::kTopLevel);
+        this->writeExpression(*f.next(), Precedence::kExpression);
     }
     this->write(") ");
     this->writeStatement(*f.statement());

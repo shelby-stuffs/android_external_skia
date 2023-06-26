@@ -10,24 +10,19 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkSLIRNode.h"
-#include "include/private/SkSLLayout.h"
-#include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLProgramElement.h"
-#include "include/private/SkSLStatement.h"
-#include "include/private/SkSLString.h"
 #include "include/private/base/SkTArray.h"
-#include "include/sksl/SkSLErrorReporter.h"
-#include "include/sksl/SkSLOperator.h"
-#include "include/sksl/SkSLPosition.h"
 #include "src/base/SkStringView.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLGLSL.h"
 #include "src/sksl/SkSLIntrinsicList.h"
+#include "src/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLOutputStream.h"
+#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/SkSLString.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
@@ -45,16 +40,21 @@
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLFunctionPrototype.h"
+#include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
+#include "src/sksl/ir/SkSLLayout.h"
 #include "src/sksl/ir/SkSLLiteral.h"
+#include "src/sksl/ir/SkSLModifiers.h"
 #include "src/sksl/ir/SkSLModifiersDeclaration.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
 #include "src/sksl/ir/SkSLSetting.h"
+#include "src/sksl/ir/SkSLStatement.h"
 #include "src/sksl/ir/SkSLStructDefinition.h"
 #include "src/sksl/ir/SkSLSwitchCase.h"
 #include "src/sksl/ir/SkSLSwitchStatement.h"
@@ -168,6 +168,9 @@ std::string GLSLCodeGenerator::getTypeName(const Type& raw) {
         }
         case Type::TypeKind::kArray: {
             std::string baseTypeName = this->getTypeName(type.componentType());
+            if (type.isUnsizedArray()) {
+                return String::printf("%s[]", baseTypeName.c_str());
+            }
             return String::printf("%s[%d]", baseTypeName.c_str(), type.columns());
         }
         case Type::TypeKind::kScalar: {
@@ -291,7 +294,7 @@ void GLSLCodeGenerator::writeMinAbsHack(Expression& absExpr, Expression& otherEx
     this->fFunctionHeader += std::string("    ") + this->getTypePrecision(otherExpr.type()) +
                              this->getTypeName(otherExpr.type()) + " " + tmpVar2 + ";\n";
     this->write("((" + tmpVar1 + " = ");
-    this->writeExpression(absExpr, Precedence::kTopLevel);
+    this->writeExpression(absExpr, Precedence::kAssignment);
     this->write(") < (" + tmpVar2 + " = ");
     this->writeExpression(otherExpr, Precedence::kAssignment);
     this->write(") ? " + tmpVar1 + " : " + tmpVar2 + ")");
@@ -299,7 +302,7 @@ void GLSLCodeGenerator::writeMinAbsHack(Expression& absExpr, Expression& otherEx
 
 void GLSLCodeGenerator::writeInverseSqrtHack(const Expression& x) {
     this->write("(1.0 / sqrt(");
-    this->writeExpression(x, Precedence::kTopLevel);
+    this->writeExpression(x, Precedence::kExpression);
     this->write("))");
 }
 
@@ -372,7 +375,7 @@ void GLSLCodeGenerator::writeDeterminantHack(const Expression& mat) {
         SkDEBUGFAILF("no polyfill for determinant(%s)", type.description().c_str());
         this->write("determinant(");
     }
-    this->writeExpression(mat, Precedence::kTopLevel);
+    this->writeExpression(mat, Precedence::kExpression);
     this->write(")");
 }
 
@@ -465,7 +468,7 @@ void GLSLCodeGenerator::writeInverseHack(const Expression& mat) {
         SkDEBUGFAILF("no polyfill for inverse(%s)", type.description().c_str());
         this->write("inverse(");
     }
-    this->writeExpression(mat, Precedence::kTopLevel);
+    this->writeExpression(mat, Precedence::kExpression);
     this->write(")");
 }
 
@@ -496,7 +499,7 @@ void GLSLCodeGenerator::writeTransposeHack(const Expression& mat) {
         fExtraFunctions.writeText("); }\n");
     }
     this->write(name + "(");
-    this->writeExpression(mat, Precedence::kTopLevel);
+    this->writeExpression(mat, Precedence::kExpression);
     this->write(")");
 }
 
@@ -926,7 +929,7 @@ void GLSLCodeGenerator::writeVariableReference(const VariableReference& ref) {
 void GLSLCodeGenerator::writeIndexExpression(const IndexExpression& expr) {
     this->writeExpression(*expr.base(), Precedence::kPostfix);
     this->write("[");
-    this->writeExpression(*expr.index(), Precedence::kTopLevel);
+    this->writeExpression(*expr.index(), Precedence::kExpression);
     this->write("]");
 }
 
@@ -1107,7 +1110,7 @@ void GLSLCodeGenerator::writeLiteral(const Literal& l) {
         }
         return;
     }
-    this->write(l.description(OperatorPrecedence::kTopLevel));
+    this->write(l.description(OperatorPrecedence::kExpression));
 }
 
 void GLSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) {
@@ -1272,7 +1275,7 @@ void GLSLCodeGenerator::writeInterfaceBlock(const InterfaceBlock& intf) {
 }
 
 void GLSLCodeGenerator::writeVarInitializer(const Variable& var, const Expression& value) {
-    this->writeExpression(value, Precedence::kTopLevel);
+    this->writeExpression(value, Precedence::kExpression);
 }
 
 const char* GLSLCodeGenerator::getTypePrecision(const Type& type) {
@@ -1407,7 +1410,7 @@ void GLSLCodeGenerator::writeBlock(const Block& b) {
 
 void GLSLCodeGenerator::writeIfStatement(const IfStatement& stmt) {
     this->write("if (");
-    this->writeExpression(*stmt.test(), Precedence::kTopLevel);
+    this->writeExpression(*stmt.test(), Precedence::kExpression);
     this->write(") ");
     this->writeStatement(*stmt.ifTrue());
     if (stmt.ifFalse()) {
@@ -1420,7 +1423,7 @@ void GLSLCodeGenerator::writeForStatement(const ForStatement& f) {
     // Emit loops of the form 'for(;test;)' as 'while(test)', which is probably how they started
     if (!f.initializer() && f.test() && !f.next()) {
         this->write("while (");
-        this->writeExpression(*f.test(), Precedence::kTopLevel);
+        this->writeExpression(*f.test(), Precedence::kExpression);
         this->write(") ");
         this->writeStatement(*f.statement());
         return;
@@ -1438,14 +1441,14 @@ void GLSLCodeGenerator::writeForStatement(const ForStatement& f) {
                     Position(), f.test()->clone(), Operator::Kind::LOGICALAND,
                     Literal::MakeBool(fContext, Position(), /*value=*/true),
                     fContext.fTypes.fBool.get()));
-            this->writeExpression(*and_true, Precedence::kTopLevel);
+            this->writeExpression(*and_true, Precedence::kExpression);
         } else {
-            this->writeExpression(*f.test(), Precedence::kTopLevel);
+            this->writeExpression(*f.test(), Precedence::kExpression);
         }
     }
     this->write("; ");
     if (f.next()) {
-        this->writeExpression(*f.next(), Precedence::kTopLevel);
+        this->writeExpression(*f.next(), Precedence::kExpression);
     }
     this->write(") ");
     this->writeStatement(*f.statement());
@@ -1456,7 +1459,7 @@ void GLSLCodeGenerator::writeDoStatement(const DoStatement& d) {
         this->write("do ");
         this->writeStatement(*d.statement());
         this->write(" while (");
-        this->writeExpression(*d.test(), Precedence::kTopLevel);
+        this->writeExpression(*d.test(), Precedence::kExpression);
         this->write(");");
         return;
     }
@@ -1509,7 +1512,7 @@ void GLSLCodeGenerator::writeExpressionStatement(const ExpressionStatement& s) {
         // Don't emit dead expressions.
         return;
     }
-    this->writeExpression(*s.expression(), Precedence::kTopLevel);
+    this->writeExpression(*s.expression(), Precedence::kStatement);
     this->write(";");
 }
 
@@ -1578,7 +1581,7 @@ void GLSLCodeGenerator::writeSwitchStatement(const SwitchStatement& s) {
     }
 
     this->write("switch (");
-    this->writeExpression(*s.value(), Precedence::kTopLevel);
+    this->writeExpression(*s.value(), Precedence::kExpression);
     this->writeLine(") {");
     fIndentation++;
     // If a switch contains only a `default` case and nothing else, this confuses some drivers and
@@ -1628,7 +1631,7 @@ void GLSLCodeGenerator::writeReturnStatement(const ReturnStatement& r) {
     this->write("return");
     if (r.expression()) {
         this->write(" ");
-        this->writeExpression(*r.expression(), Precedence::kTopLevel);
+        this->writeExpression(*r.expression(), Precedence::kExpression);
     }
     this->write(";");
 }
@@ -1691,7 +1694,7 @@ void GLSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
 }
 
 void GLSLCodeGenerator::writeInputVars() {
-    if (fProgram.fInputs.fUseFlipRTUniform) {
+    if (fProgram.fInterface.fUseFlipRTUniform) {
         const char* precision = this->usesPrecisionModifiers() ? "highp " : "";
         fGlobals.writeText("uniform ");
         fGlobals.writeText(precision);

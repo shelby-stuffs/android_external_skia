@@ -8,6 +8,8 @@
 #ifndef skgpu_graphite_Caps_DEFINED
 #define skgpu_graphite_Caps_DEFINED
 
+#include <optional>
+
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
 #include "include/private/base/SkAlign.h"
@@ -17,6 +19,7 @@
 #include "src/gpu/graphite/ResourceTypes.h"
 #include "src/text/gpu/SDFTControl.h"
 
+enum class SkBlendMode;
 class SkCapabilities;
 
 namespace SkSL { struct ShaderCaps; }
@@ -50,6 +53,13 @@ struct ResourceBindingRequirements {
     bool fDistinctIndexRanges = false;
 };
 
+enum class DstReadRequirement {
+    kNone,
+    kTextureCopy,
+    kTextureSample,
+    kFramebufferFetch,
+};
+
 class Caps {
 public:
     virtual ~Caps();
@@ -70,14 +80,18 @@ public:
                                                           uint32_t sampleCount,
                                                           Protected) const = 0;
 
+    virtual TextureInfo getDefaultStorageTextureInfo(SkColorType) const = 0;
+
     virtual UniqueKey makeGraphicsPipelineKey(const GraphicsPipelineDesc&,
                                               const RenderPassDesc&) const = 0;
     virtual UniqueKey makeComputePipelineKey(const ComputePipelineDesc&) const = 0;
 
     bool areColorTypeAndTextureInfoCompatible(SkColorType, const TextureInfo&) const;
+    virtual uint32_t channelMask(const TextureInfo&) const = 0;
 
     bool isTexturable(const TextureInfo&) const;
     virtual bool isRenderable(const TextureInfo&) const = 0;
+    virtual bool isStorage(const TextureInfo&) const = 0;
 
     int maxTextureSize() const { return fMaxTextureSize; }
 
@@ -86,6 +100,9 @@ public:
                                     ResourceType,
                                     Shareable,
                                     GraphiteResourceKey*) const = 0;
+
+    // Returns the number of bytes for the backend format in the TextureInfo
+    virtual size_t bytesPerPixel(const TextureInfo&) const = 0;
 
     const ResourceBindingRequirements& resourceBindingRequirements() const {
         return fResourceBindingReqs;
@@ -165,6 +182,9 @@ public:
     skgpu::Swizzle getWriteSwizzle(SkColorType, const TextureInfo&) const;
 
     skgpu::ShaderErrorHandler* shaderErrorHandler() const { return fShaderErrorHandler; }
+
+    // Returns what method of dst read is required for a draw using the dst color.
+    DstReadRequirement getDstReadRequirement() const;
 
     float minDistanceFieldFontSize() const { return fMinDistanceFieldFontSize; }
     float glyphsAsPathsFontSize() const { return fGlyphsAsPathsFontSize; }

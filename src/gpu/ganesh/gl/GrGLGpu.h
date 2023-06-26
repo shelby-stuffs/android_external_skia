@@ -10,6 +10,7 @@
 
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkTArray.h"
+#include "src/core/SkChecksum.h"
 #include "src/core/SkLRUCache.h"
 #include "src/gpu/ganesh/GrFinishCallbacks.h"
 #include "src/gpu/ganesh/GrGpu.h"
@@ -28,6 +29,7 @@
 class GrGLBuffer;
 class GrGLOpsRenderPass;
 class GrPipeline;
+enum class SkTextureCompressionType;
 
 namespace skgpu {
 class Swizzle;
@@ -313,9 +315,10 @@ private:
                            std::string_view label);
 
     GrGLuint createCompressedTexture2D(SkISize dimensions,
-                                       SkImage::CompressionType compression,
+                                       SkTextureCompressionType compression,
                                        GrGLFormat,
                                        GrMipmapped,
+                                       GrProtected,
                                        GrGLTextureParameters::SamplerOverriddenState*);
 
     bool onReadPixels(GrSurface*,
@@ -384,15 +387,16 @@ private:
     void addFinishedProc(GrGpuFinishedProc finishedProc,
                          GrGpuFinishedContext finishedContext) override;
 
-    GrOpsRenderPass* onGetOpsRenderPass(GrRenderTarget*,
-                                        bool useMultisampleFBO,
-                                        GrAttachment*,
-                                        GrSurfaceOrigin,
-                                        const SkIRect&,
-                                        const GrOpsRenderPass::LoadAndStoreInfo&,
-                                        const GrOpsRenderPass::StencilLoadAndStoreInfo&,
-                                        const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-                                        GrXferBarrierFlags renderPassXferBarriers) override;
+    GrOpsRenderPass* onGetOpsRenderPass(
+            GrRenderTarget*,
+            bool useMultisampleFBO,
+            GrAttachment*,
+            GrSurfaceOrigin,
+            const SkIRect&,
+            const GrOpsRenderPass::LoadAndStoreInfo&,
+            const GrOpsRenderPass::StencilLoadAndStoreInfo&,
+            const skia_private::TArray<GrSurfaceProxy*, true>& sampledProxies,
+            GrXferBarrierFlags renderPassXferBarriers) override;
 
     bool onSubmitToGpu(bool syncCpu) override;
 
@@ -430,7 +434,7 @@ private:
 
         struct DescHash {
             uint32_t operator()(const GrProgramDesc& desc) const {
-                return SkOpts::hash_fn(desc.asKey(), desc.keyLength(), 0);
+                return SkChecksum::Hash32(desc.asKey(), desc.keyLength());
             }
         };
 
@@ -509,7 +513,7 @@ private:
 
     // Helper for onCreateCompressedTexture. Compressed textures are read-only so we only use this
     // to populate a new texture. Returns false if we failed to create and upload the texture.
-    bool uploadCompressedTexData(SkImage::CompressionType compressionType,
+    bool uploadCompressedTexData(SkTextureCompressionType compressionType,
                                  GrGLFormat,
                                  SkISize dimensions,
                                  GrMipmapped,

@@ -8,15 +8,17 @@
 #include "src/gpu/graphite/dawn/DawnGraphicsPipeline.h"
 
 #include "include/gpu/graphite/TextureInfo.h"
+#include "src/gpu/Swizzle.h"
 #include "src/gpu/graphite/Attribute.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
 #include "src/gpu/graphite/Log.h"
+#include "src/gpu/graphite/PipelineUtils.h"
 #include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/UniformManager.h"
+#include "src/gpu/graphite/dawn/DawnGraphiteUtilsPriv.h"
 #include "src/gpu/graphite/dawn/DawnResourceProvider.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
-#include "src/gpu/graphite/dawn/DawnUtilsPriv.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLProgram.h"
 
@@ -193,6 +195,22 @@ static wgpu::BlendFactor blend_coeff_to_dawn_blend(skgpu::BlendCoeff coeff) {
     SkUNREACHABLE;
 }
 
+static wgpu::BlendFactor blend_coeff_to_dawn_blend_for_alpha(skgpu::BlendCoeff coeff) {
+    switch (coeff) {
+        // Force all srcColor used in alpha slot to alpha version.
+        case skgpu::BlendCoeff::kSC:
+            return wgpu::BlendFactor::SrcAlpha;
+        case skgpu::BlendCoeff::kISC:
+            return wgpu::BlendFactor::OneMinusSrcAlpha;
+        case skgpu::BlendCoeff::kDC:
+            return wgpu::BlendFactor::DstAlpha;
+        case skgpu::BlendCoeff::kIDC:
+            return wgpu::BlendFactor::OneMinusDstAlpha;
+        default:
+            return blend_coeff_to_dawn_blend(coeff);
+    }
+}
+
 // TODO: share this w/ Ganesh Metal backend?
 static wgpu::BlendOperation blend_equation_to_dawn_blend_op(skgpu::BlendEquation equation) {
     static const wgpu::BlendOperation gTable[] = {
@@ -219,7 +237,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
                                                        const RenderPassDesc& renderPassDesc) {
     const auto& device = sharedContext->device();
 
-    SkSL::Program::Inputs vsInputs, fsInputs;
+    SkSL::Program::Interface vsInterface, fsInterface;
     SkSL::ProgramSettings settings;
 
     settings.fForceNoRTFlip = true;
@@ -238,12 +256,13 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
 
     // Some steps just render depth buffer but not color buffer, so the fragment
     // shader is null.
-    const FragSkSLInfo fsSkSLInfo = GetSkSLFS(sharedContext->caps()->resourceBindingRequirements(),
+    const FragSkSLInfo fsSkSLInfo = GetSkSLFS(sharedContext->caps(),
                                               sharedContext->shaderCodeDictionary(),
                                               runtimeDict,
                                               step,
                                               pipelineDesc.paintParamsID(),
-                                              useShadingSsboIndex);
+                                              useShadingSsboIndex,
+                                              renderPassDesc.fWriteSwizzle);
     const std::string& fsSKSL = fsSkSLInfo.fSkSL;
     const BlendInfo& blendInfo = fsSkSLInfo.fBlendInfo;
     const bool localCoordsNeeded = fsSkSLInfo.fRequiresLocalCoords;
@@ -256,7 +275,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
                          SkSL::ProgramKind::kGraphiteFragment,
                          settings,
                          &fsSPIRV,
-                         &fsInputs,
+                         &fsInterface,
                          errorHandler)) {
             return {};
         }
@@ -276,7 +295,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
                      SkSL::ProgramKind::kGraphiteVertex,
                      settings,
                      &vsSPIRV,
-                     &vsInputs,
+                     &vsInterface,
                      errorHandler)) {
         return {};
     }
@@ -303,8 +322,8 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
         blend.color.srcFactor = blend_coeff_to_dawn_blend(srcCoeff);
         blend.color.dstFactor = blend_coeff_to_dawn_blend(dstCoeff);
         blend.alpha.operation = blend_equation_to_dawn_blend_op(equation);
-        blend.alpha.srcFactor = blend_coeff_to_dawn_blend(srcCoeff);
-        blend.alpha.dstFactor = blend_coeff_to_dawn_blend(dstCoeff);
+        blend.alpha.srcFactor = blend_coeff_to_dawn_blend_for_alpha(srcCoeff);
+        blend.alpha.dstFactor = blend_coeff_to_dawn_blend_for_alpha(dstCoeff);
     }
 
     wgpu::ColorTargetState colorTarget;
@@ -336,10 +355,15 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
             depthStencil.depthWriteEnabled = depthStencilSettings.fDepthWriteEnabled;
         }
         depthStencil.depthCompare = compare_op_to_dawn(depthStencilSettings.fDepthCompareOp);
-        depthStencil.stencilFront = stencil_face_to_dawn(depthStencilSettings.fFrontStencil);
-        depthStencil.stencilBack = stencil_face_to_dawn(depthStencilSettings.fBackStencil);
-        depthStencil.stencilReadMask = depthStencilSettings.fFrontStencil.fReadMask;
-        depthStencil.stencilWriteMask = depthStencilSettings.fFrontStencil.fWriteMask;
+
+        // Dawn validation fails if the stencil state is non-default and the
+        // format doesn't have the stencil aspect.
+        if (DawnFormatIsStencil(dsFormat) && depthStencilSettings.fStencilTestEnabled) {
+            depthStencil.stencilFront = stencil_face_to_dawn(depthStencilSettings.fFrontStencil);
+            depthStencil.stencilBack = stencil_face_to_dawn(depthStencilSettings.fBackStencil);
+            depthStencil.stencilReadMask = depthStencilSettings.fFrontStencil.fReadMask;
+            depthStencil.stencilWriteMask = depthStencilSettings.fFrontStencil.fWriteMask;
+        }
 
         descriptor.depthStencil = &depthStencil;
     }
@@ -490,12 +514,12 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
             break;
         case PrimitiveType::kTriangleStrip:
             descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleStrip;
+            descriptor.primitive.stripIndexFormat = wgpu::IndexFormat::Uint16;
             break;
         case PrimitiveType::kPoints:
             descriptor.primitive.topology = wgpu::PrimitiveTopology::PointList;
             break;
     }
-    descriptor.primitive.stripIndexFormat = wgpu::IndexFormat::Uint16;
 
     descriptor.multisample.count = renderPassDesc.fColorAttachment.fTextureInfo.numSamples();
     descriptor.multisample.mask = 0xFFFFFFFF;

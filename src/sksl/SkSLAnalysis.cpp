@@ -10,21 +10,16 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkSLIRNode.h"
-#include "include/private/SkSLLayout.h"
-#include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLSampleUsage.h"
-#include "include/private/SkSLStatement.h"
 #include "include/private/base/SkTArray.h"
-#include "include/sksl/SkSLErrorReporter.h"
-#include "include/sksl/SkSLOperator.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLIntrinsicList.h"
+#include "src/sksl/SkSLOperator.h"
 #include "src/sksl/analysis/SkSLNoOpErrorReporter.h"
 #include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/analysis/SkSLProgramVisitor.h"
@@ -40,12 +35,17 @@
 #include "src/sksl/ir/SkSLFunctionCall.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
+#include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
+#include "src/sksl/ir/SkSLLayout.h"
+#include "src/sksl/ir/SkSLModifiers.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLStatement.h"
 #include "src/sksl/ir/SkSLSwitchCase.h"
 #include "src/sksl/ir/SkSLSwitchStatement.h"
 #include "src/sksl/ir/SkSLSwizzle.h"
@@ -247,7 +247,7 @@ public:
                 VariableReference& varRef = expr.as<VariableReference>();
                 const Variable* var = varRef.variable();
                 auto fieldName = [&] {
-                    return fieldAccess ? fieldAccess->description(OperatorPrecedence::kTopLevel)
+                    return fieldAccess ? fieldAccess->description(OperatorPrecedence::kExpression)
                                        : std::string(var->name());
                 };
                 if (var->modifiers().fFlags & (Modifiers::kConst_Flag | Modifiers::kUniform_Flag)) {
@@ -381,6 +381,27 @@ bool Analysis::ContainsRTAdjust(const Expression& expr) {
     return visitor.visitExpression(expr);
 }
 
+bool Analysis::ContainsVariable(const Expression& expr, const Variable& var) {
+    class ContainsVariableVisitor : public ProgramVisitor {
+    public:
+        ContainsVariableVisitor(const Variable* v) : fVariable(v) {}
+
+        bool visitExpression(const Expression& expr) override {
+            if (expr.is<VariableReference>() &&
+                expr.as<VariableReference>().variable() == fVariable) {
+                return true;
+            }
+            return INHERITED::visitExpression(expr);
+        }
+
+        using INHERITED = ProgramVisitor;
+        const Variable* fVariable;
+    };
+
+    ContainsVariableVisitor visitor{&var};
+    return visitor.visitExpression(expr);
+}
+
 bool Analysis::IsCompileTimeConstant(const Expression& expr) {
     class IsCompileTimeConstantVisitor : public ProgramVisitor {
     public:
@@ -480,48 +501,6 @@ bool Analysis::UpdateVariableRefKind(Expression* expr,
     }
     info.fAssignedVar->setRefKind(kind);
     return true;
-}
-
-class ES2IndexingVisitor : public ProgramVisitor {
-public:
-    ES2IndexingVisitor(ErrorReporter& errors) : fErrors(errors) {}
-
-    bool visitStatement(const Statement& s) override {
-        if (s.is<ForStatement>()) {
-            const ForStatement& f = s.as<ForStatement>();
-            SkASSERT(f.initializer() && f.initializer()->is<VarDeclaration>());
-            const Variable* var = f.initializer()->as<VarDeclaration>().var();
-            auto [iter, inserted] = fLoopIndices.insert(var);
-            SkASSERT(inserted);
-            bool result = this->visitStatement(*f.statement());
-            fLoopIndices.erase(iter);
-            return result;
-        }
-        return INHERITED::visitStatement(s);
-    }
-
-    bool visitExpression(const Expression& e) override {
-        if (e.is<IndexExpression>()) {
-            const IndexExpression& i = e.as<IndexExpression>();
-            if (!Analysis::IsConstantIndexExpression(*i.index(), &fLoopIndices)) {
-                fErrors.error(i.fPosition, "index expression must be constant");
-                return true;
-            }
-        }
-        return INHERITED::visitExpression(e);
-    }
-
-    using ProgramVisitor::visitProgramElement;
-
-private:
-    ErrorReporter& fErrors;
-    std::set<const Variable*> fLoopIndices;
-    using INHERITED = ProgramVisitor;
-};
-
-void Analysis::ValidateIndexingForES2(const ProgramElement& pe, ErrorReporter& errors) {
-    ES2IndexingVisitor visitor(errors);
-    visitor.visitProgramElement(pe);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

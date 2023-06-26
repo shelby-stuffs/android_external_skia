@@ -8,11 +8,12 @@
 #ifndef SkRuntimeEffect_DEFINED
 #define SkRuntimeEffect_DEFINED
 
-#include "include/core/SkBlender.h"
-#include "include/core/SkColorFilter.h"
+#include "include/core/SkBlender.h"  // IWYU pragma: keep
+#include "include/core/SkColorFilter.h"  // IWYU pragma: keep
 #include "include/core/SkData.h"
-#include "include/core/SkImageInfo.h"
+#include "include/core/SkFlattenable.h"
 #include "include/core/SkMatrix.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
@@ -20,32 +21,37 @@
 #include "include/private/SkSLSampleUsage.h"
 #include "include/private/base/SkOnce.h"
 #include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/base/SkTypeTraits.h"
 
-#include <string>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <memory>
 #include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #ifdef SK_ENABLE_SKSL
 
+#include "include/sksl/SkSLDebugTrace.h"
 #include "include/sksl/SkSLVersion.h"
 
 class GrRecordingContext;
 class SkFilterColorProgram;
 class SkImage;
-class SkRuntimeImageFilter;
+struct SkIPoint;
+struct SkImageInfo;
 
 namespace SkSL {
-class DebugTrace;
-class ErrorReporter;
+class DebugTracePriv;
 class FunctionDefinition;
 struct Program;
 enum class ProgramKind : int8_t;
 struct ProgramSettings;
 }  // namespace SkSL
-
-namespace skvm {
-class Program;
-}
 
 namespace SkSL::RP {
 class Program;
@@ -282,6 +288,7 @@ private:
         kSamplesOutsideMain_Flag = 0x10,
         kUsesColorTransform_Flag = 0x20,
         kAlwaysOpaque_Flag       = 0x40,
+        kAlphaUnchanged_Flag     = 0x80,
     };
 
     SkRuntimeEffect(std::unique_ptr<SkSL::Program> baseProgram,
@@ -307,9 +314,10 @@ private:
     bool samplesOutsideMain() const { return (fFlags & kSamplesOutsideMain_Flag); }
     bool usesColorTransform() const { return (fFlags & kUsesColorTransform_Flag); }
     bool alwaysOpaque()       const { return (fFlags & kAlwaysOpaque_Flag);       }
+    bool isAlphaUnchanged()   const { return (fFlags & kAlphaUnchanged_Flag);     }
 
     const SkFilterColorProgram* getFilterColorProgram() const;
-    const SkSL::RP::Program* getRPProgram() const;
+    const SkSL::RP::Program* getRPProgram(SkSL::DebugTracePriv* debugTrace) const;
 
 #if defined(SK_GANESH)
     friend class GrSkSLFP;             // fBaseProgram, fSampleUsages

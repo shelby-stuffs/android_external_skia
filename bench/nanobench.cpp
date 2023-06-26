@@ -23,14 +23,16 @@
 #include "bench/SkSLBench.h"
 #include "include/codec/SkAndroidCodec.h"
 #include "include/codec/SkCodec.h"
+#include "include/codec/SkJpegDecoder.h"
+#include "include/codec/SkPngDecoder.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkData.h"
 #include "include/core/SkGraphics.h"
-#include "include/core/SkImageEncoder.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTime.h"
+#include "include/encode/SkPngEncoder.h"
 #include "include/private/base/SkMacros.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/base/SkLeanWindows.h"
@@ -67,6 +69,7 @@
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
+#include "include/gpu/graphite/Surface.h"
 #include "tools/graphite/ContextFactory.h"
 #include "tools/graphite/GraphiteTestContext.h"
 #endif
@@ -79,12 +82,6 @@
 
 extern bool gSkForceRasterPipelineBlitter;
 extern bool gForceHighPrecisionRasterPipeline;
-extern bool gUseSkVMBlitter;
-extern bool gSkVMAllowJIT;
-extern bool gSkVMJITViaDylib;
-
-#include "src/utils/SkBlitterTraceCommon.h"
-SK_BLITTER_TRACE_INIT
 
 #ifndef SK_BUILD_FOR_WIN
     #include <unistd.h>
@@ -92,10 +89,13 @@ SK_BLITTER_TRACE_INIT
 #endif
 
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "tools/gpu/GrContextFactory.h"
+
+using namespace skia_private;
 
 using sk_gpu_test::ContextInfo;
 using sk_gpu_test::GrContextFactory;
@@ -155,9 +155,6 @@ static DEFINE_string(benchType,  "",
 
 static DEFINE_bool(forceRasterPipeline, false, "sets gSkForceRasterPipelineBlitter");
 static DEFINE_bool(forceRasterPipelineHP, false, "sets gSkForceRasterPipelineBlitter and gForceHighPrecisionRasterPipeline");
-static DEFINE_bool(skvm, false, "sets gUseSkVMBlitter");
-static DEFINE_bool(jit, true, "JIT SkVM?");
-static DEFINE_bool(dylib, false, "JIT via dylib (much slower compile but easier to debug/profile)");
 
 static DEFINE_bool2(pre_log, p, false,
                     "Log before running each test. May be incomprehensible when threading");
@@ -219,7 +216,7 @@ static SkString humanize(double ms) {
 
 bool Target::init(SkImageInfo info, Benchmark* bench) {
     if (Benchmark::kRaster_Backend == config.backend) {
-        this->surface = SkSurface::MakeRaster(info);
+        this->surface = SkSurfaces::Raster(info);
         if (!this->surface) {
             return false;
         }
@@ -275,7 +272,7 @@ struct GPUTarget : public Target {
         bench->modifyGrContextOptions(&options);
         this->factory = std::make_unique<GrContextFactory>(options);
         SkSurfaceProps props(this->config.surfaceFlags, kRGB_H_SkPixelGeometry);
-        this->surface = SkSurface::MakeRenderTarget(
+        this->surface = SkSurfaces::RenderTarget(
                 this->factory->get(this->config.ctxType, this->config.ctxOverrides),
                 skgpu::Budgeted::kNo,
                 info,
@@ -364,7 +361,7 @@ struct GraphiteTarget : public Target {
             return false;
         }
 
-        this->surface = SkSurface::MakeGraphite(this->recorder.get(), info);
+        this->surface = SkSurfaces::RenderTarget(this->recorder.get(), info);
         if (!this->surface) {
             return false;
         }
@@ -392,9 +389,7 @@ static double time(int loops, Benchmark* bench, Target* target) {
     double start = now_ms();
     canvas = target->beginTiming(canvas);
 
-    SK_BLITTER_TRACE_LOCAL_SETUP;
     bench->draw(loops, canvas);
-    SK_BLITTER_TRACE_LOCAL_TEARDOWN;
 
     target->endTiming();
     double elapsed = now_ms() - start;
@@ -458,7 +453,7 @@ static bool write_canvas_png(Target* target, const SkString& filename) {
         SkDebugf("Can't write %s.\n", filename.c_str());
         return false;
     }
-    if (!SkEncodeImage(&stream, bmp, SkEncodedImageFormat::kPNG, 100)) {
+    if (!SkPngEncoder::Encode(&stream, bmp.pixmap(), {})) {
         SkDebugf("Can't encode a PNG.\n");
         return false;
     }
@@ -679,7 +674,7 @@ static std::optional<Config> create_config(const SkCommandLineConfig* config) {
 }
 
 // Append all configs that are enabled and supported.
-void create_configs(SkTArray<Config>* configs) {
+void create_configs(TArray<Config>* configs) {
     SkCommandLineConfigArray array;
     ParseConfigs(FLAGS_config, &array);
     for (int i = 0; i < array.size(); ++i) {
@@ -768,7 +763,7 @@ static void cleanup_run(Target* target) {
 
 static void collect_files(const CommandLineFlags::StringArray& paths,
                           const char*                          ext,
-                          SkTArray<SkString>*                  list) {
+                          TArray<SkString>*                  list) {
     for (int i = 0; i < paths.size(); ++i) {
         if (SkStrEndsWith(paths[i], ext)) {
             list->push_back(SkString(paths[i]));
@@ -1269,13 +1264,13 @@ private:
     const BenchRegistry* fBenches;
     const skiagm::GMRegistry* fGMs;
     SkIRect            fClip;
-    SkTArray<SkScalar> fScales;
-    SkTArray<SkString> fSKPs;
-    SkTArray<SkString> fMSKPs;
-    SkTArray<SkString> fSVGs;
-    SkTArray<SkString> fTextBlobTraces;
-    SkTArray<SkString> fImages;
-    SkTArray<SkColorType, true> fColorTypes;
+    TArray<SkScalar> fScales;
+    TArray<SkString> fSKPs;
+    TArray<SkString> fMSKPs;
+    TArray<SkString> fSVGs;
+    TArray<SkString> fTextBlobTraces;
+    TArray<SkString> fImages;
+    TArray<SkColorType, true> fColorTypes;
     SkScalar           fZoomMax;
     double             fZoomPeriodMs;
 
@@ -1339,6 +1334,11 @@ int main(int argc, char** argv) {
 #endif
     SetupCrashHandler();
     SkAutoGraphics ag;
+
+    // Our benchmarks only currently decode .png or .jpg files
+    SkCodecs::Register(SkPngDecoder::Decoder());
+    SkCodecs::Register(SkJpegDecoder::Decoder());
+
     SkTaskGroup::Enabler enabled(FLAGS_threads);
 
     CommonFlags::SetCtxOptions(&grContextOpts);
@@ -1396,7 +1396,7 @@ int main(int argc, char** argv) {
         SkDebugf("Timer overhead: %s\n", HUMANIZE(overhead));
     }
 
-    SkTArray<double> samples;
+    TArray<double> samples;
 
     if (kAutoTuneLoops != FLAGS_loops) {
         SkDebugf("Fixed number of loops; times would only be misleading so we won't print them.\n");
@@ -1414,7 +1414,7 @@ int main(int argc, char** argv) {
 
     GrRecordingContextPriv::DMSAAStats combinedDMSAAStats;
 
-    SkTArray<Config> configs;
+    TArray<Config> configs;
     create_configs(&configs);
 
     if (FLAGS_keepAlive) {
@@ -1425,9 +1425,6 @@ int main(int argc, char** argv) {
 
     gSkForceRasterPipelineBlitter     = FLAGS_forceRasterPipelineHP || FLAGS_forceRasterPipeline;
     gForceHighPrecisionRasterPipeline = FLAGS_forceRasterPipelineHP;
-    gUseSkVMBlitter = FLAGS_skvm;
-    gSkVMAllowJIT = FLAGS_jit;
-    gSkVMJITViaDylib = FLAGS_dylib;
 
     // The SkSL memory benchmark must run before any GPU painting occurs. SkSL allocates memory for
     // its modules the first time they are accessed, and this test is trying to measure the size of
@@ -1522,8 +1519,8 @@ int main(int argc, char** argv) {
                 sample *= (1.0 / bench->getUnits());
             }
 
-            SkTArray<SkString> keys;
-            SkTArray<double> values;
+            TArray<SkString> keys;
+            TArray<double> values;
             if (configs[i].backend == Benchmark::kGPU_Backend) {
                 if (FLAGS_gpuStatsDump) {
                     // TODO cache stats
@@ -1591,7 +1588,6 @@ int main(int argc, char** argv) {
                          , sk_tools::getMaxResidentSetSizeMB()
                          , bench->getUniqueName()
                          , config);
-                SK_BLITTER_TRACE_PRINT;
                 SkDebugf("\n");
             } else if (FLAGS_quiet) {
                 const char* mark = " ";

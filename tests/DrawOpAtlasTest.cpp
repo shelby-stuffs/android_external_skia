@@ -15,6 +15,7 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
@@ -210,10 +211,13 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrAtlasTextOpPreparation,
     auto gpu = dContext->priv().getGpu();
     auto resourceProvider = dContext->priv().resourceProvider();
 
-    auto sdc = skgpu::v1::SurfaceDrawContext::Make(dContext, GrColorType::kRGBA_8888, nullptr,
-                                                   SkBackingFit::kApprox, {32, 32},
-                                                   SkSurfaceProps(),
-                                                   /*label=*/"AtlasTextOpPreparation");
+    auto sdc = skgpu::ganesh::SurfaceDrawContext::Make(dContext,
+                                                       GrColorType::kRGBA_8888,
+                                                       nullptr,
+                                                       SkBackingFit::kApprox,
+                                                       {32, 32},
+                                                       SkSurfaceProps(),
+                                                       /*label=*/"AtlasTextOpPreparation");
 
     SkPaint paint;
     paint.setColor(SK_ColorRED);

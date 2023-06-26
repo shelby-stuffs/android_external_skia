@@ -26,7 +26,8 @@
 #include "src/gpu/ganesh/GrProxyProvider.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
-#include "src/image/SkImage_Gpu.h"
+#include "src/gpu/ganesh/image/GrImageUtils.h"
+#include "src/gpu/ganesh/image/SkImage_Ganesh.h"
 #include "src/shaders/SkImageShader.h"
 #endif
 
@@ -45,21 +46,6 @@ SkSpecialImage::SkSpecialImage(const SkIRect& subset,
     , fUniqueID(kNeedNewImageUniqueID_SpecialImage == uniqueID ? SkNextID::ImageID() : uniqueID)
     , fColorInfo(colorInfo)
     , fProps(props) {
-}
-
-sk_sp<SkSpecialSurface> SkSpecialImage::makeSurface(SkColorType colorType,
-                                                    const SkColorSpace* colorSpace,
-                                                    const SkISize& size,
-                                                    SkAlphaType at,
-                                                    const SkSurfaceProps& props) const {
-    return this->onMakeSurface(colorType, colorSpace, size, at, props);
-}
-
-sk_sp<SkSurface> SkSpecialImage::makeTightSurface(SkColorType colorType,
-                                                  const SkColorSpace* colorSpace,
-                                                  const SkISize& size,
-                                                  SkAlphaType at) const {
-    return this->onMakeTightSurface(colorType, colorSpace, size, at);
 }
 
 sk_sp<SkImage> SkSpecialImage::asImage(const SkIRect* subset) const {
@@ -86,7 +72,7 @@ sk_sp<SkShader> SkSpecialImage::asShader(const SkSamplingOptions& sampling,
     return this->asShader(SkTileMode::kClamp, sampling, lm);
 }
 
-#if SK_GRAPHITE
+#if defined(SK_GRAPHITE)
 #include "src/gpu/graphite/TextureProxyView.h"
 
 bool SkSpecialImage::isGraphiteBacked() const {
@@ -129,7 +115,7 @@ sk_sp<SkSpecialImage> SkSpecialImage::MakeFromImage(GrRecordingContext* rContext
 
 #if defined(SK_GANESH)
     if (rContext) {
-        auto [view, ct] = as_IB(image)->asView(rContext, GrMipmapped::kNo);
+        auto [view, ct] = skgpu::ganesh::AsView(rContext, image, GrMipmapped::kNo);
         return MakeDeferredFromGpu(rContext,
                                    subset,
                                    image->uniqueID(),
@@ -184,15 +170,6 @@ public:
     }
 #endif
 
-    sk_sp<SkSpecialSurface> onMakeSurface(SkColorType colorType, const SkColorSpace* colorSpace,
-                                          const SkISize& size, SkAlphaType at,
-                                          const SkSurfaceProps& props) const override {
-        // Ignore the requested color type, the raster backend currently only supports N32
-        colorType = kN32_SkColorType;   // TODO: find ways to allow f16
-        SkImageInfo info = SkImageInfo::Make(size, colorType, at, sk_ref_sp(colorSpace));
-        return SkSpecialSurface::MakeRaster(info, props);
-    }
-
     sk_sp<SkSpecialImage> onMakeSubset(const SkIRect& subset) const override {
         // No need to extract subset, onGetROPixels handles that when needed
         return SkSpecialImage::MakeFromRaster(subset, fBitmap, this->props());
@@ -222,14 +199,6 @@ public:
             return nullptr;
         }
         return subsetBM.asImage()->makeShader(tileMode, tileMode, sampling, lm);
-    }
-
-    sk_sp<SkSurface> onMakeTightSurface(SkColorType colorType, const SkColorSpace* colorSpace,
-                                        const SkISize& size, SkAlphaType at) const override {
-        // Ignore the requested color type, the raster backend currently only supports N32
-        colorType = kN32_SkColorType;   // TODO: find ways to allow f16
-        SkImageInfo info = SkImageInfo::Make(size, colorType, at, sk_ref_sp(colorSpace));
-        return SkSurface::MakeRaster(info);
     }
 
 private:
@@ -293,11 +262,8 @@ sk_sp<SkSpecialImage> SkSpecialImage::CopyFromRaster(const SkIRect& subset,
 static sk_sp<SkImage> wrap_proxy_in_image(GrRecordingContext* context,
                                           GrSurfaceProxyView view,
                                           const SkColorInfo& colorInfo) {
-
-    return sk_make_sp<SkImage_Gpu>(sk_ref_sp(context),
-                                   kNeedNewImageUniqueID,
-                                   std::move(view),
-                                   colorInfo);
+    return sk_make_sp<SkImage_Ganesh>(
+            sk_ref_sp(context), kNeedNewImageUniqueID, std::move(view), colorInfo);
 }
 
 class SkSpecialImage_Gpu final : public SkSpecialImage {
@@ -324,15 +290,12 @@ public:
 
         // TODO: In this instance we know we're going to draw a sub-portion of the backing
         // texture into the canvas so it is okay to wrap it in an SkImage. This poses
-        // some problems for full deferral however in that when the deferred SkImage_Gpu
+        // some problems for full deferral however in that when the deferred SkImage_Ganesh
         // instantiates itself it is going to have to either be okay with having a larger
         // than expected backing texture (unlikely) or the 'fit' of the SurfaceProxy needs
         // to be tightened (if it is deferred).
-        sk_sp<SkImage> img = sk_sp<SkImage>(
-                new SkImage_Gpu(sk_ref_sp(canvas->recordingContext()),
-                                this->uniqueID(),
-                                fView,
-                                this->colorInfo()));
+        sk_sp<SkImage> img = sk_sp<SkImage>(new SkImage_Ganesh(
+                sk_ref_sp(canvas->recordingContext()), this->uniqueID(), fView, this->colorInfo()));
 
         canvas->drawImageRect(img, SkRect::Make(this->subset()), dst,
                               sampling, paint, SkCanvas::kStrict_SrcRectConstraint);
@@ -347,18 +310,6 @@ public:
         // so we never perform read-back.
         SkASSERT(false);
         return false;
-    }
-
-    sk_sp<SkSpecialSurface> onMakeSurface(SkColorType colorType, const SkColorSpace* colorSpace,
-                                          const SkISize& size, SkAlphaType at,
-                                          const SkSurfaceProps& props) const override {
-        if (!fContext) {
-            return nullptr;
-        }
-
-        SkImageInfo ii = SkImageInfo::Make(size, colorType, at, sk_ref_sp(colorSpace));
-
-        return SkSpecialSurface::MakeRenderTarget(fContext, ii, props, fView.origin());
     }
 
     sk_sp<SkSpecialImage> onMakeSubset(const SkIRect& subset) const override {
@@ -417,18 +368,6 @@ public:
         // subset used to access the image.
         return SkImageShader::MakeSubset(
                 this->asImage(), subset, tileMode, tileMode, sampling, &subsetOrigin);
-    }
-
-    sk_sp<SkSurface> onMakeTightSurface(SkColorType colorType, const SkColorSpace* colorSpace,
-                                        const SkISize& size, SkAlphaType at) const override {
-        // TODO (michaelludwig): Why does this ignore colorType but onMakeSurface doesn't ignore it?
-        //    Once makeTightSurface() goes away, should this type overriding behavior be moved into
-        //    onMakeSurface() or is this unnecessary?
-        colorType = colorSpace && colorSpace->gammaIsLinear()
-            ? kRGBA_F16_SkColorType : kRGBA_8888_SkColorType;
-        SkImageInfo info = SkImageInfo::Make(size, colorType, at, sk_ref_sp(colorSpace));
-        return SkSurface::MakeRenderTarget(
-                fContext, skgpu::Budgeted::kYes, info, 0, fView.origin(), nullptr);
     }
 
 private:

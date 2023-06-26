@@ -8,21 +8,18 @@
 #ifndef SKSL_WGSLCODEGENERATOR
 #define SKSL_WGSLCODEGENERATOR
 
+#include "include/core/SkSpan.h"
 #include "include/private/SkSLDefines.h"
 #include "include/private/base/SkTArray.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/codegen/SkSLCodeGenerator.h"
-#include "src/sksl/ir/SkSLType.h"
 
 #include <cstdint>
 #include <initializer_list>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <utility>
-
-template <typename T> class SkSpan;
 
 namespace sknonstd {
 template <typename T> struct is_bitmask_enum;
@@ -36,31 +33,36 @@ class Block;
 class Context;
 class ConstructorCompound;
 class ConstructorDiagonalMatrix;
+class ConstructorMatrixResize;
 class Expression;
 class ExpressionStatement;
+struct Field;
 class FieldAccess;
 class FunctionCall;
 class FunctionDeclaration;
 class FunctionDefinition;
 class GlobalVarDeclaration;
 class IfStatement;
+class IndexExpression;
 class Literal;
 class MemoryLayout;
 class OutputStream;
 class Position;
+class PostfixExpression;
+class PrefixExpression;
 class ProgramElement;
 class ReturnStatement;
 class Statement;
 class StructDefinition;
+class Swizzle;
 class TernaryExpression;
+class Type;
 class VarDeclaration;
 class Variable;
 class VariableReference;
 enum class OperatorPrecedence : uint8_t;
-struct IndexExpression;
 struct Modifiers;
 struct Program;
-struct Swizzle;
 
 /**
  * Convert a Program into WGSL code.
@@ -110,7 +112,7 @@ public:
     };
 
     struct ProgramRequirements {
-        using DepsMap = SkTHashMap<const FunctionDeclaration*, FunctionDependencies>;
+        using DepsMap = skia_private::THashMap<const FunctionDeclaration*, FunctionDependencies>;
 
         ProgramRequirements() = default;
         ProgramRequirements(DepsMap dependencies, bool mainNeedsCoordsArgument)
@@ -152,7 +154,6 @@ private:
     void write(std::string_view s);
     void writeLine(std::string_view s = std::string_view());
     void finishLine();
-    void writeName(std::string_view name);
     void writeVariableDecl(const Type& type, std::string_view name, Delimiter delimiter);
 
     // Helpers to declare a pipeline stage IO parameter declaration.
@@ -185,26 +186,51 @@ private:
     void writeReturnStatement(const ReturnStatement& s);
     void writeVarDeclaration(const VarDeclaration& varDecl);
 
-    // Writers for expressions.
-    void writeExpression(const Expression& e, Precedence parentPrecedence);
-    void writeBinaryExpression(const BinaryExpression& b, Precedence parentPrecedence);
-    void writeFieldAccess(const FieldAccess& f);
-    void writeFunctionCall(const FunctionCall&);
-    void writeIndexExpression(const IndexExpression& i);
-    void writeLiteral(const Literal& l);
-    void writeSwizzle(const Swizzle& swizzle);
-    void writeTernaryExpression(const TernaryExpression& t, Precedence parentPrecedence);
-    void writeVariableReference(const VariableReference& r);
+    // Writers for expressions. These return the final expression text as a string, and emit any
+    // necessary setup code directly into the program as necessary.
+    std::string assembleExpression(const Expression& e, Precedence parentPrecedence);
+    std::string assembleBinaryExpression(const BinaryExpression& b, Precedence parentPrecedence);
+    std::string assembleFieldAccess(const FieldAccess& f);
+    std::string assembleFunctionCall(const FunctionCall&);
+    std::string assembleIndexExpression(const IndexExpression& i);
+    std::string assembleLiteral(const Literal& l);
+    std::string assemblePostfixExpression(const PostfixExpression& p, Precedence parentPrecedence);
+    std::string assemblePrefixExpression(const PrefixExpression& p, Precedence parentPrecedence);
+    std::string assembleSwizzle(const Swizzle& swizzle);
+    std::string assembleTernaryExpression(const TernaryExpression& t, Precedence parentPrecedence);
+    std::string assembleVariableReference(const VariableReference& r);
+    std::string assembleName(std::string_view name);
 
     // Constructor expressions
-    void writeAnyConstructor(const AnyConstructor& c, Precedence parentPrecedence);
-    void writeConstructorCompound(const ConstructorCompound& c, Precedence parentPrecedence);
-    void writeConstructorCompoundVector(const ConstructorCompound& c, Precedence parentPrecedence);
-    void writeConstructorDiagonalMatrix(const ConstructorDiagonalMatrix& c,
-                                        Precedence parentPrecedence);
+    std::string assembleAnyConstructor(const AnyConstructor& c, Precedence parentPrecedence);
+    std::string assembleConstructorCompound(const ConstructorCompound& c,
+                                            Precedence parentPrecedence);
+    std::string assembleConstructorCompoundVector(const ConstructorCompound& c,
+                                                  Precedence parentPrecedence);
+    std::string assembleConstructorCompoundMatrix(const ConstructorCompound& c,
+                                                  Precedence parentPrecedence);
+    std::string assembleConstructorDiagonalMatrix(const ConstructorDiagonalMatrix& c,
+                                                  Precedence parentPrecedence);
+    std::string assembleConstructorMatrixResize(const ConstructorMatrixResize& c,
+                                                Precedence parentPrecedence);
+
+    // Matrix constructor helpers.
+    bool isMatrixConstructorHelperNeeded(const ConstructorCompound& c);
+    std::string getMatrixConstructorHelper(const AnyConstructor& c);
+    void writeMatrixFromMatrixArgs(const Type& sourceMatrix, int columns, int rows);
+    void writeMatrixFromScalarAndVectorArgs(const AnyConstructor& ctor, int columns, int rows);
 
     // Synthesized helper functions for comparison operators that are not supported by WGSL.
-    void writeMatrixEquality(const Expression& left, const Expression& right);
+    std::string assembleMatrixEqualityExpression(const Expression& left, const Expression& right);
+
+    // Writes a scratch variable into the program and returns its name (e.g. `_skTemp123`).
+    std::string writeScratchVar(const Type& type);
+
+    // Adds a pointer to an lvalue into the program, e.g.:
+    //     let _skTemp123 = &(myArray[index]);
+    // The expression must be addressable; for instance, swizzles will not work.
+    // The returned name is a dereference of the pointer, e.g. `(*_skTemp123)`.
+    std::string writeScratchPtr(const Expression& lvalue);
 
     // Generic recursive ProgramElement visitor.
     void writeProgramElement(const ProgramElement& e);
@@ -215,7 +241,7 @@ private:
     // space layout constraints
     // (https://www.w3.org/TR/WGSL/#address-space-layout-constraints) if a `layout` is
     // provided. A struct that does not need to be host-shareable does not require a `layout`.
-    void writeFields(SkSpan<const Type::Field> fields,
+    void writeFields(SkSpan<const Field> fields,
                      Position parentPos,
                      const MemoryLayout* layout = nullptr);
 
@@ -240,16 +266,16 @@ private:
     // based on the function's pre-determined dependencies. These are expected to be written out as
     // the first parameters for a function that requires them. Returns true if any arguments were
     // written.
-    bool writeFunctionDependencyArgs(const FunctionDeclaration&);
+    std::string functionDependencyArgs(const FunctionDeclaration&);
     bool writeFunctionDependencyParams(const FunctionDeclaration&);
 
     // Generate an out-parameter helper function for the given call and return its name.
     std::string writeOutParamHelper(const FunctionCall&,
                                     const ExpressionArray& args,
-                                    const SkTArray<VariableReference*>& outVars);
+                                    const skia_private::TArray<VariableReference*>& outVars);
 
     // Stores the disallowed identifier names.
-    SkTHashSet<std::string_view> fReservedWords;
+    skia_private::THashSet<std::string_view> fReservedWords;
     ProgramRequirements fRequirements;
     int fPipelineInputCount = 0;
     bool fDeclaredUniformsStruct = false;
@@ -260,15 +286,15 @@ private:
     // dereference them when the variable is referenced. The contents of this set are expected to
     // be uniquely scoped for each out-param helper and will be cleared every time a new out-param
     // helper function has been emitted.
-    SkTHashSet<const Variable*> fOutParamArgVars;
+    skia_private::THashSet<const Variable*> fOutParamArgVars;
 
     // Output processing state.
     int fIndentation = 0;
     bool fAtLineStart = false;
 
-    int fSwizzleHelperCount = 0;
+    int fScratchCount = 0;
     StringStream fExtraFunctions;      // all internally synthesized helpers are written here
-    SkTHashSet<std::string> fHelpers;  // all synthesized helper functions, by name
+    skia_private::THashSet<std::string> fHelpers;  // all synthesized helper functions, by name
 };
 
 }  // namespace SkSL

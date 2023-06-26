@@ -106,8 +106,6 @@ sksl_spirv_tests_sources =
 
 sksl_skrp_tests_sources = sksl_folding_tests + sksl_rte_tests + sksl_shared_tests
 
-sksl_skvm_tests_sources = sksl_rte_tests + sksl_rte_error_tests
-
 sksl_stage_tests_sources = sksl_rte_tests
 
 sksl_minify_tests_sources = sksl_rte_tests + sksl_folding_tests`
@@ -121,16 +119,18 @@ declare_args() {
   skia_enable_skshaper_tests = skia_enable_skshaper
 }`
 
+// The footer written to gn/effects.gni.
+const effectsGNIFooter = `
+# TODO(kjlubick) Fill this in with the actual files after they are used
+skia_colorfilters_sources = []
+skia_colorfilters_sksl_sources = []
+skia_colorfilters_nosksl_sources = []
+`
+
 // The footer written to gn/gpu.gni.
 const gpuGNIFooter = `
-# TODO(kjlubick) Update clients to use the individual targets
-# instead of the monolithic ones.
-skia_gpu_sources = skia_gpu_public + skia_gpu_private
-skia_gl_gpu_sources = skia_gpu_gl_public + skia_gpu_gl_private + skia_gpu_chromium_public
-skia_vk_sources = skia_gpu_vk_public + skia_gpu_vk_private +
-                  skia_gpu_vk_chromium_public + skia_gpu_vk_chromium_private
-skia_metal_sources = skia_gpu_metal_public + skia_gpu_metal_private + skia_gpu_metal_cpp
-skia_dawn_sources = skia_gpu_dawn_public + skia_gpu_dawn_private
+# TODO(kjlubick) Update clients to use the targets with updated names
+skia_gpu_private = skia_ganesh_private
 `
 
 // The footer written to gn/utils.gni.
@@ -143,6 +143,7 @@ skia_utils_sources = skia_utils_private + skia_utils_chromium
 // Map of GNI file names to footer text to be appended to the end of the file.
 var footerMap = map[string]string{
 	"gn/core.gni":                   coreGNIFooter,
+	"gn/effects.gni":                effectsGNIFooter,
 	"gn/gpu.gni":                    gpuGNIFooter,
 	"gn/sksl_tests.gni":             skslTestsFooter,
 	"gn/utils.gni":                  utilsGNIFooter,

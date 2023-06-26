@@ -61,6 +61,9 @@ protected:
                          const std::vector<sk_sp<T>>& options,
                          int desiredOption);
 
+    template<typename T>
+    static const sk_sp<T> SelectOption(const std::vector<sk_sp<T>>& options, int desiredOption);
+
 private:
     friend class PaintOptions;
     friend class PrecompileBasePriv;
@@ -88,6 +91,18 @@ void PrecompileBase::AddToKey(const KeyContext& keyContext,
 
         desiredOption -= option->numCombinations();
     }
+}
+
+template<typename T>
+const sk_sp<T> PrecompileBase::SelectOption(const std::vector<sk_sp<T>>& options,
+                                            int desiredOption) {
+    for (const sk_sp<T>& option : options) {
+        if (desiredOption < option->numCombinations()) {
+            return option;
+        }
+        desiredOption -= option->numCombinations();
+    }
+    return nullptr;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -173,10 +188,11 @@ private:
     int numCombinations() const;
     // 'desiredCombination' must be less than the result of the numCombinations call
     void createKey(const KeyContext&, int desiredCombination,
-                   PaintParamsKeyBuilder*, bool addPrimitiveBlender) const;
+                   PaintParamsKeyBuilder*, bool addPrimitiveBlender, bool hasCoverage) const;
     void buildCombinations(
         const KeyContext&,
         bool addPrimitiveBlender,
+        bool hasCoverage,
         const std::function<void(UniquePaintParamsID)>& processCombination) const;
 
     std::vector<sk_sp<PrecompileShader>> fShaderOptions;

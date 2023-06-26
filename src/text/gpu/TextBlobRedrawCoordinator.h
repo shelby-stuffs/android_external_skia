@@ -9,16 +9,33 @@
 #define sktext_gpu_TextBlobRedrawCoordinator_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/SkSpinlock.h"
 #include "include/private/base/SkTArray.h"
+#include "include/private/base/SkThreadAnnotations.h"
+#include "src/base/SkSpinlock.h"
+#include "src/base/SkTInternalLList.h"
+#include "src/core/SkMatrixProvider.h"
 #include "src/core/SkMessageBus.h"
 #include "src/core/SkTHash.h"
-#include "src/core/SkTextBlobPriv.h"
 #include "src/text/gpu/TextBlob.h"
 
-#include <functional>
+#include <cstddef>
+#include <cstdint>
 
+class GrClip;
 class GrTextBlobTestingPeer;
+class SkCanvas;
+class SkPaint;
+struct SkStrikeDeviceInfo;
+
+namespace sktext { class GlyphRunList; }
+
+#if defined(SK_GANESH)
+namespace skgpu::ganesh { class SurfaceDrawContext; }
+#endif
+
+#if defined(SK_GRAPHITE)
+namespace skgpu::graphite { class Device; }
+#endif
 
 namespace sktext::gpu {
 
@@ -39,7 +56,7 @@ public:
                           const GlyphRunList& glyphRunList,
                           const SkPaint& paint,
                           SkStrikeDeviceInfo strikeDeviceInfo,
-                          skgpu::v1::SurfaceDrawContext* sdc);
+                          skgpu::ganesh::SurfaceDrawContext* sdc);
 #endif
 #if defined(SK_GRAPHITE)
     void drawGlyphRunList(SkCanvas* canvas,
@@ -89,7 +106,7 @@ private:
         uint32_t fID;
         // Current clients don't generate multiple GrAtlasTextBlobs per SkTextBlob, so an array w/
         // linear search is acceptable.  If usage changes, we should re-evaluate this structure.
-        SkSTArray<1, sk_sp<TextBlob>> fBlobs;
+        skia_private::STArray<1, sk_sp<TextBlob>> fBlobs;
     };
 
     sk_sp<TextBlob> findOrCreateBlob(const SkMatrixProvider& viewMatrix,
@@ -118,7 +135,7 @@ private:
 
     mutable SkSpinlock fSpinLock;
     TextBlobList fBlobList SK_GUARDED_BY(fSpinLock);
-    SkTHashMap<uint32_t, BlobIDCacheEntry> fBlobIDCache SK_GUARDED_BY(fSpinLock);
+    skia_private::THashMap<uint32_t, BlobIDCacheEntry> fBlobIDCache SK_GUARDED_BY(fSpinLock);
     size_t fSizeBudget SK_GUARDED_BY(fSpinLock);
     size_t fCurrentSize SK_GUARDED_BY(fSpinLock) {0};
 

@@ -24,6 +24,8 @@
 #include "include/docs/SkPDFDocument.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/ports/SkImageGeneratorCG.h"
 #include "include/ports/SkImageGeneratorNDK.h"
 #include "include/ports/SkImageGeneratorWIC.h"
@@ -86,6 +88,7 @@
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
+#include "include/gpu/graphite/Surface.h"
 // TODO: Remove this src include once we figure out public readPixels call for Graphite.
 #include "src/gpu/graphite/Surface_Graphite.h"
 #include "tools/graphite/ContextFactory.h"
@@ -100,9 +103,10 @@
 #include <cmath>
 #include <functional>
 
-static DEFINE_bool(multiPage, false,
-                   "For document-type backends, render the source into multiple pages");
+using namespace skia_private;
+
 static DEFINE_bool(RAW_threading, true, "Allow RAW decodes to run on multiple threads?");
+static DEFINE_int(mskpFrame, 0, "Which MSKP frame to draw?");
 
 DECLARE_int(gpuThreads);
 
@@ -978,7 +982,7 @@ Result ImageGenSrc::draw(SkCanvas* canvas) const {
 
     // Test deferred decoding path on GPU
     if (fIsGpu) {
-        sk_sp<SkImage> image(SkImage::MakeFromGenerator(std::move(gen)));
+        sk_sp<SkImage> image(SkImages::DeferredFromGenerator(std::move(gen)));
         if (!image) {
             return Result::Fatal("Could not create image from codec image generator.");
         }
@@ -1111,17 +1115,16 @@ Result SKPSrc::draw(SkCanvas* canvas) const {
     SkDeserialProcs procs;
     procs.fImageProc = [](const void* data, size_t size, void* ctx) -> sk_sp<SkImage> {
         sk_sp<SkData> tmpData = SkData::MakeWithoutCopy(data, size);
-        sk_sp<SkImage> image = SkImage::MakeFromEncoded(std::move(tmpData));
+        sk_sp<SkImage> image = SkImages::DeferredFromEncodedData(std::move(tmpData));
         image = image->makeRasterImage(); // force decoding
 
         if (image) {
             DeserializationContext* context = reinterpret_cast<DeserializationContext*>(ctx);
 
             if (context->fDirectContext) {
-                image = image->makeTextureImage(context->fDirectContext);
+                return SkImages::TextureFromImage(context->fDirectContext, image);
             }
         }
-
         return image;
     };
     procs.fImageCtx = &ctx;
@@ -1178,14 +1181,14 @@ Result BisectSrc::draw(SkCanvas* canvas) const {
     class PathFindingCanvas : public SkCanvas {
     public:
         PathFindingCanvas(int width, int height) : SkCanvas(width, height, nullptr) {}
-        const SkTArray<FoundPath>& foundPaths() const { return fFoundPaths; }
+        const TArray<FoundPath>& foundPaths() const { return fFoundPaths; }
 
     private:
         void onDrawPath(const SkPath& path, const SkPaint& paint) override {
             fFoundPaths.push_back() = {path, paint, this->getTotalMatrix()};
         }
 
-        SkTArray<FoundPath> fFoundPaths;
+        TArray<FoundPath> fFoundPaths;
     };
 
     PathFindingCanvas pathFinder(canvas->getBaseLayerSize().width(),
@@ -1379,13 +1382,13 @@ MSKPSrc::MSKPSrc(Path path) : fPath(path) {
 
 int MSKPSrc::pageCount() const { return fPages.size(); }
 
-SkISize MSKPSrc::size() const { return this->size(0); }
+SkISize MSKPSrc::size() const { return this->size(FLAGS_mskpFrame); }
 SkISize MSKPSrc::size(int i) const {
     return i >= 0 && i < fPages.size() ? fPages[i].fSize.toCeil() : SkISize{0, 0};
 }
 
 Result MSKPSrc::draw(SkCanvas* c) const {
-    return this->draw(0, c);
+    return this->draw(FLAGS_mskpFrame, c);
 }
 Result MSKPSrc::draw(int i, SkCanvas* canvas) const {
     if (this->pageCount() == 0) {
@@ -1430,14 +1433,14 @@ static Result compare_bitmaps(const SkBitmap& reference, const SkBitmap& bitmap)
     if (0 != memcmp(reference.getPixels(), bitmap.getPixels(), reference.computeByteSize())) {
         SkString encoded;
         SkString errString("Pixels don't match reference");
-        if (BipmapToBase64DataURI(reference, &encoded)) {
+        if (BitmapToBase64DataURI(reference, &encoded)) {
             errString.append("\nExpected: ");
             errString.append(encoded);
         } else {
             errString.append("\nExpected image failed to encode: ");
             errString.append(encoded);
         }
-        if (BipmapToBase64DataURI(bitmap, &encoded)) {
+        if (BitmapToBase64DataURI(bitmap, &encoded)) {
             errString.append("\nActual: ");
             errString.append(encoded);
         } else {
@@ -1489,7 +1492,7 @@ sk_sp<SkSurface> GPUSink::createDstSurface(GrDirectContext* context, SkISize siz
 
     switch (fSurfType) {
         case SkCommandLineConfigGpu::SurfType::kDefault:
-            surface = SkSurface::MakeRenderTarget(
+            surface = SkSurfaces::RenderTarget(
                     context, skgpu::Budgeted::kNo, info, fSampleCount, &props);
             break;
         case SkCommandLineConfigGpu::SurfType::kBackendTexture:
@@ -1564,7 +1567,7 @@ Result GPUSink::onDraw(const Src& src, SkBitmap* dst, SkWStream*, SkString* log,
     if (!result.isOk()) {
         return result;
     }
-    surface->flushAndSubmit();
+    direct->flushAndSubmit(surface);
     if (FLAGS_gpuStats) {
         direct->priv().dumpCacheStats(log);
         direct->priv().dumpGpuStats(log);
@@ -2125,7 +2128,7 @@ Result GraphiteSink::draw(const Src& src,
     dst->allocPixels(ii);
 
     {
-        sk_sp<SkSurface> surface = SkSurface::MakeGraphite(recorder.get(), ii);
+        sk_sp<SkSurface> surface = SkSurfaces::RenderTarget(recorder.get(), ii);
         if (!surface) {
             return Result::Fatal("Could not create a surface.");
         }

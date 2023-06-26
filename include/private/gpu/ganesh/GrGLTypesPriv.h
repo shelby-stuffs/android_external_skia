@@ -87,6 +87,8 @@ public:
     void cleanup();
     void assign(const GrGLBackendTextureInfo&, bool thisIsValid);
 
+    bool isProtected() const { return fInfo.isProtected(); }
+
 private:
     GrGLTextureInfo fInfo;
     GrGLTextureParameters* fParams;
@@ -103,6 +105,6 @@ struct GrGLTextureSpec {
 GrGLSurfaceInfo GrGLTextureSpecToSurfaceInfo(const GrGLTextureSpec& glSpec,
                                              uint32_t sampleCount,
                                              uint32_t levelCount,
-                                             GrProtected isProtected);
+                                             skgpu::Protected isProtected);
 
 #endif

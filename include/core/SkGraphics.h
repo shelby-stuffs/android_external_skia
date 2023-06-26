@@ -15,6 +15,7 @@
 class SkData;
 class SkImageGenerator;
 class SkOpenTypeSVGDecoder;
+class SkPath;
 class SkTraceMemoryDump;
 
 class SK_API SkGraphics {
@@ -74,6 +75,13 @@ public:
     static void PurgeFontCache();
 
     /**
+     *  If the strike cache is above the cache limit, attempt to purge strikes
+     *  with pinners. This should be called after clients release locks on
+     *  pinned strikes.
+     */
+    static void PurgePinnedFontCache();
+
+    /**
      *  This function returns the memory used for temporary images and other resources.
      */
     static size_t GetResourceCacheTotalBytesUsed();
@@ -116,16 +124,6 @@ public:
      *  If there are caches associated with GPU context, those will not be affected by this call.
      */
     static void PurgeAllCaches();
-
-    /**
-     *  Applications with command line options may pass optional state, such
-     *  as cache sizes, here, for instance:
-     *  font-cache-limit=12345678
-     *
-     *  The flags format is name=value[;name=value...] with no spaces.
-     *  This format is subject to change.
-     */
-    static void SetFlags(const char* flags);
 
     typedef std::unique_ptr<SkImageGenerator>
                                             (*ImageGeneratorFromEncodedDataFactory)(sk_sp<SkData>);

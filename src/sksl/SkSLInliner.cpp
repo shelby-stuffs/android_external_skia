@@ -12,15 +12,11 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkSLIRNode.h"
-#include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLProgramElement.h"
-#include "include/private/SkSLStatement.h"
 #include "include/private/base/SkTArray.h"
-#include "include/sksl/SkSLErrorReporter.h"
-#include "include/sksl/SkSLOperator.h"
-#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLAnalysis.h"
+#include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLOperator.h"
+#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLChildCall.h"
@@ -41,14 +37,18 @@
 #include "src/sksl/ir/SkSLFunctionCall.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
+#include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
 #include "src/sksl/ir/SkSLLiteral.h"
+#include "src/sksl/ir/SkSLModifiers.h"
 #include "src/sksl/ir/SkSLNop.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
+#include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
 #include "src/sksl/ir/SkSLSetting.h"
+#include "src/sksl/ir/SkSLStatement.h"
 #include "src/sksl/ir/SkSLSwitchCase.h"
 #include "src/sksl/ir/SkSLSwitchStatement.h"
 #include "src/sksl/ir/SkSLSwizzle.h"
@@ -67,6 +67,8 @@
 #include <string>
 #include <string_view>
 #include <utility>
+
+using namespace skia_private;
 
 namespace SkSL {
 namespace {
@@ -444,20 +446,21 @@ std::unique_ptr<Statement> Inliner::inlineStatement(Position pos,
             // names are important.
             const std::string* name = symbolTableForStatement->takeOwnershipOfString(
                     fMangler.uniqueName(variable->name(), symbolTableForStatement));
-            auto clonedVar = std::make_unique<Variable>(
-                    pos,
-                    variable->modifiersPosition(),
-                    variableModifiers(*variable, initialValue.get()),
-                    name->c_str(),
-                    variable->type().clone(symbolTableForStatement),
-                    isBuiltinCode,
-                    variable->storage());
+            auto clonedVar =
+                    std::make_unique<Variable>(pos,
+                                               variable->modifiersPosition(),
+                                               variableModifiers(*variable, initialValue.get()),
+                                               name->c_str(),
+                                               variable->type().clone(symbolTableForStatement),
+                                               isBuiltinCode,
+                                               variable->storage());
             varMap->set(variable, VariableReference::Make(pos, clonedVar.get()));
-            auto result = VarDeclaration::Make(*fContext,
-                                               clonedVar.get(),
-                                               decl.baseType().clone(symbolTableForStatement),
-                                               decl.arraySize(),
-                                               std::move(initialValue));
+            std::unique_ptr<Statement> result =
+                    VarDeclaration::Make(*fContext,
+                                         clonedVar.get(),
+                                         decl.baseType().clone(symbolTableForStatement),
+                                         decl.arraySize(),
+                                         std::move(initialValue));
             symbolTableForStatement->takeOwnershipOfSymbol(std::move(clonedVar));
             return result;
         }
@@ -763,7 +766,7 @@ public:
             }
             case Statement::Kind::kVarDeclaration: {
                 VarDeclaration& varDeclStmt = (*stmt)->as<VarDeclaration>();
-                // Don't need to scan the declaration's sizes; those are always IntLiterals.
+                // Don't need to scan the declaration's sizes; those are always literals.
                 this->visitExpression(&varDeclStmt.value());
                 break;
             }
@@ -991,8 +994,8 @@ bool Inliner::analyze(const std::vector<std::unique_ptr<ProgramElement>>& elemen
     this->buildCandidateList(elements, symbols, usage, &candidateList);
 
     // Inline the candidates where we've determined that it's safe to do so.
-    using StatementRemappingTable = SkTHashMap<std::unique_ptr<Statement>*,
-                                               std::unique_ptr<Statement>*>;
+    using StatementRemappingTable = THashMap<std::unique_ptr<Statement>*,
+                                             std::unique_ptr<Statement>*>;
     StatementRemappingTable statementRemappingTable;
 
     bool madeChanges = false;

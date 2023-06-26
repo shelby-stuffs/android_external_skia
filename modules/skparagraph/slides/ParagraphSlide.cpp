@@ -1372,7 +1372,7 @@ class Zalgo {
     private:
     std::u16string COMBINING_DOWN = u"\u0316\u0317\u0318\u0319\u031c\u031d\u031e\u031f\u0320\u0324\u0325\u0326\u0329\u032a\u032b\u032c\u032d\u032e\u032f\u0330\u0331\u0332\u0333\u0339\u033a\u033b\u033c\u0345\u0347\u0348\u0349\u034d\u034e\u0353\u0354\u0355\u0356\u0359\u035a\u0323";
     std::u16string COMBINING_UP = u"\u030d\u030e\u0304\u0305\u033f\u0311\u0306\u0310\u0352\u0357\u0351\u0307\u0308\u030a\u0342\u0343\u0344\u034a\u034b\u034c\u0303\u0302\u030c\u0350\u0300\u0301\u030b\u030f\u0312\u0313\u0314\u033d\u0309\u0363\u0364\u0365\u0366\u0367\u0368\u0369\u036a\u036b\u036c\u036d\u036e\u035b\u0346\u031a";
-    std::u16string COMBINING_MIDDLE = u"\u0315\u031b\u0340\u0341\u0358\u0321\u0322\u0327\u0328\u0334\u0335\u0336\u034f\u035c\u035d\u035e\u035f\u0360\u0362\u0338\u0337\u0361\u0489";
+    std::u16string COMBINING_MIDDLE = u"\u0315\u031b\u0340\u0341\u0358\u0321\u0322\u0327\u0328\u0334\u0335\u0336\u034f\u035c\u035d\u035e\u035f\u0360\u0362\u0338\u0337\u0361\u0363";
 
     std::u16string randomMarks(std::u16string& combiningMarks) {
         std::u16string result;
@@ -1508,7 +1508,7 @@ public:
 
         auto fontCollection = sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str(), false, true);
 
-        std::u16string text = u"\u0068\u0301\u0350\u0312\u0357\u030C\u0369\u0305\u036C\u0304\u0310\u033F\u0366\u0350\u0343\u0364\u0369\u0311\u0309\u030E\u0365\u031B\u0340\u0337\u0335\u035E\u0334\u0328\u0360\u0360\u0315\u035F\u0340\u0340\u0362\u0360\u0322\u031B\u031B\u0337\u0340\u031E\u031F\u032A\u0331\u0345\u032F\u0332\u032E\u0333\u0353\u0320\u0345\u031C\u031F\u033C\u0325\u0355\u032C\u0325\u033Aa\u0307\u0312\u034B\u0308\u0312\u0346\u0313\u0346\u0304\u0307\u0344\u0305\u0342\u0368\u0346\u036A\u035B\u030F\u0365\u0307\u0340\u0328\u0322\u0361\u0489\u034F\u0328\u0334\u035F\u0335\u0362\u0489\u0360\u0358\u035E\u0360\u035D\u0341\u0337\u0337\u032E\u0326\u032D\u0359\u0318\u033C\u032F\u0333\u035A\u034D\u0319\u031C\u0353\u033C\u0345\u0359\u0331\u033B\u0331\u033C";
+        std::u16string text = u"\u0068\u0301\u0350\u0312\u0357\u030C\u0369\u0305\u036C\u0304\u0310\u033F\u0366\u0350\u0343\u0364\u0369\u0311\u0309\u030E\u0365\u031B\u0340\u0337\u0335\u035E\u0334\u0328\u0360\u0360\u0315\u035F\u0340\u0340\u0362\u0360\u0322\u031B\u031B\u0337\u0340\u031E\u031F\u032A\u0331\u0345\u032F\u0332\u032E\u0333\u0353\u0320\u0345\u031C\u031F\u033C\u0325\u0355\u032C\u0325\u033Aa\u0307\u0312\u034B\u0308\u0312\u0346\u0313\u0346\u0304\u0307\u0344\u0305\u0342\u0368\u0346\u036A\u035B\u030F\u0365\u0307\u0340\u0328\u0322\u0361\u0363\u034F\u0328\u0334\u035F\u0335\u0362\u0363\u0360\u0358\u035E\u0360\u035D\u0341\u0337\u0337\u032E\u0326\u032D\u0359\u0318\u033C\u032F\u0333\u035A\u034D\u0319\u031C\u0353\u033C\u0345\u0359\u0331\u033B\u0331\u033C";
         ParagraphStyle paragraph_style;
         ParagraphBuilderImpl builder(paragraph_style, fontCollection);
         TextStyle text_style;
@@ -3697,9 +3697,9 @@ public:
         auto width = paragraph->getLongestLine();
         auto height = paragraph->getHeight();
         if (this->isVerbose()) {
-            auto f1Pos = paragraph->getGlyphPositionAtCoordinate(width/6, height/2);
-            auto f2Pos = paragraph->getGlyphPositionAtCoordinate(width/2, height/2);
-            auto iPos = paragraph->getGlyphPositionAtCoordinate(width*5/6, height/2);
+            auto f1Pos = paragraph->getGlyphPositionAtCoordinate(width/3 * 0 + 5, height/2);
+            auto f2Pos = paragraph->getGlyphPositionAtCoordinate(width/3 * 1 + 5, height/2);
+            auto iPos = paragraph->getGlyphPositionAtCoordinate(width/3 * 2 + 5, height/2);
             SkDebugf("%d(%s) %d(%s) %d(%s)\n",
                      f1Pos.position, f1Pos.affinity == Affinity::kUpstream ? "up" : "down",
                      f2Pos.position, f2Pos.affinity == Affinity::kUpstream ? "up" : "down",
@@ -3908,10 +3908,10 @@ public:
 
         canvas->drawColor(SK_ColorWHITE);
 
-        SkString text(">S͛ͭ̋͆̈̔̇͗̍͑̎ͪͮͧͣ̽ͫͣ́ͬ̀͌͑͂͗͒̍̔̄ͧ̏̉̌̊̊̿̀̌̃̄͐̓̓̚̚҉̵̡͜͟͝͠͏̸̵̡̧͜҉̷̡͇̜̘̻̺̘̟̝͙̬̘̩͇̭̼̥̖̤̦͎k͉̩̘͚̜̹̗̗͍̤̥̱͉̳͕͖̤̲̣͚̮̞̬̲͍͔̯̻̮̞̭͈̗̫͓̂ͨ̉ͪ̒͋͛̀̍͊ͧ̿̅͆̓̔̔ͬ̇̑̿ͩ͗ͮ̎͌̿̄ͅP̴̵̡̡̛̪͙̼̣̟̩̭̫̱͙̬͔͉͍̘̠͉̦̝̘̥̟̗͖̫̤͕̙̬̦͍̱̖̮̱͑͐̎̃̒͐͋̚͘͞a̶̶̵̵̵̶̶̡̧̢̢̺͔̣͖̭̺͍̤͚̱̜̰̥͕̬̥̲̞̥̘͇͚̺̰͚̪̺͔̤͍̓̿͆̎͋̓ͦ̈́ͦ̌́̄͗̌̓͌̕͜͜͟͢͝͡ŕ͎̝͕͉̻͎̤̭͚̗̳̖̙̘͚̫͖͓͚͉͔͈̟̰̟̬̗͓̟͚̱̕͡ͅͅͅa̸̶̢̛̛̽ͮͩ̅͒ͫ͗͂̎ͦ̈́̓̚͘͜͢͡҉̷̵̶̢̡̜̮̦̜̥̜̯̙͓͔̼̗̻͜͜ͅḡ̢̛͕̗͖̖̤̦̘͔ͨͨ̊͒ͩͭͤ̍̅̃ͪ̋̏̓̍̋͗̋ͨ̏̽̈́̔̀̋̉ͫ̅̂ͭͫ̏͒͋ͥ̚͜r̶̢̧̧̥̤̼̀̂̒ͪ͌̿͌̅͛ͨͪ͒̍ͥ̉ͤ̌̿̆́ͭ͆̃̒ͤ͛̊ͧ̽͘͝͠a̧̢̧̢͑͑̓͑ͮ̃͂̄͛́̈́͋̂͌̽̄͒̔́̇ͨͧͭ͐ͦ̋ͨ̍ͦ̍̋͆̔ͧ͑͋͌̈̓͛͛̚͢͜͜͏̴̢̧̛̳͍̹͚̰̹̻͔p̨̡͆ͦͣ͊̽̔͂̉ͣ̔ͣ̌̌̉̃̋̂͒ͫ̄̎̐͗̉̌̃̽̽́̀̚͘͜͟҉̱͉h̭̮̘̗͔̜̯͔͈̯̺͔̗̣̭͚̱̰̙̼̹͚̣̻̥̲̮͍̤͜͝<");
-        auto K = text.find("k");
-        auto P = text.find("P");
-        auto h = text.find("h");
+        std::u16string text = u">S͛ͭ̋͆̈̔̇͗̍͑̎ͪͮͧͣ̽ͫͣ́ͬ̀͌͑͂͗͒̍̔̄ͧ̏̉̌̊̊̿̀̌̃̄͐̓̓̚̚҉̵̡͜͟͝͠͏̸̵̡̧͜҉̷̡͇̜̘̻̺̘̟̝͙̬̘̩͇̭̼̥̖̤̦͎k͉̩̘͚̜̹̗̗͍̤̥̱͉̳͕͖̤̲̣͚̮̞̬̲͍͔̯̻̮̞̭͈̗̫͓̂ͨ̉ͪ̒͋͛̀̍͊ͧ̿̅͆̓̔̔ͬ̇̑̿ͩ͗ͮ̎͌̿̄ͅP̴̵̡̡̛̪͙̼̣̟̩̭̫̱͙̬͔͉͍̘̠͉̦̝̘̥̟̗͖̫̤͕̙̬̦͍̱̖̮̱͑͐̎̃̒͐͋̚͘͞a̶̶̵̵̵̶̶̡̧̢̢̺͔̣͖̭̺͍̤͚̱̜̰̥͕̬̥̲̞̥̘͇͚̺̰͚̪̺͔̤͍̓̿͆̎͋̓ͦ̈́ͦ̌́̄͗̌̓͌̕͜͜͟͢͝͡ŕ͎̝͕͉̻͎̤̭͚̗̳̖̙̘͚̫͖͓͚͉͔͈̟̰̟̬̗͓̟͚̱̕͡ͅͅͅa̸̶̢̛̛̽ͮͩ̅͒ͫ͗͂̎ͦ̈́̓̚͘͜͢͡҉̷̵̶̢̡̜̮̦̜̥̜̯̙͓͔̼̗̻͜͜ͅḡ̢̛͕̗͖̖̤̦̘͔ͨͨ̊͒ͩͭͤ̍̅̃ͪ̋̏̓̍̋͗̋ͨ̏̽̈́̔̀̋̉ͫ̅̂ͭͫ̏͒͋ͥ̚͜r̶̢̧̧̥̤̼̀̂̒ͪ͌̿͌̅͛ͨͪ͒̍ͥ̉ͤ̌̿̆́ͭ͆̃̒ͤ͛̊ͧ̽͘͝͠a̧̢̧̢͑͑̓͑ͮ̃͂̄͛́̈́͋̂͌̽̄͒̔́̇ͨͧͭ͐ͦ̋ͨ̍ͦ̍̋͆̔ͧ͑͋͌̈̓͛͛̚͢͜͜͏̴̢̧̛̳͍̹͚̰̹̻͔p̨̡͆ͦͣ͊̽̔͂̉ͣ̔ͣ̌̌̉̃̋̂͒ͫ̄̎̐͗̉̌̃̽̽́̀̚͘͜͟҉̱͉h̭̮̘̗͔̜̯͔͈̯̺͔̗̣̭͚̱̰̙̼̹͚̣̻̥̲̮͍̤͜͝<";
+        auto K = text.find(u"k");
+        auto P = text.find(u"P");
+        auto h = text.find(u"h");
         auto fontCollection = sk_make_sp<FontCollection>();
         fontCollection->setDefaultFontManager(SkFontMgr::RefDefault());
         fontCollection->enableFontFallback();
@@ -3922,18 +3922,18 @@ public:
         text_style.setFontSize(20);
         text_style.setColor(SK_ColorRED);
         builder.pushStyle(text_style);
-        builder.addText(text.data(), K + 3);
+        builder.addText(std::u16string(text.data(), K + 3));
         text_style.setColor(SK_ColorBLUE);
         text_style.setBackgroundColor(SkPaint(SkColors::kYellow));
         builder.pushStyle(text_style);
-        builder.addText(text.data() + K + 3, P - K - 3 + 6);
+        builder.addText(std::u16string(text.data() + K + 3, P - K - 3 + 6));
         text_style.setColor(SK_ColorGREEN);
         builder.pushStyle(text_style);
-        builder.addText(text.data() + P + 6, h - P - 6);
+        builder.addText(std::u16string(text.data() + P + 6, h - P - 6));
         text_style.setColor(SK_ColorBLACK);
         text_style.setBackgroundColor(SkPaint(SkColors::kLtGray));
         builder.pushStyle(text_style);
-        builder.addText(text.data() + h, text.size() - h);
+        builder.addText(std::u16string(text.data() + h, text.size() - h));
         auto paragraph = builder.Build();
         paragraph->layout(this->size().width());
         paragraph->paint(canvas, 0, 0);
@@ -3943,37 +3943,38 @@ public:
                                                   RectWidthStyle::kTight);
             TextBox rectSK(SkRect::MakeEmpty(), TextDirection::kLtr);
             if (resSK.empty()) {
-                SkDebugf("resSK is empty\n");
+                SkDebugf("rectSk is empty\n");
             } else {
                 rectSK = resSK[0];
-                SkDebugf("rectSK: [%f:%f] %s\n", rectSK.rect.fLeft, rectSK.rect.fRight,
+                SkDebugf("rectSk: [%f:%f] %s\n", rectSK.rect.fLeft, rectSK.rect.fRight,
                                              rectSK.direction == TextDirection::kRtl ? "rtl" : "ltr");
             }
 
-            auto resKP = paragraph->getRectsForRange(1, 2, RectHeightStyle::kTight,
+            auto resKP = paragraph->getRectsForRange(K, P, RectHeightStyle::kTight,
                                                   RectWidthStyle::kTight);
             TextBox rectKP(SkRect::MakeEmpty(), TextDirection::kLtr);
             if (resKP.empty()) {
-                SkDebugf("resKP is empty\n");
+                SkDebugf("rectkP is empty\n");
             } else {
                 rectKP = resKP[0];
-                SkDebugf("f2: [%f:%f] %s\n", rectKP.rect.fLeft, rectKP.rect.fRight,
+                SkDebugf("rectkP: [%f:%f] %s\n", rectKP.rect.fLeft, rectKP.rect.fRight,
                                              rectKP.direction == TextDirection::kRtl ? "rtl" : "ltr");
             }
 
-            auto resPh = paragraph->getRectsForRange(2, 3, RectHeightStyle::kTight,
+            auto resPh = paragraph->getRectsForRange(P, h, RectHeightStyle::kTight,
                                                   RectWidthStyle::kTight);
             TextBox rectPh(SkRect::MakeEmpty(), TextDirection::kLtr);
             if (resPh.empty()) {
-                SkDebugf("resPh is empty\n");
+                SkDebugf("rectPh is empty\n");
             } else {
                 rectPh = resPh[0];
-                SkDebugf("i:  [%f:%f] %s\n", rectPh.rect.fLeft, rectPh.rect.fRight,
-                                             rectPh.direction == TextDirection::kRtl ? "rtl" : "ltr");
+                SkDebugf("rectPh:  [%f:%f] %s\n", rectPh.rect.fLeft, rectPh.rect.fRight,
+                                                  rectPh.direction == TextDirection::kRtl ? "rtl" : "ltr");
             }
             auto posK = paragraph->getGlyphPositionAtCoordinate(rectSK.rect.center().fX, height/2);
             auto posP = paragraph->getGlyphPositionAtCoordinate(rectKP.rect.center().fX, height/2);
             auto posH = paragraph->getGlyphPositionAtCoordinate(rectPh.rect.center().fX, height/2);
+
             SkDebugf("%d(%s) %d(%s) %d(%s)\n",
                      posK.position, posK.affinity == Affinity::kUpstream ? "up" : "down",
                      posP.position, posP.affinity == Affinity::kUpstream ? "up" : "down",
@@ -4010,9 +4011,9 @@ public:
     }
 };
 
-class ParagraphSlideLast : public ParagraphSlide_Base {
+class ParagraphSlideMixedTextDirection : public ParagraphSlide_Base {
 public:
-    ParagraphSlideLast() { fName = "ParagraphSlideLast"; }
+    ParagraphSlideMixedTextDirection() { fName = "ParagraphSlideMixedTextDirection"; }
     void draw(SkCanvas* canvas) override {
         canvas->drawColor(SK_ColorWHITE);
         auto fontCollection = getFontCollection();
@@ -4042,6 +4043,76 @@ public:
         draw(u"English text (defalt RTL)", 1, TextDirection::kRtl);
         draw(u"تظاهرات و(defalt LTR) تجمعات اعتراضی در سراسر کشور ۲۳ مهر", 2, TextDirection::kLtr);
         draw(u"تظاهرات و(defalt RTL) تجمعات اعتراضی در سراسر کشور ۲۳ مهر", 2, TextDirection::kRtl);
+    }
+};
+
+class ParagraphSlideEllipsisCases : public ParagraphSlide_Base {
+public:
+    ParagraphSlideEllipsisCases() { fName = "ParagraphSlideEllipsisCases"; }
+    void draw(SkCanvas* canvas) override {
+        canvas->drawColor(SK_ColorWHITE);
+        auto fontCollection = getFontCollection();
+        fontCollection->setDefaultFontManager(SkFontMgr::RefDefault());
+        fontCollection->enableFontFallback();
+        TextStyle text_style;
+        text_style.setFontFamilies({SkString("Noto Naskh Arabic")});
+        text_style.setFontSize(100);
+        text_style.setColor(SK_ColorBLACK);
+        ParagraphStyle paragraph_style;
+        paragraph_style.setTextStyle(text_style);
+        paragraph_style.setTextAlign(TextAlign::kStart);
+        paragraph_style.setEllipsis(u"\u2026");
+        auto draw = [&](std::u16string text) {
+            paragraph_style.setMaxLines(1);
+            ParagraphBuilderImpl builder(paragraph_style, fontCollection);
+            builder.pushStyle(text_style);
+            builder.addText(text);
+            auto paragraph = builder.Build();
+            paragraph->layout(this->size().width());
+            paragraph->paint(canvas, 0, 0);
+            canvas->translate(0, paragraph->getHeight() + 10);
+        };
+
+        draw(u"你abcdefsdasdsasas");
+        draw(u"한111111111111111111");
+        draw(u"abcdefsdasds1112222");
+    }
+};
+
+class ParagraphSlideLast : public ParagraphSlide_Base {
+public:
+    ParagraphSlideLast() { fName = "ParagraphSlideLast"; }
+    void draw(SkCanvas* canvas) override {
+
+        canvas->drawColor(SK_ColorWHITE);
+        auto fontCollection = sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str(), false);
+        fontCollection->disableFontFallback();
+
+        fontCollection->addFontFromFile("abc/abc.ttf", "abc");
+        fontCollection->addFontFromFile("abc/abc+grave.ttf", "abc+grave");
+        fontCollection->addFontFromFile("abc/abc+agrave.ttf", "abc+agrave");
+
+        TextStyle text_style;
+        text_style.setFontSize(40);
+        text_style.setColor(SK_ColorBLACK);
+        text_style.setFontFamilies({SkString("abc")});
+        ParagraphStyle paragraph_style;
+        paragraph_style.setTextStyle(text_style);
+        ParagraphBuilderImpl builder(paragraph_style, fontCollection);
+        builder.pushStyle(text_style);
+        builder.addText("a\u0300bcàbc");
+        auto paragraph = builder.Build();
+        paragraph->layout(this->size().width());
+        paragraph->paint(canvas, 0, 0);
+        if (this->isVerbose()) {
+            SkDebugf("Unresolved glyphs: %d\n", paragraph->unresolvedGlyphs());
+            SkDebugf("Unresolved codepoints:");
+            auto codepoints = paragraph->unresolvedCodepoints();
+            for (auto cp : codepoints) {
+                SkDebugf("%ul ", cp);
+            }
+            SkDebugf("\n");
+        }
     }
 };
 }  // namespace
@@ -4117,5 +4188,6 @@ DEF_SLIDE(return new ParagraphSlide_MultiStyle_EmojiFamily();)
 DEF_SLIDE(return new ParagraphSlide_MultiStyle_Arabic1();)
 DEF_SLIDE(return new ParagraphSlide_MultiStyle_Zalgo();)
 DEF_SLIDE(return new ParagraphSlide_MultiStyle_Arabic2();)
+DEF_SLIDE(return new ParagraphSlideMixedTextDirection();)
+DEF_SLIDE(return new ParagraphSlideEllipsisCases();)
 DEF_SLIDE(return new ParagraphSlideLast();)
-

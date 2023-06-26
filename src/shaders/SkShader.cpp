@@ -59,6 +59,7 @@ SkShaderBase::MatrixRec::apply(const SkStageRec& rec, const SkMatrix& postInv) c
                      /*ctmApplied=*/true};
 }
 
+#if defined(SK_ENABLE_SKVM)
 std::optional<SkShaderBase::MatrixRec>
 SkShaderBase::MatrixRec::apply(skvm::Builder* p,
                                skvm::Coord* local,
@@ -80,7 +81,7 @@ SkShaderBase::MatrixRec::apply(skvm::Builder* p,
                      fTotalMatrixIsValid,
                      /*ctmApplied=*/true};
 }
-
+#endif
 #if defined(SK_GANESH)
 GrFPResult SkShaderBase::MatrixRec::apply(std::unique_ptr<GrFragmentProcessor> fp,
                                           const SkMatrix& postInv) const {
@@ -215,15 +216,12 @@ bool SkShaderBase::appendStages(const SkStageRec& rec, const MatrixRec& mRec) co
     // SkShader::Context::shadeSpan() handles the paint opacity internally,
     // but SkRasterPipelineBlitter applies it as a separate stage.
     // We skip the internal shadeSpan() step by forcing the paint opaque.
-    SkTCopyOnFirstWrite<SkPaint> opaquePaint(rec.fPaint);
-    if (rec.fPaint.getAlpha() != SK_AlphaOPAQUE) {
-        opaquePaint.writable()->setAlpha(SK_AlphaOPAQUE);
-    }
+    SkColor4f opaquePaintColor = rec.fPaintColor.makeOpaque();
 
     // We don't have a separate ctm and local matrix at this point. Just pass the combined matrix
     // as the CTM. TODO: thread the MatrixRec through the legacy context system.
     auto tm = mRec.totalMatrix();
-    ContextRec cr(*opaquePaint,
+    ContextRec cr(opaquePaintColor,
                   tm,
                   nullptr,
                   rec.fDstColorType,
@@ -261,6 +259,7 @@ bool SkShaderBase::appendStages(const SkStageRec& rec, const MatrixRec& mRec) co
     return false;
 }
 
+#if defined(SK_ENABLE_SKVM)
 skvm::Color SkShaderBase::rootProgram(skvm::Builder* p,
                                       skvm::Coord device,
                                       skvm::Color paint,
@@ -301,13 +300,14 @@ skvm::Color SkShaderBase::rootProgram(skvm::Builder* p,
     }
     return {};
 }
+#endif  // defined(SK_ENABLE_SKVM)
 
 // need a cheap way to invert the alpha channel of a shader (i.e. 1 - a)
 sk_sp<SkShader> SkShaderBase::makeInvertAlpha() const {
     return this->makeWithColorFilter(SkColorFilters::Blend(0xFFFFFFFF, SkBlendMode::kSrcOut));
 }
 
-
+#if defined(SK_ENABLE_SKVM)
 skvm::Coord SkShaderBase::ApplyMatrix(skvm::Builder* p, const SkMatrix& m,
                                       skvm::Coord coord, skvm::Uniforms* uniforms) {
     skvm::F32 x = coord.x,
@@ -335,3 +335,4 @@ skvm::Coord SkShaderBase::ApplyMatrix(skvm::Builder* p, const SkMatrix& m,
     }
     return {x,y};
 }
+#endif  // defined(SK_ENABLE_SKVM)

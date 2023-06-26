@@ -31,13 +31,15 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/SkColorData.h"
-#include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMalloc.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkRandom.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkMessageBus.h"
+#include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/ResourceKey.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/Swizzle.h"
@@ -95,20 +97,20 @@ static SkImageInfo default_ii(int wh) {
     return SkImageInfo::Make(wh, wh, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
 }
 
-static std::unique_ptr<skgpu::v1::SurfaceDrawContext> new_SDC(GrRecordingContext* rContext,
-                                                              int wh) {
-    return skgpu::v1::SurfaceDrawContext::Make(rContext,
-                                               GrColorType::kRGBA_8888,
-                                               nullptr,
-                                               SkBackingFit::kExact,
-                                               {wh, wh},
-                                               SkSurfaceProps(),
-                                               /*label=*/{},
-                                               1,
-                                               GrMipmapped::kNo,
-                                               GrProtected::kNo,
-                                               kImageOrigin,
-                                               skgpu::Budgeted::kYes);
+static std::unique_ptr<skgpu::ganesh::SurfaceDrawContext> new_SDC(GrRecordingContext* rContext,
+                                                                  int wh) {
+    return skgpu::ganesh::SurfaceDrawContext::Make(rContext,
+                                                   GrColorType::kRGBA_8888,
+                                                   nullptr,
+                                                   SkBackingFit::kExact,
+                                                   {wh, wh},
+                                                   SkSurfaceProps(),
+                                                   /*label=*/{},
+                                                   1,
+                                                   GrMipmapped::kNo,
+                                                   GrProtected::kNo,
+                                                   kImageOrigin,
+                                                   skgpu::Budgeted::kYes);
 }
 
 static void create_view_key(skgpu::UniqueKey* key, int wh, int id) {
@@ -173,7 +175,7 @@ public:
                GrThreadSafeCache::IsNewerBetter isNewerBetter = default_is_newer_better)
             : fDContext(dContext)
             , fIsNewerBetter(isNewerBetter) {
-        fDst = SkSurface::MakeRenderTarget(dContext, skgpu::Budgeted::kNo, default_ii(kImageWH));
+        fDst = SkSurfaces::RenderTarget(dContext, skgpu::Budgeted::kNo, default_ii(kImageWH));
         SkAssertResult(fDst);
 
         SkSurfaceCharacterization characterization;
@@ -427,7 +429,7 @@ public:
 
     bool checkImage(skiatest::Reporter* reporter, sk_sp<SkDeferredDisplayList> ddl) {
         sk_sp<SkSurface> tmp =
-                SkSurface::MakeRenderTarget(fDContext, skgpu::Budgeted::kNo, default_ii(kImageWH));
+                SkSurfaces::RenderTarget(fDContext, skgpu::Budgeted::kNo, default_ii(kImageWH));
         if (!tmp) {
             return false;
         }
@@ -699,8 +701,7 @@ GrSurfaceProxyView TestHelper::CreateViewOnCpu(GrRecordingContext* rContext,
 bool TestHelper::FillInViewOnGpu(GrDirectContext* dContext, int wh, Stats* stats,
                                  const GrSurfaceProxyView& lazyView,
                                  sk_sp<GrThreadSafeCache::Trampoline> trampoline) {
-
-    std::unique_ptr<skgpu::v1::SurfaceDrawContext> sdc = new_SDC(dContext, wh);
+    std::unique_ptr<skgpu::ganesh::SurfaceDrawContext> sdc = new_SDC(dContext, wh);
 
     GrPaint paint;
     paint.setColor4f({0.0f, 0.0f, 1.0f, 1.0f});
@@ -1483,7 +1484,7 @@ static void test_13(GrDirectContext* dContext, skiatest::Reporter* reporter,
     sk_sp<SkDeferredDisplayList> ddl1 = helper.snap1();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    auto firstTime = GrStdSteadyClock::now();
+    auto firstTime = skgpu::StdSteadyClock::now();
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
     (helper.*addAccess)(helper.ddlCanvas2(), 2*kImageWH, kNoID, false, false);
@@ -1497,7 +1498,7 @@ static void test_13(GrDirectContext* dContext, skiatest::Reporter* reporter,
 
     REPORTER_ASSERT(reporter, helper.numCacheEntries() == 2);
 
-    auto secondTime = GrStdSteadyClock::now();
+    auto secondTime = skgpu::StdSteadyClock::now();
 
     auto msecs = std::chrono::duration_cast<std::chrono::milliseconds>(secondTime - firstTime);
     dContext->performDeferredCleanup(msecs);

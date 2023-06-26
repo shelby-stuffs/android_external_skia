@@ -90,9 +90,10 @@ protected:
 
     void appendGradientStages(SkArenaAlloc* alloc, SkRasterPipeline* tPipeline,
                               SkRasterPipeline* postPipeline) const override;
-
+#if defined(SK_ENABLE_SKVM)
     skvm::F32 transformT(skvm::Builder*, skvm::Uniforms*,
                          skvm::Coord coord, skvm::I32* mask) const final;
+#endif
 
 private:
     friend void ::SkRegisterTwoPointConicalGradientShaderFlattenable();
@@ -317,6 +318,7 @@ void SkTwoPointConicalGradient::appendGradientStages(SkArenaAlloc* alloc, SkRast
     }
 }
 
+#if defined(SK_ENABLE_SKVM)
 skvm::F32 SkTwoPointConicalGradient::transformT(skvm::Builder* p, skvm::Uniforms* uniforms,
                                                 skvm::Coord coord, skvm::I32* mask) const {
     auto mag = [](skvm::F32 x, skvm::F32 y) { return sqrt(x*x + y*y); };
@@ -369,6 +371,7 @@ skvm::F32 SkTwoPointConicalGradient::transformT(skvm::Builder* p, skvm::Uniforms
     if ( fFocalData.isSwapped())       { t = 1.0f - t; }
     return t;
 }
+#endif
 
 /////////////////////////////////////////////////////////////////////
 
@@ -540,24 +543,11 @@ SkTwoPointConicalGradient::asFragmentProcessor(const GrFPArgs& args, const Matri
 void SkTwoPointConicalGradient::addToKey(const skgpu::graphite::KeyContext& keyContext,
                                          skgpu::graphite::PaintParamsKeyBuilder* builder,
                                          skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    SkColor4fXformer xformedColors(this, keyContext.dstColorInfo().colorSpace());
-    const SkPMColor4f* colors = xformedColors.fColors.begin();
-
-    GradientShaderBlocks::GradientData data(GradientType::kConical,
-                                            fCenter1, fCenter2,
-                                            fRadius1, fRadius2,
-                                            0.0f, 0.0f,
-                                            fTileMode,
-                                            fColorCount,
-                                            colors,
-                                            fPositions,
-                                            fInterpolation);
-
-    MakeInterpolatedToDst(keyContext, builder, gatherer,
-                          data, fInterpolation,
-                          xformedColors.fIntermediateColorSpace.get());
+    this->addToKeyCommon(keyContext, builder, gatherer,
+                         GradientType::kConical,
+                         fCenter1, fCenter2,
+                         fRadius1, fRadius2,
+                         0.0f, 0.0f);
 }
 #endif
 

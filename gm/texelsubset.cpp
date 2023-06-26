@@ -31,6 +31,8 @@
 #include <memory>
 #include <utility>
 
+using namespace skia_private;
+
 using MipmapMode = GrSamplerState::MipmapMode;
 using Filter     = GrSamplerState::Filter;
 using Wrap       = GrSamplerState::WrapMode;
@@ -79,7 +81,7 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        GetResourceAsBitmap("images/mandrill_128.png", &fBitmap);
+        SkAssertResult(GetResourceAsBitmap("images/mandrill_128.png", &fBitmap));
         // Make the bitmap non-square to detect any width/height confusion.
         fBitmap.extractSubset(&fBitmap, SkIRect::MakeSize(fBitmap.dimensions()).makeInset(0, 20));
         SkASSERT(fBitmap.dimensions() == kImageSize);
@@ -115,7 +117,7 @@ protected:
                                             3*fBitmap.width()/5 + 2, 4*fBitmap.height()/5 + 2);
         }
 
-        SkTArray<SkMatrix> textureMatrices;
+        TArray<SkMatrix> textureMatrices;
 
         SkRect a = SkRect::Make(texelSubset);
         SkRect b = fUpscale ? a.makeInset (.31f * a.width(), .31f * a.height())

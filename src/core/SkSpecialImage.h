@@ -107,7 +107,7 @@ public:
                                                      const SkSurfaceProps&);
 #endif
 
-#if SK_GRAPHITE
+#if defined(SK_GRAPHITE)
     static sk_sp<SkSpecialImage> MakeGraphite(skgpu::graphite::Recorder*,
                                               const SkIRect& subset,
                                               uint32_t uniqueID,
@@ -115,26 +115,6 @@ public:
                                               const SkColorInfo&,
                                               const SkSurfaceProps&);
 #endif
-
-    /**
-     *  Create a new special surface with a backend that is compatible with this special image.
-     */
-    sk_sp<SkSpecialSurface> makeSurface(SkColorType,
-                                        const SkColorSpace*,
-                                        const SkISize& size,
-                                        SkAlphaType,
-                                        const SkSurfaceProps&) const;
-
-    /**
-     * Create a new surface with a backend that is compatible with this special image.
-     * TODO: switch this to makeSurface once we resolved the naming issue
-     * TODO (michaelludwig) - This is only used by SkTileImageFilter, which appears should be
-     * updated to work correctly with subsets and then makeTightSurface() can go away entirely.
-     */
-    sk_sp<SkSurface> makeTightSurface(SkColorType,
-                                      const SkColorSpace*,
-                                      const SkISize& size,
-                                      SkAlphaType = kPremul_SkAlphaType) const;
 
     /**
      * Extract a subset of this special image and return it as a special image.
@@ -188,7 +168,7 @@ public:
     GrSurfaceProxyView view(GrRecordingContext* context) const { return this->onView(context); }
 #endif
 
-#if SK_GRAPHITE
+#if defined(SK_GRAPHITE)
     bool isGraphiteBacked() const;
 
     skgpu::graphite::TextureProxyView textureProxyView() const;
@@ -222,19 +202,13 @@ protected:
     virtual GrSurfaceProxyView onView(GrRecordingContext*) const = 0;
 #endif
 
-#if SK_GRAPHITE
+#if defined(SK_GRAPHITE)
     virtual skgpu::graphite::TextureProxyView onTextureProxyView() const;
 #endif
 
     // This subset is relative to the backing store's coordinate frame, it has already been mapped
     // from the content rect by the non-virtual makeSubset().
     virtual sk_sp<SkSpecialImage> onMakeSubset(const SkIRect& subset) const = 0;
-
-    virtual sk_sp<SkSpecialSurface> onMakeSurface(SkColorType colorType,
-                                                  const SkColorSpace* colorSpace,
-                                                  const SkISize& size,
-                                                  SkAlphaType at,
-                                                  const SkSurfaceProps&) const = 0;
 
     // This subset (when not null) is relative to the backing store's coordinate frame, it has
     // already been mapped from the content rect by the non-virtual asImage().
@@ -243,11 +217,6 @@ protected:
     virtual sk_sp<SkShader> onAsShader(SkTileMode,
                                        const SkSamplingOptions&,
                                        const SkMatrix&) const = 0;
-
-    virtual sk_sp<SkSurface> onMakeTightSurface(SkColorType colorType,
-                                                const SkColorSpace* colorSpace,
-                                                const SkISize& size,
-                                                SkAlphaType at) const = 0;
 
 #ifdef SK_DEBUG
     static bool RectFits(const SkIRect& rect, int width, int height);

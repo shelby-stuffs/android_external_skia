@@ -394,7 +394,7 @@ std::unique_ptr<GrFragmentProcessor> GrMorphologyEffect::TestCreate(GrProcessorT
 }
 #endif
 
-static void apply_morphology_rect(skgpu::v1::SurfaceFillContext* sfc,
+static void apply_morphology_rect(skgpu::ganesh::SurfaceFillContext* sfc,
                                   GrSurfaceProxyView view,
                                   SkAlphaType srcAlphaType,
                                   const SkIRect& srcRect,
@@ -413,7 +413,7 @@ static void apply_morphology_rect(skgpu::v1::SurfaceFillContext* sfc,
     sfc->fillRectToRectWithFP(srcRect, dstRect, std::move(fp));
 }
 
-static void apply_morphology_rect_no_bounds(skgpu::v1::SurfaceFillContext* sfc,
+static void apply_morphology_rect_no_bounds(skgpu::ganesh::SurfaceFillContext* sfc,
                                             GrSurfaceProxyView view,
                                             SkAlphaType srcAlphaType,
                                             const SkIRect& srcRect,
@@ -426,7 +426,7 @@ static void apply_morphology_rect_no_bounds(skgpu::v1::SurfaceFillContext* sfc,
     sfc->fillRectToRectWithFP(srcRect, dstRect, std::move(fp));
 }
 
-static void apply_morphology_pass(skgpu::v1::SurfaceFillContext* sfc,
+static void apply_morphology_pass(skgpu::ganesh::SurfaceFillContext* sfc,
                                   GrSurfaceProxyView view,
                                   SkAlphaType srcAlphaType,
                                   const SkIRect& srcRect,
@@ -701,8 +701,7 @@ sk_sp<SkSpecialImage> SkMorphologyImageFilter::onFilterImage(const Context& ctx,
         // called pad_image to account for our dilation of bounds, so the result will already be
         // moved to the destination color space. If a filter DAG avoids that, then we use this
         // fall-back, which saves us from having to do the xform during the filter itself.
-        input = ImageToColorSpace(input.get(), ctx.colorType(), ctx.colorSpace(),
-                                  ctx.surfaceProps());
+        input = ImageToColorSpace(ctx, input.get());
 
         sk_sp<SkSpecialImage> result(apply_morphology(context, input.get(), srcBounds, fType,
                                                       SkISize::Make(width, height), ctx));

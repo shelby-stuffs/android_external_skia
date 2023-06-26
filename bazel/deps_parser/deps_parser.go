@@ -35,6 +35,7 @@ var deps = map[string]depConfig{
 	"freetype":              {needsBazelFile: true},
 	"harfbuzz":              {needsBazelFile: true},
 	"icu":                   {needsBazelFile: true},
+	"imgui":                 {needsBazelFile: true},
 	"libavif":               {needsBazelFile: true},
 	"libgav1":               {needsBazelFile: true},
 	"libjpeg-turbo":         {bazelNameOverride: "libjpeg_turbo", needsBazelFile: true},
@@ -45,6 +46,7 @@ var deps = map[string]depConfig{
 	"spirv-cross":           {bazelNameOverride: "spirv_cross", needsBazelFile: true},
 	"perfetto":              {needsBazelFile: true},
 	"piex":                  {needsBazelFile: true},
+	"vello":                 {needsBazelFile: true},
 	"vulkan-headers":        {bazelNameOverride: "vulkan_headers", needsBazelFile: true},
 	"vulkan-tools":          {bazelNameOverride: "vulkan_tools", needsBazelFile: true},
 	"vulkanmemoryallocator": {needsBazelFile: true},
@@ -230,11 +232,15 @@ Instead, do:
 
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
 
-def git_repos_from_deps():
+def git_repos_from_deps(ws = "@"):
     """A list of native Bazel git rules to download third party git repositories
 
        These are in the order they appear in //DEPS.
         https://bazel.build/rules/lib/repo/git
+
+    Args:
+      ws: The name of the Skia Bazel workspace. The default, "@", may be when used from within the
+          Skia workspace.
     """`
 
 func writeNewGitRepositoryRule(w io.StringWriter, bazelName, repo, rev string) error {
@@ -243,7 +249,7 @@ func writeNewGitRepositoryRule(w io.StringWriter, bazelName, repo, rev string) e
 	_, err := w.WriteString(fmt.Sprintf(`
     new_git_repository(
         name = "%s",
-        build_file = "@//bazel/external/%s:BUILD.bazel",
+        build_file = ws + "//bazel/external/%s:BUILD.bazel",
         commit = "%s",
         remote = "%s",
     )

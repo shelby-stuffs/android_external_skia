@@ -5,14 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "tools/sk_app/WindowContext.h"
-#include "tools/sk_app/win/WindowContextFactory_win.h"
-
-#include "tools/gpu/d3d/D3DTestUtils.h"
-
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/d3d/GrD3DBackendContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "tools/gpu/d3d/D3DTestUtils.h"
+#include "tools/sk_app/WindowContext.h"
+#include "tools/sk_app/win/WindowContextFactory_win.h"
 
 #include <d3d12.h>
 #include <dxgi1_4.h>
@@ -44,12 +43,13 @@ public:
     }
 
     sk_sp<SkSurface> getBackbufferSurface() override;
-    void swapBuffers() override;
 
     void resize(int width, int height) override;
     void setDisplayParams(const DisplayParams& params) override;
 private:
     inline static constexpr int kNumFrames = 2;
+
+    void onSwapBuffers() override;
 
     HWND fWindow;
     gr_cp<ID3D12Device> fDevice;
@@ -152,14 +152,21 @@ void D3D12WindowContext::setupSurfaces(int width, int height) {
         info.fResource = fBuffers[i];
         if (fSampleCount > 1) {
             GrBackendTexture backendTexture(width, height, info);
-            fSurfaces[i] = SkSurface::MakeFromBackendTexture(
-                fContext.get(), backendTexture, kTopLeft_GrSurfaceOrigin, fSampleCount,
-                kRGBA_8888_SkColorType, fDisplayParams.fColorSpace, &fDisplayParams.fSurfaceProps);
+            fSurfaces[i] = SkSurfaces::WrapBackendTexture(fContext.get(),
+                                                          backendTexture,
+                                                          kTopLeft_GrSurfaceOrigin,
+                                                          fSampleCount,
+                                                          kRGBA_8888_SkColorType,
+                                                          fDisplayParams.fColorSpace,
+                                                          &fDisplayParams.fSurfaceProps);
         } else {
             GrBackendRenderTarget backendRT(width, height, info);
-            fSurfaces[i] = SkSurface::MakeFromBackendRenderTarget(
-                fContext.get(), backendRT, kTopLeft_GrSurfaceOrigin, kRGBA_8888_SkColorType,
-                fDisplayParams.fColorSpace, &fDisplayParams.fSurfaceProps);
+            fSurfaces[i] = SkSurfaces::WrapBackendRenderTarget(fContext.get(),
+                                                               backendRT,
+                                                               kTopLeft_GrSurfaceOrigin,
+                                                               kRGBA_8888_SkColorType,
+                                                               fDisplayParams.fColorSpace,
+                                                               &fDisplayParams.fSurfaceProps);
         }
     }
 }
@@ -195,11 +202,11 @@ sk_sp<SkSurface> D3D12WindowContext::getBackbufferSurface() {
     return fSurfaces[fBufferIndex];
 }
 
-void D3D12WindowContext::swapBuffers() {
+void D3D12WindowContext::onSwapBuffers() {
     SkSurface* surface = fSurfaces[fBufferIndex].get();
 
     GrFlushInfo info;
-    surface->flush(SkSurface::BackendSurfaceAccess::kPresent, info);
+    fContext->flush(surface, SkSurfaces::BackendSurfaceAccess::kPresent, info);
     fContext->submit();
 
     GR_D3D_CALL_ERRCHECK(fSwapChain->Present(1, 0));
@@ -210,7 +217,7 @@ void D3D12WindowContext::swapBuffers() {
 
 void D3D12WindowContext::resize(int width, int height) {
     // Clean up any outstanding resources in command lists
-    fContext->flush({});
+    fContext->flush();
     fContext->submit(true);
 
     // release the previous surface and backbuffer resources

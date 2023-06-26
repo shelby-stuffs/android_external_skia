@@ -24,6 +24,8 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/base/SkTemplates.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
@@ -102,17 +104,17 @@ void draw_child(skiatest::Reporter* reporter,
                                                   kPremul_SkAlphaType);
 
     auto childDContext = childInfo.directContext();
-    sk_sp<SkSurface> childSurface(SkSurface::MakeRenderTarget(
+    sk_sp<SkSurface> childSurface(SkSurfaces::RenderTarget(
             childDContext, skgpu::Budgeted::kNo, childII, 0, kTopLeft_GrSurfaceOrigin, nullptr));
 
-    sk_sp<SkImage> childImage = SkImage::MakeFromTexture(childDContext,
-                                                         backendTexture,
-                                                         kTopLeft_GrSurfaceOrigin,
-                                                         kRGBA_8888_SkColorType,
-                                                         kPremul_SkAlphaType,
-                                                         nullptr,
-                                                         nullptr,
-                                                         nullptr);
+    sk_sp<SkImage> childImage = SkImages::BorrowTextureFrom(childDContext,
+                                                            backendTexture,
+                                                            kTopLeft_GrSurfaceOrigin,
+                                                            kRGBA_8888_SkColorType,
+                                                            kPremul_SkAlphaType,
+                                                            nullptr,
+                                                            nullptr,
+                                                            nullptr);
 
     SkCanvas* childCanvas = childSurface->getCanvas();
     childCanvas->clear(SK_ColorRED);
@@ -149,7 +151,7 @@ void surface_semaphore_test(skiatest::Reporter* reporter,
     const SkImageInfo ii = SkImageInfo::Make(MAIN_W, MAIN_H, kRGBA_8888_SkColorType,
                                              kPremul_SkAlphaType);
 
-    sk_sp<SkSurface> mainSurface(SkSurface::MakeRenderTarget(
+    sk_sp<SkSurface> mainSurface(SkSurfaces::RenderTarget(
             mainCtx, skgpu::Budgeted::kNo, ii, 0, kTopLeft_GrSurfaceOrigin, nullptr));
     SkCanvas* mainCanvas = mainSurface->getCanvas();
     auto blueSurface = mainSurface->makeSurface(ii);
@@ -182,10 +184,10 @@ void surface_semaphore_test(skiatest::Reporter* reporter,
     info.fSignalSemaphores = semaphores.get();
     switch (flushType) {
         case FlushType::kSurface:
-            mainSurface->flush(SkSurface::BackendSurfaceAccess::kNoAccess, info);
+            mainCtx->flush(mainSurface, SkSurfaces::BackendSurfaceAccess::kNoAccess, info);
             break;
         case FlushType::kImage:
-            blueImage->flush(mainCtx, info);
+            mainCtx->flush(blueImage, info);
             break;
         case FlushType::kContext:
             mainCtx->flush(info);
@@ -193,8 +195,8 @@ void surface_semaphore_test(skiatest::Reporter* reporter,
     }
     mainCtx->submit();
 
-    GrBackendTexture backendTexture = mainSurface->getBackendTexture(
-            SkSurface::BackendHandleAccess::kFlushRead_BackendHandleAccess);
+    GrBackendTexture backendTexture = SkSurfaces::GetBackendTexture(
+            mainSurface.get(), SkSurface::BackendHandleAccess::kFlushRead);
 
     draw_child(reporter, childInfo1, backendTexture, semaphores[0]);
 
@@ -265,18 +267,18 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(EmptySurfaceSemaphoreTest,
     const SkImageInfo ii = SkImageInfo::Make(MAIN_W, MAIN_H, kRGBA_8888_SkColorType,
                                              kPremul_SkAlphaType);
 
-    sk_sp<SkSurface> mainSurface(SkSurface::MakeRenderTarget(
+    sk_sp<SkSurface> mainSurface(SkSurfaces::RenderTarget(
             ctx, skgpu::Budgeted::kNo, ii, 0, kTopLeft_GrSurfaceOrigin, nullptr));
 
     // Flush surface once without semaphores to make sure there is no peneding IO for it.
-    mainSurface->flushAndSubmit();
+    ctx->flushAndSubmit(mainSurface);
 
     GrBackendSemaphore semaphore;
     GrFlushInfo flushInfo;
     flushInfo.fNumSemaphores = 1;
     flushInfo.fSignalSemaphores = &semaphore;
     GrSemaphoresSubmitted submitted =
-            mainSurface->flush(SkSurface::BackendSurfaceAccess::kNoAccess, flushInfo);
+            ctx->flush(mainSurface, SkSurfaces::BackendSurfaceAccess::kNoAccess, flushInfo);
     REPORTER_ASSERT(reporter, GrSemaphoresSubmitted::kYes == submitted);
     ctx->submit();
 

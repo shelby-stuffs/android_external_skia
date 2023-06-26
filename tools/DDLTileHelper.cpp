@@ -13,12 +13,14 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkSurfaceCharacterization.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/base/SkRandom.h"
 #include "src/core/SkDeferredDisplayListPriv.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/image/SkImage_Gpu.h"
+#include "src/gpu/ganesh/image/SkImage_Ganesh.h"
 #include "tools/DDLPromiseImageHelper.h"
 
 void DDLTileHelper::TileData::init(int id,
@@ -122,13 +124,13 @@ sk_sp<SkSurface> DDLTileHelper::TileData::makeWrappedTileDest(GrRecordingContext
     // Here we are, unfortunately, aliasing the backend texture held by the SkPromiseImageTexture.
     // Both the tile's destination surface and the promise image used to draw the tile will be
     // backed by the same backendTexture - unbeknownst to Ganesh.
-    return SkSurface::MakeFromBackendTexture(rContext,
-                                             promiseImageTexture->backendTexture(),
-                                             fPlaybackChar.origin(),
-                                             fPlaybackChar.sampleCount(),
-                                             fPlaybackChar.colorType(),
-                                             fPlaybackChar.refColorSpace(),
-                                             &fPlaybackChar.surfaceProps());
+    return SkSurfaces::WrapBackendTexture(rContext,
+                                          promiseImageTexture->backendTexture(),
+                                          fPlaybackChar.origin(),
+                                          fPlaybackChar.sampleCount(),
+                                          fPlaybackChar.colorType(),
+                                          fPlaybackChar.refColorSpace(),
+                                          &fPlaybackChar.surfaceProps());
 }
 
 void DDLTileHelper::TileData::drawSKPDirectly(GrDirectContext* dContext,
@@ -175,17 +177,17 @@ sk_sp<SkImage> DDLTileHelper::TileData::makePromiseImageForDst(
 
     // The promise image gets a ref on the promise callback context
     sk_sp<SkImage> promiseImage =
-                SkImage::MakePromiseTexture(std::move(threadSafeProxy),
-                                            fCallbackContext->backendFormat(),
-                                            this->paddedRectSize(),
-                                            GrMipmapped::kNo,
-                                            GrSurfaceOrigin::kBottomLeft_GrSurfaceOrigin,
-                                            fPlaybackChar.colorType(),
-                                            kPremul_SkAlphaType,
-                                            fPlaybackChar.refColorSpace(),
-                                            PromiseImageCallbackContext::PromiseImageFulfillProc,
-                                            PromiseImageCallbackContext::PromiseImageReleaseProc,
-                                            (void*)this->refCallbackContext().release());
+            SkImages::PromiseTextureFrom(std::move(threadSafeProxy),
+                                         fCallbackContext->backendFormat(),
+                                         this->paddedRectSize(),
+                                         GrMipmapped::kNo,
+                                         GrSurfaceOrigin::kBottomLeft_GrSurfaceOrigin,
+                                         fPlaybackChar.colorType(),
+                                         kPremul_SkAlphaType,
+                                         fPlaybackChar.refColorSpace(),
+                                         PromiseImageCallbackContext::PromiseImageFulfillProc,
+                                         PromiseImageCallbackContext::PromiseImageReleaseProc,
+                                         (void*)this->refCallbackContext().release());
     fCallbackContext->wasAddedToImage();
 
     return promiseImage;

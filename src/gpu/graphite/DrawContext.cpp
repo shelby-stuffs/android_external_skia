@@ -16,6 +16,7 @@
 #include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/CommandBuffer.h"
+#include "src/gpu/graphite/ComputeTask.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/DrawList.h"
 #include "src/gpu/graphite/DrawPass.h"
@@ -26,13 +27,10 @@
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/TextureProxyView.h"
 #include "src/gpu/graphite/UploadTask.h"
+#include "src/gpu/graphite/compute/DispatchGroup.h"
 #include "src/gpu/graphite/geom/BoundsManager.h"
 #include "src/gpu/graphite/geom/Geometry.h"
 #include "src/gpu/graphite/text/AtlasManager.h"
-
-#ifdef SK_ENABLE_PIET_GPU
-#include "src/gpu/graphite/PietRenderTask.h"
-#endif
 
 namespace skgpu::graphite {
 
@@ -126,15 +124,6 @@ bool DrawContext::recordUpload(Recorder* recorder,
                                          std::move(condContext));
 }
 
-#ifdef SK_ENABLE_PIET_GPU
-bool DrawContext::recordPietSceneRender(Recorder*,
-                                        sk_sp<TextureProxy> targetProxy,
-                                        sk_sp<const skgpu::piet::Scene> scene) {
-    fPendingPietRenders.push_back(PietRenderInstance(std::move(scene), std::move(targetProxy)));
-    return true;
-}
-#endif
-
 void DrawContext::snapDrawPass(Recorder* recorder) {
     if (fPendingDraws->drawCount() == 0 && fPendingLoadOp != LoadOp::kClear) {
         return;
@@ -158,9 +147,10 @@ RenderPassDesc RenderPassDesc::Make(const Caps* caps,
                                     StoreOp storeOp,
                                     SkEnumBitMask<DepthStencilFlags> depthStencilFlags,
                                     const std::array<float, 4>& clearColor,
-                                    bool requiresMSAA) {
+                                    bool requiresMSAA,
+                                    Swizzle writeSwizzle) {
     RenderPassDesc desc;
-
+    desc.fWriteSwizzle = writeSwizzle;
     // It doesn't make sense to have a storeOp for our main target not be store. Why are we doing
     // this DrawPass then
     SkASSERT(storeOp == StoreOp::kStore);
@@ -221,12 +211,13 @@ sk_sp<Task> DrawContext::snapRenderPassTask(Recorder* recorder) {
     auto& drawPass = fDrawPasses[0];
     const TextureInfo& targetInfo = drawPass->target()->textureInfo();
     auto [loadOp, storeOp] = drawPass->ops();
+    auto writeSwizzle = caps->getWriteSwizzle(this->colorInfo().colorType(), targetInfo);
 
     RenderPassDesc desc = RenderPassDesc::Make(caps, targetInfo, loadOp, storeOp,
                                                drawPass->depthStencilFlags(),
                                                drawPass->clearColor(),
-                                               drawPass->requiresMSAA());
-
+                                               drawPass->requiresMSAA(),
+                                               writeSwizzle);
     sk_sp<TextureProxy> targetProxy = sk_ref_sp(fDrawPasses[0]->target());
     return RenderPassTask::Make(std::move(fDrawPasses), desc, std::move(targetProxy));
 }
@@ -243,13 +234,11 @@ sk_sp<Task> DrawContext::snapUploadTask(Recorder* recorder) {
     return uploadTask;
 }
 
-#ifdef SK_ENABLE_PIET_GPU
-sk_sp<Task> DrawContext::snapPietRenderTask(Recorder* recorder) {
-    if (fPendingPietRenders.empty()) {
+sk_sp<Task> DrawContext::snapComputeTask(Recorder* recorder) {
+    if (fDispatchGroups.empty()) {
         return nullptr;
     }
-    return sk_sp<Task>(new PietRenderTask(std::move(fPendingPietRenders)));
+    return ComputeTask::Make(std::move(fDispatchGroups));
 }
-#endif
 
 } // namespace skgpu::graphite

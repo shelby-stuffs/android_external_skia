@@ -8,9 +8,8 @@
 #ifndef sktext_StrikeForGPU_DEFINED
 #define sktext_StrikeForGPU_DEFINED
 
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkSpan.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
 #include "src/core/SkGlyph.h"
 
@@ -19,16 +18,13 @@
 #include <variant>
 
 class SkDescriptor;
-class SkDrawableGlyphBuffer;
+class SkDrawable;
 class SkReadBuffer;
-class SkSourceGlyphBuffer;
 class SkStrike;
 class SkStrikeCache;
 class SkStrikeClient;
 class SkStrikeSpec;
 class SkWriteBuffer;
-struct SkGlyphPositionRoundingSpec;
-struct SkScalerContextEffects;
 
 namespace sktext {
 // -- SkStrikePromise ------------------------------------------------------------------------------
@@ -99,6 +95,7 @@ public:
 // prepareForPathDrawing uses this union to convert glyph ids to paths.
 union IDOrPath {
     IDOrPath() {}
+    IDOrPath(SkGlyphID glyphID) : fGlyphID{glyphID} {}
 
     // PathOpSubmitter takes care of destroying the paths.
     ~IDOrPath() {}

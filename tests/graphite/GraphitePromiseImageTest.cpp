@@ -12,7 +12,9 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/graphite/Context.h"
+#include "include/gpu/graphite/Image.h"
 #include "include/gpu/graphite/Recording.h"
+#include "include/gpu/graphite/Surface.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/RecordingPriv.h"
@@ -187,7 +189,7 @@ void setup_test_context(Context* context,
     TextureInfo textureInfo = caps->getDefaultSampledTextureInfo(kRGBA_8888_SkColorType,
                                                                  skgpu::Mipmapped::kNo,
                                                                  skgpu::Protected::kNo,
-                                                                 Renderable::kYes);
+                                                                 skgpu::Renderable::kYes);
 
     if (invalidBackendTex) {
         // Having invalid backend textures will invalidate all the fulfill calls
@@ -219,17 +221,17 @@ void setup_test_context(Context* context,
                                        kRGBA_8888_SkColorType,
                                        kPremul_SkAlphaType);
 
-    testCtx->fImg = SkImage::MakeGraphitePromiseTexture(testCtx->fRecorder.get(),
-                                                        dimensions,
-                                                        textureInfo,
-                                                        ii.colorInfo(),
-                                                        isVolatile,
-                                                        PromiseTextureChecker::Fulfill,
-                                                        PromiseTextureChecker::ImageRelease,
-                                                        PromiseTextureChecker::TextureRelease,
-                                                        &testCtx->fPromiseChecker);
+    testCtx->fImg = SkImages::PromiseTextureFrom(testCtx->fRecorder.get(),
+                                                 dimensions,
+                                                 textureInfo,
+                                                 ii.colorInfo(),
+                                                 isVolatile,
+                                                 PromiseTextureChecker::Fulfill,
+                                                 PromiseTextureChecker::ImageRelease,
+                                                 PromiseTextureChecker::TextureRelease,
+                                                 &testCtx->fPromiseChecker);
 
-    testCtx->fSurface = SkSurface::MakeGraphite(testCtx->fRecorder.get(), ii);
+    testCtx->fSurface = SkSurfaces::RenderTarget(testCtx->fRecorder.get(), ii);
 }
 
 } // anonymous namespace

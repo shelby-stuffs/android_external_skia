@@ -8,18 +8,17 @@
 #ifndef SKSL_METALCODEGENERATOR
 #define SKSL_METALCODEGENERATOR
 
+#include "include/core/SkSpan.h"
 #include "include/private/SkSLDefines.h"
 #include "include/private/base/SkTArray.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/codegen/SkSLCodeGenerator.h"
-#include "src/sksl/ir/SkSLType.h"
 
 #include <cstdint>
 #include <initializer_list>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace SkSL {
 
@@ -34,6 +33,7 @@ class DoStatement;
 class Expression;
 class ExpressionStatement;
 class Extension;
+struct Field;
 class FieldAccess;
 class ForStatement;
 class FunctionCall;
@@ -41,6 +41,7 @@ class FunctionDeclaration;
 class FunctionDefinition;
 class FunctionPrototype;
 class IfStatement;
+class IndexExpression;
 class InterfaceBlock;
 class Literal;
 class Operator;
@@ -53,17 +54,17 @@ class ReturnStatement;
 class Statement;
 class StructDefinition;
 class SwitchStatement;
+class Swizzle;
 class TernaryExpression;
+class Type;
 class VarDeclaration;
 class Variable;
 class VariableReference;
 enum class OperatorPrecedence : uint8_t;
 enum IntrinsicKind : int8_t;
-struct IndexExpression;
 struct Layout;
 struct Modifiers;
 struct Program;
-struct Swizzle;
 
 /**
  * Converts a Program into Metal code.
@@ -117,7 +118,8 @@ protected:
 
     void writeConstantVariables();
 
-    void writeFields(const std::vector<Type::Field>& fields, Position pos,
+    void writeFields(SkSpan<const Field> fields,
+                     Position pos,
                      const InterfaceBlock* parentIntf = nullptr);
 
     int size(const Type* type, bool isPacked) const;
@@ -175,7 +177,7 @@ protected:
 
     std::string getOutParamHelper(const FunctionCall& c,
                                   const ExpressionArray& arguments,
-                                  const SkTArray<VariableReference*>& outVars);
+                                  const skia_private::TArray<VariableReference*>& outVars);
 
     std::string getInversePolyfill(const ExpressionArray& arguments);
 
@@ -293,9 +295,9 @@ protected:
 
     int getUniformSet(const Modifiers& m);
 
-    SkTHashSet<std::string_view> fReservedWords;
-    SkTHashMap<const Type::Field*, const InterfaceBlock*> fInterfaceBlockMap;
-    SkTHashMap<const InterfaceBlock*, std::string_view> fInterfaceBlockNameMap;
+    skia_private::THashSet<std::string_view> fReservedWords;
+    skia_private::THashMap<const Field*, const InterfaceBlock*> fInterfaceBlockMap;
+    skia_private::THashMap<const InterfaceBlock*, std::string_view> fInterfaceBlockNameMap;
     int fAnonInterfaceCount = 0;
     int fPaddingCount = 0;
     const char* fLineEnding;
@@ -307,8 +309,8 @@ protected:
     bool fAtLineStart = false;
     // true if we have run into usages of dFdx / dFdy
     bool fFoundDerivatives = false;
-    SkTHashMap<const FunctionDeclaration*, Requirements> fRequirements;
-    SkTHashSet<std::string> fHelpers;
+    skia_private::THashMap<const FunctionDeclaration*, Requirements> fRequirements;
+    skia_private::THashSet<std::string> fHelpers;
     int fUniformBuffer = -1;
     std::string fRTFlipName;
     const FunctionDeclaration* fCurrentFunction = nullptr;

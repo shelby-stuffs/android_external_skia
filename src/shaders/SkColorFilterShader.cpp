@@ -18,6 +18,7 @@
 #if defined(SK_GANESH)
 #include "src/gpu/ganesh/GrFPArgs.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrFragmentProcessors.h"
 #endif
 
 #if defined(SK_GRAPHITE)
@@ -68,6 +69,7 @@ bool SkColorFilterShader::appendStages(const SkStageRec& rec, const MatrixRec& m
     return true;
 }
 
+#if defined(SK_ENABLE_SKVM)
 skvm::Color SkColorFilterShader::program(skvm::Builder* p,
                                          skvm::Coord device,
                                          skvm::Coord local,
@@ -93,7 +95,7 @@ skvm::Color SkColorFilterShader::program(skvm::Builder* p,
     // Finally run that through the color filter.
     return fFilter->program(p,c, dst, uniforms,alloc);
 }
-
+#endif
 #if defined(SK_GANESH)
 /////////////////////////////////////////////////////////////////////
 
@@ -107,8 +109,11 @@ SkColorFilterShader::asFragmentProcessor(const GrFPArgs& args, const MatrixRec& 
     // TODO I guess, but it shouldn't come up as used today.
     SkASSERT(fAlpha == 1.0f);
 
-    auto [success, fp] = fFilter->asFragmentProcessor(std::move(shaderFP), args.fContext,
-                                                      *args.fDstColorInfo, args.fSurfaceProps);
+    auto [success, fp] = GrFragmentProcessors::Make(args.fContext,
+                                                    fFilter.get(),
+                                                    std::move(shaderFP),
+                                                    *args.fDstColorInfo,
+                                                    args.fSurfaceProps);
     // If the filter FP could not be created, we still want to return the shader FP, so checking
     // success can be omitted here.
     return std::move(fp);

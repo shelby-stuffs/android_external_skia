@@ -80,7 +80,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SpecialSurface_Gpu1,
     }
 }
 
-#if SK_GRAPHITE
+#if defined(SK_GRAPHITE)
 
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/TextureInfo.h"
@@ -97,7 +97,7 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(SpecialSurface_Graphite, reporter, cont
         TextureInfo info = caps->getDefaultSampledTextureInfo(colorType,
                                                               skgpu::Mipmapped::kNo,
                                                               skgpu::Protected::kNo,
-                                                              Renderable::kYes);
+                                                              skgpu::Renderable::kYes);
         if (!info.isValid()) {
             continue;
         }

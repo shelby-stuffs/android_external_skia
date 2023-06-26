@@ -95,7 +95,7 @@ sk_sp<SkSpecialSurface> SkSpecialSurface::MakeRenderTarget(GrRecordingContext* r
                                                 GrProtected::kNo,
                                                 surfaceOrigin,
                                                 {props.flags(), kUnknown_SkPixelGeometry},
-                                                skgpu::v1::Device::InitContents::kUninit);
+                                                skgpu::ganesh::Device::InitContents::kUninit);
     if (!device) {
         return nullptr;
     }
@@ -108,7 +108,7 @@ sk_sp<SkSpecialSurface> SkSpecialSurface::MakeRenderTarget(GrRecordingContext* r
 #endif // defined(SK_GANESH)
 
 ///////////////////////////////////////////////////////////////////////////////
-#if SK_GRAPHITE
+#if defined(SK_GRAPHITE)
 #include "src/gpu/graphite/Device.h"
 
 sk_sp<SkSpecialSurface> SkSpecialSurface::MakeGraphite(skgpu::graphite::Recorder* recorder,

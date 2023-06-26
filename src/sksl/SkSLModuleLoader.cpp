@@ -7,15 +7,16 @@
 #include "src/sksl/SkSLModuleLoader.h"
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkSLIRNode.h"
-#include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLProgramElement.h"
-#include "include/private/SkSLProgramKind.h"
 #include "include/private/base/SkMutex.h"
-#include "include/sksl/SkSLPosition.h"
+#include "src/base/SkNoDestructor.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLModifiersPool.h"
+#include "src/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLProgramKind.h"
+#include "src/sksl/ir/SkSLIRNode.h"
+#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVariable.h"
@@ -169,7 +170,7 @@ struct ModuleLoader::Impl {
 };
 
 ModuleLoader ModuleLoader::Get() {
-    static ModuleLoader::Impl* sModuleLoaderImpl = new ModuleLoader::Impl;
+    static SkNoDestructor<ModuleLoader::Impl> sModuleLoaderImpl;
     return ModuleLoader(*sModuleLoaderImpl);
 }
 
@@ -302,7 +303,7 @@ const Module* ModuleLoader::loadPublicModule(SkSL::Compiler* compiler) {
     if (!fModuleLoader.fPublicModule) {
         const Module* sharedModule = this->loadSharedModule(compiler);
         fModuleLoader.fPublicModule = compile_and_shrink(compiler,
-                                                         ProgramKind::kGeneric,
+                                                         ProgramKind::kFragment,
                                                          MODULE_DATA(sksl_public),
                                                          sharedModule,
                                                          this->coreModifiers());
@@ -432,12 +433,12 @@ void ModuleLoader::Impl::makeRootSymbolTable() {
     // sk_Caps is "builtin", but all references to it are resolved to Settings, so we don't need to
     // treat it as builtin (ie, no need to clone it into the Program).
     rootModule->fSymbols->add(std::make_unique<Variable>(/*pos=*/Position(),
-                                                          /*modifiersPosition=*/Position(),
-                                                          fCoreModifiers.add(Modifiers{}),
-                                                          "sk_Caps",
-                                                          fBuiltinTypes.fSkCaps.get(),
-                                                          /*builtin=*/false,
-                                                          Variable::Storage::kGlobal));
+                                                         /*modifiersPosition=*/Position(),
+                                                         fCoreModifiers.add(Modifiers{}),
+                                                         "sk_Caps",
+                                                         fBuiltinTypes.fSkCaps.get(),
+                                                         /*builtin=*/false,
+                                                         Variable::Storage::kGlobal));
     fRootModule = std::move(rootModule);
 }
 

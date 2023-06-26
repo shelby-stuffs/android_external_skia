@@ -11,6 +11,7 @@
 #include "include/core/SkTypes.h"
 #include "include/private/SkBitmaskEnum.h" // IWYU pragma: keep
 #include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTo.h"
 #include "src/base/SkUTF.h"
 
 #include <cstddef>
@@ -146,10 +147,12 @@ class SKUNICODE_API SkUnicode {
                                     std::vector<BidiRegion>* results) = 0;
         virtual bool getWords(const char utf8[], int utf8Units, const char* locale,
                               std::vector<Position>* results) = 0;
-        virtual bool computeCodeUnitFlags(char utf8[], int utf8Units, bool replaceTabs,
-                                      SkTArray<SkUnicode::CodeUnitFlags, true>* results) = 0;
-        virtual bool computeCodeUnitFlags(char16_t utf16[], int utf16Units, bool replaceTabs,
-                                      SkTArray<SkUnicode::CodeUnitFlags, true>* results) = 0;
+        virtual bool computeCodeUnitFlags(
+                char utf8[], int utf8Units, bool replaceTabs,
+                skia_private::TArray<SkUnicode::CodeUnitFlags, true>* results) = 0;
+        virtual bool computeCodeUnitFlags(
+                char16_t utf16[], int utf16Units, bool replaceTabs,
+                skia_private::TArray<SkUnicode::CodeUnitFlags, true>* results) = 0;
 
         static SkString convertUtf16ToUtf8(const char16_t * utf16, int utf16Units);
         static SkString convertUtf16ToUtf8(const std::u16string& utf16);
@@ -164,11 +167,11 @@ class SKUNICODE_API SkUnicode {
             auto end = utf8.end();
             while (ptr < end) {
 
-                size_t index = ptr - utf8.begin();
+                size_t index = SkToSizeT(ptr - utf8.begin());
                 SkUnichar u = SkUTF::NextUTF8(&ptr, end);
 
                 // All UTF8 code units refer to the same codepoint
-                size_t next = ptr - utf8.begin();
+                size_t next = SkToSizeT(ptr - utf8.begin());
                 for (auto i = index; i < next; ++i) {
                     //fUTF16IndexForUTF8Index.emplace_back(fUTF8IndexForUTF16Index.size());
                     appender16(size8);

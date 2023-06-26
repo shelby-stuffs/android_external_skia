@@ -5,18 +5,19 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkSurface.h"
-#include "src/base/SkMathPriv.h"
 #include "tools/sk_app/GraphiteMetalWindowContext.h"
 
+#include "include/core/SkSurface.h"
 #include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
+#include "include/gpu/graphite/Surface.h"
 #include "include/gpu/graphite/mtl/MtlBackendContext.h"
-#include "include/gpu/graphite/mtl/MtlTypes.h"
-#include "include/gpu/graphite/mtl/MtlUtils.h"
+#include "include/gpu/graphite/mtl/MtlGraphiteTypes.h"
+#include "include/gpu/graphite/mtl/MtlGraphiteUtils.h"
+#include "src/base/SkMathPriv.h"
 #include "tools/ToolUtils.h"
 
 using sk_app::DisplayParams;
@@ -90,28 +91,18 @@ sk_sp<SkSurface> GraphiteMetalWindowContext::getBackbufferSurface() {
     skgpu::graphite::BackendTexture backendTex(this->dimensions(),
                                                (skgpu::graphite::MtlHandle)currentDrawable.texture);
 
-    surface = SkSurface::MakeGraphiteFromBackendTexture(this->graphiteRecorder(),
-                                                        backendTex,
-                                                        kBGRA_8888_SkColorType,
-                                                        fDisplayParams.fColorSpace,
-                                                        &fDisplayParams.fSurfaceProps);
+    surface = SkSurfaces::WrapBackendTexture(this->graphiteRecorder(),
+                                             backendTex,
+                                             kBGRA_8888_SkColorType,
+                                             fDisplayParams.fColorSpace,
+                                             &fDisplayParams.fSurfaceProps);
 
     fDrawableHandle = CFRetain((skgpu::graphite::MtlHandle) currentDrawable);
 
     return surface;
 }
 
-void GraphiteMetalWindowContext::swapBuffers() {
-    // This chunk of code should not be in this class but higher up either in Window or
-    // WindowContext
-    std::unique_ptr<skgpu::graphite::Recording> recording = fGraphiteRecorder->snap();
-    if (recording) {
-        skgpu::graphite::InsertRecordingInfo info;
-        info.fRecording = recording.get();
-        fGraphiteContext->insertRecording(info);
-        fGraphiteContext->submit(skgpu::graphite::SyncToCpu::kNo);
-    }
-
+void GraphiteMetalWindowContext::onSwapBuffers() {
     id<CAMetalDrawable> currentDrawable = (id<CAMetalDrawable>)fDrawableHandle;
 
     id<MTLCommandBuffer> commandBuffer([*fQueue commandBuffer]);

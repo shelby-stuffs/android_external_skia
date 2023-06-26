@@ -8,21 +8,31 @@
 #ifndef skgpu_graphite_ContextUtils_DEFINED
 #define skgpu_graphite_ContextUtils_DEFINED
 
+#include "src/gpu/Blend.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #include "src/gpu/graphite/PipelineDataCache.h"
 
+#include <optional>
+
 class SkColorInfo;
 class SkM44;
+class SkPaint;
+
+namespace skgpu {
+class Swizzle;
+}
 
 namespace skgpu::graphite {
 
 class DrawParams;
+enum class DstReadRequirement;
 class GraphicsPipelineDesc;
 class PaintParams;
 class PipelineDataGatherer;
 class Recorder;
 class RenderStep;
 class RuntimeEffectDictionary;
+class ShaderNode;
 class UniquePaintParamsID;
 
 struct ResourceBindingRequirements;
@@ -41,6 +51,7 @@ ExtractPaintData(Recorder*,
                  const Layout layout,
                  const SkM44& local2Dev,
                  const PaintParams&,
+                 sk_sp<TextureProxy> dstTexture,
                  const SkColorInfo& targetColorInfo);
 
 std::tuple<const UniformDataBlock*, const TextureDataBlock*> ExtractRenderStepData(
@@ -51,22 +62,25 @@ std::tuple<const UniformDataBlock*, const TextureDataBlock*> ExtractRenderStepDa
         const RenderStep* step,
         const DrawParams& params);
 
+DstReadRequirement GetDstReadRequirement(const Caps*, std::optional<SkBlendMode>, bool hasCoverage);
+
 std::string GetSkSLVS(const ResourceBindingRequirements&,
                       const RenderStep* step,
                       bool defineShadingSsboIndexVarying,
                       bool defineLocalCoordsVarying);
 
-FragSkSLInfo GetSkSLFS(const ResourceBindingRequirements&,
+FragSkSLInfo GetSkSLFS(const Caps* caps,
                        const ShaderCodeDictionary*,
                        const RuntimeEffectDictionary*,
                        const RenderStep* renderStep,
                        UniquePaintParamsID paintID,
-                       bool useStorageBuffers);
+                       bool useStorageBuffers,
+                       skgpu::Swizzle writeSwizzle);
 
 std::string EmitPaintParamsUniforms(int bufferID,
                                     const char* name,
                                     const Layout layout,
-                                    const std::vector<PaintParamsKey::BlockReader>&);
+                                    SkSpan<const ShaderNode*> nodes);
 std::string EmitRenderStepUniforms(int bufferID,
                                    const char* name,
                                    const Layout layout,
@@ -74,12 +88,12 @@ std::string EmitRenderStepUniforms(int bufferID,
 std::string EmitPaintParamsStorageBuffer(int bufferID,
                                          const char* bufferTypePrefix,
                                          const char* bufferNamePrefix,
-                                         const std::vector<PaintParamsKey::BlockReader>& readers);
+                                         SkSpan<const ShaderNode*> nodes);
 std::string EmitStorageBufferAccess(const char* bufferNamePrefix,
                                     const char* ssboIndex,
                                     const char* uniformName);
 std::string EmitTexturesAndSamplers(const ResourceBindingRequirements&,
-                                    const std::vector<PaintParamsKey::BlockReader>&,
+                                    SkSpan<const ShaderNode*> nodes,
                                     int* binding);
 std::string EmitSamplerLayout(const ResourceBindingRequirements&, int* binding);
 std::string EmitVaryings(const RenderStep* step,

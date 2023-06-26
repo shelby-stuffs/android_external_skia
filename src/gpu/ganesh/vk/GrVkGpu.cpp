@@ -7,13 +7,14 @@
 
 #include "src/gpu/ganesh/vk/GrVkGpu.h"
 
+#include "include/core/SkTextureCompressionType.h"
 #include "include/gpu/GrBackendSemaphore.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/private/base/SkTo.h"
+#include "src/base/SkRectMemcpy.h"
 #include "src/core/SkCompressedDataUtils.h"
-#include "src/core/SkConvertPixels.h"
 #include "src/core/SkMipmap.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
@@ -28,6 +29,8 @@
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrThreadSafePipelineBuilder.h"
 #include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/image/SkImage_Ganesh.h"
+#include "src/gpu/ganesh/surface/SkSurface_Ganesh.h"
 #include "src/gpu/ganesh/vk/GrVkBuffer.h"
 #include "src/gpu/ganesh/vk/GrVkCommandBuffer.h"
 #include "src/gpu/ganesh/vk/GrVkCommandPool.h"
@@ -45,8 +48,6 @@
 #include "src/gpu/vk/VulkanInterface.h"
 #include "src/gpu/vk/VulkanMemory.h"
 #include "src/gpu/vk/VulkanUtilsPriv.h"
-#include "src/image/SkImage_Gpu.h"
-#include "src/image/SkSurface_Gpu.h"
 
 #include "include/gpu/vk/GrVkTypes.h"
 #include "include/gpu/vk/VulkanExtensions.h"
@@ -64,16 +65,9 @@ sk_sp<GrGpu> GrVkGpu::Make(const GrVkBackendContext& backendContext,
         backendContext.fPhysicalDevice == VK_NULL_HANDLE ||
         backendContext.fDevice == VK_NULL_HANDLE ||
         backendContext.fQueue == VK_NULL_HANDLE) {
-        SK_ABORT_IN_ANDROID_FRAMEWORK("Backend context invalid: %s%s%s%s",
-                backendContext.fInstance == VK_NULL_HANDLE ? "[instance null]" : "",
-                backendContext.fPhysicalDevice == VK_NULL_HANDLE ? "[physical device null]" : "",
-                backendContext.fDevice == VK_NULL_HANDLE ? "[device null]" : "",
-                backendContext.fQueue == VK_NULL_HANDLE ? "[queue null]" : ""
-                );
         return nullptr;
     }
     if (!backendContext.fGetProc) {
-        SK_ABORT_IN_ANDROID_FRAMEWORK("Backend context's fGetProc is null");
         return nullptr;
     }
 
@@ -87,7 +81,6 @@ sk_sp<GrGpu> GrVkGpu::Make(const GrVkBackendContext& backendContext,
     } else {
         VkResult err = localEnumerateInstanceVersion(&instanceVersion);
         if (err) {
-            SK_ABORT_IN_ANDROID_FRAMEWORK("Failed to enumerate instance version. Err: %d\n", err);
             SkDebugf("Failed to enumerate instance version. Err: %d\n", err);
             return nullptr;
         }
@@ -100,7 +93,6 @@ sk_sp<GrGpu> GrVkGpu::Make(const GrVkBackendContext& backendContext,
                                             VK_NULL_HANDLE));
 
     if (!localGetPhysicalDeviceProperties) {
-        SK_ABORT_IN_ANDROID_FRAMEWORK("Failed to get local vkGetPhysicalDeviceProperties proc");
         return nullptr;
     }
     VkPhysicalDeviceProperties physDeviceProperties;
@@ -123,8 +115,6 @@ sk_sp<GrGpu> GrVkGpu::Make(const GrVkBackendContext& backendContext,
                                                    physDevVersion,
                                                    backendContext.fVkExtensions));
         if (!interface->validate(instanceVersion, physDevVersion, backendContext.fVkExtensions)) {
-            SK_ABORT_IN_ANDROID_FRAMEWORK("Failed to validate VulkanInterface (with " \
-                                          "given extensions)");
             return nullptr;
         }
     } else {
@@ -144,15 +134,6 @@ sk_sp<GrGpu> GrVkGpu::Make(const GrVkBackendContext& backendContext,
                                                    physDevVersion,
                                                    &extensions));
         if (!interface->validate(instanceVersion, physDevVersion, &extensions)) {
-            if (backendContext.fExtensions & kKHR_swapchain_GrVkExtensionFlag) {
-                SK_ABORT_IN_ANDROID_FRAMEWORK("Failed to validate VulkanInterface (with " \
-                                              "only swapchain extension)");
-            }
-            else {
-                SK_ABORT_IN_ANDROID_FRAMEWORK("Failed to validate VulkanInterface (with " \
-                                              "no extensions)");
-            }
-
             return nullptr;
         }
     }
@@ -162,10 +143,6 @@ sk_sp<GrGpu> GrVkGpu::Make(const GrVkBackendContext& backendContext,
         caps.reset(new GrVkCaps(options, interface.get(), backendContext.fPhysicalDevice,
                                 *backendContext.fDeviceFeatures2, instanceVersion, physDevVersion,
                                 *backendContext.fVkExtensions, backendContext.fProtectedContext));
-        if (!caps) {
-            SK_ABORT_IN_ANDROID_FRAMEWORK("Failed to initialize GrVkCaps (with " \
-                                          "given VkPhysicalDeviceFeatures2 (extensible))");
-        }
     } else if (backendContext.fDeviceFeatures) {
         VkPhysicalDeviceFeatures2 features2;
         features2.pNext = nullptr;
@@ -173,10 +150,6 @@ sk_sp<GrGpu> GrVkGpu::Make(const GrVkBackendContext& backendContext,
         caps.reset(new GrVkCaps(options, interface.get(), backendContext.fPhysicalDevice,
                                 features2, instanceVersion, physDevVersion,
                                 *backendContext.fVkExtensions, backendContext.fProtectedContext));
-        if (!caps) {
-            SK_ABORT_IN_ANDROID_FRAMEWORK("Failed to initialize GrVkCaps (with " \
-                                          "given VkPhysicalDeviceFeatures)");
-        }
     } else {
         VkPhysicalDeviceFeatures2 features;
         memset(&features, 0, sizeof(VkPhysicalDeviceFeatures2));
@@ -202,10 +175,6 @@ sk_sp<GrGpu> GrVkGpu::Make(const GrVkBackendContext& backendContext,
         caps.reset(new GrVkCaps(options, interface.get(), backendContext.fPhysicalDevice,
                                 features, instanceVersion, physDevVersion, extensions,
                                 backendContext.fProtectedContext));
-        if (!caps) {
-            SK_ABORT_IN_ANDROID_FRAMEWORK("Failed to initialize GrVkCaps (with " \
-                                          "minimal set of features and extensions)");
-        }
     }
 
     if (!caps) {
@@ -226,8 +195,6 @@ sk_sp<GrGpu> GrVkGpu::Make(const GrVkBackendContext& backendContext,
                                                                 /*=threadSafe=*/false);
     }
     if (!memoryAllocator) {
-        SK_ABORT_IN_ANDROID_FRAMEWORK("No supplied vulkan memory allocator and unable to create " \
-                                      "one internally.");
         SkDEBUGFAIL("No supplied vulkan memory allocator and unable to create one internally.");
         return nullptr;
     }
@@ -237,8 +204,6 @@ sk_sp<GrGpu> GrVkGpu::Make(const GrVkBackendContext& backendContext,
                                       std::move(memoryAllocator)));
      if (backendContext.fProtectedContext == GrProtected::kYes &&
          !vkGpu->vkCaps().supportsProtectedMemory()) {
-         SK_ABORT_IN_ANDROID_FRAMEWORK("Backend content is in a protected context, but protected " \
-                                       "memory is not supported by current GrVkCaps");
          return nullptr;
      }
      return std::move(vkGpu);
@@ -355,7 +320,7 @@ GrOpsRenderPass* GrVkGpu::onGetOpsRenderPass(
         const SkIRect& bounds,
         const GrOpsRenderPass::LoadAndStoreInfo& colorInfo,
         const GrOpsRenderPass::StencilLoadAndStoreInfo& stencilInfo,
-        const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
+        const TArray<GrSurfaceProxy*, true>& sampledProxies,
         GrXferBarrierFlags renderPassXferBarriers) {
     if (!fCachedOpsRenderPass) {
         fCachedOpsRenderPass = std::make_unique<GrVkOpsRenderPass>(this);
@@ -921,14 +886,14 @@ bool GrVkGpu::uploadTexDataLinear(GrVkImage* texImage,
 // This fills in the 'regions' vector in preparation for copying a buffer to an image.
 // 'individualMipOffsets' is filled in as a side-effect.
 static size_t fill_in_compressed_regions(GrStagingBufferManager* stagingBufferManager,
-                                         SkTArray<VkBufferImageCopy>* regions,
-                                         SkTArray<size_t>* individualMipOffsets,
+                                         TArray<VkBufferImageCopy>* regions,
+                                         TArray<size_t>* individualMipOffsets,
                                          GrStagingBufferManager::Slice* slice,
-                                         SkImage::CompressionType compression,
+                                         SkTextureCompressionType compression,
                                          VkFormat vkFormat,
                                          SkISize dimensions,
                                          GrMipmapped mipmapped) {
-    SkASSERT(compression != SkImage::CompressionType::kNone);
+    SkASSERT(compression != SkTextureCompressionType::kNone);
     int numMipLevels = 1;
     if (mipmapped == GrMipmapped::kYes) {
         numMipLevels = SkMipmap::ComputeLevelCount(dimensions.width(), dimensions.height()) + 1;
@@ -1007,7 +972,7 @@ bool GrVkGpu::uploadTexDataOptimal(GrVkImage* texImage,
     AutoTArray<GrMipLevel> texelsShallowCopy(mipLevelCount);
     std::copy_n(texels, mipLevelCount, texelsShallowCopy.get());
 
-    SkTArray<size_t> individualMipOffsets;
+    TArray<size_t> individualMipOffsets;
     size_t combinedBufferSize;
     if (mipLevelCount > 1) {
         combinedBufferSize = GrComputeTightCombinedBufferSize(bpp,
@@ -1039,7 +1004,7 @@ bool GrVkGpu::uploadTexDataOptimal(GrVkImage* texImage,
     int uploadTop = rect.top();
 
     char* buffer = (char*) slice.fOffsetMapPtr;
-    SkTArray<VkBufferImageCopy> regions(mipLevelCount);
+    TArray<VkBufferImageCopy> regions(mipLevelCount);
 
     int currentWidth = rect.width();
     int currentHeight = rect.height();
@@ -1092,7 +1057,7 @@ bool GrVkGpu::uploadTexDataOptimal(GrVkImage* texImage,
 // It's probably possible to roll this into uploadTexDataOptimal,
 // but for now it's easier to maintain as a separate entity.
 bool GrVkGpu::uploadTexDataCompressed(GrVkImage* uploadTexture,
-                                      SkImage::CompressionType compression, VkFormat vkFormat,
+                                      SkTextureCompressionType compression, VkFormat vkFormat,
                                       SkISize dimensions, GrMipmapped mipmapped,
                                       const void* data, size_t dataSize) {
     if (!this->currentCommandBuffer()) {
@@ -1114,8 +1079,8 @@ bool GrVkGpu::uploadTexDataCompressed(GrVkImage* uploadTexture,
 
 
     GrStagingBufferManager::Slice slice;
-    SkTArray<VkBufferImageCopy> regions;
-    SkTArray<size_t> individualMipOffsets;
+    TArray<VkBufferImageCopy> regions;
+    TArray<size_t> individualMipOffsets;
     SkDEBUGCODE(size_t combinedBufferSize =) fill_in_compressed_regions(&fStagingBufferManager,
                                                                         &regions,
                                                                         &individualMipOffsets,
@@ -1194,7 +1159,7 @@ sk_sp<GrTexture> GrVkGpu::onCreateTexture(SkISize dimensions,
         if (!this->currentCommandBuffer()) {
             return nullptr;
         }
-        SkSTArray<1, VkImageSubresourceRange> ranges;
+        STArray<1, VkImageSubresourceRange> ranges;
         bool inRange = false;
         GrVkImage* texImage = tex->textureImage();
         for (uint32_t i = 0; i < texImage->mipLevels(); ++i) {
@@ -1255,7 +1220,7 @@ sk_sp<GrTexture> GrVkGpu::onCreateCompressedTexture(SkISize dimensions,
         return nullptr;
     }
 
-    SkImage::CompressionType compression = GrBackendFormatToCompressionType(format);
+    SkTextureCompressionType compression = GrBackendFormatToCompressionType(format);
     if (!this->uploadTexDataCompressed(tex->textureImage(), compression, pixelFormat,
                                        dimensions, mipmapped, data, dataSize)) {
         return nullptr;
@@ -1664,7 +1629,7 @@ sk_sp<GrAttachment> GrVkGpu::makeMSAAAttachment(SkISize dimensions,
 
 bool copy_src_data(char* mapPtr,
                    VkFormat vkFormat,
-                   const SkTArray<size_t>& individualMipOffsets,
+                   const TArray<size_t>& individualMipOffsets,
                    const GrPixmap srcData[],
                    int numMipLevels) {
     SkASSERT(srcData && numMipLevels);
@@ -1886,11 +1851,11 @@ bool GrVkGpu::onUpdateCompressedBackendTexture(const GrBackendTexture& backendTe
                           VK_PIPELINE_STAGE_TRANSFER_BIT,
                           false);
 
-    SkImage::CompressionType compression =
+    SkTextureCompressionType compression =
             GrBackendFormatToCompressionType(backendTexture.getBackendFormat());
 
-    SkTArray<VkBufferImageCopy> regions;
-    SkTArray<size_t> individualMipOffsets;
+    TArray<VkBufferImageCopy> regions;
+    TArray<size_t> individualMipOffsets;
     GrStagingBufferManager::Slice slice;
 
     fill_in_compressed_regions(&fStagingBufferManager,
@@ -2216,17 +2181,17 @@ void GrVkGpu::addImageMemoryBarrier(const GrManagedResource* resource,
 
 void GrVkGpu::prepareSurfacesForBackendAccessAndStateUpdates(
         SkSpan<GrSurfaceProxy*> proxies,
-        SkSurface::BackendSurfaceAccess access,
+        SkSurfaces::BackendSurfaceAccess access,
         const skgpu::MutableTextureState* newState) {
     // Submit the current command buffer to the Queue. Whether we inserted semaphores or not does
     // not effect what we do here.
-    if (!proxies.empty() && (access == SkSurface::BackendSurfaceAccess::kPresent || newState)) {
+    if (!proxies.empty() && (access == SkSurfaces::BackendSurfaceAccess::kPresent || newState)) {
         // We currently don't support passing in new surface state for multiple proxies here. The
         // only time we have multiple proxies is if we are flushing a yuv SkImage which won't have
         // state updates anyways. Additionally if we have a newState than we must not have any
         // BackendSurfaceAccess.
         SkASSERT(!newState || proxies.size() == 1);
-        SkASSERT(!newState || access == SkSurface::BackendSurfaceAccess::kNoAccess);
+        SkASSERT(!newState || access == SkSurfaces::BackendSurfaceAccess::kNoAccess);
         GrVkImage* image;
         for (GrSurfaceProxy* proxy : proxies) {
             SkASSERT(proxy->isInstantiated());
@@ -2242,7 +2207,7 @@ void GrVkGpu::prepareSurfacesForBackendAccessAndStateUpdates(
                 const skgpu::VulkanMutableTextureState& newInfo = newState->fVkState;
                 set_layout_and_queue_from_mutable_state(this, image, newInfo);
             } else {
-                SkASSERT(access == SkSurface::BackendSurfaceAccess::kPresent);
+                SkASSERT(access == SkSurfaces::BackendSurfaceAccess::kPresent);
                 image->prepareForPresent(this);
             }
         }

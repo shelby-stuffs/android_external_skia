@@ -21,10 +21,13 @@
 
 #include <initializer_list>
 
+using namespace skia_private;
+
 static sk_sp<SkImage> make_image1() { return GetResourceAsImage("images/mandrill_128.png"); }
 
 static sk_sp<SkImage> make_image2() {
-    return GetResourceAsImage("images/brickwork-texture.jpg")->makeSubset({0, 0, 128, 128});
+    return GetResourceAsImage("images/brickwork-texture.jpg")->
+            makeSubset(nullptr, {0, 0, 128, 128});
 }
 
 namespace skiagm {
@@ -126,7 +129,7 @@ protected:
 
 private:
     inline static constexpr int kNumImages = 4;
-    SkTArray<sk_sp<SkImage>> fImages;
+    TArray<sk_sp<SkImage>> fImages;
 
     using INHERITED = GM;
 };

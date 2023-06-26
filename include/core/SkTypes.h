@@ -26,13 +26,6 @@
 #include <climits>
 #include <cstdint>
 
-// Legacy flag
-#if defined(SK_SUPPORT_GPU)
-#if SK_SUPPORT_GPU && !defined(SK_GANESH)
-#  define SK_GANESH
-#endif
-#endif
-
 #if defined(SK_GANESH) || defined(SK_GRAPHITE)
 #  if !defined(SK_ENABLE_SKSL)
 #    define SK_ENABLE_SKSL
@@ -132,8 +125,10 @@
 
 // The top-level define SK_ENABLE_OPTIMIZE_SIZE can be used to remove several large features at once
 #if defined(SK_ENABLE_OPTIMIZE_SIZE)
-#   define SK_FORCE_RASTER_PIPELINE_BLITTER
-#   define SK_DISABLE_SDF_TEXT
+    #if !defined(SK_FORCE_RASTER_PIPELINE_BLITTER)
+        #define SK_FORCE_RASTER_PIPELINE_BLITTER
+    #endif
+    #define SK_DISABLE_SDF_TEXT
 #endif
 
 #ifndef SK_DISABLE_LEGACY_SHADERCONTEXT

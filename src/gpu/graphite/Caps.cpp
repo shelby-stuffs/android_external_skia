@@ -8,9 +8,12 @@
 #include "src/gpu/graphite/Caps.h"
 
 #include "include/core/SkCapabilities.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkTextureCompressionType.h"
 #include "include/gpu/ShaderErrorHandler.h"
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/TextureInfo.h"
+#include "src/core/SkBlenderBase.h"
 #include "src/sksl/SkSLUtil.h"
 
 namespace skgpu::graphite {
@@ -50,14 +53,14 @@ bool Caps::isTexturable(const TextureInfo& info) const {
 }
 
 bool Caps::areColorTypeAndTextureInfoCompatible(SkColorType ct, const TextureInfo& info) const {
-    // TODO: add SkImage::CompressionType handling
+    // TODO: add SkTextureCompressionType handling
     // (can be handled by setting up the colorTypeInfo instead?)
 
     return SkToBool(this->getColorTypeInfo(ct, info));
 }
 
 skgpu::Swizzle Caps::getReadSwizzle(SkColorType ct, const TextureInfo& info) const {
-    // TODO: add SkImage::CompressionType handling
+    // TODO: add SkTextureCompressionType handling
     // (can be handled by setting up the colorTypeInfo instead?)
 
     auto colorTypeInfo = this->getColorTypeInfo(ct, info);
@@ -77,6 +80,15 @@ skgpu::Swizzle Caps::getWriteSwizzle(SkColorType ct, const TextureInfo& info) co
     }
 
     return colorTypeInfo->fWriteSwizzle;
+}
+
+DstReadRequirement Caps::getDstReadRequirement() const {
+    // TODO(b/238757201): Currently this only supports dst reads by FB fetch and texture copy.
+    if (this->shaderCaps()->fFBFetchSupport) {
+        return DstReadRequirement::kFramebufferFetch;
+    } else {
+        return DstReadRequirement::kTextureCopy;
+    }
 }
 
 sktext::gpu::SDFTControl Caps::getSDFTControl(bool useSDFTForSmallText) const {

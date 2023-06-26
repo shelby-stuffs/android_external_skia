@@ -22,12 +22,12 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/base/SkRandom.h"
 #include "src/core/SkColorFilterBase.h"
 #include "src/core/SkColorFilterPriv.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/core/SkVM.h"
 #include "src/core/SkWriteBuffer.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
@@ -35,10 +35,14 @@
 #include <cstddef>
 #include <utility>
 
-class SkArenaAlloc;
 class SkFlattenable;
 struct GrContextOptions;
 struct SkStageRec;
+
+#if defined(SK_ENABLE_SKVM)
+#include "src/core/SkVM.h"
+class SkArenaAlloc;
+#endif
 
 static sk_sp<SkColorFilter> reincarnate_colorfilter(SkFlattenable* obj) {
     SkBinaryWriteBuffer wb;
@@ -149,6 +153,7 @@ DEF_TEST(WorkingFormatFilterFlags, r) {
 }
 
 struct FailureColorFilter final : public SkColorFilterBase {
+#if defined(SK_ENABLE_SKVM)
     skvm::Color onProgram(skvm::Builder*,
                           skvm::Color c,
                           const SkColorInfo&,
@@ -156,6 +161,9 @@ struct FailureColorFilter final : public SkColorFilterBase {
                           SkArenaAlloc*) const override {
         return {};
     }
+#endif
+
+    SkColorFilterBase::Type type() const override { return SkColorFilterBase::Type::kNoop; }
 
     bool appendStages(const SkStageRec&, bool) const override { return false; }
 
@@ -169,7 +177,7 @@ DEF_GANESH_TEST_FOR_ALL_CONTEXTS(ComposeFailureWithInputElision,
                                  ctxInfo,
                                  CtsEnforcement::kApiLevel_T) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(8, 8);
-    auto surface = SkSurface::MakeRenderTarget(ctxInfo.directContext(), skgpu::Budgeted::kNo, info);
+    auto surface = SkSurfaces::RenderTarget(ctxInfo.directContext(), skgpu::Budgeted::kNo, info);
     SkPaint paint;
 
     // Install a non-trivial shader, so the color filter isn't just applied to the paint color:

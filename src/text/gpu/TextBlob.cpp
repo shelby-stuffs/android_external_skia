@@ -8,27 +8,44 @@
 #include "src/text/gpu/TextBlob.h"
 
 #include "include/core/SkMatrix.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
-#include "include/private/base/SkTemplates.h"
-#include "include/private/chromium/SkChromeRemoteGlyphCache.h"
+#include "include/private/SkColorData.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkCPUTypes.h"
 #include "include/private/chromium/Slug.h"
+#include "src/core/SkDevice.h"
 #include "src/core/SkFontPriv.h"
 #include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/core/SkRectPriv.h"
+#include "src/core/SkScalerContext.h"
 #include "src/core/SkStrikeCache.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/text/GlyphRun.h"
+#include "src/text/gpu/SDFTControl.h"
 #include "src/text/gpu/SubRunAllocator.h"
 #include "src/text/gpu/SubRunContainer.h"
 
+#include <memory>
+#include <utility>
+
+class SkMaskFilter;
+class SkStrikeClient;
+
 #if defined(SK_GANESH)  // Ganesh Support
+#include "include/gpu/GrContextOptions.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/ganesh/Device_v1.h"
-#include "src/gpu/ganesh/GrClip.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
-#include "src/gpu/ganesh/SurfaceDrawContext.h"
+#endif
+
+#if defined(SK_GRAPHITE)  // Graphite Support
+#include "src/gpu/graphite/Caps.h"
+#include "src/gpu/graphite/Device.h"
+#include "src/gpu/graphite/RecorderPriv.h"
 #endif
 
 using namespace sktext::gpu;
@@ -107,7 +124,11 @@ public:
                      const GrClip* clip,
                      const SkMatrixProvider& viewMatrix,
                      const SkPaint& paint,
-                     skgpu::v1::SurfaceDrawContext* sdc) const;
+                     skgpu::ganesh::SurfaceDrawContext* sdc) const;
+#endif
+
+#if defined(SK_GRAPHITE)
+    void surfaceDraw(SkCanvas*, const SkPaint& paint, skgpu::graphite::Device* device) const;
 #endif
 
     SkRect sourceBounds() const override { return fSourceBounds; }
@@ -130,7 +151,6 @@ private:
     SubRunContainerOwner fSubRuns;
     const SkRect fSourceBounds;
     const SkPaint fInitialPaint;
-    const SkMatrix fInitialPositionMatrix;
     const SkPoint fOrigin;
 };
 
@@ -146,9 +166,20 @@ SlugImpl::SlugImpl(SubRunAllocator&& alloc,
         , fOrigin{origin} {}
 
 #if defined(SK_GANESH)
-void SlugImpl::surfaceDraw(SkCanvas* canvas, const GrClip* clip, const SkMatrixProvider& viewMatrix,
-                           const SkPaint& drawingPaint, skgpu::v1::SurfaceDrawContext* sdc) const {
+void SlugImpl::surfaceDraw(SkCanvas* canvas,
+                           const GrClip* clip,
+                           const SkMatrixProvider& viewMatrix,
+                           const SkPaint& drawingPaint,
+                           skgpu::ganesh::SurfaceDrawContext* sdc) const {
     fSubRuns->draw(canvas, clip, viewMatrix, fOrigin, drawingPaint, this, sdc);
+}
+#endif
+
+#if defined(SK_GRAPHITE)
+void SlugImpl::surfaceDraw(SkCanvas* canvas,
+                           const SkPaint& paint,
+                           skgpu::graphite::Device* device) const {
+    fSubRuns->draw(canvas, fOrigin, paint, this, device);
 }
 #endif
 
@@ -355,10 +386,6 @@ void TextBlob::addKey(const Key& key) {
     fKey = key;
 }
 
-bool TextBlob::hasPerspective() const {
-    return fSubRuns->initialPosition().hasPerspective();
-}
-
 bool TextBlob::canReuse(const SkPaint& paint, const SkMatrix& positionMatrix) const {
     // A singular matrix will create a TextBlob with no SubRuns, but unknown glyphs can also
     // cause empty runs. If there are no subRuns, then regenerate when the matrices don't match.
@@ -385,7 +412,7 @@ void TextBlob::draw(SkCanvas* canvas,
                     const SkMatrixProvider& viewMatrix,
                     SkPoint drawOrigin,
                     const SkPaint& paint,
-                    skgpu::v1::SurfaceDrawContext* sdc) {
+                    skgpu::ganesh::SurfaceDrawContext* sdc) {
     fSubRuns->draw(canvas, clip, viewMatrix, drawOrigin, paint, this, sdc);
 }
 #endif
@@ -430,10 +457,20 @@ TextBlob::TextBlob(SubRunAllocator&& alloc,
 sk_sp<Slug> SkMakeSlugFromBuffer(SkReadBuffer& buffer, const SkStrikeClient* client) {
     return SlugImpl::MakeFromBuffer(buffer, client);
 }
+
+sk_sp<Slug> MakeSlug(const SkMatrixProvider& drawMatrix,
+                     const sktext::GlyphRunList& glyphRunList,
+                     const SkPaint& initialPaint,
+                     const SkPaint& drawingPaint,
+                     SkStrikeDeviceInfo strikeDeviceInfo,
+                     sktext::StrikeForGPUCacheInterface* strikeCache) {
+    return SlugImpl::Make(
+            drawMatrix, glyphRunList, initialPaint, drawingPaint, strikeDeviceInfo, strikeCache);
+}
 }  // namespace sktext::gpu
 
 #if defined(SK_GANESH)
-namespace skgpu::v1 {
+namespace skgpu::ganesh {
 sk_sp<Slug>
 Device::convertGlyphRunListToSlug(const sktext::GlyphRunList& glyphRunList,
                                   const SkPaint& initialPaint,
@@ -463,15 +500,24 @@ void Device::drawSlug(SkCanvas* canvas, const Slug* slug, const SkPaint& drawing
     slugImpl->surfaceDraw(
             canvas, this->clip(), matrixProvider, drawingPaint, fSurfaceDrawContext.get());
 }
+}  // namespace skgpu::ganesh
+#endif
 
-sk_sp<Slug> MakeSlug(const SkMatrixProvider& drawMatrix,
-                     const sktext::GlyphRunList& glyphRunList,
-                     const SkPaint& initialPaint,
-                     const SkPaint& drawingPaint,
-                     SkStrikeDeviceInfo strikeDeviceInfo,
-                     sktext::StrikeForGPUCacheInterface* strikeCache) {
-    return SlugImpl::Make(
-            drawMatrix, glyphRunList, initialPaint, drawingPaint, strikeDeviceInfo, strikeCache);
+#if defined(SK_GRAPHITE)
+namespace skgpu::graphite {
+sk_sp<Slug> Device::convertGlyphRunListToSlug(const sktext::GlyphRunList& glyphRunList,
+                                              const SkPaint& initialPaint,
+                                              const SkPaint& drawingPaint) {
+    return SlugImpl::Make(this->asMatrixProvider(),
+                          glyphRunList,
+                          initialPaint,
+                          drawingPaint,
+                          this->strikeDeviceInfo(),
+                          SkStrikeCache::GlobalStrikeCache());
 }
-}  // namespace skgpu::v1
+
+void Device::drawSlug(SkCanvas* canvas, const Slug* slug, const SkPaint& drawingPaint) {
+    static_cast<const SlugImpl*>(slug)->surfaceDraw(canvas, drawingPaint, this);
+}
+}  // namespace skgpu::graphite
 #endif

@@ -9,10 +9,10 @@
 #define SKSL_SWITCHSTATEMENT
 
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkSLIRNode.h"
-#include "include/private/SkSLStatement.h"
-#include "include/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLIRNode.h"
+#include "src/sksl/ir/SkSLStatement.h"
 
 #include <memory>
 #include <string>
@@ -45,8 +45,7 @@ public:
                                               Position pos,
                                               std::unique_ptr<Expression> value,
                                               ExpressionArray caseValues,
-                                              StatementArray caseStatements,
-                                              std::shared_ptr<SymbolTable> symbolTable);
+                                              StatementArray caseStatements);
 
     // Create a `switch` statement with an array of SwitchCases. The array of SwitchCases must
     // already contain non-overlapping, correctly-typed case values. Reports errors via ASSERT.

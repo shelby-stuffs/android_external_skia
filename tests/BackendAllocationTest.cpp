@@ -9,7 +9,6 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkColorType.h"
-#include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPixmap.h"
@@ -17,13 +16,15 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkString.h"
-#include "include/core/SkSurface.h"
+#include "include/core/SkTextureCompressionType.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/SkColorData.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkAutoPixmapStorage.h"
@@ -67,7 +68,7 @@
 #include "include/gpu/gl/GrGLTypes.h"
 #include "src/gpu/ganesh/gl/GrGLCaps.h"
 #include "src/gpu/ganesh/gl/GrGLContext.h"
-#include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
+#include "src/gpu/ganesh/gl/GrGLDefines.h"
 #include "src/gpu/ganesh/gl/GrGLGpu.h"
 #include "tools/gpu/gl/GLTestContext.h"
 #endif
@@ -86,6 +87,9 @@
 #include "src/gpu/ganesh/vk/GrVkCaps.h"
 #include <vulkan/vulkan_core.h>
 #endif
+
+class SkImage;
+class SkSurface;
 
 using sk_gpu_test::ManagedBackendTexture;
 
@@ -132,12 +136,13 @@ void test_wrapping(GrDirectContext* dContext,
     }
 
     if (GrRenderable::kYes == renderable && dContext->colorTypeSupportedAsSurface(skColorType)) {
-        sk_sp<SkSurface> surf = SkSurface::MakeFromBackendTexture(dContext,
-                                                                  mbet->texture(),
-                                                                  kTopLeft_GrSurfaceOrigin,
-                                                                  0,
-                                                                  skColorType,
-                                                                  nullptr, nullptr);
+        sk_sp<SkSurface> surf = SkSurfaces::WrapBackendTexture(dContext,
+                                                               mbet->texture(),
+                                                               kTopLeft_GrSurfaceOrigin,
+                                                               0,
+                                                               skColorType,
+                                                               nullptr,
+                                                               nullptr);
         if (!surf) {
             ERRORF(reporter, "Couldn't make SkSurface from backendTexture for %s\n",
                    ToolUtils::colortype_name(skColorType));
@@ -148,12 +153,12 @@ void test_wrapping(GrDirectContext* dContext,
     }
 
     {
-        sk_sp<SkImage> img = SkImage::MakeFromTexture(dContext,
-                                                      mbet->texture(),
-                                                      kTopLeft_GrSurfaceOrigin,
-                                                      skColorType,
-                                                      kUnpremul_SkAlphaType,
-                                                      nullptr);
+        sk_sp<SkImage> img = SkImages::BorrowTextureFrom(dContext,
+                                                         mbet->texture(),
+                                                         kTopLeft_GrSurfaceOrigin,
+                                                         skColorType,
+                                                         kUnpremul_SkAlphaType,
+                                                         nullptr);
         if (!img) {
             ERRORF(reporter, "Couldn't make SkImage from backendTexture for %s\n",
                    ToolUtils::colortype_name(skColorType));
@@ -215,8 +220,8 @@ static bool isBGRA8(const GrBackendFormat& format) {
 #endif
         }
         case GrBackendApi::kMock: {
-            SkImage::CompressionType compression = format.asMockCompressionType();
-            if (compression != SkImage::CompressionType::kNone) {
+            SkTextureCompressionType compression = format.asMockCompressionType();
+            if (compression != SkTextureCompressionType::kNone) {
                 return false; // No compressed formats are BGRA
             }
 

@@ -5,6 +5,8 @@
  * found in the LICENSE file.
  */
 
+#include "src/gpu/graphite/Caps.h"
+#include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/FactoryFunctions.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
@@ -92,10 +94,24 @@ int PaintOptions::numCombinations() const {
            this->numBlendModeCombinations();
 }
 
+DstReadRequirement get_dst_read_req(const Caps* caps,
+                                    bool hasCoverage,
+                                    SkSpan<const sk_sp<PrecompileBlender>> options,
+                                    int desiredOption) {
+    for (const sk_sp<PrecompileBlender>& option : options) {
+        if (desiredOption < option->numCombinations()) {
+            return GetDstReadRequirement(caps, option->asBlendMode(), hasCoverage);
+        }
+        desiredOption -= option->numCombinations();
+    }
+    return DstReadRequirement::kNone;
+}
+
 void PaintOptions::createKey(const KeyContext& keyContext,
                              int desiredCombination,
                              PaintParamsKeyBuilder* keyBuilder,
-                             bool addPrimitiveBlender) const {
+                             bool addPrimitiveBlender,
+                             bool hasCoverage) const {
     SkDEBUGCODE(keyBuilder->checkReset();)
     SkASSERT(desiredCombination < this->numCombinations());
 
@@ -120,14 +136,39 @@ void PaintOptions::createKey(const KeyContext& keyContext,
                                       {1, 0, 0, 1});
     keyBuilder->endBlock();
 
+    DstReadRequirement dstReadReq = get_dst_read_req(
+            keyContext.caps(), hasCoverage, fBlenderOptions, desiredBlendCombination);
+    bool needsDstSample = dstReadReq == DstReadRequirement::kTextureCopy ||
+                          dstReadReq == DstReadRequirement::kTextureSample;
+    if (needsDstSample) {
+        DstReadSampleBlock::BeginBlock(
+                keyContext, keyBuilder, /* gatherer= */ nullptr, /* dstTexture= */ nullptr);
+        keyBuilder->endBlock();
+
+    } else if (dstReadReq == DstReadRequirement::kFramebufferFetch) {
+        DstReadFetchBlock::BeginBlock(keyContext, keyBuilder, /* gatherer= */ nullptr);
+        keyBuilder->endBlock();
+    }
+
     if (!fShaderOptions.empty()) {
         PrecompileBase::AddToKey(keyContext, keyBuilder, fShaderOptions, desiredShaderCombination);
     }
 
     if (addPrimitiveBlender) {
-        PrimitiveBlendModeBlock::BeginBlock(keyContext, keyBuilder, /* gatherer= */ nullptr,
-                                            SkBlendMode::kSrcOver);
+        BlendShaderBlock::BeginBlock(keyContext, keyBuilder, /* gatherer= */ nullptr);
+        // src -- prior output
+        PriorOutputBlock::BeginBlock(keyContext, keyBuilder, /* gatherer= */ nullptr);
         keyBuilder->endBlock();
+        // dst -- primitive color
+        PrimitiveColorBlock::BeginBlock(keyContext, keyBuilder, /* gatherer= */ nullptr);
+        keyBuilder->endBlock();
+        // blender -- shader based blending
+        // TODO: Support runtime blenders for primitive blending in the precompile API.
+        // In the meantime, assume for now that we're using a coefficient blend mode here.
+        SkSpan<const float> coeffs = skgpu::GetPorterDuffBlendConstants(SkBlendMode::kSrcOver);
+        CoeffBlenderBlock::BeginBlock(keyContext, keyBuilder, /* gatherer= */ nullptr, coeffs);
+        keyBuilder->endBlock();
+        keyBuilder->endBlock();  // BlendShaderBlock
     }
 
     PrecompileBase::AddToKey(keyContext, keyBuilder, fMaskFilterOptions,
@@ -135,31 +176,47 @@ void PaintOptions::createKey(const KeyContext& keyContext,
     PrecompileBase::AddToKey(keyContext, keyBuilder, fColorFilterOptions,
                              desiredColorFilterCombination);
 
-    if (fBlenderOptions.empty()) {
-        BlendModeBlock::BeginBlock(keyContext, keyBuilder, /* gatherer= */ nullptr,
-                                   SkBlendMode::kSrcOver);
+    sk_sp<PrecompileBlender> blender =
+            PrecompileBase::SelectOption(fBlenderOptions, desiredBlendCombination);
+    std::optional<SkBlendMode> finalBlendMode = blender ? blender->asBlendMode()
+                                                        : SkBlendMode::kSrcOver;
+    if (finalBlendMode && *finalBlendMode <= SkBlendMode::kLastCoeffMode) {
+        BuiltInCodeSnippetID fixedFuncBlendModeID = static_cast<BuiltInCodeSnippetID>(
+                kFixedFunctionBlendModeIDOffset + (int) *finalBlendMode);
+        keyBuilder->beginBlock(fixedFuncBlendModeID);
         keyBuilder->endBlock();
+
     } else {
+        BlendShaderBlock::BeginBlock(keyContext, keyBuilder, /* gatherer= */ nullptr);
+        // src -- prior output
+        PriorOutputBlock::BeginBlock(keyContext, keyBuilder, /* gatherer= */ nullptr);
+        keyBuilder->endBlock();
+        // dst -- surface color
+        DstColorBlock::BeginBlock(keyContext, keyBuilder, /* gatherer= */ nullptr);
+        keyBuilder->endBlock();
+        // blender -- shader based blending
         PrecompileBase::AddToKey(keyContext, keyBuilder, fBlenderOptions, desiredBlendCombination);
+        keyBuilder->endBlock();  // BlendShaderBlock
     }
 }
 
 void PaintOptions::buildCombinations(
         const KeyContext& keyContext,
         bool addPrimitiveBlender,
+        bool hasCoverage,
         const std::function<void(UniquePaintParamsID)>& processCombination) const {
 
     PaintParamsKeyBuilder builder(keyContext.dict());
 
     int numCombinations = this->numCombinations();
     for (int i = 0; i < numCombinations; ++i) {
-        this->createKey(keyContext, i, &builder, addPrimitiveBlender);
+        this->createKey(keyContext, i, &builder, addPrimitiveBlender, hasCoverage);
 
         // The 'findOrCreate' calls lockAsKey on builder and then destroys the returned
         // PaintParamsKey. This serves to reset the builder.
-        auto entry = keyContext.dict()->findOrCreate(&builder);
+        UniquePaintParamsID paintID = keyContext.dict()->findOrCreate(&builder);
 
-        processCombination(entry->uniqueID());
+        processCombination(paintID);
     }
 }
 

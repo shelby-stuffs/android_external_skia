@@ -19,6 +19,7 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
 #include "include/gpu/MutableTextureState.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/gpu/vk/GrVkTypes.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
@@ -76,10 +77,12 @@ DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkBackendSurfaceMutableStateTest,
     // Setting back to the init state since we didn't actually change it
     backendTex.setMutableState(initState);
 
-    sk_sp<SkImage> wrappedImage = SkImage::MakeFromTexture(dContext, backendTex,
-                                                           kTopLeft_GrSurfaceOrigin,
-                                                           kRGBA_8888_SkColorType,
-                                                           kPremul_SkAlphaType, nullptr);
+    sk_sp<SkImage> wrappedImage = SkImages::BorrowTextureFrom(dContext,
+                                                              backendTex,
+                                                              kTopLeft_GrSurfaceOrigin,
+                                                              kRGBA_8888_SkColorType,
+                                                              kPremul_SkAlphaType,
+                                                              nullptr);
 
     GrSurfaceProxy* proxy = sk_gpu_test::GetTextureImageProxy(wrappedImage.get(), dContext);
 
@@ -98,7 +101,9 @@ DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkBackendSurfaceMutableStateTest,
     REPORTER_ASSERT(reporter, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL == info.fImageLayout);
     REPORTER_ASSERT(reporter, initQueue == info.fCurrentQueueFamily);
 
-    GrBackendTexture backendTexImage = wrappedImage->getBackendTexture(false);
+    GrBackendTexture backendTexImage;
+    bool ok = SkImages::GetBackendTextureFromImage(wrappedImage, &backendTexImage, false);
+    REPORTER_ASSERT(reporter, ok);
     REPORTER_ASSERT(reporter, backendTexImage.getVkImageInfo(&info));
     REPORTER_ASSERT(reporter, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL == info.fImageLayout);
     REPORTER_ASSERT(reporter, initQueue == info.fCurrentQueueFamily);

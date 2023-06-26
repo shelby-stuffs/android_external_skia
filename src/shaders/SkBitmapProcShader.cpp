@@ -10,7 +10,6 @@
 #include "src/base/SkArenaAlloc.h"
 #include "src/core/SkBitmapProcState.h"
 #include "src/core/SkPaintPriv.h"
-#include "src/core/SkXfermodePriv.h"
 
 class BitmapProcShaderContext : public SkShaderBase::Context {
 public:
@@ -22,15 +21,6 @@ public:
     {
         if (fState->fPixmap.isOpaque() && (255 == this->getPaintAlpha())) {
             fFlags |= SkShaderBase::kOpaqueAlpha_Flag;
-        }
-
-        auto only_scale_and_translate = [](const SkMatrix& matrix) {
-            unsigned mask = SkMatrix::kTranslate_Mask | SkMatrix::kScale_Mask;
-            return (matrix.getType() & ~mask) == 0;
-        };
-
-        if (1 == fState->fPixmap.height() && only_scale_and_translate(this->getTotalInverse())) {
-            fFlags |= SkShaderBase::kConstInY32_Flag;
         }
     }
 

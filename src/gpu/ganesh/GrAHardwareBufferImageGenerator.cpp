@@ -33,7 +33,6 @@
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/SkGr.h"
-#include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -67,7 +66,7 @@ std::unique_ptr<SkImageGenerator> GrAHardwareBufferImageGenerator::Make(
 GrAHardwareBufferImageGenerator::GrAHardwareBufferImageGenerator(const SkImageInfo& info,
         AHardwareBuffer* hardwareBuffer, SkAlphaType alphaType, bool isProtectedContent,
         uint32_t bufferFormat, GrSurfaceOrigin surfaceOrigin)
-    : INHERITED(info)
+    : GrTextureGenerator(info)
     , fHardwareBuffer(hardwareBuffer)
     , fBufferFormat(bufferFormat)
     , fIsProtectedContent(isProtectedContent)

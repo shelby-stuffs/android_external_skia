@@ -7,24 +7,24 @@
 
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 
-#include "include/private/SkSLLayout.h"
-#include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLProgramKind.h"
-#include "include/private/SkSLString.h"
-#include "include/sksl/SkSLErrorReporter.h"
-#include "include/sksl/SkSLPosition.h"
+#include "include/core/SkSpan.h"
+#include "include/private/base/SkTo.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/SkSLString.h"
 #include "src/sksl/SkSLThreadContext.h"
-#include "src/sksl/ir/SkSLSymbolTable.h"
+#include "src/sksl/ir/SkSLLayout.h"
+#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLSymbolTable.h"  // IWYU pragma: keep
 #include "src/sksl/ir/SkSLType.h"
 
-#include <cstddef>
 #include <string_view>
-#include <vector>
 
 namespace SkSL {
 namespace {
@@ -74,7 +74,7 @@ static bool check_valid_uniform_type(Position pos,
     // In non-RTE SkSL we allow structs and interface blocks to be uniforms but we must make sure
     // their fields are allowed.
     if (t->isStruct()) {
-        for (const Type::Field& field : t->fields()) {
+        for (const Field& field : t->fields()) {
             if (!check_valid_uniform_type(
                         field.fPosition, field.fType, context, /*topLevel=*/false)) {
                 // Emit a "caused by" line only for the top-level uniform type and not for any
@@ -104,10 +104,10 @@ std::unique_ptr<Statement> VarDeclaration::clone() const {
     // the moment. We instead just keep track of whether a VarDeclaration is a clone so we can
     // handle its cleanup properly. This allows clone() to work in the simple case that a
     // VarDeclaration's clone does not outlive the original, which is adequate for testing. Since
-    // this leaves a sharp  edge in place - destroying the original could cause a use-after-free in
+    // this leaves a sharp edge in place - destroying the original could cause a use-after-free in
     // some circumstances - we also disable cloning altogether unless the
     // fAllowVarDeclarationCloneForTesting ProgramSetting is enabled.
-    if (ThreadContext::Settings().fAllowVarDeclarationCloneForTesting) {
+    if (ThreadContext::Context().fConfig->fSettings.fAllowVarDeclarationCloneForTesting) {
         return std::make_unique<VarDeclaration>(this->var(),
                                                 &this->baseType(),
                                                 fArraySize,
@@ -257,9 +257,9 @@ void VarDeclaration::ErrorCheck(const Context& context,
                 // It is an error for an unsized array to appear anywhere but the last member of a
                 // "buffer" block.
                 const auto& fields = baseType->fields();
-                const size_t illegalRangeEnd =
-                        fields.size() - ((modifiers.fFlags & Modifiers::kBuffer_Flag) ? 1 : 0);
-                for (size_t i = 0; i < illegalRangeEnd; ++i) {
+                const int illegalRangeEnd = SkToInt(fields.size()) -
+                                            ((modifiers.fFlags & Modifiers::kBuffer_Flag) ? 1 : 0);
+                for (int i = 0; i < illegalRangeEnd; ++i) {
                     if (fields[i].fType->isUnsizedArray()) {
                         context.fErrors->error(
                                 fields[i].fPosition,
@@ -323,13 +323,21 @@ void VarDeclaration::ErrorCheck(const Context& context,
         // Disallow all layout flags except 'color' in runtime effects
         permittedLayoutFlags &= Layout::kColor_Flag;
     }
+
+    // The `push_constant` flag isn't allowed on in-variables, out-variables, bindings or sets.
+    if ((modifiers.fLayout.fFlags & (Layout::kSet_Flag | Layout::kBinding_Flag)) ||
+        (modifiers.fFlags & (Modifiers::kIn_Flag | Modifiers::kOut_Flag))) {
+        permittedLayoutFlags &= ~Layout::kPushConstant_Flag;
+    }
+
     modifiers.checkPermitted(context, modifiersPosition, permitted, permittedLayoutFlags);
 }
 
-bool VarDeclaration::ErrorCheckAndCoerce(const Context& context, const Variable& var,
-        std::unique_ptr<Expression>& value) {
+bool VarDeclaration::ErrorCheckAndCoerce(const Context& context,
+                                         const Variable& var,
+                                         std::unique_ptr<Expression>& value) {
     ErrorCheck(context, var.fPosition, var.modifiersPosition(), var.modifiers(), &var.type(),
-            var.storage());
+               var.storage());
     if (value) {
         if (var.type().isOpaque()) {
             context.fErrors->error(value->fPosition, "opaque type '" + var.type().displayName() +
@@ -384,10 +392,35 @@ bool VarDeclaration::ErrorCheckAndCoerce(const Context& context, const Variable&
     return true;
 }
 
-std::unique_ptr<Statement> VarDeclaration::Convert(const Context& context,
-                                                   std::unique_ptr<Variable> var,
-                                                   std::unique_ptr<Expression> value,
-                                                   bool addToSymbolTable) {
+std::unique_ptr<VarDeclaration> VarDeclaration::Convert(const Context& context,
+                                                        Position overallPos,
+                                                        Position modifiersPos,
+                                                        const Modifiers& modifiers,
+                                                        const Type& type,
+                                                        Position namePos,
+                                                        std::string_view name,
+                                                        VariableStorage storage,
+                                                        std::unique_ptr<Expression> value) {
+    // Parameter declaration-statements do not exist in the grammar (unlike, say, K&R C).
+    SkASSERT(storage != VariableStorage::kParameter);
+
+    std::unique_ptr<Variable> var = Variable::Convert(context,
+                                                      overallPos,
+                                                      modifiersPos,
+                                                      modifiers,
+                                                      &type,
+                                                      namePos,
+                                                      name,
+                                                      storage);
+    if (!var) {
+        return nullptr;
+    }
+    return VarDeclaration::Convert(context, std::move(var), std::move(value));
+}
+
+std::unique_ptr<VarDeclaration> VarDeclaration::Convert(const Context& context,
+                                                        std::unique_ptr<Variable> var,
+                                                        std::unique_ptr<Expression> value) {
     if (!ErrorCheckAndCoerce(context, *var, value)) {
         return nullptr;
     }
@@ -397,17 +430,16 @@ std::unique_ptr<Statement> VarDeclaration::Convert(const Context& context,
         arraySize = baseType->columns();
         baseType = &baseType->componentType();
     }
-    std::unique_ptr<Statement> varDecl = VarDeclaration::Make(context, var.get(), baseType,
-                                                              arraySize, std::move(value));
+    std::unique_ptr<VarDeclaration> varDecl = VarDeclaration::Make(context, var.get(), baseType,
+                                                                   arraySize, std::move(value));
     if (!varDecl) {
         return nullptr;
     }
 
-    SymbolTable* symbols = ThreadContext::SymbolTable().get();
     if (var->storage() == Variable::Storage::kGlobal ||
         var->storage() == Variable::Storage::kInterfaceBlock) {
         // Check if this globally-scoped variable name overlaps an existing symbol name.
-        if (symbols->find(var->name())) {
+        if (context.fSymbolTable->find(var->name())) {
             context.fErrors->error(var->fPosition,
                                    "symbol '" + std::string(var->name()) + "' was already defined");
             return nullptr;
@@ -428,16 +460,15 @@ std::unique_ptr<Statement> VarDeclaration::Convert(const Context& context,
         }
     }
 
-    if (addToSymbolTable) {
-        symbols->add(std::move(var));
-    } else {
-        symbols->takeOwnershipOfSymbol(std::move(var));
-    }
+    context.fSymbolTable->add(std::move(var));
     return varDecl;
 }
 
-std::unique_ptr<Statement> VarDeclaration::Make(const Context& context, Variable* var,
-        const Type* baseType, int arraySize, std::unique_ptr<Expression> value) {
+std::unique_ptr<VarDeclaration> VarDeclaration::Make(const Context& context,
+                                                     Variable* var,
+                                                     const Type* baseType,
+                                                     int arraySize,
+                                                     std::unique_ptr<Expression> value) {
     SkASSERT(!baseType->isArray());
     // function parameters cannot have variable declarations
     SkASSERT(var->storage() != Variable::Storage::kParameter);
@@ -462,7 +493,7 @@ std::unique_ptr<Statement> VarDeclaration::Make(const Context& context, Variable
 
     auto result = std::make_unique<VarDeclaration>(var, baseType, arraySize, std::move(value));
     var->setVarDeclaration(result.get());
-    return std::move(result);
+    return result;
 }
 
 }  // namespace SkSL

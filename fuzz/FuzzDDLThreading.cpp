@@ -16,12 +16,14 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/base/SkDeque.h"
 #include "include/private/base/SkMutex.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkThreadID.h"
 #include "src/core/SkTaskGroup.h"
-#include "src/image/SkImage_Gpu.h"
+#include "src/gpu/ganesh/image/SkImage_Ganesh.h"
 #include "tools/gpu/GrContextFactory.h"
 
 #include <atomic>
@@ -132,7 +134,7 @@ DDLFuzzer::DDLFuzzer(Fuzz* fuzz, ContextType contextType) : fFuzz(fuzz) {
     SkISize canvasSize = kPromiseImageSize;
     canvasSize.fWidth *= kPromiseImagesPerDDL;
     SkImageInfo ii = SkImageInfo::Make(canvasSize, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    fSurface = SkSurface::MakeRenderTarget(fContext, skgpu::Budgeted::kNo, ii);
+    fSurface = SkSurfaces::RenderTarget(fContext, skgpu::Budgeted::kNo, ii);
     if (!fSurface || !fSurface->characterize(&fSurfaceCharacterization)) {
         return;
     }
@@ -236,17 +238,17 @@ void DDLFuzzer::initPromiseImage(int index) {
     promiseImage.fFuzzer = this;
     GrBackendFormat backendFmt = fContext->defaultBackendFormat(kRGBA_8888_SkColorType,
                                                                 GrRenderable::kYes);
-    promiseImage.fImage = SkImage::MakePromiseTexture(fContext->threadSafeProxy(),
-                                                      backendFmt,
-                                                      kPromiseImageSize,
-                                                      GrMipmapped::kNo,
-                                                      kTopLeft_GrSurfaceOrigin,
-                                                      kRGBA_8888_SkColorType,
-                                                      kUnpremul_SkAlphaType,
-                                                      SkColorSpace::MakeSRGB(),
-                                                      &fuzz_promise_image_fulfill,
-                                                      &fuzz_promise_image_release,
-                                                      &promiseImage);
+    promiseImage.fImage = SkImages::PromiseTextureFrom(fContext->threadSafeProxy(),
+                                                       backendFmt,
+                                                       kPromiseImageSize,
+                                                       GrMipmapped::kNo,
+                                                       kTopLeft_GrSurfaceOrigin,
+                                                       kRGBA_8888_SkColorType,
+                                                       kUnpremul_SkAlphaType,
+                                                       SkColorSpace::MakeSRGB(),
+                                                       &fuzz_promise_image_fulfill,
+                                                       &fuzz_promise_image_release,
+                                                       &promiseImage);
 }
 
 void DDLFuzzer::recordAndPlayDDL() {
@@ -280,9 +282,7 @@ void DDLFuzzer::run() {
     });
     fRecordingTaskGroup.wait();
 
-    fGpuTaskGroup.add([=]{
-        fSurface->flushAndSubmit(/* syncCpu= */ true);
-    });
+    fGpuTaskGroup.add([=] { fContext->flushAndSubmit(fSurface, /* syncCpu= */ true); });
 
     fGpuTaskGroup.wait();
 

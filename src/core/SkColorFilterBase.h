@@ -13,6 +13,7 @@
 #include "src/core/SkVM_fwd.h"
 
 #include <memory>
+#include <tuple>
 
 class GrColorInfo;
 class GrFragmentProcessor;
@@ -32,34 +33,41 @@ class PaintParamsKeyBuilder;
 class PipelineDataGatherer;
 }
 
+#define SK_ALL_COLOR_FILTERS(M) \
+    M(BlendMode)                \
+    M(ColorSpaceXform)          \
+    M(Compose)                  \
+    M(Gaussian)                 \
+    M(Matrix)                   \
+    M(Runtime)                  \
+    M(Table)                    \
+    M(WorkingFormat)
+
 class SkColorFilterBase : public SkColorFilter {
 public:
     SK_WARN_UNUSED_RESULT
     virtual bool appendStages(const SkStageRec& rec, bool shaderIsOpaque) const = 0;
 
+#if defined(SK_ENABLE_SKVM)
     SK_WARN_UNUSED_RESULT
     skvm::Color program(skvm::Builder*, skvm::Color,
                         const SkColorInfo& dst, skvm::Uniforms*, SkArenaAlloc*) const;
+#endif
 
     /** Returns the flags for this filter. Override in subclasses to return custom flags.
     */
     virtual bool onIsAlphaUnchanged() const { return false; }
 
-#if defined(SK_GANESH)
-    /**
-     *  A subclass may implement this factory function to work with the GPU backend. It returns
-     *  a GrFragmentProcessor that implements the color filter in GPU shader code.
-     *
-     *  The fragment processor receives a input FP that generates a premultiplied input color, and
-     *  produces a premultiplied output color.
-     *
-     *  A GrFPFailure indicates that the color filter isn't implemented for the GPU backend.
-     */
-    virtual GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
-                                           GrRecordingContext* context,
-                                           const GrColorInfo& dstColorInfo,
-                                           const SkSurfaceProps& props) const;
-#endif
+    enum class Type {
+        // Used for stubs/tests
+        kNoop,
+#define M(type) k##type,
+        SK_ALL_COLOR_FILTERS(M)
+#undef M
+
+    };
+
+    virtual Type type() const = 0;
 
     bool affectsTransparentBlack() const {
         return this->filterColor(SK_ColorTRANSPARENT) != SK_ColorTRANSPARENT;
@@ -105,8 +113,10 @@ protected:
     virtual bool onAsAColorMode(SkColor* color, SkBlendMode* bmode) const;
 
 private:
+#if defined(SK_ENABLE_SKVM)
     virtual skvm::Color onProgram(skvm::Builder*, skvm::Color,
                                   const SkColorInfo& dst, skvm::Uniforms*, SkArenaAlloc*) const = 0;
+#endif
 
     friend class SkColorFilter;
 
@@ -129,11 +139,10 @@ static inline sk_sp<SkColorFilterBase> as_CFB_sp(sk_sp<SkColorFilter> filter) {
     return sk_sp<SkColorFilterBase>(static_cast<SkColorFilterBase*>(filter.release()));
 }
 
-
 void SkRegisterComposeColorFilterFlattenable();
 void SkRegisterMatrixColorFilterFlattenable();
 void SkRegisterModeColorFilterFlattenable();
-void SkRegisterColorSpaceXformColorFilterFlattenable();
+void SkRegisterSkColorSpaceXformColorFilterFlattenable();
 void SkRegisterTableColorFilterFlattenable();
 void SkRegisterWorkingFormatColorFilterFlattenable();
 

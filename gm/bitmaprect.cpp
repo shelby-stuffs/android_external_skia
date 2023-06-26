@@ -10,10 +10,12 @@
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
-#include "include/core/SkShader.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
@@ -22,8 +24,11 @@
 #include "include/effects/SkGradientShader.h"
 #include "tools/ToolUtils.h"
 
+#include <cstddef>
+#include <iterator>
+
 static sk_sp<SkImage> make_image(SkCanvas* destCanvas) {
-    auto surf = SkSurface::MakeRasterN32Premul(64, 64);
+    auto surf = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(64, 64));
     auto tmpCanvas = surf->getCanvas();
 
     tmpCanvas->drawColor(SK_ColorRED);

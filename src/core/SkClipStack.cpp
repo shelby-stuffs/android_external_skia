@@ -48,7 +48,7 @@ SkClipStack::Element::Element(const Element& that) {
     fGenID = that.fGenID;
 }
 
-SkClipStack::Element::~Element() {}
+SkClipStack::Element::~Element() = default;
 
 bool SkClipStack::Element::operator== (const Element& element) const {
     if (this == &element) {

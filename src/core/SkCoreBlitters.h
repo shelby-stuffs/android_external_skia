@@ -11,7 +11,7 @@
 #include "include/core/SkPaint.h"
 #include "src/core/SkBlitRow.h"
 #include "src/core/SkBlitter.h"
-#include "src/core/SkXfermodePriv.h"
+#include "src/core/SkBlitter_A8.h"
 #include "src/shaders/SkBitmapProcShader.h"
 #include "src/shaders/SkShaderBase.h"
 
@@ -40,10 +40,8 @@ public:
     ~SkShaderBlitter() override;
 
 protected:
-    uint32_t                fShaderFlags;
-    const SkShader*         fShader;
+    sk_sp<SkShader>         fShader;
     SkShaderBase::Context*  fShaderContext;
-    bool                    fConstInY;
 
 private:
     // illegal
@@ -54,22 +52,6 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-class SkA8_Coverage_Blitter : public SkRasterBlitter {
-public:
-    SkA8_Coverage_Blitter(const SkPixmap& device, const SkPaint& paint);
-    void blitH(int x, int y, int width) override;
-    void blitAntiH(int x, int y, const SkAlpha antialias[], const int16_t runs[]) override;
-    void blitV(int x, int y, int height, SkAlpha alpha) override;
-    void blitRect(int x, int y, int width, int height) override;
-    void blitMask(const SkMask&, const SkIRect&) override;
-    const SkPixmap* justAnOpaqueColor(uint32_t*) override;
-
-private:
-    using INHERITED = SkRasterBlitter;
-};
-
-////////////////////////////////////////////////////////////////
-
 class SkARGB32_Blitter : public SkRasterBlitter {
 public:
     SkARGB32_Blitter(const SkPixmap& device, const SkPaint& paint);
@@ -78,7 +60,6 @@ public:
     void blitV(int x, int y, int height, SkAlpha alpha) override;
     void blitRect(int x, int y, int width, int height) override;
     void blitMask(const SkMask&, const SkIRect&) override;
-    const SkPixmap* justAnOpaqueColor(uint32_t*) override;
     void blitAntiH2(int x, int y, U8CPU a0, U8CPU a1) override;
     void blitAntiV2(int x, int y, U8CPU a0, U8CPU a1) override;
 
@@ -131,7 +112,6 @@ public:
     void blitMask(const SkMask&, const SkIRect&) override;
 
 private:
-    SkXfermode*         fXfermode;
     SkPMColor*          fBuffer;
     SkBlitRow::Proc32   fProc32;
     SkBlitRow::Proc32   fProc32Blend;

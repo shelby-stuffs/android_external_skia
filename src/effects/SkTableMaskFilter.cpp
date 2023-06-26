@@ -14,8 +14,8 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkFixed.h"
 #include "include/private/base/SkAlign.h"
+#include "include/private/base/SkFixed.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkTPin.h"
 #include "src/core/SkMask.h"
@@ -35,6 +35,7 @@ public:
 
     SkMask::Format getFormat() const override;
     bool filterMask(SkMask*, const SkMask&, const SkMatrix&, SkIPoint*) const override;
+    SkMaskFilterBase::Type type() const override { return SkMaskFilterBase::Type::kTable; }
 
 protected:
     ~SkTableMaskFilterImpl() override;

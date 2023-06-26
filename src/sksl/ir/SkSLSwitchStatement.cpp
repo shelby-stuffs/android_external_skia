@@ -8,15 +8,15 @@
 #include "src/sksl/ir/SkSLSwitchStatement.h"
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkSLString.h"
 #include "include/private/base/SkTArray.h"
-#include "include/sksl/SkSLErrorReporter.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/SkSLString.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLNop.h"
 #include "src/sksl/ir/SkSLSwitchCase.h"
@@ -26,6 +26,8 @@
 #include <algorithm>
 #include <forward_list>
 #include <iterator>
+
+using namespace skia_private;
 
 namespace SkSL {
 
@@ -54,7 +56,7 @@ std::string SwitchStatement::description() const {
 static std::forward_list<const SwitchCase*> find_duplicate_case_values(
         const StatementArray& cases) {
     std::forward_list<const SwitchCase*> duplicateCases;
-    SkTHashSet<SKSL_INT> intValues;
+    THashSet<SKSL_INT> intValues;
     bool foundDefault = false;
 
     for (const std::unique_ptr<Statement>& stmt : cases) {
@@ -166,8 +168,7 @@ std::unique_ptr<Statement> SwitchStatement::Convert(const Context& context,
                                                     Position pos,
                                                     std::unique_ptr<Expression> value,
                                                     ExpressionArray caseValues,
-                                                    StatementArray caseStatements,
-                                                    std::shared_ptr<SymbolTable> symbolTable) {
+                                                    StatementArray caseStatements) {
     SkASSERT(caseValues.size() == caseStatements.size());
 
     value = context.fTypes.fInt->coerceExpression(std::move(value), context);
@@ -212,8 +213,8 @@ std::unique_ptr<Statement> SwitchStatement::Convert(const Context& context,
         return nullptr;
     }
 
-    return SwitchStatement::Make(
-            context, pos, std::move(value), std::move(cases), std::move(symbolTable));
+    return SwitchStatement::Make(context, pos, std::move(value), std::move(cases),
+                                 context.fSymbolTable);
 }
 
 std::unique_ptr<Statement> SwitchStatement::Make(const Context& context,
@@ -268,8 +269,8 @@ std::unique_ptr<Statement> SwitchStatement::Make(const Context& context,
     }
 
     // The switch couldn't be optimized away; emit it normally.
-    return std::make_unique<SwitchStatement>(
-            pos, std::move(value), std::move(cases), std::move(symbolTable));
+    return std::make_unique<SwitchStatement>(pos, std::move(value), std::move(cases),
+                                             std::move(symbolTable));
 }
 
 }  // namespace SkSL

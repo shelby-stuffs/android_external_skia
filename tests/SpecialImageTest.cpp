@@ -14,16 +14,14 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
-#include "include/core/SkPixmap.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
-#include "include/core/SkSurface.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypes.h"
-#include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrTypes.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkSpecialSurface.h"
 #include "src/gpu/ganesh/GrColorInfo.h" // IWYU pragma: keep
@@ -100,9 +98,13 @@ static void test_image(const sk_sp<SkSpecialImage>& img, skiatest::Reporter* rep
 
     //--------------
     // Test that draw restricts itself to the subset
-    sk_sp<SkSpecialSurface> surf(img->makeSurface(kN32_SkColorType, img->getColorSpace(),
-                                                  SkISize::Make(kFullSize, kFullSize),
-                                                  kPremul_SkAlphaType, SkSurfaceProps()));
+    SkImageInfo imageInfo = SkImageInfo::Make(SkISize::Make(kFullSize, kFullSize),
+                                              kN32_SkColorType,
+                                              kPremul_SkAlphaType,
+                                              sk_ref_sp(img->getColorSpace()));
+    sk_sp<SkSpecialSurface> surf = isGPUBacked
+            ? SkSpecialSurface::MakeRenderTarget(rContext, imageInfo, {}, kTopLeft_GrSurfaceOrigin)
+            : SkSpecialSurface::MakeRaster(imageInfo, {});
 
     SkCanvas* canvas = surf->getCanvas();
 
@@ -122,32 +124,6 @@ static void test_image(const sk_sp<SkSpecialImage>& img, skiatest::Reporter* rep
                                                           kSmallerSize+kPad-1));
     REPORTER_ASSERT(reporter, SK_ColorBLUE == bm.getColor(kSmallerSize+kPad,
                                                           kSmallerSize+kPad));
-
-    //--------------
-    // Test that asImage & makeTightSurface return appropriately sized objects
-    // of the correct backing type
-    SkIRect newSubset = SkIRect::MakeWH(subset.width(), subset.height());
-    {
-        sk_sp<SkImage> tightImg(img->asImage(&newSubset));
-
-        REPORTER_ASSERT(reporter, tightImg->width() == subset.width());
-        REPORTER_ASSERT(reporter, tightImg->height() == subset.height());
-        REPORTER_ASSERT(reporter, isGPUBacked == tightImg->isTextureBacked());
-        SkPixmap tmpPixmap;
-        REPORTER_ASSERT(reporter, isGPUBacked != !!tightImg->peekPixels(&tmpPixmap));
-    }
-    {
-        sk_sp<SkSurface> tightSurf(img->makeTightSurface(kN32_SkColorType, img->getColorSpace(),
-                                                         subset.size()));
-
-        REPORTER_ASSERT(reporter, tightSurf->width() == subset.width());
-        REPORTER_ASSERT(reporter, tightSurf->height() == subset.height());
-        GrBackendTexture backendTex = tightSurf->getBackendTexture(
-                                                    SkSurface::kDiscardWrite_BackendHandleAccess);
-        REPORTER_ASSERT(reporter, isGPUBacked == backendTex.isValid());
-        SkPixmap tmpPixmap;
-        REPORTER_ASSERT(reporter, isGPUBacked != !!tightSurf->peekPixels(&tmpPixmap));
-    }
 }
 
 DEF_TEST(SpecialImage_Raster, reporter) {

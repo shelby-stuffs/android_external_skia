@@ -16,6 +16,7 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/private/base/SkNoncopyable.h"
+#include "include/private/base/SkTArray.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkRasterClip.h"
@@ -36,8 +37,12 @@ struct SkIRect;
 class SkRasterHandleAllocator;
 class SkSpecialImage;
 
-namespace skif { class Mapping; }
-namespace skgpu::v1 {
+namespace skif {
+class Context;
+struct ContextInfo;
+class Mapping;
+}
+namespace skgpu::ganesh {
 class Device;
 }
 namespace skgpu::graphite {
@@ -214,7 +219,7 @@ public:
 
     virtual bool android_utils_clipWithStencil() { return false; }
 
-    virtual skgpu::v1::Device* asGaneshDevice() { return nullptr; }
+    virtual skgpu::ganesh::Device* asGaneshDevice() { return nullptr; }
     virtual skgpu::graphite::Device* asGraphiteDevice() { return nullptr; }
 
     // Ensure that non-RSXForm runs are passed to onDrawGlyphRunList.
@@ -453,6 +458,9 @@ protected:
     // inspect a layer's device to know if calling drawDevice() later is allowed.
     virtual bool isNoPixelsDevice() const { return false; }
 
+    // Defaults to a CPU image filtering context.
+    virtual skif::Context createContext(const skif::ContextInfo&) const;
+
     // Returns whether or not localToDevice() has changed since the last call to this function.
     bool checkLocalToDeviceDirty() {
         bool wasDirty = fLocalToDeviceDirty;
@@ -464,6 +472,7 @@ private:
     friend class SkAndroidFrameworkUtils;
     friend class SkCanvas;
     friend class SkDraw;
+    friend class SkDrawBase;
     friend class SkSurface_Raster;
     friend class DeviceTestingAccess;
 
@@ -610,7 +619,7 @@ private:
         fClipStack.emplace_back(this->bounds(), /*isAA=*/false, /*isRect=*/true);
     }
 
-    SkSTArray<4, ClipState> fClipStack;
+    skia_private::STArray<4, ClipState> fClipStack;
 
     using INHERITED = SkBaseDevice;
 };

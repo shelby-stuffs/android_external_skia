@@ -11,10 +11,11 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkSLIRNode.h"
-#include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLSymbol.h"
-#include "include/sksl/SkSLPosition.h"
+#include "include/private/base/SkTArray.h"
+#include "src/sksl/SkSLPosition.h"
+#include "src/sksl/ir/SkSLIRNode.h"
+#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLSymbol.h"
 #include "src/sksl/spirv.h"
 
 #include <cmath>
@@ -24,13 +25,13 @@
 #include <string>
 #include <string_view>
 #include <tuple>
-#include <vector>
 
 namespace SkSL {
 
 class Context;
 class Expression;
 class SymbolTable;
+class Type;
 
 struct CoercionCost {
     static CoercionCost Free()              { return {    0,    0, false }; }
@@ -66,6 +67,24 @@ struct CoercionCost {
 };
 
 /**
+ * Represents a single field in a struct type.
+ */
+struct Field {
+    Field(Position pos, Modifiers modifiers, std::string_view name, const Type* type)
+            : fPosition(pos)
+            , fModifiers(modifiers)
+            , fName(name)
+            , fType(type) {}
+
+    std::string description() const;
+
+    Position fPosition;
+    Modifiers fModifiers;
+    std::string_view fName;
+    const Type* fType;
+};
+
+/**
  * Represents a type, such as int or float4.
  */
 class Type : public Symbol {
@@ -74,20 +93,6 @@ public:
     inline static constexpr int kMaxAbbrevLength = 3;
     // Represents unspecified array dimensions, as in `int[]`.
     inline static constexpr int kUnsizedArray = -1;
-    struct Field {
-        Field(Position pos, Modifiers modifiers, std::string_view name, const Type* type)
-                : fPosition(pos)
-                , fModifiers(modifiers)
-                , fName(name)
-                , fType(type) {}
-
-        std::string description() const;
-
-        Position fPosition;
-        Modifiers fModifiers;
-        std::string_view fName;
-        const Type* fType;
-    };
 
     enum class TypeKind : int8_t {
         kArray,
@@ -175,7 +180,7 @@ public:
     static std::unique_ptr<Type> MakeStructType(const Context& context,
                                                 Position pos,
                                                 std::string_view name,
-                                                std::vector<Field> fields,
+                                                skia_private::TArray<Field> fields,
                                                 bool interfaceBlock = false);
 
     /** Create a texture type. */
@@ -420,7 +425,7 @@ public:
         return 0;
     }
 
-    virtual const std::vector<Field>& fields() const {
+    virtual SkSpan<const Field> fields() const {
         SK_ABORT("Internal error: not a struct");
     }
 
@@ -539,10 +544,7 @@ public:
      *  - Modifier `readonly` + Type `texture2D`: Type `readonlyTexture2D`
      * Generates an error if the qualifiers don't make sense (`highp bool`, `writeonly MyStruct`)
      */
-    const Type* applyQualifiers(const Context& context,
-                                Modifiers* modifiers,
-                                SymbolTable* symbols,
-                                Position pos) const;
+    const Type* applyQualifiers(const Context& context, Modifiers* modifiers, Position pos) const;
 
     /**
      * Coerces the passed-in expression to this type. If the types are incompatible, reports an
@@ -566,26 +568,29 @@ public:
      * Verifies that the expression is a valid constant array size for this type. Returns the array
      * size, or reports errors and returns zero if the expression isn't a valid literal value.
      */
-    SKSL_INT convertArraySize(const Context& context, Position arrayPos,
-            std::unique_ptr<Expression> size) const;
+    SKSL_INT convertArraySize(const Context& context,
+                              Position arrayPos,
+                              std::unique_ptr<Expression> size) const;
+
+    SKSL_INT convertArraySize(const Context& context,
+                              Position arrayPos,
+                              Position sizePos,
+                              SKSL_INT size) const;
 
 protected:
-    Type(std::string_view name, const char* abbrev, TypeKind kind,
-            Position pos = Position())
-        : INHERITED(pos, kIRNodeKind, name)
-        , fTypeKind(kind) {
+    Type(std::string_view name, const char* abbrev, TypeKind kind, Position pos = Position())
+            : INHERITED(pos, kIRNodeKind, name)
+            , fTypeKind(kind) {
         SkASSERT(strlen(abbrev) <= kMaxAbbrevLength);
         strcpy(fAbbreviatedName, abbrev);
     }
 
     const Type* applyPrecisionQualifiers(const Context& context,
                                          Modifiers* modifiers,
-                                         SymbolTable* symbols,
                                          Position pos) const;
 
     const Type* applyAccessQualifiers(const Context& context,
                                       Modifiers* modifiers,
-                                      SymbolTable* symbols,
                                       Position pos) const;
 
 private:

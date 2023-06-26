@@ -7,11 +7,20 @@
 
 #include "src/text/gpu/TextBlobRedrawCoordinator.h"
 
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkTypes.h"
+#include "src/core/SkDevice.h"
 #include "src/core/SkStrikeCache.h"
 #include "src/text/GlyphRun.h"
-#if defined(SK_GANESH)
-#include "src/gpu/ganesh/SurfaceDrawContext.h"
-#endif
+
+#include <utility>
+
+class GrClip;
+class SkCanvas;
+class SkPaint;
+
+using namespace skia_private;
 
 // This needs to be outside the namespace so we can declare SkMessageBus properly
 DECLARE_SKMESSAGEBUS_MESSAGE(sktext::gpu::TextBlobRedrawCoordinator::PurgeBlobMessage,
@@ -35,7 +44,7 @@ void TextBlobRedrawCoordinator::drawGlyphRunList(SkCanvas* canvas,
                                                  const GlyphRunList& glyphRunList,
                                                  const SkPaint& paint,
                                                  SkStrikeDeviceInfo strikeDeviceInfo,
-                                                 skgpu::v1::SurfaceDrawContext* sdc) {
+                                                 skgpu::ganesh::SurfaceDrawContext* sdc) {
     sk_sp<TextBlob> blob = this->findOrCreateBlob(viewMatrix, glyphRunList, paint,
                                                   strikeDeviceInfo);
 
@@ -156,7 +165,7 @@ void TextBlobRedrawCoordinator::purgeStaleBlobs() {
 }
 
 void TextBlobRedrawCoordinator::internalPurgeStaleBlobs() {
-    SkTArray<PurgeBlobMessage> msgs;
+    TArray<PurgeBlobMessage> msgs;
     fPurgeBlobInbox.poll(&msgs);
 
     for (const auto& msg : msgs) {

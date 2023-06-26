@@ -2,7 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
 #include "gm/gm.h"
+#include "include/codec/SkBmpDecoder.h"
 #include "include/codec/SkCodec.h"
+#include "include/codec/SkGifDecoder.h"
+#include "include/codec/SkIcoDecoder.h"
+#include "include/codec/SkJpegDecoder.h"
+#include "include/codec/SkPngDecoder.h"
+#include "include/codec/SkWbmpDecoder.h"
+#include "include/codec/SkWebpDecoder.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkGraphics.h"
@@ -11,6 +18,7 @@
 #include "include/docs/SkPDFDocument.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkMD5.h"
 #include "src/core/SkOSFile.h"
@@ -49,6 +57,24 @@
     #include "modules/skresources/include/SkResources.h"
 #endif
 
+#ifdef SK_CODEC_DECODES_AVIF
+#include "include/codec/SkAvifDecoder.h"
+#endif
+
+#ifdef SK_HAS_HEIF_LIBRARY
+#include "include/android/SkHeifDecoder.h"
+#endif
+
+#ifdef SK_CODEC_DECODES_JPEGXL
+#include "include/codec/SkJpegxlDecoder.h"
+#endif
+
+#ifdef SK_CODEC_DECODES_RAW
+#include "include/codec/SkRawDecoder.h"
+#endif
+
+using namespace skia_private;
+
 using sk_gpu_test::GrContextFactory;
 
 static DEFINE_bool(listGMs  , false, "Print GM names and exit.");
@@ -62,10 +88,6 @@ static DEFINE_string(at    , "premul", "The alpha type for any raster backend.")
 static DEFINE_string(gamut ,   "srgb", "The color gamut for any raster backend.");
 static DEFINE_string(tf    ,   "srgb", "The transfer function for any raster backend.");
 static DEFINE_bool  (legacy,    false, "Use a null SkColorSpace instead of --gamut and --tf?");
-
-static DEFINE_bool  (skvm ,    false, "Use SkVMBlitter when supported?");
-static DEFINE_bool  (jit  ,     true, "JIT SkVM?");
-static DEFINE_bool  (dylib,    false, "JIT SkVM via dylib?");
 
 static DEFINE_bool  (reducedshaders,    false, "Use reduced shader set for any GPU backend.");
 static DEFINE_int   (samples       ,         0, "Samples per pixel in GPU backends.");
@@ -230,6 +252,29 @@ static void init(Source* source, sk_sp<skottie::Animation> animation) {
 }
 #endif
 
+static void register_codecs() {
+    SkCodecs::Register(SkPngDecoder::Decoder());
+    SkCodecs::Register(SkJpegDecoder::Decoder());
+    SkCodecs::Register(SkWebpDecoder::Decoder());
+    SkCodecs::Register(SkGifDecoder::Decoder());
+    SkCodecs::Register(SkBmpDecoder::Decoder());
+    SkCodecs::Register(SkWbmpDecoder::Decoder());
+    SkCodecs::Register(SkIcoDecoder::Decoder());
+
+#ifdef SK_CODEC_DECODES_AVIF
+    SkCodecs::Register(SkAvifDecoder::Decoder());
+#endif
+#ifdef SK_HAS_HEIF_LIBRARY
+    SkCodecs::Register(SkHeifDecoder::Decoder());
+#endif
+#ifdef SK_CODEC_DECODES_JPEGXL
+    SkCodecs::Register(SkJpegxlDecoder::Decoder());
+#endif
+#ifdef SK_CODEC_DECODES_RAW
+    SkCodecs::Register(SkRawDecoder::Decoder());
+#endif
+}
+
 static void init_cpu_test(Source* source, const skiatest::Test& test) {
     source->size  = {1,1};
     source->draw  = [test](SkCanvas* canvas) {
@@ -256,7 +301,7 @@ static void init_cpu_test(Source* source, const skiatest::Test& test) {
 
 static sk_sp<SkImage> draw_with_cpu(std::function<bool(SkCanvas*)> draw,
                                     SkImageInfo info) {
-    if (sk_sp<SkSurface> surface = SkSurface::MakeRaster(info)) {
+    if (sk_sp<SkSurface> surface = SkSurfaces::Raster(info)) {
         if (draw(surface->getCanvas())) {
             return surface->makeImageSnapshot();
         }
@@ -321,7 +366,7 @@ static sk_sp<SkImage> draw_with_gpu(std::function<bool(SkCanvas*)> draw,
 
     switch (surfaceType) {
         case SurfaceType::kDefault:
-            surface = SkSurface::MakeRenderTarget(
+            surface = SkSurfaces::RenderTarget(
                     context, skgpu::Budgeted::kNo, info, FLAGS_samples, &props);
             break;
 
@@ -372,10 +417,6 @@ TestHarness CurrentTestHarness() {
     return TestHarness::kFM;
 }
 
-extern bool gUseSkVMBlitter;
-extern bool gSkVMAllowJIT;
-extern bool gSkVMJITViaDylib;
-
 int main(int argc, char** argv) {
     CommandLineFlags::Parse(argc, argv);
     SetupCrashHandler();
@@ -388,9 +429,7 @@ int main(int argc, char** argv) {
     SkGraphics::SetOpenTypeSVGDecoderFactory(SkSVGOpenTypeSVGDecoder::Make);
 #endif
 
-    gUseSkVMBlitter  = FLAGS_skvm;
-    gSkVMAllowJIT    = FLAGS_jit;
-    gSkVMJITViaDylib = FLAGS_dylib;
+    register_codecs();
 
     initializeEventTracingForTools();
     CommonFlags::SetDefaultFontMgr();
@@ -406,7 +445,7 @@ int main(int argc, char** argv) {
         baseOptions.fShaderCacheStrategy = GrContextOptions::ShaderCacheStrategy::kBackendSource;
     }
 
-    SkTHashMap<SkString, skiagm::GMFactory> gm_factories;
+    THashMap<SkString, skiagm::GMFactory> gm_factories;
     for (skiagm::GMFactory factory : skiagm::GMRegistry::Range()) {
         std::unique_ptr<skiagm::GM> gm{factory()};
         if (FLAGS_listGMs) {
@@ -416,7 +455,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    SkTHashMap<SkString, const skiatest::Test*> tests;
+    THashMap<SkString, const skiatest::Test*> tests;
     for (const skiatest::Test& test : skiatest::TestRegistry::Range()) {
         if (test.fTestType != skiatest::TestType::kCPU) {
             continue;  // TODO
@@ -438,7 +477,7 @@ int main(int argc, char** argv) {
 
     const int replicas = std::max(1, FLAGS_race);
 
-    SkTArray<Source> sources;
+    TArray<Source> sources;
     for (const SkString& name : FLAGS_sources)
     for (int replica = 0; replica < replicas; replica++) {
         Source* source = &sources.push_back();

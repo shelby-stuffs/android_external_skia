@@ -29,10 +29,6 @@
 #include <cstring>
 #include <utility>
 
-#if defined(SK_GANESH)
-#include "include/private/chromium/Slug.h"
-#endif
-
 using namespace skia_private;
 
 template <typename T> int SafeCount(const T* obj) {
@@ -431,7 +427,7 @@ static sk_sp<SkDrawable> create_drawable_from_buffer(SkReadBuffer& buffer) {
 // We need two types 'cause SkDrawable is const-variant.
 template <typename T, typename U>
 bool new_array_from_buffer(SkReadBuffer& buffer, uint32_t inCount,
-                           SkTArray<sk_sp<T>>& array, sk_sp<U> (*factory)(SkReadBuffer&)) {
+                           TArray<sk_sp<T>>& array, sk_sp<U> (*factory)(SkReadBuffer&)) {
     if (!buffer.validate(array.empty() && SkTFitsIn<int>(inCount))) {
         return false;
     }

@@ -8,6 +8,7 @@
 #ifndef skgpu_graphite_Device_DEFINED
 #define skgpu_graphite_Device_DEFINED
 
+#include "include/core/SkImage.h"
 #include "include/gpu/GpuTypes.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkEnumBitMask.h"
@@ -31,6 +32,7 @@ class BoundsManager;
 class Clip;
 class Context;
 class DrawContext;
+enum class DstReadRequirement;
 class Geometry;
 class PaintParams;
 class Recorder;
@@ -176,6 +178,8 @@ private:
     sk_sp<SkSpecialImage> makeSpecial(const SkImage*) override;
     sk_sp<SkSpecialImage> snapSpecial(const SkIRect& subset, bool forceCopy = false) override;
 
+    skif::Context createContext(const skif::ContextInfo&) const override;
+
     // DrawFlags alters the effects used by drawShape.
     enum class DrawFlags : unsigned {
         kNone             = 0b000,
@@ -215,6 +219,12 @@ private:
                          const SkPaint& paint,
                          sk_sp<SkRefCnt> subRunStorage);
 
+    sk_sp<sktext::gpu::Slug> convertGlyphRunListToSlug(const sktext::GlyphRunList& glyphRunList,
+                                                       const SkPaint& initialPaint,
+                                                       const SkPaint& drawingPaint) override;
+
+    void drawSlug(SkCanvas*, const sktext::gpu::Slug* slug, const SkPaint& drawingPaint) override;
+
     // Returns the Renderer to draw the shape in the given style. If SkStrokeRec is a
     // stroke-and-fill, this returns the Renderer used for the fill portion and it can be assumed
     // that Renderer::TessellatedStrokes() will be used for the stroke portion.
@@ -224,12 +234,12 @@ private:
     // return a retry error code? or does drawGeometry() handle all the fallbacks, knowing that
     // a particular shape type needs to be pre-chopped?
     // TODO: Move this into a RendererSelector object provided by the Context.
-    const Renderer* chooseRenderer(const Geometry&,
-                                   const Clip&,
+    const Renderer* chooseRenderer(const Transform& localToDevice,
+                                   const Geometry&,
                                    const SkStrokeRec&,
                                    bool requireMSAA) const;
 
-    bool needsFlushBeforeDraw(int numNewDraws) const;
+    bool needsFlushBeforeDraw(int numNewDraws, DstReadRequirement) const;
 
     Recorder* fRecorder;
     sk_sp<DrawContext> fDC;

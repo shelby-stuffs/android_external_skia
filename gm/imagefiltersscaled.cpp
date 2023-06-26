@@ -37,7 +37,7 @@ static sk_sp<SkImage> make_gradient_circle(int width, int height) {
     SkScalar x = SkIntToScalar(width / 2);
     SkScalar y = SkIntToScalar(height / 2);
     SkScalar radius = std::min(x, y) * 4 / 5;
-    sk_sp<SkSurface> surface(SkSurface::MakeRasterN32Premul(width, height));
+    sk_sp<SkSurface> surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(width, height)));
     SkCanvas* canvas = surface->getCanvas();
     canvas->clear(0x00000000);
     SkColor colors[2];
@@ -78,8 +78,10 @@ protected:
     void onDraw(SkCanvas* canvas) override {
         canvas->clear(SK_ColorBLACK);
 
-        sk_sp<SkImageFilter> gradient(SkImageFilters::Image(fGradientCircle));
-        sk_sp<SkImageFilter> checkerboard(SkImageFilters::Image(fCheckerboard));
+        sk_sp<SkImageFilter> gradient(SkImageFilters::Image(fGradientCircle,
+                                                            SkFilterMode::kLinear));
+        sk_sp<SkImageFilter> checkerboard(SkImageFilters::Image(fCheckerboard,
+                                                                SkFilterMode::kLinear));
 
         SkPoint3 pointLocation = SkPoint3::Make(0, 0, SkIntToScalar(10));
         SkPoint3 spotLocation = SkPoint3::Make(SkIntToScalar(-10),
@@ -104,10 +106,10 @@ protected:
             SkImageFilters::Offset(SkIntToScalar(32), 0, nullptr),
             SkImageFilters::MatrixTransform(resizeMatrix, SkSamplingOptions(), nullptr),
             SkImageFilters::Shader(SkPerlinNoiseShader::MakeFractalNoise(
-                    SkDoubleToScalar(0.1), SkDoubleToScalar(0.05), 1, 0)),
+                   SkDoubleToScalar(0.1), SkDoubleToScalar(0.05), 1, 0)),
             SkImageFilters::PointLitDiffuse(pointLocation, white, surfaceScale, kd, nullptr),
             SkImageFilters::SpotLitDiffuse(spotLocation, spotTarget, spotExponent,
-                                           cutoffAngle, white, surfaceScale, kd, nullptr),
+                                          cutoffAngle, white, surfaceScale, kd, nullptr),
         };
 
         SkVector scales[] = {

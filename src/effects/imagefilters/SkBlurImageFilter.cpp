@@ -20,9 +20,9 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkImageFilters.h"
 #include "include/private/base/SkFloatingPoint.h"
-#include "src/base/SkVx.h"
 #include "include/private/base/SkMalloc.h"
 #include "src/base/SkArenaAlloc.h"
+#include "src/base/SkVx.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkSpecialImage.h"
@@ -963,8 +963,7 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::onFilterImage(const Context& ctx,
     if (ctx.gpuBacked()) {
         // Ensure the input is in the destination's gamut. This saves us from having to do the
         // xform during the filter itself.
-        input = ImageToColorSpace(input.get(), ctx.colorType(), ctx.colorSpace(),
-                                  ctx.surfaceProps());
+        input = ImageToColorSpace(ctx, input.get());
         result = this->gpuFilter(ctx, sigma, input, inputBounds, dstBounds, inputOffset,
                                  &resultOffset);
     } else

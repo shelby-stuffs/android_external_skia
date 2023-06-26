@@ -9,11 +9,13 @@
 
 #include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/gpu/graphite/Recorder.h"
+#include "include/private/base/SkAlign.h"
 #include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/BufferManager.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/ContextUtils.h"
+#include "src/gpu/graphite/CopyTask.h"
 #include "src/gpu/graphite/DrawContext.h"
 #include "src/gpu/graphite/DrawList.h"
 #include "src/gpu/graphite/DrawWriter.h"
@@ -38,6 +40,8 @@
 
 #include <algorithm>
 #include <unordered_map>
+
+using namespace skia_private;
 
 namespace skgpu::graphite {
 
@@ -85,11 +89,11 @@ public:
 
     SkSpan<V> data() { return {fIndexToData.data(), fIndexToData.size()}; }
 
-    SkTArray<V>&& detach() { return std::move(fIndexToData); }
+    TArray<V>&& detach() { return std::move(fIndexToData); }
 
 private:
-    SkTHashMap<T, Index> fDataToIndex;
-    SkTArray<V> fIndexToData;
+    THashMap<T, Index> fDataToIndex;
+    TArray<V> fIndexToData;
 };
 
 // Tracks uniform data on the CPU and then its transition to storage in a GPU buffer (ubo or ssbo).
@@ -170,8 +174,8 @@ public:
         }
     }
 
-    SkTArray<sk_sp<TextureProxy>>&& detachTextures() { return fProxyCache.detach(); }
-    SkTArray<SamplerDesc>&& detachSamplers() { return fSamplerCache.detach(); }
+    TArray<sk_sp<TextureProxy>>&& detachTextures() { return fProxyCache.detach(); }
+    TArray<SamplerDesc>&& detachSamplers() { return fSamplerCache.detach(); }
 
 private:
     struct ProxyRef {
@@ -280,7 +284,7 @@ private:
     // Access first by pipeline index. The final UniformSsboCache::Index is either used to select
     // the BindBufferInfo for a draw using UBOs, or it's the real index into a packed array of
     // uniforms in a storage buffer object (whose binding is stored in index 0).
-    SkTArray<UniformSsboCache> fPerPipelineCaches;
+    TArray<UniformSsboCache> fPerPipelineCaches;
 
     const bool fUseStorageBuffers;
 
@@ -395,6 +399,32 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+sk_sp<TextureProxy> add_copy_target_task(Recorder* recorder,
+                                         sk_sp<TextureProxy> target,
+                                         const SkImageInfo& targetInfo) {
+    SkASSERT(recorder->priv().caps()->isTexturable(target->textureInfo()));
+    SkIRect dstSrcRect = SkIRect::MakeSize(targetInfo.dimensions());
+    sk_sp<TextureProxy> copy = TextureProxy::Make(recorder->priv().caps(),
+                                                  dstSrcRect.size(),
+                                                  targetInfo.colorType(),
+                                                  Mipmapped::kNo,
+                                                  target->textureInfo().isProtected(),
+                                                  Renderable::kNo,
+                                                  skgpu::Budgeted::kYes);
+    if (!copy) {
+        return nullptr;
+    }
+
+    sk_sp<CopyTextureToTextureTask> copyTask = CopyTextureToTextureTask::Make(
+            std::move(target), dstSrcRect, copy, /*dstOffset=*/{0, 0});
+    if (!copyTask) {
+        return nullptr;
+    }
+
+    recorder->priv().add(std::move(copyTask));
+    return copy;
+}
+
 DrawPass::DrawPass(sk_sp<TextureProxy> target,
                    std::pair<LoadOp, StoreOp> ops,
                    std::array<float, 4> clearColor)
@@ -425,11 +455,12 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
     //    indirection and does not work as well with SkTBlockList.
     // In pseudo tests, manipulating the pointer or having to mask out indices was about 15% slower
     // than an 8 byte key and unmodified pointer.
-    static_assert(sizeof(DrawPass::SortKey) == 16 + sizeof(void*));
+    static_assert(sizeof(DrawPass::SortKey) ==
+                  SkAlignTo(16 + sizeof(void*), alignof(DrawPass::SortKey)));
 
     // The DrawList is converted directly into the DrawPass' data structures, but once the DrawPass
     // is returned from Make(), it is considered immutable.
-    std::unique_ptr<DrawPass> drawPass(new DrawPass(std::move(target), ops, clearColor));
+    std::unique_ptr<DrawPass> drawPass(new DrawPass(target, ops, clearColor));
 
     Rect passBounds = Rect::InfiniteInverted();
 
@@ -460,6 +491,9 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
     // shading and geometry uniforms below.
     PipelineDataGatherer gatherer(shadingUniformLayout);
 
+    // Copy of destination, if needed.
+    sk_sp<TextureProxy> dst;
+
     std::vector<SortKey> keys;
     keys.reserve(draws->renderStepCount());
     for (const DrawList::Draw& draw : draws->fDraws.items()) {
@@ -470,6 +504,16 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
         const UniformDataBlock* shadingUniforms = nullptr;
         const TextureDataBlock* paintTextures = nullptr;
         if (draw.fPaintParams.has_value()) {
+            TextureProxy* curDst = nullptr;
+            if (draw.fPaintParams->dstReadRequirement() == DstReadRequirement::kTextureCopy) {
+                // TODO(b/274811856) Only copy a subset of the render target that we need for draws
+                // needing a dst copy, and pass in uniforms to offset the dst sample coords.
+                if (!dst) {
+                    dst = add_copy_target_task(recorder, target, targetInfo);
+                    SkASSERT(dst);
+                }
+                curDst = dst.get();
+            }
             std::tie(shaderID, shadingUniforms, paintTextures) =
                     ExtractPaintData(recorder,
                                      &gatherer,
@@ -477,6 +521,7 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
                                      shadingUniformLayout,
                                      draw.fDrawParams.transform(),
                                      draw.fPaintParams.value(),
+                                     curDst ? sk_ref_sp(curDst) : nullptr,
                                      targetInfo.colorInfo());
         } // else depth-only
 
@@ -630,9 +675,9 @@ bool DrawPass::prepareResources(ResourceProvider* resourceProvider,
     fSamplers.reserve_back(fSamplerDescs.size());
     for (int i = 0; i < fSamplerDescs.size(); ++i) {
         sk_sp<Sampler> sampler = resourceProvider->findOrCreateCompatibleSampler(
-                fSamplerDescs[i].fSamplingOptions,
-                fSamplerDescs[i].fTileModes[0],
-                fSamplerDescs[i].fTileModes[1]);
+                fSamplerDescs[i].samplingOptions(),
+                fSamplerDescs[i].tileModeX(),
+                fSamplerDescs[i].tileModeY());
         if (!sampler) {
             SKGPU_LOG_W("Failed to create sampler. Will not create renderpass!");
             return false;

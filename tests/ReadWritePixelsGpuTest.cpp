@@ -32,10 +32,12 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkRectMemcpy.h"
 #include "src/core/SkAutoPixmapStorage.h"
-#include "src/core/SkConvertPixels.h"
 #include "src/core/SkImageInfoPriv.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -64,6 +66,8 @@
 #include <memory>
 #include <utility>
 #include <vector>
+
+using namespace skia_private;
 
 struct GrContextOptions;
 
@@ -235,7 +239,7 @@ SkPixmap make_pixmap_have_valid_alpha_type(SkPixmap pm) {
 static SkAutoPixmapStorage make_ref_data(const SkImageInfo& info, bool forceOpaque) {
     SkAutoPixmapStorage result;
     result.alloc(info);
-    auto surface = SkSurface::MakeRasterDirect(make_pixmap_have_valid_alpha_type(result));
+    auto surface = SkSurfaces::WrapPixels(make_pixmap_have_valid_alpha_type(result));
     if (!surface) {
         return result;
     }
@@ -526,7 +530,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SurfaceContextReadPixels,
                                        reporter,
                                        ctxInfo,
                                        CtsEnforcement::kApiLevel_T) {
-    using Surface = std::unique_ptr<skgpu::v1::SurfaceContext>;
+    using Surface = std::unique_ptr<skgpu::ganesh::SurfaceContext>;
     GrDirectContext* direct = ctxInfo.directContext();
     auto reader = std::function<GpuReadSrcFn<Surface>>(
             [direct](const Surface& surface, const SkIPoint& offset, const SkPixmap& pixels) {
@@ -569,7 +573,7 @@ DEF_GANESH_TEST_FOR_ALL_CONTEXTS(ReadPixels_InvalidRowBytes_Gpu,
                                  ctxInfo,
                                  CtsEnforcement::kApiLevel_T) {
     auto srcII = SkImageInfo::Make({10, 10}, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    auto surf = SkSurface::MakeRenderTarget(ctxInfo.directContext(), skgpu::Budgeted::kYes, srcII);
+    auto surf = SkSurfaces::RenderTarget(ctxInfo.directContext(), skgpu::Budgeted::kYes, srcII);
     for (int ct = 0; ct < kLastEnum_SkColorType + 1; ++ct) {
         auto colorType = static_cast<SkColorType>(ct);
         size_t bpp = SkColorTypeBytesPerPixel(colorType);
@@ -588,7 +592,7 @@ DEF_GANESH_TEST_FOR_ALL_CONTEXTS(WritePixels_InvalidRowBytes_Gpu,
                                  ctxInfo,
                                  CtsEnforcement::kApiLevel_T) {
     auto dstII = SkImageInfo::Make({10, 10}, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    auto surf = SkSurface::MakeRenderTarget(ctxInfo.directContext(), skgpu::Budgeted::kYes, dstII);
+    auto surf = SkSurfaces::RenderTarget(ctxInfo.directContext(), skgpu::Budgeted::kYes, dstII);
     for (int ct = 0; ct < kLastEnum_SkColorType + 1; ++ct) {
         auto colorType = static_cast<SkColorType>(ct);
         size_t bpp = SkColorTypeBytesPerPixel(colorType);
@@ -659,12 +663,8 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SurfaceAsyncReadPixels,
     for (GrSurfaceOrigin origin : {kTopLeft_GrSurfaceOrigin, kBottomLeft_GrSurfaceOrigin}) {
         auto factory = std::function<GpuSrcFactory<Surface>>(
                 [context = ctxInfo.directContext(), origin](const SkPixmap& src) {
-                    auto surf = SkSurface::MakeRenderTarget(context,
-                                                            skgpu::Budgeted::kYes,
-                                                            src.info(),
-                                                            1,
-                                                            origin,
-                                                            nullptr);
+                    auto surf = SkSurfaces::RenderTarget(
+                            context, skgpu::Budgeted::kYes, src.info(), 1, origin, nullptr);
                     if (surf) {
                         surf->writePixels(src, 0, 0);
                     }
@@ -738,7 +738,8 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ImageAsyncReadPixels,
         for (auto renderable : {GrRenderable::kNo, GrRenderable::kYes}) {
             auto factory = std::function<GpuSrcFactory<Image>>([&](const SkPixmap& src) {
                 return sk_gpu_test::MakeBackendTextureImage(ctxInfo.directContext(), src,
-                                                            renderable, origin);
+                                                            renderable, origin,
+                                                            GrProtected::kNo);
             });
             auto label = SkStringPrintf("Renderable: %d, Origin: %d", (int)renderable, origin);
             gpu_read_pixels_test_driver(reporter, rules, factory, reader, label);
@@ -792,8 +793,7 @@ DEF_GANESH_TEST(AsyncReadPixelsContextShutdown, reporter, options, CtsEnforcemen
                 if (!direct->priv().caps()->transferFromSurfaceToBufferSupport()) {
                     continue;
                 }
-                auto surf = SkSurface::MakeRenderTarget(direct, skgpu::Budgeted::kYes, ii, 1,
-                                                        nullptr);
+                auto surf = SkSurfaces::RenderTarget(direct, skgpu::Budgeted::kYes, ii, 1, nullptr);
                 if (!surf) {
                     continue;
                 }
@@ -1121,7 +1121,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SurfaceContextWritePixels,
                                        reporter,
                                        ctxInfo,
                                        CtsEnforcement::kApiLevel_T) {
-    using Surface = std::unique_ptr<skgpu::v1::SurfaceContext>;
+    using Surface = std::unique_ptr<skgpu::ganesh::SurfaceContext>;
     GrDirectContext* direct = ctxInfo.directContext();
     auto writer = std::function<GpuWriteDstFn<Surface>>(
             [direct](const Surface& surface, const SkIPoint& offset, const SkPixmap& pixels) {
@@ -1192,7 +1192,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SurfaceContextWritePixelsMipped,
         }
         SkAlphaType at = GrColorTypeHasAlpha(ct) ? kPremul_SkAlphaType : kOpaque_SkAlphaType;
         GrImageInfo info(ct, at, nullptr, kW, kH);
-        SkTArray<GrCPixmap> levels;
+        TArray<GrCPixmap> levels;
         const auto& ref = at == kPremul_SkAlphaType ? refP : refO;
         for (int w = kW, h = kH; w || h; w/=2, h/=2) {
             auto level = GrPixmap::Allocate(info.makeWH(std::max(w, 1), std::max(h, 1)));
@@ -1319,8 +1319,8 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(GLReadPixelsUnbindPBO,
     // Start with a async read so that we bind to GL_PIXEL_PACK_BUFFER.
     auto info = SkImageInfo::Make(16, 16, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
     SkAutoPixmapStorage pmap = make_ref_data(info, /*forceOpaque=*/false);
-    auto image = SkImage::MakeFromRaster(pmap, nullptr, nullptr);
-    image = image->makeTextureImage(ctxInfo.directContext());
+    auto image = SkImages::RasterFromPixmap(pmap, nullptr, nullptr);
+    image = SkImages::TextureFromImage(ctxInfo.directContext(), image);
     if (!image) {
         ERRORF(reporter, "Couldn't make texture image.");
         return;

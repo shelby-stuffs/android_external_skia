@@ -14,6 +14,7 @@
 #include "include/core/SkPicture.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "include/encode/SkPngEncoder.h"
 #include "include/utils/SkBase64.h"
 #include "src/core/SkPicturePriv.h"
 #include "src/utils/SkJSONWriter.h"
@@ -35,6 +36,7 @@
 #ifdef CK_ENABLE_WEBGL
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/gpu/gl/GrGLInterface.h"
 #include "include/gpu/gl/GrGLTypes.h"
 
@@ -120,7 +122,9 @@ class SkpDebugPlayer {
         // otherwise, its a frame at the top level.
         frames[fp]->drawTo(surface->getCanvas(), index);
       }
-      surface->flush();
+#ifdef CK_ENABLE_WEBGL
+      skgpu::ganesh::Flush(surface);
+#endif
     }
 
     // Draws to the end of the current frame.
@@ -255,7 +259,7 @@ class SkpDebugPlayer {
     // filenames like "\\1" in DrawImage commands.
     // Return type is the PNG data as a base64 encoded string with prepended URI.
     std::string getImageResource(int index) {
-      sk_sp<SkData> pngData = fImages[index]->encodeToData();
+      sk_sp<SkData> pngData = SkPngEncoder::Encode(nullptr, fImages[index].get(), {});
       size_t len = SkBase64::Encode(pngData->data(), pngData->size(), nullptr);
       SkString dst;
       dst.resize(len);

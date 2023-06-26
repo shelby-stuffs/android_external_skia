@@ -25,8 +25,6 @@ public:
 
     bool isValid() override { return fValid; }
 
-    void swapBuffers() override;
-
     void setDisplayParams(const DisplayParams& params) override;
 
     void activate(bool isActive) override;
@@ -46,12 +44,14 @@ protected:
     void destroyContext();
     virtual void onDestroyContext() = 0;
 
+    void onSwapBuffers() override;
+
     bool                        fValid;
     sk_cfp<id<MTLDevice>>       fDevice;
     sk_cfp<id<MTLCommandQueue>> fQueue;
     CAMetalLayer*               fMetalLayer;
     GrMTLHandle                 fDrawableHandle;
-#if GR_METAL_SDK_VERSION >= 230
+#if SKGPU_GRAPHITE_METAL_SDK_VERSION >= 230
     // wrapping this in sk_cfp throws up an availability warning, so we'll track lifetime manually
     id<MTLBinaryArchive>        fPipelineArchive SK_API_AVAILABLE(macos(11.0), ios(14.0));
 #endif

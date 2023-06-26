@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "include/core/SkTextureCompressionType.h"
 #include "include/gpu/GrContextOptions.h"
 #include "src/base/SkMathPriv.h"
 #include "src/base/SkTSearch.h"
@@ -3609,6 +3610,10 @@ static bool has_msaa_render_buffer(const GrSurfaceProxy* surf, const GrGLCaps& g
 
 bool GrGLCaps::onCanCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRect,
                                 const GrSurfaceProxy* src, const SkIRect& srcRect) const {
+    if (src->isProtected() == GrProtected::kYes && dst->isProtected() != GrProtected::kYes) {
+        return false;
+    }
+
     int dstSampleCnt = 0;
     int srcSampleCnt = 0;
     if (const GrRenderTargetProxy* rtProxy = dst->asRenderTargetProxy()) {
@@ -4096,12 +4101,13 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         shaderCaps->fMustObfuscateUniformColor = true;
     }
 
-    // On Mali G series GPUs, applying transfer functions in the fragment shader with half-floats
-    // produces answers that are much less accurate than expected/required. This forces full floats
-    // for some intermediate values to get acceptable results.
-    if (ctxInfo.renderer() == GrGLRenderer::kMaliG) {
-        fShaderCaps->fColorSpaceMathNeedsFloat = true;
-    }
+#if defined(SK_BUILD_FOR_ANDROID)
+    // On the following GPUs, the Perlin noise code needs to aggressively snap to multiples
+    // of 1/255 to avoid artifacts in the double table lookup:
+    //    Tegra3, PowerVRGE8320 (Wembley), MaliG76, and Adreno308
+    // Given the range of vendors we're just blanket enabling it on Android for OpenGL.
+    fShaderCaps->fPerlinNoiseRoundingFix = true;
+#endif
 
     // On Mali 400 there is a bug using dFd* in the x direction. So we avoid using it when possible.
     if (ctxInfo.renderer() == GrGLRenderer::kMali4xx) {
@@ -4417,14 +4423,19 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         formatWorkarounds->fDisallowBGRA8ReadPixels = true;
     }
 
-    // We disable MSAA for all Intel GPUs. Before Gen9, performance was very bad. Even with Gen9,
-    // we've seen driver crashes in the wild. We don't have data on Gen11 yet.
+    // We disable MSAA for older Intel GPUs. Before Gen9, performance was very bad. Even with Gen9,
+    // we've seen driver crashes in the wild.
     // (crbug.com/527565, crbug.com/983926)
-    if ((ctxInfo.vendor() == GrGLVendor::kIntel ||
-         ctxInfo.angleVendor() == GrGLVendor::kIntel) &&
-         (ctxInfo.renderer() < GrGLRenderer::kIntelIceLake ||
-          !contextOptions.fAllowMSAAOnNewIntel)) {
-         fMSFBOType = kNone_MSFBOType;
+    if (ctxInfo.vendor() == GrGLVendor::kIntel || ctxInfo.angleVendor() == GrGLVendor::kIntel) {
+        // Gen11 seems mostly ok, except we avoid drawing lines with MSAA. (anglebug.com/7796)
+        if (ctxInfo.renderer() >= GrGLRenderer::kIntelIceLake &&
+            contextOptions.fAllowMSAAOnNewIntel) {
+            if (fMSFBOType != kNone_MSFBOType) {
+                fAvoidLineDraws = true;
+            }
+        } else {
+            fMSFBOType = kNone_MSFBOType;
+        }
     }
 
     // ANGLE's D3D9 backend + AMD GPUs are flaky with program binary caching (skbug.com/10395)
@@ -4544,12 +4555,20 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     // * Nexus 5x (Adreno 418)
     // * Nexus 6 (Adreno 420)
     // * Pixel 3 (Adreno 630)
-    if (ctxInfo.renderer()      == GrGLRenderer::kWebGL &&
+    if (ctxInfo.renderer()       == GrGLRenderer::kWebGL &&
         (ctxInfo.webglRenderer() == GrGLRenderer::kAdreno4xx_other ||
          ctxInfo.webglRenderer() == GrGLRenderer::kAdreno630)) {
         fFlushBeforeWritePixels = true;
     }
-
+    // b/269561251
+    // PowerVR B-Series over ANGLE and passthrough command decoder has similar text atlas glitches
+    // to those seen on Adreno WebGL on the validating decoder (notably that case was fine on
+    // the passthrough decoder). Directly running on the device works correctly, so see if this
+    // around avoids the issue.
+    if (ctxInfo.angleBackend() != GrGLANGLEBackend::kUnknown &&
+        ctxInfo.angleRenderer() == GrGLRenderer::kPowerVRBSeries) {
+        fFlushBeforeWritePixels = true;
+    }
     // crbug.com/1395777
     // There appears to be a driver bug in GLSL program linking on Mali 400 and 450 devices with
     // driver version 2.1.199xx that causes the copy-as-draw programs in GrGLGpu to fail. The crash
@@ -4611,6 +4630,9 @@ bool GrGLCaps::onSurfaceSupportsWritePixels(const GrSurface* surface) const {
 
 GrCaps::SurfaceReadPixelsSupport GrGLCaps::surfaceSupportsReadPixels(
         const GrSurface* surface) const {
+    if (surface->isProtected()) {
+        return SurfaceReadPixelsSupport::kUnsupported;
+    }
     if (auto tex = static_cast<const GrGLTexture*>(surface->asTexture())) {
         // We don't support reading pixels directly from EXTERNAL textures as it would require
         // binding the texture to a FBO. For now we also disallow reading back directly
@@ -4668,9 +4690,9 @@ GrCaps::SupportedRead GrGLCaps::onSupportedReadPixelsColorType(
         GrColorType srcColorType, const GrBackendFormat& srcBackendFormat,
         GrColorType dstColorType) const {
 
-    SkImage::CompressionType compression = GrBackendFormatToCompressionType(srcBackendFormat);
-    if (compression != SkImage::CompressionType::kNone) {
-        return {SkCompressionTypeIsOpaque(compression) ? GrColorType::kRGB_888x
+    SkTextureCompressionType compression = GrBackendFormatToCompressionType(srcBackendFormat);
+    if (compression != SkTextureCompressionType::kNone) {
+        return {SkTextureCompressionTypeIsOpaque(compression) ? GrColorType::kRGB_888x
                                                        : GrColorType::kRGBA_8888,
                 0};
     }
@@ -4915,11 +4937,11 @@ GrBackendFormat GrGLCaps::onGetDefaultBackendFormat(GrColorType ct) const {
 }
 
 GrBackendFormat GrGLCaps::getBackendFormatFromCompressionType(
-        SkImage::CompressionType compressionType) const {
+        SkTextureCompressionType compressionType) const {
     switch (compressionType) {
-        case SkImage::CompressionType::kNone:
+        case SkTextureCompressionType::kNone:
             return {};
-        case SkImage::CompressionType::kETC2_RGB8_UNORM:
+        case SkTextureCompressionType::kETC2_RGB8_UNORM:
             // if ETC2 is available default to that format
             if (this->isFormatTexturable(GrGLFormat::kCOMPRESSED_RGB8_ETC2)) {
                 return GrBackendFormat::MakeGL(GR_GL_COMPRESSED_RGB8_ETC2, GR_GL_TEXTURE_2D);
@@ -4928,13 +4950,13 @@ GrBackendFormat GrGLCaps::getBackendFormatFromCompressionType(
                 return GrBackendFormat::MakeGL(GR_GL_COMPRESSED_ETC1_RGB8, GR_GL_TEXTURE_2D);
             }
             return {};
-        case SkImage::CompressionType::kBC1_RGB8_UNORM:
+        case SkTextureCompressionType::kBC1_RGB8_UNORM:
             if (this->isFormatTexturable(GrGLFormat::kCOMPRESSED_RGB8_BC1)) {
                 return GrBackendFormat::MakeGL(GR_GL_COMPRESSED_RGB_S3TC_DXT1_EXT,
                                                GR_GL_TEXTURE_2D);
             }
             return {};
-        case SkImage::CompressionType::kBC1_RGBA8_UNORM:
+        case SkTextureCompressionType::kBC1_RGBA8_UNORM:
             if (this->isFormatTexturable(GrGLFormat::kCOMPRESSED_RGBA8_BC1)) {
                 return GrBackendFormat::MakeGL(GR_GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
                                                GR_GL_TEXTURE_2D);

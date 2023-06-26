@@ -330,6 +330,7 @@ gm_sources = [
   "$_gm/savelayer.cpp",
   "$_gm/scaledemoji.cpp",
   "$_gm/scaledemoji_rendering.cpp",
+  "$_gm/scaledrects.cpp",
   "$_gm/scaledstrokes.cpp",
   "$_gm/shadermaskfilter.cpp",
   "$_gm/shadertext3.cpp",
@@ -338,7 +339,6 @@ gm_sources = [
   "$_gm/shapes.cpp",
   "$_gm/sharedcorners.cpp",
   "$_gm/showmiplevels.cpp",
-  "$_gm/simple_magnification.cpp",
   "$_gm/simpleaaclip.cpp",
   "$_gm/simplerect.cpp",
   "$_gm/skbug1719.cpp",
@@ -413,6 +413,8 @@ gm_sources = [
 ]
 
 gl_gm_sources = [ "$_gm/rectangletexture.cpp" ]
+
+fontations_gm_sources = [ "$_gm/fontations.cpp" ]
 
 ganesh_gm_sources = [
   "$_gm/aarecteffect.cpp",

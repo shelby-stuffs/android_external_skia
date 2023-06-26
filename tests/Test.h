@@ -72,7 +72,7 @@ public:
     }
 
 private:
-    SkTArray<SkString> fContextStack;
+    skia_private::TArray<SkString> fContextStack;
 };
 
 #define REPORT_FAILURE(reporter, cond, message) \
@@ -329,6 +329,9 @@ using skiatest::Test;
                                    skiatest::IsMetalContextType,              \
                                    reporter,                                  \
                                    graphite_context)
+
+#define DEF_GRAPHITE_TEST_FOR_DAWN_CONTEXT(name, reporter, graphite_context) \
+    DEF_GRAPHITE_TEST_FOR_CONTEXTS(name, skiatest::IsDawnContextType, reporter, graphite_context)
 
 #define DEF_GANESH_TEST(name, reporter, options, ctsEnforcement)                     \
     static void test_##name(skiatest::Reporter*, const GrContextOptions&);           \

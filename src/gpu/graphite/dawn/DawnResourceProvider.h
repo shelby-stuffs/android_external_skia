@@ -18,7 +18,7 @@ class DawnTexture;
 
 class DawnResourceProvider final : public ResourceProvider {
 public:
-    DawnResourceProvider(SharedContext* sharedContext, SingleOwner*);
+    DawnResourceProvider(SharedContext* sharedContext, SingleOwner*, uint32_t recorderID);
     ~DawnResourceProvider() override;
 
     sk_sp<Texture> createWrappedTexture(const BackendTexture&) override;
@@ -35,7 +35,7 @@ private:
     sk_sp<ComputePipeline> createComputePipeline(const ComputePipelineDesc&) override;
 
     sk_sp<Texture> createTexture(SkISize, const TextureInfo&, skgpu::Budgeted) override;
-    sk_sp<Buffer> createBuffer(size_t size, BufferType type, PrioritizeGpuReads) override;
+    sk_sp<Buffer> createBuffer(size_t size, BufferType type, AccessPattern) override;
 
     sk_sp<Sampler> createSampler(const SkSamplingOptions&,
                                  SkTileMode xTileMode,
@@ -46,7 +46,7 @@ private:
 
     const DawnSharedContext* dawnSharedContext() const;
 
-    SkTHashMap<uint64_t, wgpu::RenderPipeline> fBlitWithDrawPipelines;
+    skia_private::THashMap<uint64_t, wgpu::RenderPipeline> fBlitWithDrawPipelines;
 };
 
 } // namespace skgpu::graphite

@@ -11,7 +11,6 @@
 #include "src/base/SkStringView.h"
 #include "src/core/SkCpu.h"
 #include "src/core/SkOpts.h"
-#include "src/opts/SkChecksum_opts.h"
 #include "src/opts/SkVM_opts.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLFileOutputStream.h"
@@ -25,10 +24,8 @@
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
-#include "src/sksl/tracing/SkRPDebugTrace.h"
-#include "src/sksl/tracing/SkVMDebugTrace.h"
+#include "src/sksl/tracing/SkSLDebugTracePriv.h"
 #include "src/utils/SkShaderUtils.h"
-#include "src/utils/SkVMVisualizer.h"
 #include "tools/skslc/ProcessWorklist.h"
 
 #include "spirv-tools/libspirv.hpp"
@@ -47,9 +44,10 @@ void SkDebugf(const char format[], ...) {
 }
 
 namespace SkOpts {
-    decltype(hash_fn) hash_fn = SK_OPTS_NS::hash_fn;
-    decltype(interpret_skvm) interpret_skvm = SK_OPTS_NS::interpret_skvm;
     size_t raster_pipeline_highp_stride = 1;
+#if defined(SK_ENABLE_SKVM)
+    decltype(interpret_skvm) interpret_skvm = SK_OPTS_NS::interpret_skvm;
+#endif
 }
 
 static std::unique_ptr<SkWStream> as_SkWStream(SkSL::OutputStream& s) {
@@ -322,7 +320,7 @@ public:
 static bool detect_shader_settings(const std::string& text,
                                    SkSL::ProgramSettings* settings,
                                    const SkSL::ShaderCaps** caps,
-                                   std::unique_ptr<SkSL::SkVMDebugTrace>* debugTrace) {
+                                   std::unique_ptr<SkSL::DebugTracePriv>* debugTrace) {
     using Factory = ShaderCapsTestFactory;
 
     // Find a matching comment and isolate the name portion.
@@ -427,8 +425,8 @@ static bool detect_shader_settings(const std::string& text,
                 if (consume_suffix(&settingsText, " NoRTFlip")) {
                     settings->fForceNoRTFlip = true;
                 }
-                if (consume_suffix(&settingsText, " NoTraceVarInSkVMDebugTrace")) {
-                    settings->fAllowTraceVarInSkVMDebugTrace = false;
+                if (consume_suffix(&settingsText, " NoTraceVarInDebugTrace")) {
+                    settings->fAllowTraceVarInDebugTrace = false;
                 }
                 if (consume_suffix(&settingsText, " InlineThresholdMax")) {
                     settings->fInlineThreshold = INT_MAX;
@@ -436,9 +434,9 @@ static bool detect_shader_settings(const std::string& text,
                 if (consume_suffix(&settingsText, " Sharpen")) {
                     settings->fSharpenTextures = true;
                 }
-                if (consume_suffix(&settingsText, " SkVMDebugTrace")) {
+                if (consume_suffix(&settingsText, " DebugTrace")) {
                     settings->fOptimize = false;
-                    *debugTrace = std::make_unique<SkSL::SkVMDebugTrace>();
+                    *debugTrace = std::make_unique<SkSL::DebugTracePriv>();
                 }
                 if (consume_suffix(&settingsText, " SPIRVDawnCompatMode")) {
                     settings->fSPIRVDawnCompatMode = true;
@@ -542,9 +540,9 @@ static ResultCode process_command(SkSpan<std::string> args) {
 
     SkSL::ProgramSettings settings;
     const SkSL::ShaderCaps* caps = SkSL::ShaderCapsFactory::Standalone();
-    std::unique_ptr<SkSL::SkVMDebugTrace> skvmDebugTrace;
+    std::unique_ptr<SkSL::DebugTracePriv> debugTrace;
     if (*honorSettings) {
-        if (!detect_shader_settings(text, &settings, &caps, &skvmDebugTrace)) {
+        if (!detect_shader_settings(text, &settings, &caps, &debugTrace)) {
             return ResultCode::kInputError;
         }
     }
@@ -586,6 +584,7 @@ static ResultCode process_command(SkSpan<std::string> args) {
         return ResultCode::kSuccess;
     };
 
+#if defined(SK_ENABLE_SKVM) || defined(SK_ENABLE_SKSL_IN_RASTER_PIPELINE)
     auto compileProgramAsRuntimeShader = [&](const auto& writeFn) -> ResultCode {
         if (kind == SkSL::ProgramKind::kVertex) {
             emitCompileError("Runtime shaders do not support vertex programs\n");
@@ -597,6 +596,7 @@ static ResultCode process_command(SkSpan<std::string> args) {
         }
         return compileProgram(writeFn);
     };
+#endif
 
     if (skstd::ends_with(outputPath, ".spirv")) {
         return compileProgram(
@@ -644,34 +644,20 @@ static ResultCode process_command(SkSpan<std::string> args) {
                 [](SkSL::Compiler& compiler, SkSL::Program& program, SkSL::OutputStream& out) {
                     return compiler.toWGSL(program, out);
                 });
-    } else if (skstd::ends_with(outputPath, ".skvm")) {
-        return compileProgramAsRuntimeShader(
-                [&](SkSL::Compiler&, SkSL::Program& program, SkSL::OutputStream& out) {
-                    skvm::Builder builder{skvm::Features{}};
-                    if (!SkSL::testingOnly_ProgramToSkVMShader(program, &builder,
-                                                               skvmDebugTrace.get())) {
-                        return false;
-                    }
-
-                    std::unique_ptr<SkWStream> redirect = as_SkWStream(out);
-                    if (skvmDebugTrace) {
-                        skvmDebugTrace->dump(redirect.get());
-                    }
-                    builder.done().dump(redirect.get());
-                    return true;
-                });
+#if defined(SK_ENABLE_SKSL_IN_RASTER_PIPELINE)
     } else if (skstd::ends_with(outputPath, ".skrp")) {
         settings.fMaxVersionAllowed = SkSL::Version::k300;
         return compileProgramAsRuntimeShader(
                 [&](SkSL::Compiler& compiler, SkSL::Program& program, SkSL::OutputStream& out) {
-                    SkSL::SkRPDebugTrace skrpDebugTrace;
+                    SkSL::DebugTracePriv skrpDebugTrace;
                     const SkSL::FunctionDeclaration* main = program.getFunction("main");
                     if (!main) {
                         compiler.errorReporter().error({}, "code has no entrypoint");
                         return false;
                     }
+                    bool wantTraceOps = (debugTrace != nullptr);
                     std::unique_ptr<SkSL::RP::Program> rasterProg = SkSL::MakeRasterPipelineProgram(
-                            program, *main->definition(), &skrpDebugTrace);
+                            program, *main->definition(), &skrpDebugTrace, wantTraceOps);
                     if (!rasterProg) {
                         compiler.errorReporter().error({}, "code is not supported");
                         return false;
@@ -679,6 +665,7 @@ static ResultCode process_command(SkSpan<std::string> args) {
                     rasterProg->dump(as_SkWStream(out).get());
                     return true;
                 });
+#endif
     } else if (skstd::ends_with(outputPath, ".stage")) {
         return compileProgram(
                 [](SkSL::Compiler&, SkSL::Program& program, SkSL::OutputStream& out) {
@@ -752,31 +739,9 @@ static ResultCode process_command(SkSpan<std::string> args) {
                     out.writeString(SkShaderUtils::PrettyPrint(callbacks.fOutput));
                     return true;
                 });
-    } else if (skstd::ends_with(outputPath, ".html")) {
-        settings.fAllowTraceVarInSkVMDebugTrace = false;
-
-        SkCpu::CacheRuntimeFeatures();
-        return compileProgramAsRuntimeShader(
-            [&](SkSL::Compiler&, SkSL::Program& program, SkSL::OutputStream& out) {
-                if (!skvmDebugTrace) {
-                    skvmDebugTrace = std::make_unique<SkSL::SkVMDebugTrace>();
-                    skvmDebugTrace->setSource(text.c_str());
-                }
-                auto visualizer = std::make_unique<skvm::viz::Visualizer>(skvmDebugTrace.get());
-                skvm::Builder builder(skvm::Features{}, /*createDuplicates=*/true);
-                if (!SkSL::testingOnly_ProgramToSkVMShader(program, &builder,
-                                                           skvmDebugTrace.get())) {
-                    return false;
-                }
-
-                skvm::Program p = builder.done(/*debug_name=*/nullptr, /*allow_jit=*/false,
-                                               std::move(visualizer));
-                p.visualize(as_SkWStream(out).get());
-                return true;
-            });
     } else {
         printf("expected output path to end with one of: .glsl, .html, .metal, .hlsl, .wgsl, "
-               ".spirv, .asm.vert, .asm.frag, .skrp, .skvm, .stage (got '%s')\n",
+               ".spirv, .asm.vert, .asm.frag, .skrp, .stage (got '%s')\n",
                outputPath.c_str());
         return ResultCode::kConfigurationError;
     }

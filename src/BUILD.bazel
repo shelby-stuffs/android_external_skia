@@ -6,10 +6,19 @@ load(
     "skia_cc_library",
     "skia_filegroup",
 )
+load("//bazel:flags.bzl", "selects")
 
 licenses(["notice"])
 
 exports_files_legacy()
+
+selects.config_setting_group(
+    name = "android_with_gpu_backend",
+    match_all = [
+        "@platforms//os:android",
+        "//src/gpu:has_gpu_backend",
+    ],
+)
 
 skia_filegroup(
     name = "srcs",
@@ -19,8 +28,8 @@ skia_filegroup(
         "//src/codec:srcs",
         "//src/core:srcs",
         "//src/effects:srcs",
-        "//src/image:srcs",
         "//src/encode:srcs",
+        "//src/image:srcs",
         "//src/pathops:srcs",
         "//src/ports:srcs",
         "//src/sfnt:srcs",
@@ -53,6 +62,18 @@ skia_filegroup(
             ":generated_srcs",
         ],
         "//conditions:default": [],
+    }) + select({
+        ":android_with_gpu_backend": ["//src/image:android_srcs"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//:__pkg__"],
+)
+
+skia_filegroup(
+    name = "objc_srcs",
+    srcs = select({
+        "//src/gpu:has_gpu_backend": ["//src/gpu:objc_srcs"],
+        "//conditions:default": [],
     }),
     visibility = ["//:__pkg__"],
 )
@@ -64,13 +85,14 @@ skia_filegroup(
         "//src/codec:private_hdrs",
         "//src/core:private_hdrs",
         "//src/effects:private_hdrs",
-        "//src/image:private_hdrs",
         "//src/encode:private_hdrs",
+        "//src/image:private_hdrs",
         "//src/opts:private_hdrs",
         "//src/pathops:private_hdrs",
         "//src/ports:private_hdrs",
         "//src/sfnt:private_hdrs",
         "//src/shaders:private_hdrs",
+        "//src/sksl/tracing:skopts_hdrs",
         "//src/text:private_hdrs",
         "//src/utils:private_hdrs",
     ] + select({
@@ -105,11 +127,11 @@ skia_cc_deps(
     name = "deps",
     visibility = ["//:__pkg__"],
     deps = [
+        "//modules/skcms",
         "//src/codec:deps",
         "//src/encode:deps",
-        "//src/ports:deps",
         "//src/opts:deps",
-        "//modules/skcms:skcms",
+        "//src/ports:deps",
     ] + select({
         "//src/gpu:has_gpu_backend": ["//src/gpu:deps"],
         "//conditions:default": [],
@@ -134,13 +156,17 @@ generate_cpp_files_for_headers(
     # generated that is a copy of the header file just with a .cpp suffix so Bazel will try to
     # compile it. This allows us to run IWYU on these files.
     to_generate = [
+        "src/codec/SkPixmapUtilsPriv.h",
+        "src/core/SkAdvancedTypefaceMetrics.h",
         "src/core/SkColorSpacePriv.h",
-        "src/core/SkICCPriv.h",
+        "src/core/SkDrawProcs.h",
         "src/core/SkMatrixPriv.h",
         "src/core/SkPathPriv.h",
-        "src/image/SkImage_Base.h",
+        "src/core/SkRuntimeEffectPriv.h",
+        "src/encode/SkICCPriv.h",
         "src/encode/SkImageEncoderFns.h",
         "src/encode/SkImageEncoderPriv.h",
+        "src/image/SkImageGeneratorPriv.h",
     ],
 )
 

@@ -4,12 +4,13 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "tools/sk_app/DawnWindowContext.h"
 
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/base/SkAutoMalloc.h"
-#include "tools/sk_app/DawnWindowContext.h"
 
 #include "dawn/dawn_proc.h"
 
@@ -19,6 +20,18 @@ static wgpu::TextureUsage kUsage = wgpu::TextureUsage::RenderAttachment |
 static void PrintDeviceError(WGPUErrorType, const char* message, void*) {
     printf("Device error: %s\n", message);
     SkASSERT(false);
+}
+
+static wgpu::SwapChainDescriptor CreateSwapChainDesc(int width,
+                                                     int height,
+                                                     wgpu::TextureFormat format) {
+    wgpu::SwapChainDescriptor desc;
+    desc.format = format;
+    desc.usage = kUsage;
+    desc.width = width;
+    desc.height = height;
+    desc.presentMode = wgpu::PresentMode::Mailbox;
+    return desc;
 }
 
 namespace sk_app {
@@ -41,15 +54,15 @@ void DawnWindowContext::initializeContext(int width, int height) {
     if (!fContext) {
         return;
     }
-    fSwapChainImplementation = this->createSwapChainImplementation(width, height, fDisplayParams);
-    wgpu::SwapChainDescriptor swapChainDesc;
-    swapChainDesc.implementation = reinterpret_cast<int64_t>(&fSwapChainImplementation);
-    fSwapChain = fDevice.CreateSwapChain(nullptr, &swapChainDesc);
+
+    wgpu::SwapChainDescriptor swapChainDesc =
+        CreateSwapChainDesc(width, height, fSwapChainFormat);
+    fSwapChain = fDevice.CreateSwapChain(fDawnSurface, &swapChainDesc);
     if (!fSwapChain) {
         fContext.reset();
         return;
     }
-    fSwapChain.Configure(fSwapChainFormat, kUsage, width, height);
+
     fDevice.SetUncapturedErrorCallback(PrintDeviceError, 0);
 }
 
@@ -74,34 +87,29 @@ sk_sp<SkSurface> DawnWindowContext::getBackbufferSurface() {
     rtInfo.fLevelCount = 1; // FIXME
     GrBackendRenderTarget backendRenderTarget(fWidth, fHeight, fDisplayParams.fMSAASampleCount, 8,
                                               rtInfo);
-    fSurface = SkSurface::MakeFromBackendRenderTarget(fContext.get(),
-                                                      backendRenderTarget,
-                                                      this->getRTOrigin(),
-                                                      fDisplayParams.fColorType,
-                                                      fDisplayParams.fColorSpace,
-                                                      &fDisplayParams.fSurfaceProps);
+    fSurface = SkSurfaces::WrapBackendRenderTarget(fContext.get(),
+                                                   backendRenderTarget,
+                                                   this->getRTOrigin(),
+                                                   fDisplayParams.fColorType,
+                                                   fDisplayParams.fColorSpace,
+                                                   &fDisplayParams.fSurfaceProps);
     return fSurface;
 }
 
-void DawnWindowContext::swapBuffers() {
+void DawnWindowContext::onSwapBuffers() {
     fSwapChain.Present();
-    this->onSwapBuffers();
 }
 
 void DawnWindowContext::resize(int w, int h) {
     fWidth = w;
     fHeight = h;
-    fSwapChainImplementation = this->createSwapChainImplementation(w, h, fDisplayParams);
-    wgpu::SwapChainDescriptor swapChainDesc;
-    swapChainDesc.width = w;
-    swapChainDesc.height = h;
-    swapChainDesc.implementation = reinterpret_cast<int64_t>(&fSwapChainImplementation);
-    fSwapChain = fDevice.CreateSwapChain(nullptr, &swapChainDesc);
+    wgpu::SwapChainDescriptor swapChainDesc =
+        CreateSwapChainDesc(w, h, fSwapChainFormat);
+    fSwapChain = fDevice.CreateSwapChain(fDawnSurface, &swapChainDesc);
     if (!fSwapChain) {
         fContext.reset();
         return;
     }
-    fSwapChain.Configure(fSwapChainFormat, kUsage, fWidth, fHeight);
 }
 
 void DawnWindowContext::setDisplayParams(const DisplayParams& params) {

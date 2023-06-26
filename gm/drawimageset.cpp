@@ -38,7 +38,7 @@ static void make_image_tiles(int tileW, int tileH, int m, int n, const SkColor c
                              SkCanvas::ImageSetEntry set[], const SkColor bgColor=SK_ColorLTGRAY) {
     const int w = tileW * m;
     const int h = tileH * n;
-    auto surf = SkSurface::MakeRaster(
+    auto surf = SkSurfaces::Raster(
             SkImageInfo::Make(w, h, kRGBA_8888_SkColorType, kPremul_SkAlphaType));
     surf->getCanvas()->clear(bgColor);
 
@@ -92,7 +92,7 @@ static void make_image_tiles(int tileW, int tileH, int m, int n, const SkColor c
                 subset.fBottom = h;
                 set[y * m + x].fAAFlags |= SkCanvas::kBottom_QuadAAFlag;
             }
-            set[y * m + x].fImage = fullImage->makeSubset(subset);
+            set[y * m + x].fImage = fullImage->makeSubset(nullptr, subset);
             set[y * m + x].fSrcRect =
                     SkRect::MakeXYWH(x == 0 ? 0 : 1, y == 0 ? 0 : 1, tileW, tileH);
             set[y * m + x].fDstRect = SkRect::MakeXYWH(x * tileW, y * tileH, tileW, tileH);
@@ -299,6 +299,9 @@ private:
 
     DrawResult onGpuSetup(SkCanvas* canvas, SkString*) override {
         auto direct = GrAsDirectContext(canvas->recordingContext());
+#if defined(SK_GRAPHITE)
+        auto recorder = canvas->recorder();
+#endif
         static constexpr SkColor kColors[] = {SK_ColorBLUE, SK_ColorTRANSPARENT,
                                               SK_ColorRED,  SK_ColorTRANSPARENT};
         static constexpr SkColor kBGColor = SkColorSetARGB(128, 128, 128, 128);
@@ -312,9 +315,16 @@ private:
                 int i = y * kM + x;
                 fSet[i].fAlpha = (kM - x) / (float) kM;
                 if (y % 2 == 0) {
-                    // TODO: allow making Graphite images here
-                    fSet[i].fImage = fSet[i].fImage->makeColorTypeAndColorSpace(
-                            kAlpha_8_SkColorType, alphaSpace, direct);
+#if defined(SK_GRAPHITE)
+                    if (recorder) {
+                        fSet[i].fImage = fSet[i].fImage->makeColorTypeAndColorSpace(
+                                recorder, kAlpha_8_SkColorType, alphaSpace, {});
+                    } else
+#endif
+                    {
+                        fSet[i].fImage = fSet[i].fImage->makeColorTypeAndColorSpace(
+                                direct, kAlpha_8_SkColorType, alphaSpace);
+                    }
                 }
             }
         }

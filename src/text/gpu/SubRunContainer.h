@@ -8,37 +8,45 @@
 #ifndef sktext_gpu_SubRunContainer_DEFINED
 #define sktext_gpu_SubRunContainer_DEFINED
 
-#include "include/core/SkPoint.h"
+#include "include/core/SkMatrix.h"
 #include "include/core/SkRefCnt.h"
-#include "src/core/SkDevice.h"
-#include "src/gpu/AtlasTypes.h"
+#include "include/private/base/SkAttributes.h"
 #include "src/text/gpu/SubRunAllocator.h"
 
-class SkMatrix;
+#include <cstddef>
+#include <iterator>
+#include <memory>
+#include <tuple>
+#include <utility>
+
+class SkCanvas;
 class SkMatrixProvider;
 class SkPaint;
 class SkReadBuffer;
 class SkStrikeClient;
 class SkWriteBuffer;
+struct SkIRect;
+struct SkPoint;
+struct SkStrikeDeviceInfo;
 
 namespace sktext {
 class GlyphRunList;
 class StrikeForGPUCacheInterface;
-    namespace gpu {
-    class Glyph;
-    class StrikeCache;
-    }
 }
 
-#if defined(SK_GANESH)  // Ganesh support
+namespace skgpu {
+enum class MaskFormat : int;
+}
+
+#if defined(SK_GANESH)
 #include "src/gpu/ganesh/GrColor.h"
 #include "src/gpu/ganesh/ops/GrOp.h"
 
-class GrAtlasManager;
-class GrDeferredUploadTarget;
-class GrMeshDrawTarget;
 class GrClip;
-namespace skgpu::v1 { class SurfaceDrawContext; }
+class GrMeshDrawTarget;
+namespace skgpu::ganesh {
+class SurfaceDrawContext;
+}
 #endif
 
 #if defined(SK_GRAPHITE)
@@ -46,11 +54,8 @@ namespace skgpu::v1 { class SurfaceDrawContext; }
 #include "src/gpu/graphite/geom/SubRunData.h"
 #include "src/gpu/graphite/geom/Transform_graphite.h"
 
-namespace skgpu {
-enum class MaskFormat : int;
-}
-
 namespace skgpu::graphite {
+class Device;
 class DrawWriter;
 class Recorder;
 class Renderer;
@@ -59,6 +64,8 @@ class RendererProvider;
 #endif
 
 namespace sktext::gpu {
+class StrikeCache;
+
 // -- AtlasSubRun --------------------------------------------------------------------------------
 // AtlasSubRun is the API that AtlasTextOp uses to generate vertex data for drawing.
 //     There are three different ways AtlasSubRun is specialized.
@@ -83,14 +90,13 @@ public:
 #if defined(SK_GANESH)
     virtual size_t vertexStride(const SkMatrix& drawMatrix) const = 0;
 
-    virtual std::tuple<const GrClip*, GrOp::Owner>
-    makeAtlasTextOp(
+    virtual std::tuple<const GrClip*, GrOp::Owner> makeAtlasTextOp(
             const GrClip*,
             const SkMatrixProvider& viewMatrix,
             SkPoint drawOrigin,
             const SkPaint&,
             sk_sp<SkRefCnt>&& subRunStorage,
-            skgpu::v1::SurfaceDrawContext*) const = 0;
+            skgpu::ganesh::SurfaceDrawContext*) const = 0;
 
     virtual void fillVertexData(
             void* vertexDst, int offset, int count,
@@ -150,7 +156,7 @@ public:
                       SkPoint drawOrigin,
                       const SkPaint&,
                       sk_sp<SkRefCnt> subRunStorage,
-                      skgpu::v1::SurfaceDrawContext*) const = 0;
+                      skgpu::ganesh::SurfaceDrawContext*) const = 0;
 #endif
 #if defined(SK_GRAPHITE)
     // Produce uploads and draws for this subRun
@@ -162,8 +168,7 @@ public:
 #endif
 
     void flatten(SkWriteBuffer& buffer) const;
-    static SubRunOwner MakeFromBuffer(const SkMatrix& initialPositionMatrix,
-                                      SkReadBuffer& buffer,
+    static SubRunOwner MakeFromBuffer(SkReadBuffer& buffer,
                                       sktext::gpu::SubRunAllocator* alloc,
                                       const SkStrikeClient* client);
 
@@ -271,7 +276,7 @@ public:
               SkPoint drawOrigin,
               const SkPaint& paint,
               const SkRefCnt* subRunStorage,
-              skgpu::v1::SurfaceDrawContext* sdc) const;
+              skgpu::ganesh::SurfaceDrawContext* sdc) const;
 #endif
 #if defined(SK_GRAPHITE)
     void draw(SkCanvas*,

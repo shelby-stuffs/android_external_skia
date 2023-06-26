@@ -87,19 +87,22 @@ static sk_sp<SkImageFilter> erode_factory(sk_sp<SkImage> auxImage, const SkIRect
 }
 
 static sk_sp<SkImageFilter> displacement_factory(sk_sp<SkImage> auxImage, const SkIRect* cropRect) {
-    sk_sp<SkImageFilter> displacement = SkImageFilters::Image(std::move(auxImage));
+    sk_sp<SkImageFilter> displacement = SkImageFilters::Image(std::move(auxImage),
+                                                              SkFilterMode::kLinear);
     return SkImageFilters::DisplacementMap(SkColorChannel::kR, SkColorChannel::kG, 40.f,
                                            std::move(displacement), nullptr, cropRect);
 }
 
 static sk_sp<SkImageFilter> arithmetic_factory(sk_sp<SkImage> auxImage, const SkIRect* cropRect) {
-    sk_sp<SkImageFilter> background = SkImageFilters::Image(std::move(auxImage));
+    sk_sp<SkImageFilter> background = SkImageFilters::Image(std::move(auxImage),
+                                                            SkFilterMode::kLinear);
     return SkImageFilters::Arithmetic(0.0f, .6f, 1.f, 0.f, false, std::move(background),
                                       nullptr, cropRect);
 }
 
 static sk_sp<SkImageFilter> blend_factory(sk_sp<SkImage> auxImage, const SkIRect* cropRect) {
-    sk_sp<SkImageFilter> background = SkImageFilters::Image(std::move(auxImage));
+    sk_sp<SkImageFilter> background = SkImageFilters::Image(std::move(auxImage),
+                                                            SkFilterMode::kLinear);
     return SkImageFilters::Blend(
             SkBlendMode::kModulate, std::move(background), nullptr, cropRect);
 }
@@ -210,7 +213,7 @@ protected:
 
     void onOnceBeforeDraw() override {
         SkImageInfo info = SkImageInfo::MakeN32(100, 100, kUnpremul_SkAlphaType);
-        auto surface = SkSurface::MakeRaster(info, nullptr);
+        auto surface = SkSurfaces::Raster(info, nullptr);
 
         sk_sp<SkImage> colorImage = GetResourceAsImage("images/mandrill_128.png");
         // Resize to 100x100
