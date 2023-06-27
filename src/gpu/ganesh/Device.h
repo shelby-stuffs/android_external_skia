@@ -65,7 +65,10 @@ struct SkDrawShadowRec;
 struct SkISize;
 struct SkPoint;
 struct SkRSXform;
-namespace skgpu { enum class Budgeted : bool; }
+namespace skgpu {
+enum class Budgeted : bool;
+class TiledTextureUtils;
+}
 namespace sktext {
 class GlyphRunList;
 namespace gpu {
@@ -305,15 +308,15 @@ private:
 
     // If not null, dstClip must be contained inside dst and will also respect the edge AA flags.
     // If 'preViewMatrix' is not null, final CTM will be this->ctm() * preViewMatrix.
-    void drawImageQuad(const SkImage*,
-                       const SkRect& src,
-                       const SkRect& dst,
-                       const SkPoint dstClip[4],
-                       SkCanvas::QuadAAFlags,
-                       const SkMatrix* preViewMatrix,
-                       const SkSamplingOptions&,
-                       const SkPaint&,
-                       SkCanvas::SrcRectConstraint);
+    void drawImageQuadDirect(const SkImage*,
+                             const SkRect& src,
+                             const SkRect& dst,
+                             const SkPoint dstClip[4],
+                             SkCanvas::QuadAAFlags,
+                             const SkMatrix* preViewMatrix,
+                             const SkSamplingOptions&,
+                             const SkPaint&,
+                             SkCanvas::SrcRectConstraint);
 
     void drawEdgeAAImage(const SkImage*,
                          const SkRect& src,
@@ -337,6 +340,7 @@ private:
                          const SkPaint&);
 
     friend class ::SkSurface_Ganesh;  // for access to surfaceProps
+    friend class skgpu::TiledTextureUtils;   // for clip() and drawEdgeAAImage
 };
 
 GR_MAKE_BITFIELD_CLASS_OPS(Device::DeviceFlags)
