@@ -151,6 +151,7 @@ skia_graphite_sources = [
   "$_src/TextureProxyView.h",
   "$_src/TextureUtils.cpp",
   "$_src/TextureUtils.h",
+  "$_src/TiledTextureUtils_Graphite.cpp",
   "$_src/Uniform.h",
   "$_src/UniformManager.cpp",
   "$_src/UniformManager.h",
@@ -201,8 +202,8 @@ skia_graphite_sources = [
   "$_src/render/TessellateWedgesRenderStep.h",
   "$_src/render/VerticesRenderStep.cpp",
   "$_src/render/VerticesRenderStep.h",
-  "$_src/text/AtlasManager.cpp",
-  "$_src/text/AtlasManager.h",
+  "$_src/text/TextAtlasManager.cpp",
+  "$_src/text/TextAtlasManager.h",
 ]
 
 skia_graphite_dawn_public = [
