@@ -26,7 +26,7 @@ def git_repos_from_deps(ws = "@"):
     new_git_repository(
         name = "dawn",
         build_file = ws + "//bazel/external/dawn:BUILD.bazel",
-        commit = "4765e38cdc27112e4b1f06cea35acac4f66ab652",
+        commit = "49af09d96379ff2f8a7eae988e6e3e260c50648f",
         remote = "https://dawn.googlesource.com/dawn.git",
     )
 
@@ -122,7 +122,7 @@ def git_repos_from_deps(ws = "@"):
     new_git_repository(
         name = "libwebp",
         build_file = ws + "//bazel/external/libwebp:BUILD.bazel",
-        commit = "fd7b5d48464475408d32d2611bdb6947d4246b97",
+        commit = "fd7bb21c0cb56e8a82e9bfa376164b842f433f3b",
         remote = "https://chromium.googlesource.com/webm/libwebp.git",
     )
 
@@ -169,14 +169,14 @@ def git_repos_from_deps(ws = "@"):
 
     git_repository(
         name = "spirv_tools",
-        commit = "7520bfa6b18495f85d0747deb6be5cb1236fdfa8",
+        commit = "ea5af2fb5fb2b0f6da9e5bd50e0b3d0616d5be2c",
         remote = "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Tools.git",
     )
 
     new_git_repository(
         name = "vello",
         build_file = ws + "//bazel/external/vello:BUILD.bazel",
-        commit = "ef2630ad9c647b90863cb0915701d54725733968",
+        commit = "443539891c4c1eb3ca4ed891d251cbf4097c9a9c",
         remote = "https://skia.googlesource.com/external/github.com/linebender/vello.git",
     )
 
@@ -190,7 +190,7 @@ def git_repos_from_deps(ws = "@"):
     new_git_repository(
         name = "vulkan_tools",
         build_file = ws + "//bazel/external/vulkan_tools:BUILD.bazel",
-        commit = "ea8ea35f4e61ca90f5c8bec43e506ee77b9b57a7",
+        commit = "2e5260d44c662d31357e0cd3e430957cddcf1a6e",
         remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Tools",
     )
 
