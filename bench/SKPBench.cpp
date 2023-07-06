@@ -67,7 +67,7 @@ void SKPBench::onPerCanvasPreDraw(SkCanvas* canvas) {
     int xTiles = SkScalarCeilToInt(bounds.width()  / SkIntToScalar(tileW));
     int yTiles = SkScalarCeilToInt(bounds.height() / SkIntToScalar(tileH));
 
-    fSurfaces.reserve_back(xTiles * yTiles);
+    fSurfaces.reserve_exact(fSurfaces.size() + (xTiles * yTiles));
     fTileRects.reserve(xTiles * yTiles);
 
     SkImageInfo ii = canvas->imageInfo().makeWH(tileW, tileH);
@@ -107,8 +107,8 @@ bool SKPBench::isSuitableFor(Backend backend) {
     return backend != kNonRendering_Backend;
 }
 
-SkIPoint SKPBench::onGetSize() {
-    return SkIPoint::Make(fClip.width(), fClip.height());
+SkISize SKPBench::onGetSize() {
+    return SkISize::Make(fClip.width(), fClip.height());
 }
 
 void SKPBench::onDraw(int loops, SkCanvas* canvas) {

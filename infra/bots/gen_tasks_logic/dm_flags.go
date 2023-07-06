@@ -287,6 +287,8 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			// Fail on Iris Xe (skbug:13921)
 			skip("gltestthreading", "gm", ALL, "circular_arcs_stroke_and_fill_round")
 			skip("gltestthreading", "gm", ALL, "degeneratesegments")
+			skip("gltestthreading", "gm", ALL, "imagemakewithfilter")
+			skip("gltestthreading", "gm", ALL, "imagemakewithfilter_crop_ref")
 			skip("gltestthreading", "gm", ALL, "ovals")
 			skip("gltestthreading", "gm", ALL, "persp_images")
 			skip("gltestthreading", "gm", ALL, "rtif_distort")
@@ -352,6 +354,47 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 					skip(ALL, "gm", ALL, "async_rescale_and_read_dog_down")
 					skip(ALL, "gm", ALL, "async_rescale_and_read_rose")
 				}
+			}
+			if b.extraConfig("Vulkan") {
+				configs = []string{"grvk"}
+                                // Image size failures
+                                skip(ALL, "gm", ALL, "hugebitmapshader")
+                                skip(ALL, "gm", ALL, "path_huge_aa")
+                                skip(ALL, "gm", ALL, "path_huge_aa_manual")
+                                skip(ALL, "gm", ALL, "verylargebitmap")
+                                skip(ALL, "gm", ALL, "verylargebitmap_manual")
+                                skip(ALL, "gm", ALL, "verylarge_picture_image")
+                                skip(ALL, "gm", ALL, "verylarge_picture_image_manual")
+                                // Async read failure
+                                skip(ALL, "gm", ALL, "async_rescale_and_read_dog_down")
+                                skip(ALL, "gm", ALL, "async_rescale_and_read_no_bleed")
+                                skip(ALL, "gm", ALL, "async_rescale_and_read_rose")
+                                skip(ALL, "gm", ALL, "async_rescale_and_read_text_up")
+                                // Test failures
+                                skip(ALL, "test", ALL, "DeviceTestVertexTransparency")
+                                skip(ALL, "test", ALL, "GraphitePromiseImageMultipleImgUses")
+                                skip(ALL, "test", ALL, "GraphitePromiseImageRecorderLoss")
+                                skip(ALL, "test", ALL, "GraphitePurgeNotUsedSinceResourcesTest")
+                                skip(ALL, "test", ALL, "GraphiteTextureProxyTest")
+                                skip(ALL, "test", ALL, "GraphiteYUVAPromiseImageMultipleImgUses")
+                                skip(ALL, "test", ALL, "GraphiteYUVAPromiseImageRecorderLoss")
+                                skip(ALL, "test", ALL, "ImageProviderTest_Graphite_Testing")
+                                skip(ALL, "test", ALL, "ImageProviderTest_Graphite_Default")
+                                skip(ALL, "test", ALL, "MakeColorSpace_Test")
+                                skip(ALL, "test", ALL, "ImageProviderTest")
+                                skip(ALL, "test", ALL, "ImageShaderTest")
+                                skip(ALL, "test", ALL, "MutableImagesTest")
+                                skip(ALL, "test", ALL, "MultisampleRetainTest")
+                                skip(ALL, "test", ALL, "NonVolatileGraphitePromiseImageTest")
+                                skip(ALL, "test", ALL, "NonVolatileGraphiteYUVAPromiseImageTest")
+                                skip(ALL, "test", ALL, "PaintParamsKeyTest")
+                                skip(ALL, "test", ALL, "RecordingOrderTest_Graphite")
+                                skip(ALL, "test", ALL, "RecordingSurfacesTestClear")
+                                skip(ALL, "test", ALL, "ShaderTestNestedBlendsGraphite")
+                                skip(ALL, "test", ALL, "SkRuntimeEffectSimple_Graphite")
+                                skip(ALL, "test", ALL, "SkSLMatrixScalarNoOpFolding_GPU")
+                                skip(ALL, "test", ALL, "VolatileGraphiteYUVAPromiseImageTest")
+                                skip(ALL, "test", ALL, "VolatileGraphitePromiseImageTest")
 			}
 		}
 
@@ -435,7 +478,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		if b.gpu() && b.extraConfig("Vulkan") && (b.gpu("RadeonR9M470X", "RadeonHD7770")) {
 			skip(ALL, "tests", ALL, "VkDrawableImportTest")
 		}
-		if b.extraConfig("Vulkan") {
+		if b.extraConfig("Vulkan") && !b.extraConfig("Graphite") {
 			configs = []string{"vk"}
 			// MSAA doesn't work well on Intel GPUs chromium:527565, chromium:983926, skia:9023
 			if !b.matchGpu("Intel") {
@@ -472,7 +515,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		// Test 1010102 on our Linux/NVIDIA bots and the persistent cache config
 		// on the GL bots.
 		if b.gpu("QuadroP400") && !b.extraConfig("PreAbandonGpuContext") && !b.extraConfig("TSAN") && b.isLinux() &&
-			!b.extraConfig("FailFlushTimeCallbacks") {
+			!b.extraConfig("FailFlushTimeCallbacks") && !b.extraConfig("Graphite") {
 			if b.extraConfig("Vulkan") {
 				configs = append(configs, "vk1010102")
 				// Decoding transparent images to 1010102 just looks bad
@@ -855,6 +898,13 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		}
 	}
 
+	if !b.matchOs("Win", "Debian11", "Ubuntu18") || b.gpu("IntelIris655", "IntelIris540") {
+		// This test requires a decent max texture size so just run it on the desktops.
+		// The OS list should include Mac but Mac10.13 doesn't work correctly.
+		// The IntelIris655 and IntelIris540 GPUs don't work correctly in the Vk backend
+		skip(ALL, "test", ALL, "BigImageTest_Ganesh")
+	}
+
 	if b.matchOs("Win", "Mac") {
 		// WIC and CG fail on arithmetic jpegs
 		skip(ALL, "image", "gen_platf", "testimgari.jpg")
@@ -1055,6 +1105,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		skip(ALL, "tests", ALL, "SkSLCommaSideEffects_GPU")
 		skip(ALL, "tests", ALL, "SkSLIntrinsicMixFloatES2_GPU")
 		skip(ALL, "tests", ALL, "SkSLIntrinsicClampFloat_GPU")
+		skip(ALL, "tests", ALL, "SkSLSwitchWithFallthrough_GPU")
 		skip(ALL, "tests", ALL, "SkSLSwizzleIndexLookup_GPU") // skia:14177
 		skip(ALL, "tests", ALL, "SkSLSwizzleIndexStore_GPU")  // skia:14177
 	}
@@ -1077,11 +1128,11 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		skip(ALL, "tests", ALL, "SkSLStructFieldFolding_GPU") // skia:13393
 	}
 
-	if b.matchGpu("Adreno[56]") && b.extraConfig("Vulkan") { // disable broken tests on Adreno 5/6xx Vulkan
-		skip(ALL, "tests", ALL, "SkSLInoutParameters_GPU")   // skia:12869
-		skip(ALL, "tests", ALL, "SkSLOutParams_GPU")         // skia:11919
-		skip(ALL, "tests", ALL, "SkSLOutParamsTricky_GPU")   // skia:11919
-		skip(ALL, "tests", ALL, "SkSLOutParamsNoInline_GPU") // skia:11919
+	if b.matchGpu("Adreno[56]") && b.extraConfig("Vulkan") {        // disable broken tests on Adreno 5/6xx Vulkan
+		skip(ALL, "tests", ALL, "SkSLInoutParameters_GPU")          // skia:12869
+		skip(ALL, "tests", ALL, "SkSLOutParams_GPU")                // skia:11919
+		skip(ALL, "tests", ALL, "SkSLOutParamsDoubleSwizzle_GPU")   // skia:11919
+		skip(ALL, "tests", ALL, "SkSLOutParamsNoInline_GPU")        // skia:11919
 		skip(ALL, "tests", ALL, "SkSLOutParamsFunctionCallInArgument")
 	}
 
@@ -1099,6 +1150,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 	}
 
 	if b.matchGpu("Mali400") {
+		skip(ALL, "tests", ALL, "BlendRequiringDstReadWithLargeCoordinates")
 		skip(ALL, "tests", ALL, "SkSLCross")
 		skip(ALL, "tests", ALL, "SkSLMatrixSwizzleStore_GPU")
 	}
@@ -1107,6 +1159,10 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		// MacOS/iOS do not handle short-circuit evaluation properly in OpenGL (chromium:307751)
 		skip(ALL, "tests", ALL, "SkSLLogicalAndShortCircuit_GPU")
 		skip(ALL, "tests", ALL, "SkSLLogicalOrShortCircuit_GPU")
+	}
+
+	if b.matchOs("iOS") && !b.extraConfig("Metal") {
+		skip(ALL, "tests", ALL, "SkSLSwitchWithFallthrough_GPU")
 	}
 
 	if b.matchOs("Mac") && b.extraConfig("Metal") && (b.gpu("IntelIrisPlus") ||
@@ -1146,6 +1202,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 	if b.extraConfig("Dawn") {
 		// skia:13922: WGSL does not support case fallthrough in switch statements.
 		skip(ALL, "tests", ALL, "SkSLSwitchWithFallthrough_GPU")
+		skip(ALL, "tests", ALL, "SkSLSwitchWithFallthroughAndVarDecls_GPU")
 		skip(ALL, "tests", ALL, "SkSLSwitchWithLoops_GPU")
 	}
 
@@ -1154,6 +1211,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		skip(ALL, "tests", ALL, "SkSLSwitch_GPU")
 		skip(ALL, "tests", ALL, "SkSLSwitchDefaultOnly_GPU")
 		skip(ALL, "tests", ALL, "SkSLSwitchWithFallthrough_GPU")
+		skip(ALL, "tests", ALL, "SkSLSwitchWithFallthroughAndVarDecls_GPU")
 		skip(ALL, "tests", ALL, "SkSLSwitchWithLoops_GPU")
 		skip(ALL, "tests", ALL, "SkSLSwitchCaseFolding_GPU")
 		skip(ALL, "tests", ALL, "SkSLLoopFloat_GPU")
@@ -1204,6 +1262,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		skip(ALL, "tests", ALL, "SkSLMatrixFoldingES2_GPU") // skia:11919
 		skip(ALL, "tests", ALL, "SkSLMatrixEquality_GPU")   // skia:11919
 		skip(ALL, "tests", ALL, "SkSLIntrinsicFract_GPU")
+		skip(ALL, "tests", ALL, "SkSLModifiedStructParametersCannotBeInlined_GPU")
 	}
 
 	if b.gpu("QuadroP400") && b.matchOs("Ubuntu") && b.matchModel("Golo") {
