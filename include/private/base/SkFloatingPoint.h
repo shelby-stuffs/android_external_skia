@@ -49,6 +49,10 @@ static inline float sk_float_pow(float base, float exp) {
 #define sk_float_exp(x)         expf(x)
 #define sk_float_log(x)         logf(x)
 
+constexpr int sk_float_sgn(float x) {
+    return (0.0f < x) - (x < 0.0f);
+}
+
 constexpr float sk_float_degrees_to_radians(float degrees) {
     return degrees * (SK_FloatPI / 180);
 }
@@ -160,6 +164,9 @@ static inline float sk_double_to_float(double x) {
 #define SK_FloatNegativeInfinity    (-std::numeric_limits<float>::infinity())
 
 #define SK_DoubleNaN                std::numeric_limits<double>::quiet_NaN()
+
+// Calculate the midpoint between a and b. Similar to std::midpoint in c++20.
+float sk_float_midpoint(float a, float b);
 
 // Returns false if any of the floats are outside of [0...1]
 // Returns true if count is 0

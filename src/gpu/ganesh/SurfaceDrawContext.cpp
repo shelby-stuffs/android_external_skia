@@ -50,6 +50,7 @@
 #include "src/gpu/ganesh/GrStencilSettings.h"
 #include "src/gpu/ganesh/GrStyle.h"
 #include "src/gpu/ganesh/GrTracing.h"
+#include "src/gpu/ganesh/GrXferProcessor.h"
 #include "src/gpu/ganesh/PathRenderer.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/effects/GrBlendFragmentProcessor.h"
@@ -346,8 +347,21 @@ void SurfaceDrawContext::drawGlyphRunList(SkCanvas* canvas,
     }
 
     sktext::gpu::TextBlobRedrawCoordinator* textBlobCache = fContext->priv().getTextBlobCache();
-    textBlobCache->drawGlyphRunList(
-            canvas, clip, viewMatrix, glyphRunList, paint, strikeDeviceInfo, this);
+
+    auto atlasDelegate = [&](const sktext::gpu::AtlasSubRun* subRun,
+                             SkPoint drawOrigin,
+                             const SkPaint& paint,
+                             sk_sp<SkRefCnt> subRunStorage) {
+        auto[drawingClip, op] = subRun->makeAtlasTextOp(
+                clip, viewMatrix.localToDevice(), drawOrigin, paint, std::move(subRunStorage),
+                this);
+        if (op != nullptr) {
+            this->addDrawOp(drawingClip, std::move(op));
+        }
+    };
+
+    textBlobCache->drawGlyphRunList(canvas, viewMatrix.localToDevice(), glyphRunList, paint,
+        strikeDeviceInfo, atlasDelegate);
 }
 
 void SurfaceDrawContext::drawPaint(const GrClip* clip,
@@ -596,7 +610,7 @@ void SurfaceDrawContext::drawTexture(const GrClip* clip,
         fp = GrBlendFragmentProcessor::Make<SkBlendMode::kModulate>(std::move(fp), nullptr);
         paint.setColorFragmentProcessor(std::move(fp));
         if (blendMode != SkBlendMode::kSrcOver) {
-            paint.setXPFactory(SkBlendMode_AsXPFactory(blendMode));
+            paint.setXPFactory(GrXPFactory::FromBlendMode(blendMode));
         }
         this->fillRectToRect(clip, std::move(paint), GrAA::kYes, viewMatrix, dstRect, srcRect);
         return;

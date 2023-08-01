@@ -7,7 +7,6 @@
 
 #include "bench/BigPath.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkDeferredDisplayList.h"
 #include "include/core/SkGraphics.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
@@ -17,11 +16,13 @@
 #include "include/effects/SkPerlinNoiseShader.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "include/private/chromium/GrDeferredDisplayList.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/image/GrImageUtils.h"
 #include "src/utils/SkMultiPictureDocument.h"
 #include "src/utils/SkOSPath.h"
 #include "tools/DDLPromiseImageHelper.h"
@@ -260,12 +261,12 @@ static void run_ddl_benchmark(sk_gpu_test::TestContext* testContext,
     const Sample::duration sampleDuration = std::chrono::milliseconds(FLAGS_sampleMs);
     const clock::duration benchDuration = std::chrono::milliseconds(FLAGS_duration);
 
-    SkSurfaceCharacterization dstCharacterization;
+    GrSurfaceCharacterization dstCharacterization;
     SkAssertResult(dstSurface->characterize(&dstCharacterization));
 
     SkIRect viewport = dstSurface->imageInfo().bounds();
 
-    SkYUVAPixmapInfo::SupportedDataTypes supportedYUVADataTypes(*dContext);
+    auto supportedYUVADataTypes = skgpu::ganesh::SupportedTextureFormats(*dContext);
     DDLPromiseImageHelper promiseImageHelper(supportedYUVADataTypes);
     sk_sp<SkPicture> newSKP = promiseImageHelper.recreateSKP(dContext, inputPicture);
     if (!newSKP) {
@@ -327,7 +328,7 @@ static void run_ddl_benchmark(sk_gpu_test::TestContext* testContext,
 
     if (!FLAGS_png.isEmpty()) {
         // The user wants to see the final result
-        dstSurface->draw(tiles.composeDDL());
+        skgpu::ganesh::DrawDDL(dstSurface, tiles.composeDDL());
         dContext->flushAndSubmit(dstSurface);
     }
 
@@ -699,7 +700,7 @@ static sk_sp<SkPicture> create_warmup_skp() {
 
     // Use a perlin shader to warmup the GPU.
     SkPaint perlin;
-    perlin.setShader(SkPerlinNoiseShader::MakeTurbulence(0.1f, 0.1f, 1, 0, nullptr));
+    perlin.setShader(SkShaders::MakeTurbulence(0.1f, 0.1f, 1, 0, nullptr));
     recording->drawRect(bounds, perlin);
 
     return recorder.finishRecordingAsPicture();

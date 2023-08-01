@@ -706,6 +706,12 @@ def go_repositories():
         sum = "h1:6zsha5zo/TWhRhwqCD3+EarCAgZ2yN28ipRnGPnwkI0=",
         version = "v0.2.2",
     )
+    go_repository(
+        name = "com_github_go_chi_chi_v5",
+        importpath = "github.com/go-chi/chi/v5",
+        sum = "h1:lD+NLqFcAi1ovnVZpsnObHGW4xb4J8lNmoYVfECH1Y0=",
+        version = "v5.0.8",
+    )
 
     go_repository(
         name = "com_github_go_errors_errors",
@@ -1647,8 +1653,8 @@ def go_repositories():
     go_repository(
         name = "com_github_mitchellh_go_wordwrap",
         importpath = "github.com/mitchellh/go-wordwrap",
-        sum = "h1:6GlHJ/LTGMrIJbwgdqdl2eEH8o+Exx/0m8ir9Gns0u4=",
-        version = "v1.0.0",
+        sum = "h1:TLuKupo69TCn6TQSyGxwI1EblZZEsQ0vMlAFQflz0v0=",
+        version = "v1.0.1",
     )
     go_repository(
         name = "com_github_mitchellh_gox",
@@ -1939,6 +1945,12 @@ def go_repositories():
         importpath = "github.com/prometheus/tsdb",
         sum = "h1:YZcsG11NqnK4czYLrWd9mpEuAJIHVQLwdrleYfszMAA=",
         version = "v0.7.1",
+    )
+    go_repository(
+        name = "com_github_protocolbuffers_txtpbfmt",
+        importpath = "github.com/protocolbuffers/txtpbfmt",
+        sum = "h1:XHLAvwaTYM0PxS/HO7E0PfBaY/y0jGM5NM7g05lCb0k=",
+        version = "v0.0.0-20230412060525-fa9f017c0ded",
     )
 
     go_repository(
@@ -3044,8 +3056,8 @@ def go_repositories():
     go_repository(
         name = "org_skia_go_infra",
         importpath = "go.skia.org/infra",
-        sum = "h1:CBm4jOnYbB4jF8dMvlTVmaGl5Mv+OjDmoNiKdUR0eSA=",
-        version = "v0.0.0-20230531020754-a3d885eb0ff8",
+        sum = "h1:XcuQ9HvMBmMXNmxOX3wCiLjAmY0Jzdls6sH7rD2qsQQ=",
+        version = "v0.0.0-20230620024012-ab08126079d3",
     )
     go_repository(
         name = "org_uber_go_atomic",

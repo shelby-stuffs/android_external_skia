@@ -67,6 +67,8 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/opts:private_hdrs",
 				"//src/shaders:shader_hdrs",
 				"//src/shaders:shader_srcs",
+				"//src/shaders:sksl_hdrs",
+				"//src/shaders:sksl_srcs",
 				"//src/text:text_hdrs",
 				"//src/text:text_srcs",
 			}},
@@ -130,8 +132,21 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/effects:legacy_draw_looper",
 				"//src/shaders/gradients:gradient_hdrs",
 				"//src/shaders/gradients:gradient_srcs",
-			}}},
-	},
+			}},
+		{Var: "skia_colorfilters_sources",
+			Rules: []string{
+				"//src/effects/colorfilters:colorfilter_srcs",
+				"//src/effects/colorfilters:colorfilter_hdrs",
+			}},
+		{Var: "skia_colorfilters_sksl_sources",
+			Rules: []string{
+				"//src/effects/colorfilters:sksl_srcs",
+			}},
+		{Var: "skia_colorfilters_nosksl_sources",
+			Rules: []string{
+				"//src/effects/colorfilters:no_sksl_srcs",
+			}},
+	}},
 	{GNI: "gn/effects_imagefilters.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skia_effects_imagefilter_public",
 			Rules: []string{
@@ -204,8 +219,6 @@ var gniExportDescs = []exporter.GNIExportDesc{
 		{Var: "sksl_metal_tests", Rules: []string{"//resources/sksl:sksl_metal_tests"}},
 		{Var: "sksl_spirv_tests", Rules: []string{"//resources/sksl:sksl_spirv_tests"}},
 		{Var: "sksl_wgsl_tests", Rules: []string{"//resources/sksl:sksl_wgsl_tests"}},
-		{Var: "sksl_inverse_hyperbolic_intrinsics_tests",
-			Rules: []string{"//resources/sksl:sksl_inverse_hyperbolic_intrinsics_tests"}},
 		{Var: "sksl_shared_tests", Rules: []string{"//resources/sksl:sksl_shared_tests"}},
 		{Var: "sksl_folding_tests", Rules: []string{"//resources/sksl:sksl_folding_tests"}},
 		{Var: "sksl_inliner_tests", Rules: []string{"//resources/sksl:sksl_inliner_tests"}},
@@ -265,6 +278,7 @@ var gniExportDescs = []exporter.GNIExportDesc{
 		{Var: "skia_ganesh_private",
 			Rules: []string{
 				"//include/private/gpu/ganesh:private_hdrs",
+				"//include/private/gpu/ganesh:gl_private_hdrs",
 				"//src/gpu/ganesh/effects:effects_hdrs",
 				"//src/gpu/ganesh/effects:effects_srcs",
 				"//src/gpu/ganesh/geometry:geometry_hdrs",

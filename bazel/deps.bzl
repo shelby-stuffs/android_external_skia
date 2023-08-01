@@ -26,7 +26,7 @@ def git_repos_from_deps(ws = "@"):
     new_git_repository(
         name = "dawn",
         build_file = ws + "//bazel/external/dawn:BUILD.bazel",
-        commit = "7cb5fc8c2da91ae5e0257678bbdb5bd3563ec5bd",
+        commit = "0d5e76a2427f1c629a0d709ee0833da43bf79e84",
         remote = "https://dawn.googlesource.com/dawn.git",
     )
 
@@ -157,19 +157,19 @@ def git_repos_from_deps(ws = "@"):
     new_git_repository(
         name = "spirv_cross",
         build_file = ws + "//bazel/external/spirv_cross:BUILD.bazel",
-        commit = "12542fc6fc05000e04742daf93892a0b10edbe80",
+        commit = "2d3a152081ca6e6bea7093940d0f81088fe4d01c",
         remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/SPIRV-Cross",
     )
 
     git_repository(
         name = "spirv_headers",
-        commit = "8e2ad27488ed2f87c068c01a8f5e8979f7086405",
+        commit = "6e09e44cd88a5297433411b2ee52f4cf9f50fa90",
         remote = "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Headers.git",
     )
 
     git_repository(
         name = "spirv_tools",
-        commit = "c7e436921a148ebf1ad38720e4f8677366b54792",
+        commit = "a63ac9f73d29cd27cdb6e3388d98d1d934e512bb",
         remote = "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Tools.git",
     )
 
@@ -183,14 +183,14 @@ def git_repos_from_deps(ws = "@"):
     new_git_repository(
         name = "vulkan_headers",
         build_file = ws + "//bazel/external/vulkan_headers:BUILD.bazel",
-        commit = "3df77fb3e4e0961f7f01de9a9ae20dfdcfc4910a",
+        commit = "c1a8560c5cf5e7bd6dbc71fe69b1a317411c36b8",
         remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Headers",
     )
 
     new_git_repository(
         name = "vulkan_tools",
         build_file = ws + "//bazel/external/vulkan_tools:BUILD.bazel",
-        commit = "78f7116c852b37da7b64492c927c7bd32ee1d8a7",
+        commit = "07924a8a495dd8bcda112597da1bbc9b28f9bf63",
         remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Tools",
     )
 

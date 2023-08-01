@@ -18,6 +18,8 @@
 #include "src/gpu/graphite/vk/VulkanSharedContext.h"
 #include "src/gpu/graphite/vk/VulkanTexture.h"
 
+#define SK_DISABLE_VULKAN_RENDERING
+
 using namespace skia_private;
 
 namespace skgpu::graphite {
@@ -135,6 +137,7 @@ void VulkanCommandBuffer::begin() {
 
 void VulkanCommandBuffer::end() {
     SkASSERT(fActive);
+    SkASSERT(!fActiveRenderPass);
 
     this->submitPipelineBarriers();
 
@@ -273,11 +276,23 @@ bool VulkanCommandBuffer::onAddRenderPass(const RenderPassDesc& renderPassDesc,
         return false;
     }
 
+    VkViewport vkViewport = {
+        viewport.fLeft,
+        viewport.fTop,
+        viewport.width(),
+        viewport.height(),
+        0.0f, // minDepth
+        1.0f, // maxDepth
+    };
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdSetViewport(fPrimaryCommandBuffer,
+                               /*firstViewport=*/0,
+                               /*viewportCount=*/1,
+                               &vkViewport));
+
     for (const auto& drawPass : drawPasses) {
         this->addDrawPass(drawPass.get());
     }
-
-    // TODO: Set viewport
 
     this->endRenderPass();
     return true;
@@ -401,13 +416,15 @@ bool VulkanCommandBuffer::beginRenderPass(const RenderPassDesc& renderPassDesc,
 
     VULKAN_CALL(fSharedContext->interface(),
                 CmdBeginRendering(fPrimaryCommandBuffer, &renderingInfo));
+    fActiveRenderPass = true;
 
-     return true;
+    return true;
 }
 
 void VulkanCommandBuffer::endRenderPass() {
     SkASSERT(fActive);
     VULKAN_CALL(fSharedContext->interface(), CmdEndRendering(fPrimaryCommandBuffer));
+    fActiveRenderPass = false;
 }
 
 void VulkanCommandBuffer::addDrawPass(const DrawPass* drawPass) {
@@ -425,8 +442,10 @@ void VulkanCommandBuffer::addDrawPass(const DrawPass* drawPass) {
                 break;
             }
             case DrawPassCommands::Type::kBindUniformBuffer: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto bub = static_cast<DrawPassCommands::BindUniformBuffer*>(cmdPtr);
                 this->recordBufferBindingInfo(bub->fInfo, bub->fSlot);
+#endif
                 break;
             }
             case DrawPassCommands::Type::kBindDrawBuffers: {
@@ -436,8 +455,10 @@ void VulkanCommandBuffer::addDrawPass(const DrawPass* drawPass) {
                 break;
             }
             case DrawPassCommands::Type::kBindTexturesAndSamplers: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto bts = static_cast<DrawPassCommands::BindTexturesAndSamplers*>(cmdPtr);
                 this->recordTextureAndSamplerDescSet(*drawPass, *bts);
+#endif
                 break;
             }
             case DrawPassCommands::Type::kSetScissor: {
@@ -447,26 +468,33 @@ void VulkanCommandBuffer::addDrawPass(const DrawPass* drawPass) {
                 break;
             }
             case DrawPassCommands::Type::kDraw: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto draw = static_cast<DrawPassCommands::Draw*>(cmdPtr);
                 this->draw(draw->fType, draw->fBaseVertex, draw->fVertexCount);
+#endif
                 break;
             }
             case DrawPassCommands::Type::kDrawIndexed: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto draw = static_cast<DrawPassCommands::DrawIndexed*>(cmdPtr);
                 this->drawIndexed(
                         draw->fType, draw->fBaseIndex, draw->fIndexCount, draw->fBaseVertex);
+#endif
                 break;
             }
             case DrawPassCommands::Type::kDrawInstanced: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto draw = static_cast<DrawPassCommands::DrawInstanced*>(cmdPtr);
                 this->drawInstanced(draw->fType,
                                     draw->fBaseVertex,
                                     draw->fVertexCount,
                                     draw->fBaseInstance,
                                     draw->fInstanceCount);
+#endif
                 break;
             }
             case DrawPassCommands::Type::kDrawIndexedInstanced: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto draw = static_cast<DrawPassCommands::DrawIndexedInstanced*>(cmdPtr);
                 this->drawIndexedInstanced(draw->fType,
                                            draw->fBaseIndex,
@@ -474,16 +502,21 @@ void VulkanCommandBuffer::addDrawPass(const DrawPass* drawPass) {
                                            draw->fBaseVertex,
                                            draw->fBaseInstance,
                                            draw->fInstanceCount);
+#endif
                 break;
             }
             case DrawPassCommands::Type::kDrawIndirect: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto draw = static_cast<DrawPassCommands::DrawIndirect*>(cmdPtr);
                 this->drawIndirect(draw->fType);
+#endif
                 break;
             }
             case DrawPassCommands::Type::kDrawIndexedIndirect: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto draw = static_cast<DrawPassCommands::DrawIndexedIndirect*>(cmdPtr);
                 this->drawIndexedIndirect(draw->fType);
+#endif
                 break;
             }
         }
@@ -597,20 +630,73 @@ void VulkanCommandBuffer::bindDrawBuffers(const BindBufferInfo& vertices,
                                           const BindBufferInfo& instances,
                                           const BindBufferInfo& indices,
                                           const BindBufferInfo& indirect) {
-    // TODO: Implement
+    this->bindVertexBuffers(vertices.fBuffer,
+                            vertices.fOffset,
+                            instances.fBuffer,
+                            instances.fOffset);
+    this->bindIndexBuffer(indices.fBuffer, indices.fOffset);
+    this->bindIndirectBuffer(indirect.fBuffer, indirect.fOffset);
 }
 
 void VulkanCommandBuffer::bindVertexBuffers(const Buffer* vertexBuffer,
                                             size_t vertexOffset,
                                             const Buffer* instanceBuffer,
                                             size_t instanceOffset) {
-    // TODO: Implement
+    this->bindInputBuffer(vertexBuffer, vertexOffset,
+                          VulkanGraphicsPipeline::kVertexBufferIndex);
+    this->bindInputBuffer(instanceBuffer, instanceOffset,
+                          VulkanGraphicsPipeline::kInstanceBufferIndex);
 }
+
+void VulkanCommandBuffer::bindInputBuffer(const Buffer* buffer, VkDeviceSize offset,
+                                          uint32_t binding) {
+    if (buffer) {
+        VkBuffer vkBuffer = static_cast<const VulkanBuffer*>(buffer)->vkBuffer();
+        SkASSERT(vkBuffer != VK_NULL_HANDLE);
+        if (vkBuffer != fBoundInputBuffers[binding] ||
+            offset != fBoundInputBufferOffsets[binding]) {
+            VULKAN_CALL(fSharedContext->interface(),
+                        CmdBindVertexBuffers(fPrimaryCommandBuffer,
+                                             binding,
+                                             /*bindingCount=*/1,
+                                             &vkBuffer,
+                                             &offset));
+            fBoundInputBuffers[binding] = vkBuffer;
+            fBoundInputBufferOffsets[binding] = offset;
+            this->trackResource(sk_ref_sp(buffer));
+        }
+    }
+}
+
 void VulkanCommandBuffer::bindIndexBuffer(const Buffer* indexBuffer, size_t offset) {
-    // TODO: Implement
+    if (indexBuffer) {
+        VkBuffer vkBuffer = static_cast<const VulkanBuffer*>(indexBuffer)->vkBuffer();
+        SkASSERT(vkBuffer != VK_NULL_HANDLE);
+        if (vkBuffer != fBoundIndexBuffer || offset != fBoundIndexBufferOffset) {
+            VULKAN_CALL(fSharedContext->interface(), CmdBindIndexBuffer(fPrimaryCommandBuffer,
+                                                                        vkBuffer,
+                                                                        offset,
+                                                                        VK_INDEX_TYPE_UINT16));
+            fBoundIndexBuffer = vkBuffer;
+            fBoundIndexBufferOffset = offset;
+            this->trackResource(sk_ref_sp(indexBuffer));
+        }
+    } else {
+        fBoundIndexBuffer = VK_NULL_HANDLE;
+        fBoundIndexBufferOffset = 0;
+    }
 }
+
 void VulkanCommandBuffer::bindIndirectBuffer(const Buffer* indirectBuffer, size_t offset) {
-    // TODO: Implement
+    // Indirect buffers are not bound via the command buffer, but specified in the draw cmd.
+    if (indirectBuffer) {
+        fBoundIndirectBuffer = static_cast<const VulkanBuffer*>(indirectBuffer)->vkBuffer();
+        fBoundIndirectBufferOffset = offset;
+        this->trackResource(sk_ref_sp(indirectBuffer));
+    } else {
+        fBoundIndirectBuffer = VK_NULL_HANDLE;
+        fBoundIndirectBufferOffset = 0;
+    }
 }
 
 void VulkanCommandBuffer::recordTextureAndSamplerDescSet(
@@ -688,46 +774,107 @@ void VulkanCommandBuffer::bindTextureSamplers() {
 
 void VulkanCommandBuffer::setScissor(unsigned int left, unsigned int top, unsigned int width,
                                      unsigned int height) {
-    // TODO: Implement
+    VkRect2D scissor = {
+        {(int32_t)left, (int32_t)top},
+        {width, height}
+    };
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdSetScissor(fPrimaryCommandBuffer,
+                              /*firstScissor=*/0,
+                              /*scissorCount=*/1,
+                              &scissor));
 }
 
-void VulkanCommandBuffer::draw(PrimitiveType type,
+void VulkanCommandBuffer::draw(PrimitiveType,
                                unsigned int baseVertex,
                                unsigned int vertexCount) {
+    SkASSERT(fActiveRenderPass);
     this->syncDescriptorSets();
-    // TODO: Implement
+    // TODO: set primitive type via dynamic state if available
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdDraw(fPrimaryCommandBuffer,
+                        vertexCount,
+                        /*instanceCount=*/0,
+                        baseVertex,
+                        /*firstInstance=*/0));
 }
 
-void VulkanCommandBuffer::drawIndexed(PrimitiveType type,
+void VulkanCommandBuffer::drawIndexed(PrimitiveType,
                                       unsigned int baseIndex,
                                       unsigned int indexCount,
                                       unsigned int baseVertex) {
+    SkASSERT(fActiveRenderPass);
     this->syncDescriptorSets();
-    // TODO: Implement
+    // TODO: set primitive type via dynamic state if available
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdDrawIndexed(fPrimaryCommandBuffer,
+                               indexCount,
+                               /*instanceCount=*/0,
+                               baseIndex,
+                               baseVertex,
+                               /*firstInstance=*/0));
 }
 
-void VulkanCommandBuffer::drawInstanced(PrimitiveType type,
-                    unsigned int baseVertex, unsigned int vertexCount,
-                    unsigned int baseInstance, unsigned int instanceCount) {
+void VulkanCommandBuffer::drawInstanced(PrimitiveType,
+                                        unsigned int baseVertex,
+                                        unsigned int vertexCount,
+                                        unsigned int baseInstance,
+                                        unsigned int instanceCount) {
+    SkASSERT(fActiveRenderPass);
     this->syncDescriptorSets();
-    // TODO: Implement
+    // TODO: set primitive type via dynamic state if available
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdDraw(fPrimaryCommandBuffer,
+                        vertexCount,
+                        instanceCount,
+                        baseVertex,
+                        baseInstance));
 }
 
-void VulkanCommandBuffer::drawIndexedInstanced(PrimitiveType type, unsigned int baseIndex,
-                            unsigned int indexCount, unsigned int baseVertex,
-                            unsigned int baseInstance, unsigned int instanceCount) {
+void VulkanCommandBuffer::drawIndexedInstanced(PrimitiveType,
+                                               unsigned int baseIndex,
+                                               unsigned int indexCount,
+                                               unsigned int baseVertex,
+                                               unsigned int baseInstance,
+                                               unsigned int instanceCount) {
+    SkASSERT(fActiveRenderPass);
     this->syncDescriptorSets();
-    // TODO: Implement
+    // TODO: set primitive type via dynamic state if available
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdDrawIndexed(fPrimaryCommandBuffer,
+                               indexCount,
+                               instanceCount,
+                               baseIndex,
+                               baseVertex,
+                               baseInstance));
 }
 
-void VulkanCommandBuffer::drawIndirect(PrimitiveType type) {
+void VulkanCommandBuffer::drawIndirect(PrimitiveType) {
+    SkASSERT(fActiveRenderPass);
     this->syncDescriptorSets();
-    // TODO: Implement
+    // TODO: set primitive type via dynamic state if available
+    // Currently we can only support doing one indirect draw operation at a time,
+    // so stride is irrelevant.
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdDrawIndirect(fPrimaryCommandBuffer,
+                                fBoundIndirectBuffer,
+                                fBoundIndirectBufferOffset,
+                                /*drawCount=*/1,
+                                /*stride=*/0));
 }
 
-void VulkanCommandBuffer::drawIndexedIndirect(PrimitiveType type) {
+void VulkanCommandBuffer::drawIndexedIndirect(PrimitiveType) {
+    SkASSERT(fActiveRenderPass);
     this->syncDescriptorSets();
-    // TODO: Implement
+    // TODO: set primitive type via dynamic state if available
+    // Currently we can only support doing one indirect draw operation at a time,
+    // so stride is irrelevant.
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdDrawIndexedIndirect(fPrimaryCommandBuffer,
+                                       fBoundIndirectBuffer,
+                                       fBoundIndirectBufferOffset,
+                                       /*drawCount=*/1,
+                                       /*stride=*/0));
 }
 
 bool VulkanCommandBuffer::onAddComputePass(const DispatchGroupList&) { return false; }
@@ -864,7 +1011,42 @@ bool VulkanCommandBuffer::onCopyTextureToTexture(const Texture* src,
                                                  SkIRect srcRect,
                                                  const Texture* dst,
                                                  SkIPoint dstPoint) {
-    return false;
+    const VulkanTexture* srcTexture = static_cast<const VulkanTexture*>(src);
+    const VulkanTexture* dstTexture = static_cast<const VulkanTexture*>(dst);
+
+    VkImageCopy copyRegion;
+    memset(&copyRegion, 0, sizeof(VkImageCopy));
+    copyRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+    copyRegion.srcOffset = { srcRect.fLeft, srcRect.fTop, 0 };
+    copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+    copyRegion.dstOffset = { dstPoint.fX, dstPoint.fY, 0 };
+    copyRegion.extent = { (uint32_t)srcRect.width(), (uint32_t)srcRect.height(), 1 };
+
+    // Enable editing of the src texture so we can change its layout so it can be copied from.
+    const_cast<VulkanTexture*>(srcTexture)->setImageLayout(this,
+                                                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                                           VK_ACCESS_TRANSFER_READ_BIT,
+                                                           VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                                           false);
+    // Enable editing of the destination texture so we can change its layout so it can be copied to.
+    const_cast<VulkanTexture*>(dstTexture)->setImageLayout(this,
+                                                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                                           VK_ACCESS_TRANSFER_WRITE_BIT,
+                                                           VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                                           false);
+
+    this->submitPipelineBarriers();
+
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdCopyImage(fPrimaryCommandBuffer,
+                             srcTexture->vkImage(),
+                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                             dstTexture->vkImage(),
+                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                             /*regionCount=*/1,
+                             &copyRegion));
+
+    return true;
 }
 
 bool VulkanCommandBuffer::onSynchronizeBufferToCpu(const Buffer* buffer, bool* outDidResultInWork) {

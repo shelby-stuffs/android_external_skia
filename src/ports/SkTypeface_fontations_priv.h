@@ -21,21 +21,23 @@ class SkStreamAsset;
 /** SkTypeface implementation based on Google Fonts Fontations Rust libraries. */
 class SkTypeface_Fontations : public SkTypeface {
 public:
-    SkTypeface_Fontations(std::unique_ptr<SkStreamAsset> font_data, uint32_t ttcIndex = 0);
+    SkTypeface_Fontations(sk_sp<SkData> fontData, const SkFontArguments&);
 
     bool hasValidBridgeFontRef() const;
     const fontations_ffi::BridgeFontRef& getBridgeFontRef() { return *fBridgeFontRef; }
+    const fontations_ffi::BridgeNormalizedCoords& getBridgeNormalizedCoords() {
+        return *fBridgeNormalizedCoords;
+    }
 
-    static constexpr SkTypeface::FactoryId FactoryId = SkSetFourByteTag('f','n','t','a');
+    static constexpr SkTypeface::FactoryId FactoryId = SkSetFourByteTag('f', 'n', 't', 'a');
 
+    static sk_sp<SkTypeface> MakeFromData(sk_sp<SkData> fontData, const SkFontArguments&);
     static sk_sp<SkTypeface> MakeFromStream(std::unique_ptr<SkStreamAsset>, const SkFontArguments&);
 
     struct Register { Register(); };
 protected:
     std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override;
-    sk_sp<SkTypeface> onMakeClone(const SkFontArguments& args) const override {
-        return sk_ref_sp(this);
-    }
+    sk_sp<SkTypeface> onMakeClone(const SkFontArguments& args) const override;
     std::unique_ptr<SkScalerContext> onCreateScalerContext(const SkScalerContextEffects& effects,
                                                            const SkDescriptor* desc) const override;
     void onFilterRec(SkScalerContextRec*) const override;
@@ -53,15 +55,13 @@ protected:
     SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const override;
     bool onGlyphMaskNeedsCurrentColor() const override { return false; }
     int onGetVariationDesignPosition(SkFontArguments::VariationPosition::Coordinate coordinates[],
-                                     int coordinateCount) const override {
-        return 0;
-    }
+                                     int coordinateCount) const override;
     int onGetVariationDesignParameters(SkFontParameters::Variation::Axis parameters[],
                                        int parameterCount) const override {
         return 0;
     }
-    int onGetTableTags(SkFontTableTag tags[]) const override { return 0; }
-    size_t onGetTableData(SkFontTableTag, size_t, size_t, void*) const override { return 0; }
+    int onGetTableTags(SkFontTableTag tags[]) const override;
+    size_t onGetTableData(SkFontTableTag, size_t, size_t, void*) const override;
 
 private:
     sk_sp<SkData> fFontData;
@@ -69,7 +69,8 @@ private:
     uint32_t fTtcIndex = 0;
     // fBridgeFontRef accesses the data in fFontData. fFontData needs to be kept around for the
     // lifetime of fBridgeFontRef to safely request parsed data.
-    rust::Box<::fontations_ffi::BridgeFontRef> fBridgeFontRef;
+    rust::Box<fontations_ffi::BridgeFontRef> fBridgeFontRef;
+    rust::Box<fontations_ffi::BridgeNormalizedCoords> fBridgeNormalizedCoords;
 };
 
 #endif  // SkTypeface_Fontations_DEFINED

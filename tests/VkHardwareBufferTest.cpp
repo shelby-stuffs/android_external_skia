@@ -18,6 +18,7 @@
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrBackendSemaphore.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/MutableTextureState.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/gpu/vk/GrVkBackendContext.h"
@@ -751,6 +752,13 @@ bool VulkanTestHelper::importHardwareBuffer(skiatest::Reporter* reporter,
             }
         }
     }
+
+    // Fallback to align with GrAHardwareBufferUtils
+    if (!foundHeap && hwbProps.memoryTypeBits) {
+        typeIndex = ffs(hwbProps.memoryTypeBits) - 1;
+        foundHeap = true;
+    }
+
     if (!foundHeap) {
         ERRORF(reporter, "Failed to find valid heap for imported memory");
         return false;

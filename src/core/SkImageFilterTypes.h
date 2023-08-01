@@ -349,9 +349,9 @@ public:
     bool isEmpty() const { return fData.isEmpty(); }
     bool isZero() const { return fData.isZero(); }
 
-    LayerSpace<SkISize> round() const { return LayerSpace<SkISize>(fData.toRound()); }
-    LayerSpace<SkISize> ceil() const { return LayerSpace<SkISize>(fData.toCeil()); }
-    LayerSpace<SkISize> floor() const { return LayerSpace<SkISize>(fData.toFloor()); }
+    LayerSpace<SkISize> round() const;
+    LayerSpace<SkISize> ceil() const;
+    LayerSpace<SkISize> floor() const;
 
 private:
     SkSize fData;
@@ -388,6 +388,7 @@ public:
     void join(const LayerSpace<SkIRect>& r) { fData.join(r.fData); }
     void offset(const LayerSpace<IVector>& v) { fData.offset(SkIVector(v)); }
     void outset(const LayerSpace<SkISize>& delta) { fData.outset(delta.width(), delta.height()); }
+    void inset(const LayerSpace<SkISize>& delta) { fData.inset(delta.width(), delta.height()); }
 
 private:
     SkIRect fData;
@@ -435,6 +436,7 @@ public:
     void join(const LayerSpace<SkRect>& r) { fData.join(r.fData); }
     void offset(const LayerSpace<Vector>& v) { fData.offset(SkVector(v)); }
     void outset(const LayerSpace<SkSize>& delta) { fData.outset(delta.width(), delta.height()); }
+    void inset(const LayerSpace<SkSize>& delta) { fData.inset(delta.width(), delta.height()); }
 
     LayerSpace<SkPoint> clamp(LayerSpace<SkPoint> pt) const {
         return LayerSpace<SkPoint>(SkPoint::Make(SkTPin(pt.x(), fData.fLeft, fData.fRight),
@@ -470,13 +472,11 @@ public:
     // SkIRect has large floating point values.
     LayerSpace<SkIRect> mapRect(const LayerSpace<SkIRect>& r) const;
 
-    LayerSpace<SkPoint> mapPoint(const LayerSpace<SkPoint>& p) const {
-        return LayerSpace<SkPoint>(fData.mapPoint(SkPoint(p)));
-    }
+    LayerSpace<SkPoint> mapPoint(const LayerSpace<SkPoint>& p) const;
 
-    LayerSpace<Vector> mapVector(const LayerSpace<Vector>& v) const {
-        return LayerSpace<Vector>(Vector(fData.mapVector(v.x(), v.y())));
-    }
+    LayerSpace<Vector> mapVector(const LayerSpace<Vector>& v) const;
+
+    LayerSpace<SkSize> mapSize(const LayerSpace<SkSize>& s) const;
 
     LayerSpace<SkMatrix>& preConcat(const LayerSpace<SkMatrix>& m) {
         fData = SkMatrix::Concat(fData, m.fData);
@@ -577,6 +577,8 @@ public:
     }
 
 private:
+    friend class LayerSpace<SkMatrix>; // for map()
+
     // The image filter process decomposes the total CTM into layerToDev * paramToLayer and uses the
     // param-to-layer matrix to define the layer-space coordinate system. Depending on how it's
     // decomposed, either the layer matrix or the device matrix could be the identity matrix (but
@@ -816,9 +818,16 @@ public:
     // at by the shader created from eval(). This can be useful to provide when the shader does non
     // trivial sampling since it may avoid having to resolve a FilterResult to an image.
     //
-    // 'sampleBounds' must be left empty for merge().
-    Builder& add(const FilterResult& input, std::optional<LayerSpace<SkIRect>> sampleBounds = {}) {
-        fInputs.push_back({input, sampleBounds});
+    // The 'inputFlags' are per-input flags that are OR'ed with the ShaderFlag mask passed to
+    // eval() to control how 'input' is converted to an SkShader. 'inputSampling' specifies the
+    // sampling options to use on the input's image when sampled by the final shader created in eval
+    //
+    // 'sampleBounds', 'inputFlags' and 'inputSampling' must not be used with merge().
+    Builder& add(const FilterResult& input,
+                 std::optional<LayerSpace<SkIRect>> sampleBounds = {},
+                 SkEnumBitMask<ShaderFlags> inputFlags = ShaderFlags::kNone,
+                 const SkSamplingOptions& inputSampling = kDefaultSampling) {
+        fInputs.push_back({input, sampleBounds, inputFlags, inputSampling});
         return *this;
     }
 
@@ -844,14 +853,13 @@ public:
     template <typename ShaderFn>
     FilterResult eval(ShaderFn shaderFn,
                       SkEnumBitMask<ShaderFlags> flags,
-                      std::optional<LayerSpace<SkIRect>> explicitOutput = {},
-                      const SkSamplingOptions& xtraSampling = kDefaultSampling) {
+                      std::optional<LayerSpace<SkIRect>> explicitOutput = {}) {
         auto outputBounds = this->outputBounds(flags, explicitOutput);
         if (outputBounds.isEmpty()) {
             return {};
         }
 
-        auto inputShaders = this->createInputShaders(flags, xtraSampling, outputBounds);
+        auto inputShaders = this->createInputShaders(flags, outputBounds);
         return this->drawShader(shaderFn(inputShaders), flags, outputBounds);
     }
 
@@ -859,10 +867,11 @@ private:
     struct SampledFilterResult {
         FilterResult fImage;
         std::optional<LayerSpace<SkIRect>> fSampleBounds;
+        SkEnumBitMask<ShaderFlags> fFlags;
+        SkSamplingOptions fSampling;
     };
 
     SkSpan<sk_sp<SkShader>> createInputShaders(SkEnumBitMask<ShaderFlags> flags,
-                                               const SkSamplingOptions& sampling,
                                                const LayerSpace<SkIRect>& outputBounds);
 
     LayerSpace<SkIRect> outputBounds(SkEnumBitMask<ShaderFlags> flags,

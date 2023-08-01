@@ -74,6 +74,7 @@
 #endif
 
 #ifdef ENABLE_GPU
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/ganesh/GrExternalTextureGenerator.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
@@ -83,6 +84,7 @@
 
 #ifdef CK_ENABLE_WEBGL
 #include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrTypes.h"
 #include "include/gpu/gl/GrGLInterface.h"
 #include "include/gpu/gl/GrGLTypes.h"
 #include "src/gpu/RefCntedCallback.h"
@@ -1935,8 +1937,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
                                                 int tileW, int tileH)->sk_sp<SkShader> {
             // if tileSize is empty (e.g. tileW <= 0 or tileH <= 0, it will be ignored.
             SkISize tileSize = SkISize::Make(tileW, tileH);
-            return SkPerlinNoiseShader::MakeFractalNoise(baseFreqX, baseFreqY,
-                                                         numOctaves, seed, &tileSize);
+            return SkShaders::MakeFractalNoise(baseFreqX, baseFreqY, numOctaves, seed, &tileSize);
         }))
          // Here and in other gradient functions, cPtr is a pointer to an array of data
          // representing colors. whether this is an array of SkColor or SkColor4f is indicated
@@ -2015,8 +2016,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
                                                 int tileW, int tileH)->sk_sp<SkShader> {
             // if tileSize is empty (e.g. tileW <= 0 or tileH <= 0, it will be ignored.
             SkISize tileSize = SkISize::Make(tileW, tileH);
-            return SkPerlinNoiseShader::MakeTurbulence(baseFreqX, baseFreqY,
-                                                       numOctaves, seed, &tileSize);
+            return SkShaders::MakeTurbulence(baseFreqX, baseFreqY, numOctaves, seed, &tileSize);
         }))
         .class_function("_MakeTwoPointConicalGradient", optional_override([](
                                          WASMPointerF32 fourFloatsPtr,
@@ -2037,11 +2037,17 @@ EMSCRIPTEN_BINDINGS(Skia) {
                                                             colors, colorSpace, positions, count, mode,
                                                             flags, &localMatrix);
             } else if (colorType == SkColorType::kRGBA_8888_SkColorType) {
-               const SkColor* colors  = reinterpret_cast<const SkColor*>(cPtr);
-               return SkGradientShader::MakeTwoPointConical(startAndEnd[0], startRadius,
-                                                            startAndEnd[1], endRadius,
-                                                            colors, positions, count, mode,
-                                                            flags, &localMatrix);
+                const SkColor* colors = reinterpret_cast<const SkColor*>(cPtr);
+                return SkGradientShader::MakeTwoPointConical(startAndEnd[0],
+                                                             startRadius,
+                                                             startAndEnd[1],
+                                                             endRadius,
+                                                             colors,
+                                                             positions,
+                                                             count,
+                                                             mode,
+                                                             flags,
+                                                             &localMatrix);
             }
             SkDebugf("%d is not an accepted colorType\n", colorType);
             return nullptr;
@@ -2181,7 +2187,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
             auto releaseCtx = new TextureReleaseContext{webglHandle, texHandle};
             GrGLTextureInfo gti = {GR_GL_TEXTURE_2D, texHandle,
                                    GR_GL_RGBA8}; // TODO(kjlubick) look at ii for this
-            GrBackendTexture gbt(ii.width, ii.height, GrMipmapped::kNo, gti);
+            GrBackendTexture gbt(ii.width, ii.height, skgpu::Mipmapped::kNo, gti);
             auto dContext = GrAsDirectContext(self.getCanvas()->recordingContext());
 
             return SkImages::BorrowTextureFrom(dContext,
