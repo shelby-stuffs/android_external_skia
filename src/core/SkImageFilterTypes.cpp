@@ -7,10 +7,18 @@
 
 #include "src/core/SkImageFilterTypes.h"
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkImage.h"
-#include "include/core/SkPicture.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPicture.h"  // IWYU pragma: keep
 #include "include/core/SkShader.h"
 #include "include/core/SkTileMode.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkRectPriv.h"
@@ -21,6 +29,8 @@
 #include "include/effects/SkRuntimeEffect.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #endif
+
+#include <algorithm>
 
 namespace skif {
 
@@ -207,10 +217,6 @@ sk_sp<SkShader> apply_decal(
 
 #endif
 
-bool fills_layer_bounds(const SkColorFilter* colorFilter) {
-    return colorFilter && as_CFB(colorFilter)->affectsTransparentBlack();
-}
-
 // AutoSurface manages an SkSpecialSurface and canvas state to draw to a layer-space bounding box,
 // and then snap it into a FilterResult. It provides operators to be used directly as a canvas,
 // assuming surface creation succeeded. Usage:
@@ -272,8 +278,22 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+Context Context::MakeRaster(const ContextInfo& info) {
+    // TODO (skbug:14286): Remove this forcing to 8888. Many legacy image filters only support
+    // N32 on CPU, but once they are implemented in terms of draws and SkSL they will support
+    // all color types, like the GPU backends.
+    ContextInfo n32 = info;
+    n32.fColorType = kN32_SkColorType;
+    auto makeSurfaceCallback = [](const SkImageInfo& imageInfo,
+                                  const SkSurfaceProps* props) {
+        return SkSpecialSurface::MakeRaster(imageInfo, *props);
+    };
+    return Context(n32, nullptr, makeSurfaceCallback);
+}
+
 sk_sp<SkSpecialSurface> Context::makeSurface(const SkISize& size,
                                              const SkSurfaceProps* props) const {
+    SkASSERT(fMakeSurfaceDelegate);
     if (!props) {
         props = &fInfo.fSurfaceProps;
     }
@@ -282,24 +302,7 @@ sk_sp<SkSpecialSurface> Context::makeSurface(const SkISize& size,
                                               fInfo.fColorType,
                                               kPremul_SkAlphaType,
                                               sk_ref_sp(fInfo.fColorSpace));
-
-#if defined(SK_GANESH)
-    if (fGaneshContext) {
-        // FIXME: Context should also store a surface origin that matches the source origin
-        return SkSpecialSurface::MakeRenderTarget(fGaneshContext,
-                                                  imageInfo,
-                                                  *props,
-                                                  fGaneshOrigin);
-    } else
-#endif
-#if defined(SK_GRAPHITE)
-    if (fGraphiteRecorder) {
-        return SkSpecialSurface::MakeGraphite(fGraphiteRecorder, imageInfo, *props);
-    } else
-#endif
-    {
-        return SkSpecialSurface::MakeRaster(imageInfo, *props);
-    }
+    return fMakeSurfaceDelegate(imageInfo, props);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -545,11 +548,33 @@ sk_sp<SkSpecialImage> FilterResult::imageAndOffset(const Context& ctx, SkIPoint*
     return image;
 }
 
+
+bool FilterResult::modifiesPixelsBeyondImage(const LayerSpace<SkIRect>& dstBounds) const {
+    // If there is no transparency-affecting color filter and it's just decal tiling, it doesn't
+    // matter how the image geometry overlaps with the dst bounds.
+    if (!(fColorFilter && as_CFB(fColorFilter)->affectsTransparentBlack())) {
+        // TODO: add "&& fTileMode == SkTileMode::kDecal) {""
+        return false;
+    }
+
+    // If the base image completely covers the render bounds then the effects of tiling won't be
+    // visible and it doesn't matter if any color filter affects transparent black.
+    if (SkRectPriv::QuadContainsRect(SkMatrix(fTransform),
+                                     SkIRect::MakeSize(fImage->dimensions()),
+                                     SkIRect(dstBounds))) {
+        return false;
+    }
+
+    // Otherwise tiling or transparency-affecting color filters will modify the pixels beyond
+    // the image bounds that are still within render bounds.
+    return true;
+}
+
 bool FilterResult::isCropped(const LayerSpace<SkMatrix>& xtraTransform,
                              const LayerSpace<SkIRect>& dstBounds) const {
     // Tiling and color-filtering can completely fill 'fLayerBounds' in which case its edge is
     // a transition from possibly non-transparent to definitely transparent color.
-    bool fillsLayerBounds = fills_layer_bounds(fColorFilter.get());
+    bool fillsLayerBounds = this->modifiesPixelsBeyondImage(dstBounds);
     if (!fillsLayerBounds) {
         // When that's not the case, 'fLayerBounds' may still be important if it crops the
         // edges of the original transformed image itself.
@@ -589,7 +614,7 @@ FilterResult FilterResult::applyCrop(const Context& ctx,
     }
 
     LayerSpace<SkIPoint> origin;
-    if (!fills_layer_bounds(fColorFilter.get()) &&
+    if (!this->modifiesPixelsBeyondImage(tightBounds) &&
          is_nearly_integer_translation(fTransform, &origin)) {
         // We can lift the crop to earlier in the order of operations and apply it to the image
         // subset directly. This does not rely on resolve() to call extract_subset() because it
@@ -808,12 +833,12 @@ std::pair<sk_sp<SkSpecialImage>, LayerSpace<SkIPoint>> FilterResult::resolve(
     SkSurfaceProps props = {};
     AutoSurface surface{ctx, dstBounds, /*renderInParameterSpace=*/false, &props};
     if (surface) {
-        this->draw(surface.canvas());
+        this->draw(surface.canvas(), dstBounds);
     }
     return surface.snap();
 }
 
-void FilterResult::draw(SkCanvas* canvas) const {
+void FilterResult::draw(SkCanvas* canvas, const LayerSpace<SkIRect>& dstBounds) const {
     if (!fImage) {
         return;
     }
@@ -838,7 +863,7 @@ void FilterResult::draw(SkCanvas* canvas) const {
         sampling = {};
     }
 
-    if (fills_layer_bounds(fColorFilter.get())) {
+    if (this->modifiesPixelsBeyondImage(dstBounds)) {
 #ifdef SK_ENABLE_SKSL
         // apply_decal consumes the transform, so we don't modify the canvas
         paint.setShader(apply_decal(fTransform, fImage, fLayerBounds, sampling));
@@ -1096,7 +1121,7 @@ FilterResult FilterResult::Builder::merge() {
                      input.fSampling == kDefaultSampling &&
                      input.fFlags == ShaderFlags::kNone);
             surface->save();
-            input.fImage.draw(surface.canvas());
+            input.fImage.draw(surface.canvas(), outputBounds);
             surface->restore();
         }
     }
