@@ -18,9 +18,6 @@
 
 #include <optional>
 
-class GrFragmentProcessor;
-class GrRecordingContext;
-
 // True base class that all SkImageFilter implementations need to extend from. This provides the
 // actual API surface that Skia will use to compute the filtered images.
 class SkImageFilter_Base : public SkImageFilter {
@@ -311,24 +308,6 @@ protected:
     // other filters to need to call it.
     skif::Context mapContext(const skif::Context& ctx) const;
 
-#if defined(SK_GANESH)
-    static sk_sp<SkSpecialImage> DrawWithFP(GrRecordingContext* context,
-                                            std::unique_ptr<GrFragmentProcessor> fp,
-                                            const SkIRect& bounds,
-                                            SkColorType colorType,
-                                            const SkColorSpace* colorSpace,
-                                            const SkSurfaceProps&,
-                                            GrSurfaceOrigin surfaceOrigin,
-                                            GrProtected isProtected = GrProtected::kNo);
-
-    /**
-     *  Returns a version of the passed-in image (possibly the original), that is in the Context's
-     *  colorspace and color type. This allows filters that do many
-     *  texture samples to guarantee that any color space conversion has happened before running.
-     */
-    static sk_sp<SkSpecialImage> ImageToColorSpace(const skif::Context& ctx, SkSpecialImage* src);
-#endif
-
     // If 'srcBounds' will sample outside the border of 'originalSrcBounds' (i.e., the sample
     // will wrap around to the other side) we must preserve the far side of the src along that
     // axis (e.g., if we will sample beyond the left edge of the src, the right side must be
@@ -373,6 +352,12 @@ private:
      *  transparent black and thus process fewer pixels.
      */
     virtual bool onAffectsTransparentBlack() const { return false; }
+
+    /**
+     * Return true if `affectsTransparentBlack()` should only be based on
+     * `onAffectsTransparentBlack()` and ignore the transparency behavior of child input filters.
+     */
+    virtual bool ignoreInputsAffectsTransparentBlack() const { return false; }
 
     /**
      *  This is the virtual which should be overridden by the derived class to perform image
@@ -488,7 +473,6 @@ void SkRegisterPictureImageFilterFlattenable();
 void SkRegisterRuntimeImageFilterFlattenable();
 #endif
 void SkRegisterShaderImageFilterFlattenable();
-void SkRegisterTileImageFilterFlattenable();
 
 // TODO(michaelludwig): These filters no longer have dedicated implementations, so their
 // SkFlattenable create procs only need to remain to support old SkPictures.

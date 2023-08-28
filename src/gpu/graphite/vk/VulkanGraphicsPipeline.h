@@ -36,8 +36,10 @@ public:
     inline static constexpr unsigned int kNumUniformBuffers = 3;
 
     inline static const DescriptorData kIntrinsicUniformDescriptor  =
-            {DescriptorType::kUniformBuffer,
-             /*count=*/1,
+            {DescriptorType::kInlineUniform,
+             // For inline uniform descriptors, the descriptor count field is actually the number of
+             // bytes to allocate for descriptors given this type.
+             /*count=*/sizeof(float) * 4,
              VulkanGraphicsPipeline::kIntrinsicUniformBufferIndex};
     inline static const DescriptorData kRenderStepUniformDescriptor =
             {DescriptorType::kUniformBuffer,
@@ -62,7 +64,8 @@ public:
                                               SkSL::Compiler* compiler,
                                               const RuntimeEffectDictionary*,
                                               const GraphicsPipelineDesc&,
-                                              const RenderPassDesc&);
+                                              const RenderPassDesc&,
+                                              VkPipelineCache);
 
     ~VulkanGraphicsPipeline() override {}
 
@@ -71,20 +74,31 @@ public:
         return fPipelineLayout;
     }
 
+    VkPipeline pipeline() const {
+        SkASSERT(fPipeline != VK_NULL_HANDLE);
+        return fPipeline;
+    }
+
     bool hasFragment() const { return fHasFragment; }
     bool hasStepUniforms() const { return fHasStepUniforms; }
+    int numTextureSamplers() const { return fNumTextureSamplers; }
 
 private:
     VulkanGraphicsPipeline(const skgpu::graphite::SharedContext* sharedContext,
+                           Shaders* pipelineShaders,
                            VkPipelineLayout,
+                           VkPipeline,
                            bool hasFragment,
-                           bool hasStepUniforms);
+                           bool hasStepUniforms,
+                           int numTextureSamplers);
 
     void freeGpuData() override;
 
-    VkPipelineLayout  fPipelineLayout = VK_NULL_HANDLE;
+    VkPipelineLayout fPipelineLayout = VK_NULL_HANDLE;
+    VkPipeline fPipeline = VK_NULL_HANDLE;
     bool fHasFragment = false;
     bool fHasStepUniforms = false;
+    int fNumTextureSamplers = 0;
 };
 
 } // namespace skgpu::graphite

@@ -10,8 +10,8 @@
 
 #include "include/core/SkImage.h"
 #include "include/gpu/GpuTypes.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/core/SkDevice.h"
-#include "src/core/SkEnumBitMask.h"
 #include "src/gpu/graphite/ClipStack_graphite.h"
 #include "src/gpu/graphite/DrawOrder.h"
 #include "src/gpu/graphite/geom/Rect.h"
@@ -72,11 +72,6 @@ public:
     void flushPendingWorkToRecorder();
 
     TextureProxyView createCopy(const SkIRect* subset, Mipmapped);
-
-    sk_sp<SkImage> rescale(SkIRect srcRect,
-                           const SkImageInfo& dstInfo,
-                           SkImage::RescaleGamma rescaleGamma,
-                           SkImage::RescaleMode);
 
     const Transform& localToDeviceTransform();
 

@@ -7,7 +7,6 @@
 
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkBitmaskEnum.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkMutex.h"
 #include "include/private/base/SkOnce.h"
@@ -17,6 +16,7 @@
 #include "modules/skunicode/include/SkUnicode.h"
 #include "modules/skunicode/src/SkUnicode_icu.h"
 #include "modules/skunicode/src/SkUnicode_icu_bidi.h"
+#include "src/base/SkBitmaskEnum.h"
 #include "src/base/SkUTF.h"
 #include "src/core/SkTHash.h"
 #include <unicode/umachine.h>
@@ -302,8 +302,7 @@ class SkUnicode_icu : public SkUnicode {
     }
 
     bool isHardBreak(SkUnichar utf8) override {
-        auto property = sk_u_getIntPropertyValue(utf8, UCHAR_LINE_BREAK);
-        return property == U_LB_LINE_FEED || property == U_LB_MANDATORY_BREAK;
+        return SkUnicode_icu::isHardLineBreak(utf8);
     }
 
     bool isEmoji(SkUnichar unichar) override {
@@ -317,6 +316,11 @@ class SkUnicode_icu : public SkUnicode {
 
     bool isTabulation(SkUnichar utf8) override {
         return utf8 == '\t';
+    }
+
+    static bool isHardLineBreak(SkUnichar utf8) {
+        auto property = sk_u_getIntPropertyValue(utf8, UCHAR_LINE_BREAK);
+        return property == U_LB_LINE_FEED || property == U_LB_MANDATORY_BREAK;
     }
 
 public:
@@ -343,11 +347,6 @@ public:
     }
     std::unique_ptr<SkBreakIterator> makeBreakIterator(BreakType breakType) override {
         return makeBreakIterator(sk_uloc_getDefault(), breakType);
-    }
-
-    static bool isHardLineBreak(SkUnichar utf8) {
-        auto property = sk_u_getIntPropertyValue(utf8, UCHAR_LINE_BREAK);
-        return property == U_LB_LINE_FEED || property == U_LB_MANDATORY_BREAK;
     }
 
     SkString toUpper(const SkString& str) override {

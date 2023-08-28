@@ -18,11 +18,6 @@
 #include "src/core/SkWriteBuffer.h"
 #include "src/effects/colorfilters/SkColorFilterBase.h"
 
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/PaintParamsKey.h"
-#endif
-
 #include <utility>
 
 SkColorFilterShader::SkColorFilterShader(sk_sp<SkShader> shader,
@@ -63,27 +58,8 @@ bool SkColorFilterShader::appendStages(const SkStageRec& rec,
     if (fAlpha != 1.0f) {
         rec.fPipeline->append(SkRasterPipelineOp::scale_1_float, rec.fAlloc->make<float>(fAlpha));
     }
-    if (!fFilter->appendStages(rec, fShader->isOpaque())) {
+    if (!fFilter->appendStages(rec, fAlpha == 1.0f && fShader->isOpaque())) {
         return false;
     }
     return true;
 }
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-#if defined(SK_GRAPHITE)
-
-void SkColorFilterShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
-                                   skgpu::graphite::PaintParamsKeyBuilder* builder,
-                                   skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    ColorFilterShaderBlock::BeginBlock(keyContext, builder, gatherer);
-
-    as_SB(fShader)->addToKey(keyContext, builder, gatherer);
-    as_CFB(fFilter)->addToKey(keyContext, builder, gatherer);
-
-    builder->endBlock();
-}
-
-#endif  // SK_ENABLE_SKSL

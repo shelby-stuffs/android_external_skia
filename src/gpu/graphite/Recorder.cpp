@@ -7,6 +7,7 @@
 
 #include "include/gpu/graphite/Recorder.h"
 
+#include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/graphite/BackendTexture.h"
@@ -287,7 +288,7 @@ bool Recorder::updateBackendTexture(const BackendTexture& backendTex,
         return false;
     }
 
-    sk_sp<TextureProxy> proxy(new TextureProxy(std::move(texture)));
+    sk_sp<TextureProxy> proxy = TextureProxy::Wrap(std::move(texture));
 
     std::vector<MipLevel> mipLevels;
     mipLevels.resize(numLevels);
@@ -355,7 +356,12 @@ void RecorderPriv::flushTrackedDevices() {
 sk_sp<TextureProxy> RecorderPriv::CreateCachedProxy(Recorder* recorder,
                                                     const SkBitmap& bitmap,
                                                     Mipmapped mipmapped) {
+    SkASSERT(!bitmap.isNull());
     return recorder->priv().proxyCache()->findOrCreateCachedProxy(recorder, bitmap, mipmapped);
+}
+
+size_t RecorderPriv::getResourceCacheLimit() const {
+    return fRecorder->fResourceProvider->getResourceCacheLimit();
 }
 
 #if GRAPHITE_TEST_UTILS

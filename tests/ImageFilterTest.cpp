@@ -54,6 +54,7 @@
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/image/GrImageUtils.h"
+#include "src/gpu/ganesh/image/SkSpecialImage_Ganesh.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
@@ -327,7 +328,7 @@ static skif::Context make_context(const SkIRect& out, const SkSpecialImage* src)
                                  src->getColorSpace(),
                                  src->props(),
                                  /*cache=*/nullptr};
-    if (src->isTextureBacked()) {
+    if (src->isGaneshBacked()) {
         return skif::MakeGaneshContext(src->getContext(), kTestSurfaceOrigin, ctxInfo);
     } else {
         return skif::Context::MakeRaster(ctxInfo);
@@ -402,10 +403,10 @@ static sk_sp<SkSpecialSurface> create_empty_special_surface(GrRecordingContext* 
                                              kPremul_SkAlphaType);
 
     if (rContext) {
-        return SkSpecialSurface::MakeRenderTarget(rContext, ii, SkSurfaceProps(),
+        return SkSpecialSurfaces::MakeRenderTarget(rContext, ii, SkSurfaceProps(),
                                                   kTestSurfaceOrigin);
     } else {
-        return SkSpecialSurface::MakeRaster(ii, SkSurfaceProps());
+        return SkSpecialSurfaces::MakeRaster(ii, SkSurfaceProps());
     }
 }
 
@@ -587,9 +588,13 @@ static void test_negative_blur_sigma(skiatest::Reporter* reporter,
     sk_sp<SkImageFilter> negativeFilter(SkImageFilters::Blur(-kBlurSigma, kBlurSigma, nullptr));
 
     sk_sp<SkImage> gradient = make_gradient_circle(kWidth, kHeight).asImage();
-    sk_sp<SkSpecialImage> imgSrc(
-            SkSpecialImage::MakeFromImage(dContext, SkIRect::MakeWH(kWidth, kHeight), gradient,
-                                          SkSurfaceProps()));
+    sk_sp<SkSpecialImage> imgSrc;
+    if (dContext) {
+        imgSrc = SkSpecialImages::MakeFromTextureImage(
+                dContext, SkIRect::MakeWH(kWidth, kHeight), gradient, SkSurfaceProps());
+    } else {
+        imgSrc = SkSpecialImages::MakeFromRaster(SkIRect::MakeWH(kWidth, kHeight), gradient, {});
+    }
 
     SkIPoint offset;
     skif::Context ctx = make_context(32, 32, imgSrc.get());
@@ -681,9 +686,13 @@ static void test_morphology_radius_with_mirror_ctm(skiatest::Reporter* reporter,
     canvas.drawRect(SkRect::MakeXYWH(kWidth / 4, kHeight / 4, kWidth / 2, kHeight / 2),
                     paint);
     sk_sp<SkImage> image = bitmap.asImage();
-    sk_sp<SkSpecialImage> imgSrc(
-            SkSpecialImage::MakeFromImage(dContext, SkIRect::MakeWH(kWidth, kHeight), image,
-                                          SkSurfaceProps()));
+    sk_sp<SkSpecialImage> imgSrc;
+    if (dContext) {
+        imgSrc = SkSpecialImages::MakeFromTextureImage(
+                dContext, SkIRect::MakeWH(kWidth, kHeight), image, SkSurfaceProps());
+    } else {
+        imgSrc = SkSpecialImages::MakeFromRaster(SkIRect::MakeWH(kWidth, kHeight), image, {});
+    }
 
     SkIPoint offset;
     skif::Context ctx = make_context(32, 32, imgSrc.get());
@@ -1260,7 +1269,7 @@ static void test_big_kernel(skiatest::Reporter* reporter, GrRecordingContext* rC
     skif::Context ctx = make_context(100, 100, srcImg.get());
     sk_sp<SkSpecialImage> resultImg(as_IFB(filter)->filterImage(ctx).imageAndOffset(ctx, &offset));
     REPORTER_ASSERT(reporter, resultImg);
-    REPORTER_ASSERT(reporter, SkToBool(rContext) == resultImg->isTextureBacked());
+    REPORTER_ASSERT(reporter, SkToBool(rContext) == resultImg->isGaneshBacked());
     REPORTER_ASSERT(reporter, resultImg->width() == 100 && resultImg->height() == 100);
     REPORTER_ASSERT(reporter, offset.fX == 0 && offset.fY == 0);
 }

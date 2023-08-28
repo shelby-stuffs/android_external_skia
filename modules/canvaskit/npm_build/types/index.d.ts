@@ -460,6 +460,7 @@ export interface CanvasKit {
 
     // Factories, i.e. things made with CanvasKit.Foo.MakeTurboEncabulator()
     readonly ParagraphBuilder: ParagraphBuilderFactory;
+    readonly Blender: BlenderFactory;
     readonly ColorFilter: ColorFilterFactory;
     readonly FontCollection: FontCollectionFactory;
     readonly FontMgr: FontMgrFactory;
@@ -1201,6 +1202,11 @@ export interface AnimatedImage extends EmbindObject<"AnimatedImage"> {
      */
     width(): number;
 }
+
+/**
+ * See SkBlender.h for more on this class. The objects are opaque.
+ */
+export type Blender = EmbindObject<"Blender">;
 
 /**
  * See SkCanvas.h for more information on this class.
@@ -2016,7 +2022,21 @@ export interface Image extends EmbindObject<"Image"> {
 /**
  * See ImageFilter.h for more on this class. The objects are opaque.
  */
-export type ImageFilter = EmbindObject<"ImageFilter">;
+export interface ImageFilter extends EmbindObject<"ImageFilter"> {
+    /**
+     * Returns an IRect that is the updated bounds of inputRect after this
+     * filter has been applied.
+     *
+     * @param drawBounds - The local (pre-transformed) bounding box of the
+     *        geometry being drawn _before_ the filter is applied.
+     * @param ctm - If provided, the current transform at the time the filter
+     *        would be used.
+     * @param outputRect - If provided, the result will be output to this array
+     *        rather than allocating a new one.
+     * @returns an IRect describing the updated bounds.
+     */
+    getOutputBounds(drawBounds: Rect, ctm?: InputMatrix, outputRect?: IRect): IRect;
+}
 
 export interface ImageInfo {
     alphaType: AlphaType;
@@ -2108,6 +2128,18 @@ export interface Paint extends EmbindObject<"Paint"> {
      * @param mode
      */
     setBlendMode(mode: BlendMode): void;
+
+    /**
+     * Sets the current blender, increasing its refcnt, and if a blender is already
+     * present, decreasing that object's refcnt.
+     *
+     * * A nullptr blender signifies the default SrcOver behavior.
+     *
+     * * For convenience, you can call setBlendMode() if the blend effect can be expressed
+     * as one of those values.
+     * @param blender
+     */
+    setBlender(blender: Blender): void;
 
     /**
      * Sets alpha and RGB used when stroking and filling. The color is four floating
@@ -2734,6 +2766,12 @@ export interface RuntimeEffect extends EmbindObject<"RuntimeEffect"> {
     /**
      * Returns a shader executed using the given uniform data.
      * @param uniforms
+     */
+    makeBlender(uniforms: Float32Array | number[] | MallocObj): Blender;
+
+    /**
+     * Returns a shader executed using the given uniform data.
+     * @param uniforms
      * @param localMatrix
      */
     makeShader(uniforms: Float32Array | number[] | MallocObj,
@@ -3068,7 +3106,7 @@ export interface TonalColorsOutput {
     spot: Color;
 }
 
-export interface TypefaceFontProvider extends EmbindObject<"TypefaceFontProvider"> {
+export interface TypefaceFontProvider extends FontMgr {
     /**
      * Registers a given typeface with the given family name (ignoring whatever name the
      * typface has for itself).
@@ -3342,6 +3380,17 @@ export interface Matrix4x4Helpers {
      * @param matrix
      */
     transpose(matrix: Matrix4x4 | number[]): number[];
+}
+
+    /**
+     * For more information, see SkBlender.h.
+     */
+export interface BlenderFactory {
+    /**
+     * Create a blender that implements the specified BlendMode.
+     * @param mode
+     */
+    Mode(mode: BlendMode): Blender;
 }
 
 export interface ParagraphBuilderFactory {
@@ -3797,6 +3846,14 @@ export interface RuntimeEffectFactory {
      *                   be printed to console.log().
      */
     Make(sksl: string, callback?: (err: string) => void): RuntimeEffect | null;
+
+    /**
+     * Compiles a RuntimeEffect from the given blender code.
+     * @param sksl - Source code for a blender written in SkSL
+     * @param callback - will be called with any compilation error. If not provided, errors will
+     *                   be printed to console.log().
+     */
+    MakeForBlender(sksl: string, callback?: (err: string) => void): RuntimeEffect | null;
 
     /**
      * Adds debug tracing to an existing RuntimeEffect.

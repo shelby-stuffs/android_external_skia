@@ -9,6 +9,7 @@
 
 #include "include/core/SkSpan.h"
 #include "include/gpu/graphite/BackendTexture.h"
+#include "src/gpu/MutableTextureStateRef.h"
 #include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/ComputePipeline.h"
 #include "src/gpu/graphite/GraphicsPipeline.h"
@@ -28,26 +29,36 @@ namespace skgpu::graphite {
 
 GraphiteResourceKey build_desc_set_key(const SkSpan<DescriptorData>& requestedDescriptors,
                                        const uint32_t uniqueId) {
-    // TODO(nicolettep): Optimize key structure. It is horrendously inefficient but functional.
-    // Fow now, have each descriptor type and quantity take up an entire uint32_t, with an
-    // additional uint32_t added to include a unique identifier for different descriptor sets that
-    // have the same set layout.
-    static const int kNum32DataCnt = (kDescriptorTypeCount * 2) + 1;
+    // TODO(nicolettep): Finalize & optimize key structure. Refactor to have the order of the
+    // requested descriptors be irrelevant.
+    // For now, to place some kind of upper limit on key size, limit a key to only containing
+    // information for up to 9 descriptors. This number was selected due to having a maximum of 3
+    // uniform buffer descriptors and observationally only encountering up to 6 texture/samplers for
+    // our testing use cases. The 10th uint32 is reserved for housing a unique descriptor set ID.
+    static const int kMaxDescriptorQuantity = 9;
+    static const int kNum32DataCnt = kMaxDescriptorQuantity + 1;
     static const ResourceType kType = GraphiteResourceKey::GenerateResourceType();
 
     GraphiteResourceKey key;
     GraphiteResourceKey::Builder builder(&key, kType, kNum32DataCnt, Shareable::kNo);
 
-    // Fill out the key with each descriptor type. Initialize each count to 0.
-    for (uint8_t j = 0; j < kDescriptorTypeCount; j = j + 2) {
-        builder[j] = static_cast<uint32_t>(static_cast<DescriptorType>(j));
-        builder[j+1] = 0;
+    if (requestedDescriptors.size() > kMaxDescriptorQuantity) {
+        SKGPU_LOG_E("%d descriptors requested, but graphite currently only supports creating"
+                    "descriptor set keys for up to %d. The key will only take the first %d into"
+                    " account.", static_cast<int>(requestedDescriptors.size()),
+                    kMaxDescriptorQuantity, kMaxDescriptorQuantity);
     }
-    // Go through and update the counts for requested descriptor types. The span should not contain
-    // descriptor types with count values of 0, but check just in case.
-    for (auto desc : requestedDescriptors) {
-        if (desc.count > 0) {
-            builder[static_cast<uint32_t>(desc.type) + 1] = desc.count;
+
+    for (size_t i = 0; i < kNum32DataCnt; i++) {
+        if (i < requestedDescriptors.size()) {
+            // TODO: Consider making the DescriptorData struct itself just use uint16_t.
+            uint16_t smallerCount = static_cast<uint16_t>(requestedDescriptors[i].count);
+            builder[i] =  static_cast<uint8_t>(requestedDescriptors[i].type) << 24
+                          | requestedDescriptors[i].bindingIndex << 16
+                          | smallerCount;
+        } else {
+            // Populate reminaing key components with 0.
+            builder[i] = 0;
         }
     }
     builder[kNum32DataCnt - 1] = uniqueId;
@@ -60,14 +71,26 @@ VulkanResourceProvider::VulkanResourceProvider(SharedContext* sharedContext,
                                                uint32_t recorderID)
         : ResourceProvider(sharedContext, singleOwner, recorderID) {}
 
-VulkanResourceProvider::~VulkanResourceProvider() {}
+VulkanResourceProvider::~VulkanResourceProvider() {
+    if (fPipelineCache != VK_NULL_HANDLE) {
+        VULKAN_CALL(this->vulkanSharedContext()->interface(),
+                    DestroyPipelineCache(this->vulkanSharedContext()->device(),
+                                         fPipelineCache,
+                                         nullptr));
+    }
+}
 
 const VulkanSharedContext* VulkanResourceProvider::vulkanSharedContext() {
     return static_cast<const VulkanSharedContext*>(fSharedContext);
 }
 
-sk_sp<Texture> VulkanResourceProvider::createWrappedTexture(const BackendTexture&) {
-    return nullptr;
+sk_sp<Texture> VulkanResourceProvider::createWrappedTexture(const BackendTexture& texture) {
+    return VulkanTexture::MakeWrapped(this->vulkanSharedContext(),
+                                      texture.dimensions(),
+                                      texture.info(),
+                                      texture.getMutableState(),
+                                      texture.getVkImage(),
+                                      {});
 }
 
 sk_sp<GraphicsPipeline> VulkanResourceProvider::createGraphicsPipeline(
@@ -79,7 +102,8 @@ sk_sp<GraphicsPipeline> VulkanResourceProvider::createGraphicsPipeline(
                                         &skslCompiler,
                                         runtimeDict,
                                         pipelineDesc,
-                                        renderPassDesc);
+                                        renderPassDesc,
+                                        this->pipelineCache());
 }
 
 sk_sp<ComputePipeline> VulkanResourceProvider::createComputePipeline(const ComputePipelineDesc&) {
@@ -149,5 +173,28 @@ sk_sp<VulkanDescriptorSet> VulkanResourceProvider::findOrCreateDescriptorSet(
     auto descSet = fResourceCache->findAndRefResource(descSetKeys[0], skgpu::Budgeted::kNo);
     return descSet ? sk_sp<VulkanDescriptorSet>(static_cast<VulkanDescriptorSet*>(descSet))
                    : nullptr;
+}
+
+VkPipelineCache VulkanResourceProvider::pipelineCache() {
+    if (fPipelineCache == VK_NULL_HANDLE) {
+        VkPipelineCacheCreateInfo createInfo;
+        memset(&createInfo, 0, sizeof(VkPipelineCacheCreateInfo));
+        createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+        createInfo.pNext = nullptr;
+        createInfo.flags = 0;
+        createInfo.initialDataSize = 0;
+        createInfo.pInitialData = nullptr;
+        VkResult result;
+        VULKAN_CALL_RESULT(this->vulkanSharedContext()->interface(),
+                           result,
+                           CreatePipelineCache(this->vulkanSharedContext()->device(),
+                                               &createInfo,
+                                               nullptr,
+                                               &fPipelineCache));
+        if (VK_SUCCESS != result) {
+            fPipelineCache = VK_NULL_HANDLE;
+        }
+    }
+    return fPipelineCache;
 }
 } // namespace skgpu::graphite

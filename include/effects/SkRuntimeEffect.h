@@ -23,6 +23,8 @@
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/base/SkTypeTraits.h"
+#include "include/sksl/SkSLDebugTrace.h"
+#include "include/sksl/SkSLVersion.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -33,11 +35,6 @@
 #include <string_view>
 #include <utility>
 #include <vector>
-
-#ifdef SK_ENABLE_SKSL
-
-#include "include/sksl/SkSLDebugTrace.h"
-#include "include/sksl/SkSLVersion.h"
 
 struct SkIPoint;
 
@@ -270,14 +267,15 @@ public:
 
 private:
     enum Flags {
-        kUsesSampleCoords_Flag   = 0x01,
-        kAllowColorFilter_Flag   = 0x02,
-        kAllowShader_Flag        = 0x04,
-        kAllowBlender_Flag       = 0x08,
-        kSamplesOutsideMain_Flag = 0x10,
-        kUsesColorTransform_Flag = 0x20,
-        kAlwaysOpaque_Flag       = 0x40,
-        kAlphaUnchanged_Flag     = 0x80,
+        kUsesSampleCoords_Flag    = 0x001,
+        kAllowColorFilter_Flag    = 0x002,
+        kAllowShader_Flag         = 0x004,
+        kAllowBlender_Flag        = 0x008,
+        kSamplesOutsideMain_Flag  = 0x010,
+        kUsesColorTransform_Flag  = 0x020,
+        kAlwaysOpaque_Flag        = 0x040,
+        kAlphaUnchanged_Flag      = 0x080,
+        kDisableOptimization_Flag = 0x100,
     };
 
     SkRuntimeEffect(std::unique_ptr<SkSL::Program> baseProgram,
@@ -516,7 +514,5 @@ public:
 
     sk_sp<SkBlender> makeBlender() const;
 };
-
-#endif  // SK_ENABLE_SKSL
 
 #endif  // SkRuntimeEffect_DEFINED

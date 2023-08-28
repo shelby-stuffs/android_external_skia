@@ -29,6 +29,7 @@
 #include "src/gpu/graphite/Renderer.h"
 #include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/SharedContext.h"
+#include "src/gpu/graphite/SpecialImage_Graphite.h"
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/TextureUtils.h"
 #include "src/gpu/graphite/geom/BoundsManager.h"
@@ -55,7 +56,6 @@
 #include "src/core/SkStrikeCache.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/core/SkVerticesPriv.h"
-#include "src/effects/colorfilters/SkColorSpaceXformColorFilter.h"
 #include "src/shaders/SkImageShader.h"
 #include "src/text/GlyphRun.h"
 #include "src/text/gpu/GlyphVector.h"
@@ -448,99 +448,6 @@ bool Device::onReadPixels(const SkPixmap& pm, int srcX, int srcY) {
 #endif
     // We have no access to a context to do a read pixels here.
     return false;
-}
-
-sk_sp<SkImage> Device::rescale(SkIRect srcIRect,
-                               const SkImageInfo& dstInfo,
-                               SkImage::RescaleGamma rescaleGamma,
-                               SkImage::RescaleMode rescaleMode) {
-    // make a Surface matching dstInfo to rescale into
-    // TODO: use fallback colortype if necessary
-    sk_sp<SkSurface> dst = this->makeSurface(dstInfo, SkSurfaceProps{});
-    SkRect srcRect = SkRect::Make(srcIRect);
-    SkRect dstRect = SkRect::Make(dstInfo.dimensions());
-
-    // Get backing texture information for current Device.
-    // For now this needs to be texturable because we can't depend on copies to scale.
-    TextureProxyView deviceView = this->readSurfaceView();
-    if (!deviceView.proxy()) {
-        // TODO: if not texturable, copy to a texturable format
-        return nullptr;
-    }
-
-    SkISize finalSize = SkISize::Make(dstRect.width(), dstRect.height());
-    if (finalSize == srcIRect.size()) {
-        rescaleGamma = RescaleGamma::kSrc;
-        rescaleMode = RescaleMode::kNearest;
-    }
-
-    // Within a rescaling pass tempInput is read from and tempOutput is written to.
-    // At the end of the pass tempOutput's texture is wrapped and assigned to tempInput.
-    sk_sp<SkImage> tempInput;
-    sk_sp<SkSurface> tempOutput;
-
-    // Assume we should ignore the rescale linear request if the surface has no color space since
-    // it's unclear how we'd linearize from an unknown color space.
-    if (rescaleGamma == RescaleGamma::kLinear && this->imageInfo().colorSpace() &&
-        !this->imageInfo().colorSpace()->gammaIsLinear()) {
-        // TODO: handle linear gamma
-        // For now just make image from Device
-        tempInput.reset(new Image(kNeedNewImageUniqueID,
-                                  deviceView,
-                                  this->imageInfo().colorInfo()));
-    } else {
-        tempInput.reset(new Image(kNeedNewImageUniqueID,
-                                  deviceView,
-                                  this->imageInfo().colorInfo()));
-    }
-
-    do {
-        SkISize nextDims = finalSize;
-        if (rescaleMode != RescaleMode::kNearest && rescaleMode != RescaleMode::kLinear) {
-            if (srcRect.width() > finalSize.width()) {
-                nextDims.fWidth = std::max((srcRect.width() + 1)/2, (float)finalSize.width());
-            } else if (srcRect.width() < finalSize.width()) {
-                nextDims.fWidth = std::min(srcRect.width()*2, (float)finalSize.width());
-            }
-            if (srcRect.height() > finalSize.height()) {
-                nextDims.fHeight = std::max((srcRect.height() + 1)/2, (float)finalSize.height());
-            } else if (srcRect.height() < finalSize.height()) {
-                nextDims.fHeight = std::min(srcRect.height()*2, (float)finalSize.height());
-            }
-        }
-
-        SkCanvas* stepDst;
-        SkRect stepDstRect;
-        if (nextDims == finalSize) {
-            stepDst = dst->getCanvas();
-            stepDstRect = dstRect;
-        } else {
-            SkImageInfo nextInfo = tempInput->imageInfo().makeDimensions(nextDims);
-            tempOutput = this->makeSurface(nextInfo, SkSurfaceProps{});
-            if (!tempOutput) {
-                return nullptr;
-            }
-            stepDst = tempOutput->getCanvas();
-            stepDstRect = SkRect::Make(tempOutput->imageInfo().dimensions());
-        }
-
-        SkSamplingOptions samplingOptions;
-        if (rescaleMode == RescaleMode::kRepeatedCubic) {
-            samplingOptions = SkSamplingOptions(SkCubicResampler::CatmullRom());
-        } else {
-            samplingOptions = (rescaleMode == RescaleMode::kNearest) ?
-                               SkSamplingOptions(SkFilterMode::kNearest) :
-                               SkSamplingOptions(SkFilterMode::kLinear);
-        }
-        SkPaint paint;
-        stepDst->drawImageRect(tempInput, srcRect, stepDstRect, samplingOptions, &paint,
-                               SkCanvas::kStrict_SrcRectConstraint);
-
-        tempInput = SkSurfaces::AsImage(tempOutput);
-        srcRect = SkRect::Make(nextDims);
-    } while (srcRect.width() != finalSize.width() || srcRect.height() != finalSize.height());
-
-    return SkSurfaces::AsImage(dst);
 }
 
 bool Device::onWritePixels(const SkPixmap& src, int x, int y) {
@@ -1063,7 +970,8 @@ void Device::drawGeometry(const Transform& localToDevice,
     // Calculate the clipped bounds of the draw and determine the clip elements that affect the
     // draw without updating the clip stack.
     ClipStack::ElementList clipElements;
-    const Clip clip = fClip.visitClipStackForDraw(localToDevice, geometry, style, &clipElements);
+    const Clip clip =
+            fClip.visitClipStackForDraw(localToDevice, geometry, style, *renderer, &clipElements);
     if (clip.isClippedOut()) {
         // Clipped out, so don't record anything.
         return;
@@ -1092,7 +1000,8 @@ void Device::drawGeometry(const Transform& localToDevice,
 
     // If an atlas path renderer was chosen we need to insert the shape into the atlas and schedule
     // it to be drawn.
-    Rect atlasBounds;  // Only used if `pathAtlas != nullptr`.
+    AtlasShape::MaskInfo atlasMaskInfo;  // only used if `pathAtlas != nullptr`
+
     // It is possible for the transformed shape bounds to be fully clipped out while the draw still
     // produces coverage due to an inverse fill. In this case, don't render any mask;
     // AtlasShapeRenderStep will automatically handle the simple fill.
@@ -1102,7 +1011,7 @@ void Device::drawGeometry(const Transform& localToDevice,
                                                    geometry.shape(),
                                                    localToDevice,
                                                    style,
-                                                   &atlasBounds);
+                                                   &atlasMaskInfo);
 
         // If there was no space in the atlas and we haven't flushed already, then flush pending
         // work to clear up space in the atlas. If we had already flushed once (which would have
@@ -1116,7 +1025,7 @@ void Device::drawGeometry(const Transform& localToDevice,
                                                   geometry.shape(),
                                                   localToDevice,
                                                   style,
-                                                  &atlasBounds);
+                                                  &atlasMaskInfo);
         }
 
         if (!foundAtlasSpace) {
@@ -1186,12 +1095,8 @@ void Device::drawGeometry(const Transform& localToDevice,
     // and record a single AtlashShape draw.
     if (pathAtlas != nullptr) {
         // Record the draw as a fill since stroking is handled by the atlas render.
-        Geometry atlasShape(AtlasShape(geometry.shape(),
-                                       pathAtlas,
-                                       localToDevice.inverse(),
-                                       clip.transformedShapeBounds().topLeft(),
-                                       atlasBounds.topLeft(),
-                                       clip.transformedShapeBounds().size()));
+        Geometry atlasShape(
+                AtlasShape(geometry.shape(), pathAtlas, localToDevice.inverse(), atlasMaskInfo));
         fDC->recordDraw(
                 renderer, Transform::Identity(), atlasShape, clip, order, &shading, nullptr);
     } else {
@@ -1306,18 +1211,21 @@ std::pair<const Renderer*, PathAtlas*> Device::chooseRenderer(const Transform& l
         return {renderers->analyticRRect(), nullptr};
     }
 
-#ifdef SK_ENABLE_VELLO_SHADERS
-    // Prefer the compute atlas if it is supported. This currently implicitly filters out clip draws
-    // as they require MSAA. Eventually we may want to route clip shapes to the atlas as well but
-    // not if hardware MSAA is required.
-    // TODO: There may be reasons to prefer tessellation, e.g. if the shape is large and hardware
-    // MSAA looks acceptable.
-    if (!requireMSAA && fRecorder->priv().atlasProvider()->computePathAtlas()) {
+    // Prefer compute atlas draws if supported. This currently implicitly filters out clip draws as
+    // they require MSAA. Eventually we may want to route clip shapes to the atlas as well but not
+    // if hardware MSAA is required.
+    // TODO(b/285195175): There may be reasons to prefer tessellation, e.g. if the shape is large
+    // and hardware MSAA looks acceptable.
+    // TODO(b/280927548): Currently we assume `pathAtlas` is a GPU compute path atlas and select it
+    // if it's supported (this should be always nullptr if SK_ENABLE_VELLO_SHADERS isn't defined).
+    // This will likely need to provide more information about the PathAtlas' rendering algorithm
+    // when we support non-compute PathAtlases, which may factor into the renderer choice.
+    PathAtlas* pathAtlas = fDC->getOrCreatePathAtlas(fRecorder);
+    if (!requireMSAA && pathAtlas) {
         // TODO: vello can't do correct strokes yet. Maybe this shouldn't get selected for stroke
         // renders until all stroke styles are supported?
-        return {renderers->atlasShape(), fRecorder->priv().atlasProvider()->computePathAtlas()};
+        return {renderers->atlasShape(), pathAtlas};
     }
-#endif
 
     // If we got here, it requires tessellated path rendering or an MSAA technique applied to a
     // simple shape (so we interpret them as paths to reduce the number of pipelines we need).
@@ -1384,13 +1292,10 @@ void Device::flushPendingWorkToRecorder() {
         fRecorder->priv().add(std::move(uploadTask));
     }
 
-    // Process atlas renders that use compute passes before snapping a compute task.
-    fDC->recordPathAtlasDispatches(fRecorder);
-
     fClip.recordDeferredClipDraws();
 
     // Snap the render pass task before snapping the compute task because creating a DrawPass may
-    // record DispatchGroups that it depends on (e.g. to process geometry).
+    // record DispatchGroups that it depends on (e.g. to process geometry or atlas draws).
     auto drawTask = fDC->snapRenderPassTask(fRecorder);
     auto computeTask = fDC->snapComputeTask(fRecorder);
 
@@ -1485,12 +1390,11 @@ sk_sp<SkSpecialImage> Device::snapSpecial(const SkIRect& subset, bool forceCopy)
         finalSubset = SkIRect::MakeWH(view.width(), view.height());
     }
 
-    return SkSpecialImage::MakeGraphite(fRecorder,
-                                        finalSubset,
-                                        kNeedNewImageUniqueID_SpecialImage,
-                                        std::move(view),
-                                        this->imageInfo().colorInfo(),
-                                        this->surfaceProps());
+    return SkSpecialImages::MakeGraphite(finalSubset,
+                                         kNeedNewImageUniqueID_SpecialImage,
+                                         std::move(view),
+                                         this->imageInfo().colorInfo(),
+                                         this->surfaceProps());
 }
 
 skif::Context Device::createContext(const skif::ContextInfo& ctxInfo) const {

@@ -741,7 +741,7 @@ sk_sp<GrTexture> GrGLGpu::onWrapBackendTexture(const GrBackendTexture& backendTe
         // Pessimistically assume this external texture may have been bound to a FBO.
         texture->baseLevelWasBoundToFBO();
     }
-    return std::move(texture);
+    return texture;
 }
 
 static bool check_compressed_backend_texture(const GrBackendTexture& backendTex,
@@ -789,10 +789,8 @@ sk_sp<GrTexture> GrGLGpu::onWrapCompressedBackendTexture(const GrBackendTexture&
     GrMipmapStatus mipmapStatus = backendTex.hasMipmaps() ? GrMipmapStatus::kValid
                                                           : GrMipmapStatus::kNotAllocated;
 
-    auto texture = GrGLTexture::MakeWrapped(this, mipmapStatus, desc,
-                                            backendTex.getGLTextureParams(), cacheable,
-                                            kRead_GrIOType, backendTex.getLabel());
-    return std::move(texture);
+    return GrGLTexture::MakeWrapped(this, mipmapStatus, desc, backendTex.getGLTextureParams(),
+                                    cacheable, kRead_GrIOType, backendTex.getLabel());
 }
 
 sk_sp<GrTexture> GrGLGpu::onWrapRenderableBackendTexture(const GrBackendTexture& backendTex,
@@ -835,7 +833,7 @@ sk_sp<GrTexture> GrGLGpu::onWrapRenderableBackendTexture(const GrBackendTexture&
             this, sampleCnt, desc, backendTex.getGLTextureParams(), rtIDs, cacheable,
             mipmapStatus, backendTex.getLabel()));
     texRT->baseLevelWasBoundToFBO();
-    return std::move(texRT);
+    return texRT;
 }
 
 sk_sp<GrRenderTarget> GrGLGpu::onWrapBackendRenderTarget(const GrBackendRenderTarget& backendRT) {
@@ -1563,7 +1561,7 @@ sk_sp<GrTexture> GrGLGpu::onCreateTexture(SkISize dimensions,
                                    levelClearMask);
         }
     }
-    return std::move(tex);
+    return tex;
 }
 
 sk_sp<GrTexture> GrGLGpu::onCreateCompressedTexture(SkISize dimensions,
@@ -1611,7 +1609,7 @@ sk_sp<GrTexture> GrGLGpu::onCreateCompressedTexture(SkISize dimensions,
     // The non-sampler params are still at their default values.
     tex->parameters()->set(&initialState, GrGLTextureParameters::NonsamplerState(),
                            fResetTimestampForTextureParameters);
-    return std::move(tex);
+    return tex;
 }
 
 GrBackendTexture GrGLGpu::onCreateCompressedBackendTexture(
@@ -1917,7 +1915,7 @@ sk_sp<GrAttachment> GrGLGpu::makeStencilAttachment(const GrBackendFormat& colorF
     if (stencil) {
         fStats.incStencilAttachmentCreates();
     }
-    return std::move(stencil);
+    return stencil;
 }
 
 sk_sp<GrAttachment> GrGLGpu::makeMSAAAttachment(SkISize dimensions, const GrBackendFormat& format,
@@ -3658,6 +3656,8 @@ bool GrGLGpu::copySurfaceAsBlitFramebuffer(GrSurface* dst, GrSurface* src, const
 }
 
 bool GrGLGpu::onRegenerateMipMapLevels(GrTexture* texture) {
+    using RegenerateMipmapType = GrGLCaps::RegenerateMipmapType;
+
     auto glTex = static_cast<GrGLTexture*>(texture);
     // Mipmaps are only supported on 2D textures:
     if (GR_GL_TEXTURE_2D != glTex->target()) {
@@ -3732,6 +3732,7 @@ bool GrGLGpu::onRegenerateMipMapLevels(GrTexture* texture) {
     width = texture->width();
     height = texture->height();
 
+    std::unique_ptr<GrSemaphore> semaphore;
     for (GrGLint level = 1; level < levelCount; ++level) {
         // Get and bind the program for this particular downsample (filter shape can vary):
         int progIdx = TextureSizeToMipmapProgramIdx(width, height);
@@ -3745,6 +3746,12 @@ bool GrGLGpu::onRegenerateMipMapLevels(GrTexture* texture) {
         }
         this->flushProgram(fMipmapPrograms[progIdx].fProgram);
 
+        if (this->glCaps().regenerateMipmapType() == RegenerateMipmapType::kBasePlusSync &&
+            level > 1) {
+            this->waitSemaphore(semaphore.get());
+            semaphore.reset();
+        }
+
         // Texcoord uniform is expected to contain (1/w, (w-1)/w, 1/h, (h-1)/h)
         const float invWidth = 1.0f / width;
         const float invHeight = 1.0f / height;
@@ -3752,14 +3759,16 @@ bool GrGLGpu::onRegenerateMipMapLevels(GrTexture* texture) {
                           invWidth, (width - 1) * invWidth, invHeight, (height - 1) * invHeight));
         GL_CALL(Uniform1i(fMipmapPrograms[progIdx].fTextureUniform, 0));
 
-        // Set the base level and max level so that we only sample from the
-        // previous mip. Setting the max level is technically unnecessary, but
-        // we do it as a performance optimization. By making it clear that a
-        // rendering feedback loop is not occurring, we avoid hitting a slow
-        // path on some drivers.
+        // Set the base level so that we only sample from the previous mip.
         SkASSERT(this->glCaps().mipmapLevelControlSupport());
         GL_CALL(TexParameteri(GR_GL_TEXTURE_2D, GR_GL_TEXTURE_BASE_LEVEL, level - 1));
-        GL_CALL(TexParameteri(GR_GL_TEXTURE_2D, GR_GL_TEXTURE_MAX_LEVEL, level - 1));
+        // Setting the max level is technically unnecessary and can affect
+        // validation for the framebuffer. However, by making it clear that a
+        // rendering feedback loop is not occurring, we avoid hitting a slow
+        // path on some drivers.
+        if (this->glCaps().regenerateMipmapType() == RegenerateMipmapType::kBasePlusMaxLevel) {
+            GL_CALL(TexParameteri(GR_GL_TEXTURE_2D, GR_GL_TEXTURE_MAX_LEVEL, level - 1));
+        }
 
         GL_CALL(FramebufferTexture2D(GR_GL_FRAMEBUFFER, GR_GL_COLOR_ATTACHMENT0, GR_GL_TEXTURE_2D,
                                      glTex->textureID(), level));
@@ -3769,6 +3778,12 @@ bool GrGLGpu::onRegenerateMipMapLevels(GrTexture* texture) {
         this->flushViewport(SkIRect::MakeWH(width, height), height, kTopLeft_GrSurfaceOrigin);
 
         GL_CALL(DrawArrays(GR_GL_TRIANGLE_STRIP, 0, 4));
+
+        if (this->glCaps().regenerateMipmapType() == RegenerateMipmapType::kBasePlusSync &&
+            level < levelCount-1) {
+            semaphore = this->makeSemaphore(true);
+            this->insertSemaphore(semaphore.get());
+        }
     }
 
     // Unbind:
@@ -3779,7 +3794,9 @@ bool GrGLGpu::onRegenerateMipMapLevels(GrTexture* texture) {
     GrGLTextureParameters::NonsamplerState nonsamplerState = glTex->parameters()->nonsamplerState();
     // We drew the 2nd to last level into the last level.
     nonsamplerState.fBaseMipMapLevel = levelCount - 2;
-    nonsamplerState.fMaxMipmapLevel = levelCount - 2;
+    if (this->glCaps().regenerateMipmapType() == RegenerateMipmapType::kBasePlusMaxLevel) {
+        nonsamplerState.fMaxMipmapLevel = levelCount - 2;
+    }
     glTex->parameters()->set(nullptr, nonsamplerState, fResetTimestampForTextureParameters);
 
     return true;
@@ -4200,7 +4217,7 @@ void GrGLGpu::submit(GrOpsRenderPass* renderPass) {
     fCachedOpsRenderPass->reset();
 }
 
-GrFence SK_WARN_UNUSED_RESULT GrGLGpu::insertFence() {
+[[nodiscard]] GrFence GrGLGpu::insertFence() {
     if (!this->caps()->fenceSyncSupport()) {
         return 0;
     }
@@ -4256,7 +4273,7 @@ void GrGLGpu::deleteFence(GrFence fence) {
     }
 }
 
-std::unique_ptr<GrSemaphore> SK_WARN_UNUSED_RESULT GrGLGpu::makeSemaphore(bool isOwned) {
+[[nodiscard]] std::unique_ptr<GrSemaphore> GrGLGpu::makeSemaphore(bool isOwned) {
     SkASSERT(this->caps()->semaphoreSupport());
     return GrGLSemaphore::Make(this, isOwned);
 }

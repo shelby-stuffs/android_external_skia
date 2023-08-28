@@ -44,20 +44,13 @@ public:
      */
     virtual std::optional<SkBlendMode> asBlendMode() const { return {}; }
 
-    SK_WARN_UNUSED_RESULT bool appendStages(const SkStageRec& rec) const {
+    [[nodiscard]] bool appendStages(const SkStageRec& rec) const {
         return this->onAppendStages(rec);
     }
 
-    SK_WARN_UNUSED_RESULT
-    virtual bool onAppendStages(const SkStageRec& rec) const = 0;
+    [[nodiscard]] virtual bool onAppendStages(const SkStageRec& rec) const = 0;
 
     virtual SkRuntimeEffect* asRuntimeEffect() const { return nullptr; }
-
-#if defined(SK_GRAPHITE)
-    virtual void addToKey(const skgpu::graphite::KeyContext&,
-                          skgpu::graphite::PaintParamsKeyBuilder*,
-                          skgpu::graphite::PipelineDataGatherer*) const = 0;
-#endif
 
     static SkFlattenable::Type GetFlattenableType() { return kSkBlender_Type; }
     SkFlattenable::Type getFlattenableType() const override { return GetFlattenableType(); }

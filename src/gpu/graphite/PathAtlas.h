@@ -10,6 +10,7 @@
 
 #include "include/core/SkStrokeRec.h"
 #include "src/gpu/RectanizerSkyline.h"
+#include "src/gpu/graphite/geom/AtlasShape.h"
 
 #ifdef SK_ENABLE_VELLO_SHADERS
 #include "src/gpu/graphite/compute/VelloRenderer.h"
@@ -52,10 +53,10 @@ public:
      *
      * `shape` will be drawn after applying the linear components (scale, rotation, skew) of the
      * provided `localToDevice` transform. This is done by  translating the shape by the inverse of
-     * the `maskBounds` offset. For an unclipped shape this amounts to translating it back to its
-     * origin. For a clipped shape, this ensures that the visible portions of the mask are centered
-     * in the atlas slot while invisible portions that would lie outside the atlas slot are clipped
-     * out.
+     * the rounded out `transformedShapeBounds` offset. For an unclipped shape this amounts to
+     * translating it back to its origin while preserving any sub-pixel translation. For a clipped
+     * shape, this ensures that the visible portions of the mask are centered in the atlas slot
+     * while invisible portions that would lie outside the atlas slot get clipped out.
      *
      * `addShape()` schedules the shape to be drawn but when and how the rendering happens is
      * specified by the subclass implementation.
@@ -67,11 +68,11 @@ public:
      * the atlas.
      */
     bool addShape(Recorder*,
-                  const Rect& maskBounds,
+                  const Rect& transformedShapeBounds,
                   const Shape& shape,
                   const Transform& localToDevice,
                   const SkStrokeRec& style,
-                  Rect* outAtlasBounds);
+                  AtlasShape::MaskInfo* outMaskInfo);
 
     // Clear all scheduled atlas draws and free up atlas allocations. After this call the atlas can
     // be considered cleared and available for new shape insertions. However this method does not
@@ -89,47 +90,56 @@ protected:
     virtual void onAddShape(const Shape&,
                             const Transform& transform,
                             const Rect& atlasBounds,
-                            float deviceOffsetX,
-                            float deviceOffsetY,
+                            skvx::int2 deviceOffset,
                             const SkStrokeRec&) = 0;
     virtual void onReset() = 0;
 
 private:
     skgpu::RectanizerSkyline fRectanizer;
 
-    // PathAtlas currently supports a single atlas page. The TextureProxy gets created only once and
-    // is valid for the lifetime of the PathAtlas. It is possible for the same texture to be bound
-    // to multiple DispatchGroups and DrawPasses across flushes. The caller must make sure that any
-    // uploads or compute dispatches are scheduled to remain coherent across flushes.
+    // A PathAtlas lazily requests a texture from the AtlasProvider when the first shape gets added
+    // to it and references the same texture for the duration of its lifetime. A reference to this
+    // texture is stored here, which is used by AtlasShapeRenderStep when encoding the render pass.
+    //
+    // TODO: Rather than permanently assigning a texture we may want PathAtlases to request one from
+    // a pool on demand while encoding a dispatch. Currently all PathAtlases reference the same
+    // TextureProxy and the RenderStep can reference it easily via the PathAtlas. We may want to
+    // revise how a RenderStep obtains the correct texture if we move to a pooled approach.
     sk_sp<TextureProxy> fTexture;
 };
-
-// NOTE: currently the coverage mask atlas that uses GPU compute uses Vello shaders, so its
-// availability is conditioned on SK_ENABLE_VELLO_SHADERS:
-#ifdef SK_ENABLE_VELLO_SHADERS
 
 class DispatchGroup;
 
 /**
- * PathAtlas implementation that rasterizes the coverage masks on the GPU using compute shaders.
+ * Base class for PathAtlas implementations that rasterize coverage masks on the GPU using compute
+ * shaders.
  *
- * When a new shape gets added, it gets encoded into data streams that will later serve as an input
- * to a series of GPU compute passes. This data is recorded into a DispatchGroup which can be added
- * to a ComputeTask in `recordDispatches()`.
+ * When a new shape gets added, it gets tracked as input to a series of GPU compute passes. This
+ * data is recorded by `recordDispatches()` into a DispatchGroup which can be added to a
+ * ComputeTask.
  *
  * After a successful call to `recordDispatches()`, the client is free to call `reset()` and start
  * adding new shapes for a future atlas render.
  */
-class ComputePathAtlas final : public PathAtlas {
+class ComputePathAtlas : public PathAtlas {
 public:
     ComputePathAtlas();
+    virtual std::unique_ptr<DispatchGroup> recordDispatches(Recorder*) const = 0;
+};
 
+#ifdef SK_ENABLE_VELLO_SHADERS
+
+/**
+ * ComputePathAtlas that uses a VelloRenderer.
+ */
+class VelloComputePathAtlas final : public ComputePathAtlas {
+public:
     // Record the compute dispatches that will draw the atlas contents.
-    std::unique_ptr<DispatchGroup> recordDispatches(Recorder*) const;
+    std::unique_ptr<DispatchGroup> recordDispatches(Recorder*) const override;
 
 private:
-    void onAddShape(const Shape&, const Transform&, const Rect&,
-                    float, float, const SkStrokeRec&) override;
+    void onAddShape(
+            const Shape&, const Transform&, const Rect&, skvx::int2, const SkStrokeRec&) override;
     void onReset() override {
         fScene.reset();
         fOccuppiedWidth = fOccuppiedHeight = 0;

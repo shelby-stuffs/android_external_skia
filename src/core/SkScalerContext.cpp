@@ -231,26 +231,43 @@ SkGlyph SkScalerContext::internalMakeGlyph(SkPackedGlyphID packedID, SkMask::For
         glyph.fWidth    = 0;
         glyph.fHeight   = 0;
     };
+
     SkGlyph glyph{packedID};
-    glyph.fMaskFormat = format;
-    // Must call to allow the subclass to determine the glyph representation to use.
-    this->generateMetrics(&glyph, alloc);
-    SkDEBUGCODE(glyph.fAdvancesBoundsFormatAndInitialPathDone = true;)
-    if (fGenerateImageFromPath) {
+    glyph.fMaskFormat = format; // subclass may return a different value
+    const auto mx = this->generateMetrics(glyph, alloc);
+    SkASSERT(!mx.neverRequestPath || !mx.computeFromPath);
+
+    glyph.fAdvanceX = mx.advance.fX;
+    glyph.fAdvanceY = mx.advance.fY;
+    glyph.fMaskFormat = mx.maskFormat;
+    glyph.fScalerContextBits = mx.extraBits;
+
+    if (mx.computeFromPath || (fGenerateImageFromPath && !mx.neverRequestPath)) {
+        SkDEBUGCODE(glyph.fAdvancesBoundsFormatAndInitialPathDone = true;)
         this->internalGetPath(glyph, alloc);
         const SkPath* devPath = glyph.path();
         if (devPath) {
-            // generateMetrics may have modified the glyph fMaskFormat.
-            glyph.fMaskFormat = format;
             const bool doVert = SkToBool(fRec.fFlags & SkScalerContext::kLCD_Vertical_Flag);
             const bool a8LCD = SkToBool(fRec.fFlags & SkScalerContext::kGenA8FromLCD_Flag);
             const bool hairline = glyph.pathIsHairline();
             if (!GenerateMetricsFromPath(&glyph, *devPath, format, doVert, a8LCD, hairline)) {
                 zeroBounds(glyph);
-                return glyph;
             }
         }
+    } else {
+        if (!SkRectPriv::Is16Bit(mx.bounds)) {
+            zeroBounds(glyph);
+        } else {
+            glyph.fLeft   = SkTo<int16_t>( mx.bounds.fLeft);
+            glyph.fTop    = SkTo<int16_t>( mx.bounds.fTop);
+            glyph.fWidth  = SkTo<uint16_t>(mx.bounds.width());
+            glyph.fHeight = SkTo<uint16_t>(mx.bounds.height());
+        }
+        if (mx.neverRequestPath) {
+            glyph.setPath(alloc, nullptr, false);
+        }
     }
+    SkDEBUGCODE(glyph.fAdvancesBoundsFormatAndInitialPathDone = true;)
 
     // if either dimension is empty, zap the image bounds of the glyph
     if (0 == glyph.fWidth || 0 == glyph.fHeight) {
@@ -584,13 +601,13 @@ void SkScalerContext::getImage(const SkGlyph& origGlyph) {
     }
 
     if (!fGenerateImageFromPath) {
-        generateImage(*unfilteredGlyph);
+        generateImage(*unfilteredGlyph, unfilteredGlyph->fImage);
     } else {
         SkASSERT(origGlyph.setPathHasBeenCalled());
         const SkPath* devPath = origGlyph.path();
 
         if (!devPath) {
-            generateImage(*unfilteredGlyph);
+            generateImage(*unfilteredGlyph, unfilteredGlyph->fImage);
         } else {
             SkMask mask = unfilteredGlyph->mask();
             SkASSERT(SkMask::kARGB32_Format != origGlyph.fMaskFormat);
@@ -1254,15 +1271,10 @@ std::unique_ptr<SkScalerContext> SkScalerContext::MakeEmpty(
                 : SkScalerContext(std::move(typeface), effects, desc) {}
 
     protected:
-        bool generateAdvance(SkGlyph* glyph) override {
-            glyph->zeroMetrics();
-            return true;
+        GlyphMetrics generateMetrics(const SkGlyph& glyph, SkArenaAlloc*) override {
+            return {glyph.maskFormat()};
         }
-        void generateMetrics(SkGlyph* glyph, SkArenaAlloc*) override {
-            glyph->fMaskFormat = fRec.fMaskFormat;
-            glyph->zeroMetrics();
-        }
-        void generateImage(const SkGlyph& glyph) override {}
+        void generateImage(const SkGlyph&, void*) override {}
         bool generatePath(const SkGlyph& glyph, SkPath* path) override {
             path->reset();
             return false;

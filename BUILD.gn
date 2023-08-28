@@ -205,16 +205,6 @@ opts("hsw") {
   }
 }
 
-opts("skx") {
-  enabled = is_x86
-  sources = skia_opts.skx_sources
-  if (is_win) {
-    cflags = [ "/arch:AVX512" ]
-  } else {
-    cflags = [ "-march=skylake-avx512" ]
-  }
-}
-
 # Any feature of Skia that requires third-party code should be optional and use this template.
 template("optional") {
   if (invoker.enabled) {
@@ -844,9 +834,11 @@ if (skia_compile_sksl_tests) {
         sources += [ src ]
 
         foreach(outExtension, invoker.outExtensions) {
-          # SPIR-V uses separate extensions for .vert shaders.
+          # SPIR-V uses separate extensions for .vert and .compute shaders.
           if (ext == "vert" && outExtension == ".asm.frag") {
             outExtension = ".asm.vert"
+          } else if (ext == "compute" && outExtension == ".asm.frag") {
+            outExtension = ".asm.comp"
           }
           outputs +=
               [ target_out_dir + "/" +
@@ -1169,7 +1161,7 @@ optional("jpeg_decode") {
       ":jpeg_mpf",
       ":xml",
     ]
-    sources += [ "src/codec/SkJpegXmp.cpp" ]
+    sources += skia_codec_jpeg_xmp
   }
 }
 
@@ -1375,7 +1367,7 @@ optional("xml") {
   public_defines = [ "SK_XML" ]
 
   deps = [ "//third_party/expat" ]
-  sources = skia_xml_sources + [
+  sources = skia_xml_sources + skia_codec_xmp + [
               "src/svg/SkSVGCanvas.cpp",
               "src/svg/SkSVGDevice.cpp",
             ]
@@ -1442,7 +1434,6 @@ skia_component("skia") {
     ":ndk_images",
     ":png_decode",
     ":raw",
-    ":skx",
     ":ssse3",
     ":vello",
     ":webp_decode",
@@ -1489,6 +1480,7 @@ skia_component("skia") {
   if (skia_enable_sksl) {
     deps += [ ":minify_sksl" ]
     sources += skia_sksl_sources
+    sources += skia_needs_sksl_sources
     sources += skia_colorfilters_sksl_sources
 
     if (skia_enable_sksl_tracing) {
@@ -1939,7 +1931,10 @@ if (skia_enable_tools) {
       "tools/gpu/ManagedBackendTexture.h",
       "tools/gpu/MemoryCache.cpp",
       "tools/gpu/MemoryCache.h",
+      "tools/gpu/ProtectedUtils.cpp",
+      "tools/gpu/ProtectedUtils.h",
       "tools/gpu/ProxyUtils.cpp",
+      "tools/gpu/ProxyUtils.h",
       "tools/gpu/TestContext.cpp",
       "tools/gpu/TestOps.cpp",
       "tools/gpu/TestOps.h",
@@ -2022,7 +2017,7 @@ if (skia_enable_tools) {
       sources += [ "tools/graphite/GraphiteTestContext.h" ]
       sources += [ "tools/graphite/GraphiteTestContext.cpp" ]
       if (skia_use_dawn) {
-        sources += [ "tools/graphite/dawn/DawnTestContext.cpp" ]
+        sources += [ "tools/graphite/dawn/GraphiteDawnTestContext.cpp" ]
         sources += [ "tools/graphite/dawn/GraphiteDawnTestContext.h" ]
       }
       if (skia_use_metal) {
@@ -2030,8 +2025,8 @@ if (skia_enable_tools) {
         sources += [ "tools/graphite/mtl/GraphiteMtlTestContext.mm" ]
       }
       if (skia_use_vulkan) {
-        sources += [ "tools/graphite/vk/VulkanTestContext.cpp" ]
-        sources += [ "tools/graphite/vk/VulkanTestContext.h" ]
+        sources += [ "tools/graphite/vk/GraphiteVulkanTestContext.cpp" ]
+        sources += [ "tools/graphite/vk/GraphiteVulkanTestContext.h" ]
       }
     }
 
@@ -2311,8 +2306,10 @@ if (skia_enable_tools) {
         deps = [ "modules/skottie:tool_gpu" ]
       }
     }
-    test_app("svg_tool") {
-      deps = [ "modules/svg:tool" ]
+    if (skia_enable_svg && skia_use_expat && defined(is_skia_standalone)) {
+      test_app("svg_tool") {
+        deps = [ "modules/svg:tool" ]
+      }
     }
   }
 
@@ -2338,28 +2335,6 @@ if (skia_enable_tools) {
       deps = [
         ":skia",
         "modules/skcms",
-      ]
-    }
-    test_app("fm") {
-      sources = [
-        "dm/DMGpuTestProcs.cpp",  # blech
-        "tools/fm/fm.cpp",
-      ]
-      deps = [
-        ":common_flags_aa",
-        ":common_flags_fontmgr",
-        ":common_flags_gpu",
-        ":flags",
-        ":gm",
-        ":gpu_tool_utils",
-        ":hash_and_encode",
-        ":skia",
-        ":tests",
-        ":tool_utils",
-        ":trace",
-        "modules/skottie",
-        "modules/skottie:utils",
-        "modules/svg",
       ]
     }
     test_app("dm") {
@@ -2597,6 +2572,9 @@ if (skia_enable_tools) {
       "tools/debugger/DrawCommand.cpp",
       "tools/debugger/JsonWriteBuffer.cpp",
     ]
+    if (skia_enable_graphite && skia_enable_precompile) {
+      sources += [ "fuzz/FuzzPrecompile.cpp" ]
+    }
     deps = [
       ":flags",
       ":gpu_tool_utils",
@@ -2888,6 +2866,7 @@ if (skia_enable_tools) {
         "tools/viewer/PathSlide.cpp",
         "tools/viewer/PathTessellatorsSlide.cpp",
         "tools/viewer/PathTextSlide.cpp",
+        "tools/viewer/ProtectedSlide.cpp",
         "tools/viewer/QuadStrokerSlide.cpp",
         "tools/viewer/RectanizerSlide.cpp",
         "tools/viewer/RepeatTileSlide.cpp",
@@ -3256,6 +3235,19 @@ if (skia_enable_tools) {
           "modules/svg",
           "//third_party/libpng",
         ]
+      }
+    }
+
+    if (skia_enable_graphite && skia_enable_precompile) {
+      libfuzzer_app("api_precompile") {
+        include_dirs = []
+        sources = [
+          "fuzz/FuzzPrecompile.cpp",
+          "fuzz/oss_fuzz/FuzzPrecompile.cpp",
+          "tools/fonts/TestFontMgr.cpp",
+          "tools/fonts/TestTypeface.cpp",
+        ]
+        deps = []
       }
     }
 

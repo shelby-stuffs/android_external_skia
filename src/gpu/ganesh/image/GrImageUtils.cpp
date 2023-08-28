@@ -30,7 +30,6 @@
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/SkIDChangeListener.h"
 #include "include/private/base/SkMutex.h"
-#include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrImageContext.h"
 #include "include/private/gpu/ganesh/GrTextureGenerator.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
@@ -38,7 +37,7 @@
 #include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkSamplingPriv.h"
 #include "src/core/SkSpecialImage.h"
-#include "src/core/SkSpecialSurface.h"
+#include "src/core/SkSpecialSurface.h"  // IWYU pragma: keep
 #include "src/gpu/ResourceKey.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/Swizzle.h"
@@ -52,14 +51,17 @@
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
+#include "src/gpu/ganesh/GrThreadSafeCache.h"
 #include "src/gpu/ganesh/GrYUVATextureProxies.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/SurfaceFillContext.h"
 #include "src/gpu/ganesh/effects/GrBicubicEffect.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/gpu/ganesh/effects/GrYUVtoRGBEffect.h"
+#include "src/gpu/ganesh/image/SkImage_Ganesh.h"
 #include "src/gpu/ganesh/image/SkImage_GaneshBase.h"
 #include "src/gpu/ganesh/image/SkImage_RasterPinnable.h"
+#include "src/gpu/ganesh/image/SkSpecialImage_Ganesh.h"
 #include "src/image/SkImage_Base.h"
 #include "src/image/SkImage_Lazy.h"
 #include "src/image/SkImage_Picture.h"
@@ -729,20 +731,47 @@ Context MakeGaneshContext(GrRecordingContext* context,
                           GrSurfaceOrigin origin,
                           const ContextInfo& info) {
     SkASSERT(context);
-    SkASSERT(!info.fSource.image() ||
-             SkToBool(context) == info.fSource.image()->isTextureBacked());
+    SkASSERT(!info.fSource.image() || info.fSource.image()->isGaneshBacked());
 
     auto makeSurfaceFunctor = [context, origin](const SkImageInfo& imageInfo,
                                                 const SkSurfaceProps* props) {
-        return SkSpecialSurface::MakeRenderTarget(context,
-                                                  imageInfo,
-                                                  *props,
-                                                  origin);
+        return SkSpecialSurfaces::MakeRenderTarget(context,
+                                                   imageInfo,
+                                                   *props,
+                                                   origin);
     };
 
-    return Context(info, context, makeSurfaceFunctor);
+    auto makeImageFunctor = [context](const SkIRect& subset,
+                                      sk_sp<SkImage> image,
+                                      const SkSurfaceProps& props) {
+        return SkSpecialImages::MakeFromTextureImage(context, subset, image, props);
+    };
+
+    auto makeCachedBitmapFunctor = [context](const SkBitmap& data) -> sk_sp<SkImage> {
+        // This uses the thread safe cache (instead of GrMakeCachedBitmapProxyView) so that image
+        // filters can be evaluated on other threads with DDLs.
+        auto threadSafeCache = context->priv().threadSafeCache();
+
+        skgpu::UniqueKey key;
+        SkIRect subset = SkIRect::MakePtSize(data.pixelRefOrigin(), data.dimensions());
+        GrMakeKeyFromImageID(&key, data.getGenerationID(), subset);
+
+        auto view = threadSafeCache->find(key);
+        if (!view) {
+            view = std::get<0>(GrMakeUncachedBitmapProxyView(context, data));
+            if (!view) {
+                return nullptr;
+            }
+            threadSafeCache->add(key, view);
+        }
+
+        return sk_make_sp<SkImage_Ganesh>(sk_ref_sp(context),
+                                          data.getGenerationID(),
+                                          std::move(view),
+                                          data.info().colorInfo());
+    };
+
+    return Context(info, context, makeSurfaceFunctor, makeImageFunctor, makeCachedBitmapFunctor);
 }
 
-}  // namespace skgpu::ganesh
-
-
+}  // namespace skif

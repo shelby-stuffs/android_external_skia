@@ -353,6 +353,7 @@ void SkImage_Ganesh::onAsyncRescaleAndReadPixels(const SkImageInfo& info,
 }
 
 void SkImage_Ganesh::onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
+                                                       bool readAlpha,
                                                        sk_sp<SkColorSpace> dstColorSpace,
                                                        SkIRect srcRect,
                                                        SkISize dstSize,
@@ -373,6 +374,7 @@ void SkImage_Ganesh::onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorS
     }
     ctx->asyncRescaleAndReadPixelsYUV420(dContext,
                                          yuvColorSpace,
+                                         readAlpha,
                                          std::move(dstColorSpace),
                                          srcRect,
                                          dstSize,
@@ -408,6 +410,11 @@ std::tuple<GrSurfaceProxyView, GrColorType> SkImage_Ganesh::asView(
     return {std::move(view), ct};
 }
 
+skif::Context SkImage_Ganesh::onCreateFilterContext(GrRecordingContext* rContext,
+                                                    const skif::ContextInfo& ctxInfo) const {
+    return skif::MakeGaneshContext(rContext, fOrigin, ctxInfo);
+}
+
 std::unique_ptr<GrFragmentProcessor> SkImage_Ganesh::asFragmentProcessor(
         GrRecordingContext* rContext,
         SkSamplingOptions sampling,
@@ -433,4 +440,3 @@ std::unique_ptr<GrFragmentProcessor> SkImage_Ganesh::asFragmentProcessor(
 GrSurfaceProxyView SkImage_Ganesh::makeView(GrRecordingContext* rContext) const {
     return {fChooser.chooseProxy(rContext), fOrigin, fSwizzle};
 }
-

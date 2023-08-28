@@ -461,6 +461,10 @@ void tiled_image_caching_test(GrDirectContext* dContext,
     }
 #endif
 
+    if (!surface) {
+        return;
+    }
+
     SkCanvas* canvas = surface->getCanvas();
 
     gOverrideMaxTextureSize = kOverrideMaxTextureSize;
@@ -543,8 +547,6 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(BigImageTest_Graphite,
     tiling_comparison_test(/* dContext= */ nullptr, recorder.get(), reporter);
 }
 
-// TODO: re-enable when Graphite's caching works correctly (currently Graphite has 32 tiles!)
-#if 0
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(TiledDrawCacheTest_Graphite,
                                          reporter,
                                          context) {
@@ -553,6 +555,5 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(TiledDrawCacheTest_Graphite,
 
     tiled_image_caching_test(/* dContext= */ nullptr, recorder.get(), reporter);
 }
-#endif
 
 #endif // SK_GRAPHITE

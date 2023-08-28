@@ -112,6 +112,12 @@ public:
                        // WEBGL_draw_instanced_base_vertex_base_instance
     };
 
+    enum class RegenerateMipmapType {
+        kBaseLevel,
+        kBasePlusMaxLevel,
+        kBasePlusSync
+    };
+
     /**
      * Initializes the GrGLCaps to the set of features supported in the current
      * OpenGL context accessible via ctxInfo.
@@ -308,6 +314,9 @@ public:
 
     /// How are multi draws implemented (if at all)?
     MultiDrawType multiDrawType() const { return fMultiDrawType; }
+
+    /// How is restricting sampled miplevels in onRegenerateMipmapLevels implemented?
+    RegenerateMipmapType regenerateMipmapType() const { return fRegenerateMipmapType; }
 
     /// The maximum number of fragment uniform vectors (GLES has min. 16).
     int maxFragmentUniformVectors() const { return fMaxFragmentUniformVectors; }
@@ -573,6 +582,7 @@ private:
     TransferBufferType   fTransferBufferType   = TransferBufferType::kNone;
     FenceType            fFenceType            = FenceType::kNone;
     MultiDrawType        fMultiDrawType        = MultiDrawType::kNone;
+    RegenerateMipmapType fRegenerateMipmapType = RegenerateMipmapType::kBaseLevel;
 
     bool fPackFlipYSupport : 1;
     bool fTextureUsageSupport : 1;

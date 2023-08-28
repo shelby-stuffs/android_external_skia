@@ -316,6 +316,14 @@ protected:
     virtual void drawImageRect(const SkImage*, const SkRect* src, const SkRect& dst,
                                const SkSamplingOptions&, const SkPaint&,
                                SkCanvas::SrcRectConstraint) = 0;
+    virtual bool drawAsTiledImageRect(SkCanvas*,
+                                      const SkImage*,
+                                      const SkRect* src,
+                                      const SkRect& dst,
+                                      const SkSamplingOptions&,
+                                      const SkPaint&,
+                                      SkCanvas::SrcRectConstraint) { return false; }
+
     virtual void drawImageLattice(const SkImage*, const SkCanvas::Lattice&,
                                   const SkRect& dst, SkFilterMode, const SkPaint&);
 
@@ -327,9 +335,7 @@ protected:
                               sk_sp<SkBlender>,
                               const SkPaint&,
                               bool skipColorXform = false) = 0;
-#ifdef SK_ENABLE_SKSL
     virtual void drawMesh(const SkMesh& mesh, sk_sp<SkBlender>, const SkPaint&) = 0;
-#endif
     virtual void drawShadow(const SkPath&, const SkDrawShadowRec&);
 
     // default implementation calls drawVertices
@@ -483,7 +489,6 @@ private:
     friend class SkDrawBase;
     friend class SkSurface_Raster;
     friend class DeviceTestingAccess;
-    friend class skgpu::TiledTextureUtils; // for drawEdgeAAImage
 
     void simplifyGlyphRunRSXFormAndRedraw(SkCanvas*,
                                           const sktext::GlyphRunList&,
@@ -594,9 +599,7 @@ protected:
     void drawPath(const SkPath&, const SkPaint&, bool) override {}
     void drawDevice(SkBaseDevice*, const SkSamplingOptions&, const SkPaint&) override {}
     void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override {}
-#ifdef SK_ENABLE_SKSL
     void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override {}
-#endif
 
     void drawSlug(SkCanvas*, const sktext::gpu::Slug*, const SkPaint&) override {}
     void onDrawGlyphRunList(

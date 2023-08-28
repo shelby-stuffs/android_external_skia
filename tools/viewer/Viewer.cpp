@@ -29,7 +29,6 @@
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTextBlob.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/gpu/graphite/Context.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTPin.h"
 #include "include/private/base/SkTo.h"
@@ -47,8 +46,6 @@
 #include "src/core/SkStringUtils.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/core/SkTextBlobPriv.h"
-#include "src/gpu/graphite/ContextPriv.h"
-#include "src/gpu/graphite/GlobalCache.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLString.h"
 #include "src/text/GlyphRun.h"
@@ -102,10 +99,17 @@
 #include "src/gpu/ganesh/ops/TessellationPathRenderer.h"
 #endif
 
+#if defined(SK_GRAPHITE)
+#include "include/gpu/graphite/Context.h"
+#include "src/gpu/graphite/ContextPriv.h"
+#include "src/gpu/graphite/GlobalCache.h"
+#include "src/gpu/graphite/GraphicsPipeline.h"
+#endif
+
 #include "imgui.h"
 #include "misc/cpp/imgui_stdlib.h"  // For ImGui support of std::string
 
-#ifdef SK_VULKAN
+#if defined(SK_VULKAN)
 #include "spirv-tools/libspirv.hpp"
 #endif
 
@@ -246,6 +250,9 @@ const char* get_backend_string(sk_app::Window::BackendType type) {
 #endif
 #ifdef SK_VULKAN
         case sk_app::Window::kVulkan_BackendType: return "Vulkan";
+#if defined(SK_GRAPHITE)
+        case sk_app::Window::kGraphiteVulkan_BackendType: return "Vulkan (Graphite)";
+#endif
 #endif
 #ifdef SK_METAL
         case sk_app::Window::kMetal_BackendType: return "Metal";
@@ -277,6 +284,11 @@ static sk_app::Window::BackendType get_backend_type(const char* str) {
     if (0 == strcmp(str, "vk")) {
         return sk_app::Window::kVulkan_BackendType;
     } else
+#if defined(SK_GRAPHITE)
+        if (0 == strcmp(str, "grvk")) {
+            return sk_app::Window::kGraphiteVulkan_BackendType;
+        } else
+#endif
 #endif
 #if SK_ANGLE && defined(SK_BUILD_FOR_WIN)
     if (0 == strcmp(str, "angle")) {
@@ -2017,6 +2029,11 @@ void Viewer::drawImGui() {
 #if defined(SK_VULKAN) && !defined(SK_BUILD_FOR_MAC)
                 ImGui::SameLine();
                 ImGui::RadioButton("Vulkan", &newBackend, sk_app::Window::kVulkan_BackendType);
+#if defined(SK_GRAPHITE)
+                ImGui::SameLine();
+                ImGui::RadioButton("Vulkan (Graphite)", &newBackend,
+                                   sk_app::Window::kGraphiteVulkan_BackendType);
+#endif
 #endif
 #if defined(SK_METAL)
                 ImGui::SameLine();
@@ -2608,9 +2625,35 @@ void Viewer::drawImGui() {
                         });
                     }
 #if defined(SK_GRAPHITE)
+#if GRAPHITE_TEST_UTILS
                     if (skgpu::graphite::Context* gctx = fWindow->graphiteContext()) {
                         // TODO(skia:14418): populate fCachedShaders with recently-used shaders
+                        auto callback = [&](const skgpu::UniqueKey& key,
+                                            const skgpu::graphite::GraphicsPipeline* pipeline) {
+                            // Retrieve the shaders from the pipeline.
+                            const skgpu::graphite::GraphicsPipeline::Shaders& shaders =
+                                    pipeline->getPipelineShaders();
+
+                            CachedShader& entry(fCachedShaders.push_back());
+                            entry.fKey = nullptr;
+                            entry.fKeyString.printf("Pipeline 0x%08X", key.hash());
+
+                            if (sksl) {
+                                entry.fShader[kVertex_GrShaderType] = shaders.fSkSLVertexShader;
+                                entry.fShader[kFragment_GrShaderType] = shaders.fSkSLFragmentShader;
+                                entry.fShaderType = SkSetFourByteTag('S', 'K', 'S', 'L');
+                            } else {
+                                entry.fShader[kVertex_GrShaderType] = shaders.fNativeVertexShader;
+                                entry.fShader[kFragment_GrShaderType] =
+                                        shaders.fNativeFragmentShader;
+                                // We could derive the shader type from the GraphicsPipeline's type
+                                // if there is ever a need to.
+                                entry.fShaderType = SkSetFourByteTag('?', '?', '?', '?');
+                            }
+                        };
+                        gctx->priv().globalCache()->forEachGraphicsPipeline(callback);
                     }
+#endif
 #endif
 
                     gLoadPending = false;
@@ -2740,7 +2783,7 @@ void Viewer::drawImGui() {
                 if (isVulkan && !sksl) {
                     doApply = false;
                 }
-                if (doApply) {
+                if (ctx && doApply) {
                     fPersistentCache.reset();
                     ctx->priv().getGpu()->resetShaderCacheForTesting();
                     for (auto& entry : fCachedShaders) {

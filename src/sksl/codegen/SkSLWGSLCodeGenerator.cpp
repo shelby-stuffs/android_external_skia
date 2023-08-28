@@ -9,15 +9,17 @@
 
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkBitmaskEnum.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTo.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLIntrinsicList.h"
+#include "src/sksl/SkSLMemoryLayout.h"
 #include "src/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLOutputStream.h"
 #include "src/sksl/SkSLPosition.h"
@@ -48,7 +50,7 @@
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
 #include "src/sksl/ir/SkSLLayout.h"
 #include "src/sksl/ir/SkSLLiteral.h"
-#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLProgram.h"
@@ -252,7 +254,7 @@ std::string_view wgsl_builtin_type(WGSLCodeGenerator::Builtin builtin) {
 // reference. Returns the WGSL type of the conversion target if conversion is needed, otherwise
 // returns std::nullopt.
 std::optional<std::string_view> needs_builtin_type_conversion(const Variable& v) {
-    switch (v.modifiers().fLayout.fBuiltin) {
+    switch (v.layout().fBuiltin) {
         case SK_VERTEXID_BUILTIN:
         case SK_INSTANCEID_BUILTIN:
             return {"i32"};
@@ -312,7 +314,7 @@ const char* delimiter_to_str(WGSLCodeGenerator::Delimiter delimiter) {
 // synthesize arguments when writing out function definitions.
 class FunctionDependencyResolver : public ProgramVisitor {
 public:
-    using Deps = WGSLCodeGenerator::FunctionDependencies;
+    using Deps = WGSLFunctionDependencies;
     using DepsMap = WGSLCodeGenerator::ProgramRequirements::DepsMap;
 
     FunctionDependencyResolver(const Program* p,
@@ -321,7 +323,7 @@ public:
             : fProgram(p), fFunction(f), fDependencyMap(programDependencyMap) {}
 
     Deps resolve() {
-        fDeps = Deps::kNone;
+        fDeps = WGSLFunctionDependency::kNone;
         this->visit(*fProgram);
         return fDeps;
     }
@@ -339,13 +341,13 @@ private:
     bool visitExpression(const Expression& e) override {
         if (e.is<VariableReference>()) {
             const VariableReference& v = e.as<VariableReference>();
-            const Modifiers& modifiers = v.variable()->modifiers();
             if (v.variable()->storage() == Variable::Storage::kGlobal) {
-                if (modifiers.fFlags & Modifiers::kIn_Flag) {
-                    fDeps |= Deps::kPipelineInputs;
+                ModifierFlags flags = v.variable()->modifierFlags();
+                if (flags & ModifierFlag::kIn) {
+                    fDeps |= WGSLFunctionDependency::kPipelineInputs;
                 }
-                if (modifiers.fFlags & Modifiers::kOut_Flag) {
-                    fDeps |= Deps::kPipelineOutputs;
+                if (flags & ModifierFlag::kOut) {
+                    fDeps |= WGSLFunctionDependency::kPipelineOutputs;
                 }
             }
         } else if (e.is<FunctionCall>()) {
@@ -383,7 +385,7 @@ private:
     const Program* const fProgram;
     const FunctionDeclaration* const fFunction;
     DepsMap* const fDependencyMap;
-    Deps fDeps = Deps::kNone;
+    Deps fDeps = WGSLFunctionDependency::kNone;
 
     using INHERITED = ProgramVisitor;
 };
@@ -398,14 +400,7 @@ WGSLCodeGenerator::ProgramRequirements resolve_program_requirements(const Progra
         }
 
         const FunctionDeclaration& decl = e->as<FunctionDefinition>().declaration();
-        if (decl.isMain()) {
-            for (const Variable* v : decl.parameters()) {
-                if (v->modifiers().fLayout.fBuiltin == SK_MAIN_COORDS_BUILTIN) {
-                    mainNeedsCoordsArgument = true;
-                    break;
-                }
-            }
-        }
+        mainNeedsCoordsArgument |= (decl.getMainCoordsParameter() != nullptr);
 
         FunctionDependencyResolver resolver(program, &decl, &dependencies);
         dependencies.set(&decl, resolver.resolve());
@@ -419,12 +414,12 @@ int count_pipeline_inputs(const Program* program) {
     for (const ProgramElement* e : program->elements()) {
         if (e->is<GlobalVarDeclaration>()) {
             const Variable* v = e->as<GlobalVarDeclaration>().varDeclaration().var();
-            if (v->modifiers().fFlags & Modifiers::kIn_Flag) {
+            if (v->modifierFlags() & ModifierFlag::kIn) {
                 inputCount++;
             }
         } else if (e->is<InterfaceBlock>()) {
             const Variable* v = e->as<InterfaceBlock>().var();
-            if (v->modifiers().fFlags & Modifiers::kIn_Flag) {
+            if (v->modifierFlags() & ModifierFlag::kIn) {
                 inputCount++;
             }
         }
@@ -434,7 +429,9 @@ int count_pipeline_inputs(const Program* program) {
 
 bool is_in_global_uniforms(const Variable& var) {
     SkASSERT(var.storage() == VariableStorage::kGlobal);
-    return var.modifiers().fFlags & Modifiers::kUniform_Flag && !var.type().isOpaque();
+    return  var.modifierFlags().isUniform() &&
+           !var.type().isOpaque() &&
+           !var.interfaceBlock();
 }
 
 }  // namespace
@@ -442,12 +439,6 @@ bool is_in_global_uniforms(const Variable& var) {
 class WGSLCodeGenerator::LValue {
 public:
     virtual ~LValue() = default;
-
-    // Returns a pointer to the lvalue, if possible. If the lvalue cannot be directly referenced
-    // by a pointer (e.g. vector swizzles), returns "".
-    virtual std::string getPointer() {
-        return "";
-    }
 
     // Returns a WGSL expression that loads from the lvalue with no side effects.
     // (e.g. `array[index].field`)
@@ -463,10 +454,6 @@ public:
     // `name` must be a WGSL expression with no side-effects, which we can safely take the address
     // of. (e.g. `array[index].field` would be valid, but `array[Func()]` or `vector.x` are not.)
     PointerLValue(std::string name) : fName(std::move(name)) {}
-
-    std::string getPointer() override {
-        return std::string("&(") + fName + std::string(")");
-    }
 
     std::string load() override {
         return fName;
@@ -485,10 +472,6 @@ public:
     // `name` must be a WGSL expression with no side-effects that points to a single component of a
     // WGSL vector.
     VectorComponentLValue(std::string name) : fName(std::move(name)) {}
-
-    std::string getPointer() override {
-        return "";
-    }
 
     std::string load() override {
         return fName;
@@ -554,10 +537,6 @@ public:
         }
     }
 
-    std::string getPointer() override {
-        return "";
-    }
-
     std::string load() override {
         return fName + "." + Swizzle::MaskString(fComponents);
     }
@@ -608,10 +587,10 @@ bool WGSLCodeGenerator::generateCode() {
     StringStream header;
     {
         AutoOutputStream outputToHeader(this, &header, &fIndentation);
-        // TODO(skia:13092): Implement the following:
-        // - global uniform/storage resource declarations, including interface blocks.
+        this->writeLine("diagnostic(off, derivative_uniformity);");
         this->writeStageInputStruct();
         this->writeStageOutputStruct();
+        this->writeUniformsAndBuffers();
         this->writeNonBlockUniformsForTests();
     }
     StringStream body;
@@ -675,7 +654,7 @@ void WGSLCodeGenerator::writeVariableDecl(const Type& type,
     this->writeLine(delimiter_to_str(delimiter));
 }
 
-void WGSLCodeGenerator::writePipelineIODeclaration(Modifiers modifiers,
+void WGSLCodeGenerator::writePipelineIODeclaration(const Layout& layout,
                                                    const Type& type,
                                                    std::string_view name,
                                                    Delimiter delimiter) {
@@ -692,11 +671,10 @@ void WGSLCodeGenerator::writePipelineIODeclaration(Modifiers modifiers,
     // https://www.w3.org/TR/WGSL/#input-output-locations
     // https://www.w3.org/TR/WGSL/#attribute-location
     // https://www.w3.org/TR/WGSL/#builtin-inputs-outputs
-    int location = modifiers.fLayout.fLocation;
-    if (location >= 0) {
-        this->writeUserDefinedIODecl(type, name, location, delimiter);
-    } else if (modifiers.fLayout.fBuiltin >= 0) {
-        auto builtin = builtin_from_sksl_name(modifiers.fLayout.fBuiltin);
+    if (layout.fLocation >= 0) {
+        this->writeUserDefinedIODecl(type, name, layout.fLocation, delimiter);
+    } else if (layout.fBuiltin >= 0) {
+        auto builtin = builtin_from_sksl_name(layout.fBuiltin);
         if (builtin.has_value()) {
             this->writeBuiltinIODecl(type, name, *builtin, delimiter);
         }
@@ -754,7 +732,7 @@ void WGSLCodeGenerator::writeFunction(const FunctionDefinition& f) {
             // Variables which are never written-to don't need dedicated storage and can use `let`.
             // Out-parameters are passed as pointers; the pointer itself is never modified, so it
             // doesn't need a dedicated variable and can use `let`.
-            this->write(((param.modifiers().fFlags & Modifiers::kOut_Flag) || counts.fWrite == 0)
+            this->write(((param.modifierFlags() & ModifierFlag::kOut) || counts.fWrite == 0)
                                 ? "let "
                                 : "var ");
             this->write(this->assembleName(param.mangledName()));
@@ -802,7 +780,7 @@ void WGSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& decl
         this->write(": ");
 
         // Declare an "out" function parameter as a pointer.
-        if (param.modifiers().fFlags & Modifiers::kOut_Flag) {
+        if (param.modifierFlags() & ModifierFlag::kOut) {
             this->write(to_ptr_type(param.type()));
         } else {
             this->write(to_wgsl_type(param.type()));
@@ -877,32 +855,28 @@ void WGSLCodeGenerator::writeEntryPoint(const FunctionDefinition& main) {
     this->write(main.declaration().mangledName());
     this->write("(");
     auto separator = SkSL::String::Separator();
-    FunctionDependencies* deps = fRequirements.dependencies.find(&main.declaration());
+    WGSLFunctionDependencies* deps = fRequirements.dependencies.find(&main.declaration());
     if (deps) {
-        if ((*deps & FunctionDependencies::kPipelineInputs) != FunctionDependencies::kNone) {
+        if (*deps & WGSLFunctionDependency::kPipelineInputs) {
             this->write(separator());
             this->write("_stageIn");
         }
-        if ((*deps & FunctionDependencies::kPipelineOutputs) != FunctionDependencies::kNone) {
+        if (*deps & WGSLFunctionDependency::kPipelineOutputs) {
             this->write(separator());
             this->write("&_stageOut");
         }
     }
     // TODO(armansito): Handle arbitrary parameters.
-    if (main.declaration().parameters().size() != 0) {
-        const Variable* v = main.declaration().parameters()[0];
+    if (const Variable* v = main.declaration().getMainCoordsParameter()) {
         const Type& type = v->type();
-        if (v->modifiers().fLayout.fBuiltin == SK_MAIN_COORDS_BUILTIN) {
-            if (!type.matches(*fContext.fTypes.fFloat2)) {
-                fContext.fErrors->error(
-                        main.fPosition,
-                        "main function has unsupported parameter: " + type.description());
-                return;
-            }
-
-            this->write(separator());
-            this->write("_stageIn.sk_FragCoord.xy");
+        if (!type.matches(*fContext.fTypes.fFloat2)) {
+            fContext.fErrors->error(main.fPosition, "main function has unsupported parameter: "
+                                                    + type.description());
+            return;
         }
+
+        this->write(separator());
+        this->write("_stageIn.sk_FragCoord.xy");
     }
     this->writeLine(");");
     this->writeLine("return _stageOut;");
@@ -1377,7 +1351,7 @@ void WGSLCodeGenerator::writeVarDeclaration(const VarDeclaration& varDecl) {
             varDecl.value() ? this->assembleExpression(*varDecl.value(), Precedence::kAssignment)
                             : std::string();
 
-    if (varDecl.var()->modifiers().fFlags & Modifiers::kConst_Flag) {
+    if (varDecl.var()->modifierFlags().isConst()) {
         // Use `const` at global scope, or if the value is a compile-time constant.
         SkASSERTF(varDecl.value(), "a constant variable must specify a value");
         this->write((!fAtFunctionScope || Analysis::IsCompileTimeConstant(*varDecl.value()))
@@ -1621,8 +1595,11 @@ std::string WGSLCodeGenerator::assembleBinaryExpression(const Expression& left,
             result = this->assembleExpression(right, Precedence::kAssignment);
         } else {
             // Evaluate the right-hand side of compound-assignment (`a += b` --> `a + b`).
-            result = this->assembleBinaryExpression(left, op.removeAssignment(), right, resultType,
-                                                    Precedence::kAssignment);
+            op = op.removeAssignment();
+
+            result += lvalue->load();
+            result += operator_name(op);
+            result += this->assembleExpression(right, op.getBinaryPrecedence());
         }
 
         // Emit the assignment statement (`a = a + b`).
@@ -1664,7 +1641,18 @@ std::string WGSLCodeGenerator::assembleBinaryExpression(const Expression& left,
         expr.push_back('(');
     }
 
-    expr += this->assembleExpression(left, precedence);
+    if (ConstantFolder::GetConstantValueOrNull(left) &&
+        ConstantFolder::GetConstantValueOrNull(right)) {
+        // If we are emitting `constant + constant`, this generally indicates that the values could
+        // not be constant-folded. This happens when the values overflow or become nan. WGSL will
+        // refuse to compile such expressions, as WGSL 1.0 has no infinity/nan support. However, the
+        // WGSL compile-time check can be dodged by putting one side into a let-variable. This
+        // technically gives us an indeterminate result, but the vast majority of backends will just
+        // calculate an infinity or nan here, as we would expect. (skia:14385)
+        expr += this->writeScratchLet(left, precedence);
+    } else {
+        expr += this->assembleExpression(left, precedence);
+    }
     expr += operator_name(op);
     expr += this->assembleExpression(right, precedence);
 
@@ -1677,30 +1665,44 @@ std::string WGSLCodeGenerator::assembleBinaryExpression(const Expression& left,
 
 std::string WGSLCodeGenerator::assembleFieldAccess(const FieldAccess& f) {
     std::string expr;
-
     const Field* field = &f.base()->type().fields()[f.fieldIndex()];
-    if (FieldAccess::OwnerKind::kDefault == f.ownerKind()) {
-        expr += this->assembleExpression(*f.base(), Precedence::kPostfix);
-        expr.push_back('.');
-    } else {
-        // We are accessing a field in an anonymous interface block. If the field refers to a
-        // pipeline IO parameter, then we access it via the synthesized IO structs. We make an
-        // explicit exception for `sk_PointSize` which we declare as a placeholder variable in
-        // global scope as it is not supported by WebGPU as a pipeline IO parameter (see comments
-        // in `writeStageOutputStruct`).
-        const Variable& v = *f.base()->as<VariableReference>().variable();
-        if (v.modifiers().fFlags & Modifiers::kIn_Flag) {
-            expr += "_stageIn.";
-        } else if (v.modifiers().fFlags & Modifiers::kOut_Flag &&
-                   field->fModifiers.fLayout.fBuiltin != SK_POINTSIZE_BUILTIN) {
-            expr += "(*_stageOut).";
-        } else {
-            // TODO(skia:13092): Reference the variable using the base name used for its
-            // uniform/storage block global declaration.
+
+    switch (f.ownerKind()) {
+        case FieldAccess::OwnerKind::kDefault:
+            expr = this->assembleExpression(*f.base(), Precedence::kPostfix) + '.';
+            break;
+
+        case FieldAccess::OwnerKind::kAnonymousInterfaceBlock:
+            if (f.base()->is<VariableReference>() &&
+                field->fLayout.fBuiltin != SK_POINTSIZE_BUILTIN) {
+                expr = this->variablePrefix(*f.base()->as<VariableReference>().variable());
+            }
+            break;
+    }
+
+    expr += std::string(field->fName);
+
+    if (fMatrixPolyfillFields.contains(field)) {
+        expr = String::printf("_skMatrixUnpack%d%d(%s)",
+                              field->fType->columns(), field->fType->rows(), expr.c_str());
+    }
+
+    return expr;
+}
+
+static bool all_arguments_constant(const ExpressionArray& arguments) {
+    // Returns true if all arguments in the ExpressionArray are compile-time constants. If we are
+    // calling an intrinsic and all of its inputs are constant, but we didn't constant-fold it, this
+    // generally indicates that constant-folding resulted in an infinity or nan. The WGSL compiler
+    // will reject such an expression with a compile-time error. We can dodge the error, taking on
+    // the risk of indeterminate behavior instead, by replacing one of the constant values with a
+    // scratch let-variable. (skia:14385)
+    for (const std::unique_ptr<Expression>& arg : arguments) {
+        if (!ConstantFolder::GetConstantValueOrNull(*arg)) {
+            return false;
         }
     }
-    expr += field->fName;
-    return expr;
+    return true;
 }
 
 std::string WGSLCodeGenerator::assembleSimpleIntrinsic(std::string_view intrinsicName,
@@ -1712,9 +1714,14 @@ std::string WGSLCodeGenerator::assembleSimpleIntrinsic(std::string_view intrinsi
     expr.push_back('(');
     const ExpressionArray& args = call.arguments();
     auto separator = SkSL::String::Separator();
+    bool allConstant = all_arguments_constant(call.arguments());
     for (int index = 0; index < args.size(); ++index) {
         expr += separator();
-        expr += this->assembleExpression(*args[index], Precedence::kSequence);
+
+        // We can use a scratch-let for argument 0 to dodge WGSL overflow errors. (skia:14385)
+        std::string argument = this->assembleExpression(*args[index], Precedence::kSequence);
+        expr += (allConstant && index == 0) ? this->writeScratchLet(argument)
+                                            : argument;
     }
     expr.push_back(')');
 
@@ -1732,6 +1739,7 @@ std::string WGSLCodeGenerator::assembleVectorizedIntrinsic(std::string_view intr
     auto separator = SkSL::String::Separator();
     const ExpressionArray& args = call.arguments();
     bool returnsVector = call.type().isVector();
+    bool allConstant = all_arguments_constant(call.arguments());
     for (int index = 0; index < args.size(); ++index) {
         expr += separator();
 
@@ -1741,8 +1749,10 @@ std::string WGSLCodeGenerator::assembleVectorizedIntrinsic(std::string_view intr
             expr.push_back('(');
         }
 
-        expr += this->assembleExpression(*args[index], Precedence::kSequence);
-
+        // We can use a scratch-let for argument 0 to dodge WGSL overflow errors. (skia:14385)
+        std::string argument = this->assembleExpression(*args[index], Precedence::kSequence);
+        expr += (allConstant && index == 0) ? this->writeScratchLet(argument)
+                                            : argument;
         if (vectorize) {
             expr.push_back(')');
         }
@@ -1787,7 +1797,10 @@ std::string WGSLCodeGenerator::assembleBinaryOpIntrinsic(Operator op,
         expr.push_back('(');
     }
 
-    expr += this->assembleExpression(*call.arguments()[0], precedence);
+    // We can use a scratch-let for argument 0 to dodge WGSL overflow errors. (skia:14385)
+    std::string argument = this->assembleExpression(*call.arguments()[0], precedence);
+    expr += all_arguments_constant(call.arguments()) ? this->writeScratchLet(argument)
+                                                     : argument;
     expr += operator_name(op);
     expr += this->assembleExpression(*call.arguments()[1], precedence);
 
@@ -1801,13 +1814,18 @@ std::string WGSLCodeGenerator::assembleBinaryOpIntrinsic(Operator op,
 std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
                                                      IntrinsicKind kind,
                                                      Precedence parentPrecedence) {
+    // Be careful: WGSL 1.0 will reject any intrinsic calls which can be constant-evaluated to
+    // infinity or nan with a compile error. If all arguments to an intrinsic are compile-time
+    // constants (`all_arguments_constant`), it is safest to copy one argument into a scratch-let so
+    // that the call will be seen as runtime-evaluated, which defuses the overflow checks.
+    // Don't worry; a competent driver should still optimize it away.
+
     const ExpressionArray& arguments = call.arguments();
     switch (kind) {
         case k_atan_IntrinsicKind: {
             const char* name = (arguments.size() == 1) ? "atan" : "atan2";
             return this->assembleSimpleIntrinsic(name, call);
         }
-
         case k_dot_IntrinsicKind: {
             if (arguments[0]->type().isScalar()) {
                 return this->assembleBinaryOpIntrinsic(OperatorKind::STAR, call, parentPrecedence);
@@ -1819,14 +1837,17 @@ std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
 
         case k_faceforward_IntrinsicKind: {
             if (arguments[0]->type().isScalar()) {
-                // (select(-1.0, 1.0, (I * Nref) < 0) * N)
+                // select(-N, N, (I * Nref) < 0)
+                std::string N = this->writeNontrivialScratchLet(*arguments[0],
+                                                                Precedence::kAssignment);
                 return this->writeScratchLet(
-                        "(select(-1.0, 1.0, (" +
-                        this->assembleExpression(*arguments[1], Precedence::kMultiplicative) +
-                        " * " +
-                        this->assembleExpression(*arguments[2], Precedence::kMultiplicative) +
-                        ") < 0) * " +
-                        this->assembleExpression(*arguments[0], Precedence::kMultiplicative) + ")");
+                        "select(-" + N + ", " + N + ", " +
+                        this->assembleBinaryExpression(*arguments[1],
+                                                       OperatorKind::STAR,
+                                                       *arguments[2],
+                                                       arguments[1]->type(),
+                                                       Precedence::kRelational) +
+                        " < 0)");
             }
             return this->assembleSimpleIntrinsic("faceForward", call);
         }
@@ -1846,7 +1867,10 @@ std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
             return this->assembleBinaryOpIntrinsic(OperatorKind::LTEQ, call, parentPrecedence);
 
         case k_matrixCompMult_IntrinsicKind: {
-            std::string arg0 = this->writeNontrivialScratchLet(*arguments[0], Precedence::kPostfix);
+            // We use a scratch-let for arg0 to avoid the potential for WGSL overflow. (skia:14385)
+            std::string arg0 = all_arguments_constant(arguments)
+                            ? this->writeScratchLet(*arguments[0], Precedence::kPostfix)
+                            : this->writeNontrivialScratchLet(*arguments[0], Precedence::kPostfix);
             std::string arg1 = this->writeNontrivialScratchLet(*arguments[1], Precedence::kPostfix);
             std::string expr = to_wgsl_type(arguments[0]->type()) + '(';
 
@@ -1865,8 +1889,11 @@ std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
         }
         case k_mod_IntrinsicKind: {
             // WGSL has no intrinsic equivalent to `mod`. Synthesize `x - y * floor(x / y)`.
-            std::string arg0 = this->writeNontrivialScratchLet(*arguments[0],
-                                                               Precedence::kAdditive);
+            // We can use a scratch-let on one side to dodge WGSL overflow errors.  In practice, I
+            // can't find any values of x or y which would overflow, but it can't hurt. (skia:14385)
+            std::string arg0 = all_arguments_constant(arguments)
+                            ? this->writeScratchLet(*arguments[0], Precedence::kAdditive)
+                            : this->writeNontrivialScratchLet(*arguments[0], Precedence::kAdditive);
             std::string arg1 = this->writeNontrivialScratchLet(*arguments[1],
                                                                Precedence::kAdditive);
             return this->writeScratchLet(arg0 + " - " + arg1 + " * floor(" +
@@ -1885,10 +1912,12 @@ std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
         case k_reflect_IntrinsicKind:
             if (arguments[0]->type().isScalar()) {
                 // I - 2 * N * I * N
+                // We can use a scratch-let for N to dodge WGSL overflow errors. (skia:14385)
                 std::string I = this->writeNontrivialScratchLet(*arguments[0],
                                                                 Precedence::kAdditive);
-                std::string N = this->writeNontrivialScratchLet(*arguments[1],
-                                                                Precedence::kMultiplicative);
+                std::string N = all_arguments_constant(arguments)
+                      ? this->writeScratchLet(*arguments[1], Precedence::kMultiplicative)
+                      : this->writeNontrivialScratchLet(*arguments[1], Precedence::kMultiplicative);
                 return this->writeScratchLet(String::printf("%s - 2 * %s * %s * %s",
                                                             I.c_str(), N.c_str(),
                                                             I.c_str(), N.c_str()));
@@ -1903,8 +1932,10 @@ std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
                                                                 Precedence::kSequence);
                 std::string N = this->writeNontrivialScratchLet(*arguments[1],
                                                                 Precedence::kSequence);
-                std::string Eta = this->writeNontrivialScratchLet(*arguments[2],
-                                                                  Precedence::kSequence);
+                // We can use a scratch-let for Eta to avoid WGSL overflow errors. (skia:14385)
+                std::string Eta = all_arguments_constant(arguments)
+                      ? this->writeScratchLet(*arguments[2], Precedence::kSequence)
+                      : this->writeNontrivialScratchLet(*arguments[2], Precedence::kSequence);
                 return this->writeScratchLet(
                         String::printf("refract(vec2<%s>(%s, 0), vec2<%s>(%s, 0), %s).x",
                                        to_wgsl_type(arguments[0]->type()).c_str(), I.c_str(),
@@ -1984,9 +2015,9 @@ std::string WGSLCodeGenerator::assembleFunctionCall(const FunctionCall& call,
     substituteArgument.reserve_exact(args.size());
 
     for (int index = 0; index < args.size(); ++index) {
-        if (params[index]->modifiers().fFlags & Modifiers::kOut_Flag) {
+        if (params[index]->modifierFlags() & ModifierFlag::kOut) {
             std::unique_ptr<LValue> lvalue = this->makeLValue(*args[index]);
-            if (params[index]->modifiers().fFlags & Modifiers::kIn_Flag) {
+            if (params[index]->modifierFlags() & ModifierFlag::kIn) {
                 // Load the lvalue's contents into the substitute argument.
                 substituteArgument.push_back(this->writeScratchVar(args[index]->type(),
                                                                    lvalue->load()));
@@ -2191,6 +2222,11 @@ std::string WGSLCodeGenerator::writeScratchLet(const std::string& expr) {
     return scratchVarName;
 }
 
+std::string WGSLCodeGenerator::writeScratchLet(const Expression& expr,
+                                               Precedence parentPrecedence) {
+    return this->writeScratchLet(this->assembleExpression(expr, parentPrecedence));
+}
+
 std::string WGSLCodeGenerator::writeNontrivialScratchLet(const Expression& expr,
                                                          Precedence parentPrecedence) {
     std::string result = this->assembleExpression(expr, parentPrecedence);
@@ -2275,39 +2311,49 @@ std::string WGSLCodeGenerator::assembleTernaryExpression(const TernaryExpression
     return expr;
 }
 
-std::string WGSLCodeGenerator::variableReferenceNameForLValue(const VariableReference& r) {
-    std::string expr;
-    const Variable& v = *r.variable();
-    bool needsDeref = false;
-
-    // When a variable is referenced in the context of a synthesized out-parameter helper argument,
-    // two special rules apply:
-    //     1. If it's accessed via a pipeline I/O or global uniforms struct, it should instead
-    //        be referenced by name (since it's actually referring to a function parameter).
-    //     2. Its type should be treated as a pointer and should be dereferenced as such.
+std::string WGSLCodeGenerator::variablePrefix(const Variable& v) {
     if (v.storage() == Variable::Storage::kGlobal) {
-        if (v.modifiers().fFlags & Modifiers::kIn_Flag) {
-            expr += "_stageIn.";
-        } else if (v.modifiers().fFlags & Modifiers::kOut_Flag) {
-            expr += "(*_stageOut).";
-        } else if (is_in_global_uniforms(v)) {
-            expr += "_globalUniforms.";
+        // If the field refers to a pipeline IO parameter, then we access it via the synthesized IO
+        // structs. We make an explicit exception for `sk_PointSize` which we declare as a
+        // placeholder variable in global scope as it is not supported by WebGPU as a pipeline IO
+        // parameter (see comments in `writeStageOutputStruct`).
+        if (v.modifierFlags() & ModifierFlag::kIn) {
+            return "_stageIn.";
         }
-    } else if ((v.storage() == Variable::Storage::kParameter &&
-                v.modifiers().fFlags & Modifiers::kOut_Flag)) {
-        // This is an out-parameter and its type is a pointer, which we need to dereference.
-        // We wrap the dereference in parentheses in case the value is used in an access expression
-        // later.
-        needsDeref = true;
-        expr += "(*";
+        if (v.modifierFlags() & ModifierFlag::kOut) {
+            return "(*_stageOut).";
+        }
+
+        // If the field refers to an anonymous-interface-block structure, access it via the
+        // synthesized `_uniform0` or `_storage1` global.
+        if (const InterfaceBlock* ib = v.interfaceBlock()) {
+            if (const std::string* ibName = fInterfaceBlockNameMap.find(&ib->var()->type())) {
+                return *ibName + '.';
+            }
+        }
+
+        // If the field refers to an top-level uniform, access it via the synthesized
+        // `_globalUniforms` global. (Note that this should only occur in test code; Skia will
+        // always put uniforms in an interface block.)
+        if (is_in_global_uniforms(v)) {
+            return "_globalUniforms.";
+        }
     }
 
-    expr += this->assembleName(v.mangledName());
-    if (needsDeref) {
-        expr.push_back(')');
+    return "";
+}
+
+std::string WGSLCodeGenerator::variableReferenceNameForLValue(const VariableReference& r) {
+    const Variable& v = *r.variable();
+
+    if ((v.storage() == Variable::Storage::kParameter &&
+         v.modifierFlags() & ModifierFlag::kOut)) {
+        // This is an out-parameter; it's pointer-typed, so we need to dereference it. We wrap the
+        // dereference in parentheses, in case the value is used in an access expression later.
+        return "(*" + this->assembleName(v.mangledName()) + ')';
     }
 
-    return expr;
+    return this->variablePrefix(v) + this->assembleName(v.mangledName());
 }
 
 std::string WGSLCodeGenerator::assembleVariableReference(const VariableReference& r) {
@@ -2598,7 +2644,7 @@ void WGSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
 
 void WGSLCodeGenerator::writeGlobalVarDeclaration(const GlobalVarDeclaration& d) {
     const Variable& var = *d.declaration()->as<VarDeclaration>().var();
-    if ((var.modifiers().fFlags & (Modifiers::kIn_Flag | Modifiers::kOut_Flag)) ||
+    if ((var.modifierFlags() & (ModifierFlag::kIn | ModifierFlag::kOut)) ||
         is_in_global_uniforms(var)) {
         // Pipeline stage I/O parameters and top-level (non-block) uniforms are handled specially
         // in generateCode().
@@ -2615,7 +2661,7 @@ void WGSLCodeGenerator::writeGlobalVarDeclaration(const GlobalVarDeclaration& d)
         initializer += this->assembleExpression(*d.varDeclaration().value(),
                                                 Precedence::kAssignment);
     }
-    this->write((var.modifiers().fFlags & Modifiers::kConst_Flag) ? "const " : "var<private> ");
+    this->write(var.modifierFlags().isConst() ? "const " : "var<private> ");
     this->write(this->assembleName(var.mangledName()));
     this->write(": " + to_wgsl_type(var.type()));
     this->write(initializer);
@@ -2625,21 +2671,53 @@ void WGSLCodeGenerator::writeGlobalVarDeclaration(const GlobalVarDeclaration& d)
 void WGSLCodeGenerator::writeStructDefinition(const StructDefinition& s) {
     const Type& type = s.type();
     this->writeLine("struct " + type.displayName() + " {");
-    fIndentation++;
-    this->writeFields(SkSpan(type.fields()), type.fPosition);
-    fIndentation--;
+    this->writeFields(type.fields(), /*memoryLayout=*/nullptr);
     this->writeLine("};");
 }
 
-void WGSLCodeGenerator::writeFields(SkSpan<const Field> fields,
-                                    Position parentPos,
-                                    const MemoryLayout*) {
-    // TODO(skia:13092): Check alignment against `layout` constraints, if present. A layout
-    // constraint will be specified for interface blocks and for structs that appear in a block.
-    for (const Field& field : fields) {
-        const Type* fieldType = field.fType;
-        this->writeVariableDecl(*fieldType, field.fName, Delimiter::kComma);
+void WGSLCodeGenerator::writeFields(SkSpan<const Field> fields, const MemoryLayout* memoryLayout) {
+    fIndentation++;
+
+    // TODO(skia:14370): array uniforms may need manual fixup for std140 padding. (Those uniforms
+    // will also need special handling when they are accessed, or passed to functions.)
+    for (size_t index = 0; index < fields.size(); ++index) {
+        const Field& field = fields[index];
+        if (memoryLayout && !memoryLayout->isSupported(*field.fType)) {
+            // Reject types that aren't supported by the memory layout.
+            fContext.fErrors->error(field.fPosition, "type '" + std::string(field.fType->name()) +
+                                                     "' is not permitted here");
+            return;
+        }
+
+        // Prepend @size(n) to enforce the offsets from the SkSL layout. (This is effectively
+        // a gadget that we can use to insert padding between elements.)
+        if (index < fields.size() - 1) {
+            int thisFieldOffset = field.fLayout.fOffset;
+            int nextFieldOffset = fields[index + 1].fLayout.fOffset;
+            if (index == 0 && thisFieldOffset > 0) {
+                fContext.fErrors->error(field.fPosition, "field must have an offset of zero");
+                return;
+            }
+            if (thisFieldOffset >= 0 && nextFieldOffset > thisFieldOffset) {
+                this->write("@size(");
+                this->write(std::to_string(nextFieldOffset - thisFieldOffset));
+                this->write(") ");
+            }
+        }
+
+        this->write(this->assembleName(field.fName));
+        this->write(": ");
+        if (fMatrixPolyfillFields.contains(&field)) {
+            this->write("_skMatrix");
+            this->write(std::to_string(field.fType->columns()));
+            this->write(std::to_string(field.fType->rows()));
+        } else {
+            this->write(to_wgsl_type(*field.fType));
+        }
+        this->writeLine(",");
     }
+
+    fIndentation--;
 }
 
 void WGSLCodeGenerator::writeStageInputStruct() {
@@ -2664,10 +2742,10 @@ void WGSLCodeGenerator::writeStageInputStruct() {
         if (e->is<GlobalVarDeclaration>()) {
             const Variable* v = e->as<GlobalVarDeclaration>().declaration()
                                  ->as<VarDeclaration>().var();
-            if (v->modifiers().fFlags & Modifiers::kIn_Flag) {
-                this->writePipelineIODeclaration(v->modifiers(), v->type(), v->mangledName(),
+            if (v->modifierFlags() & ModifierFlag::kIn) {
+                this->writePipelineIODeclaration(v->layout(), v->type(), v->mangledName(),
                                                  Delimiter::kComma);
-                if (v->modifiers().fLayout.fBuiltin == SK_FRAGCOORD_BUILTIN) {
+                if (v->layout().fBuiltin == SK_FRAGCOORD_BUILTIN) {
                     declaredFragCoordsBuiltin = true;
                 }
             }
@@ -2678,11 +2756,11 @@ void WGSLCodeGenerator::writeStageInputStruct() {
             //
             // TODO(armansito): Is it legal to have an interface block without a storage qualifier
             // but with members that have individual storage qualifiers?
-            if (v->modifiers().fFlags & Modifiers::kIn_Flag) {
+            if (v->modifierFlags() & ModifierFlag::kIn) {
                 for (const auto& f : v->type().fields()) {
-                    this->writePipelineIODeclaration(f.fModifiers, *f.fType, f.fName,
+                    this->writePipelineIODeclaration(f.fLayout, *f.fType, f.fName,
                                                      Delimiter::kComma);
-                    if (f.fModifiers.fLayout.fBuiltin == SK_FRAGCOORD_BUILTIN) {
+                    if (f.fLayout.fBuiltin == SK_FRAGCOORD_BUILTIN) {
                         declaredFragCoordsBuiltin = true;
                     }
                 }
@@ -2719,8 +2797,8 @@ void WGSLCodeGenerator::writeStageOutputStruct() {
         if (e->is<GlobalVarDeclaration>()) {
             const Variable* v = e->as<GlobalVarDeclaration>().declaration()
                                  ->as<VarDeclaration>().var();
-            if (v->modifiers().fFlags & Modifiers::kOut_Flag) {
-                this->writePipelineIODeclaration(v->modifiers(), v->type(), v->mangledName(),
+            if (v->modifierFlags() & ModifierFlag::kOut) {
+                this->writePipelineIODeclaration(v->layout(), v->type(), v->mangledName(),
                                                  Delimiter::kComma);
             }
         } else if (e->is<InterfaceBlock>()) {
@@ -2730,13 +2808,13 @@ void WGSLCodeGenerator::writeStageOutputStruct() {
             //
             // TODO(armansito): Is it legal to have an interface block without a storage qualifier
             // but with members that have individual storage qualifiers?
-            if (v->modifiers().fFlags & Modifiers::kOut_Flag) {
+            if (v->modifierFlags() & ModifierFlag::kOut) {
                 for (const auto& f : v->type().fields()) {
-                    this->writePipelineIODeclaration(f.fModifiers, *f.fType, f.fName,
+                    this->writePipelineIODeclaration(f.fLayout, *f.fType, f.fName,
                                                      Delimiter::kComma);
-                    if (f.fModifiers.fLayout.fBuiltin == SK_POSITION_BUILTIN) {
+                    if (f.fLayout.fBuiltin == SK_POSITION_BUILTIN) {
                         declaredPositionBuiltin = true;
-                    } else if (f.fModifiers.fLayout.fBuiltin == SK_POINTSIZE_BUILTIN) {
+                    } else if (f.fLayout.fBuiltin == SK_POINTSIZE_BUILTIN) {
                         // sk_PointSize is explicitly not supported by `builtin_from_sksl_name` so
                         // writePipelineIODeclaration will never write it. We mark it here if the
                         // declaration is needed so we can synthesize it below.
@@ -2766,22 +2844,169 @@ void WGSLCodeGenerator::writeStageOutputStruct() {
     }
 }
 
+void WGSLCodeGenerator::writeUniformPolyfills(const Type& structType,
+                                              MemoryLayout::Standard nativeLayout) {
+    SkSL::MemoryLayout std140(MemoryLayout::Standard::k140);
+    SkSL::MemoryLayout native(nativeLayout);
+
+    for (const Field& field : structType.fields()) {
+        // Matrices will be represented as 16-byte aligned arrays in std140, and reconstituted into
+        // proper matrices as they are later accessed. We need to synthesize helpers for this.
+        if (field.fType->isMatrix()) {
+            // A polyfill is only necessary if the std140 layout (what Skia provides) actually
+            // differs from native layout (what WGSL expects). Otherwise the matrix is used as-is.
+            if (std140.stride(*field.fType) == native.stride(*field.fType)) {
+                continue;
+            }
+
+            // Add a polyfill for this matrix type.
+            fMatrixPolyfillFields.add(&field);
+
+            int c = field.fType->columns();
+            int r = field.fType->rows();
+            if (!fWrittenUniformRowPolyfill[r]) {
+                fWrittenUniformRowPolyfill[r] = true;
+
+                this->write("struct _skRow");
+                this->write(std::to_string(r));
+                this->writeLine(" {");
+                this->write("    @size(16) r : vec");
+                this->write(std::to_string(r));
+                this->write("<");
+                this->write(to_wgsl_type(field.fType->componentType()));
+                this->writeLine(">");
+                this->writeLine("};");
+            }
+
+            if (!fWrittenUniformMatrixPolyfill[c][r]) {
+                fWrittenUniformMatrixPolyfill[c][r] = true;
+
+                this->write("struct _skMatrix");
+                this->write(std::to_string(c));
+                this->write(std::to_string(r));
+                this->writeLine(" {");
+                this->write("    c : array<_skRow");
+                this->write(std::to_string(r));
+                this->write(", ");
+                this->write(std::to_string(c));
+                this->writeLine(">");
+                this->writeLine("};");
+
+                this->write("fn _skMatrixUnpack");
+                this->write(std::to_string(c));
+                this->write(std::to_string(r));
+                this->write("(m : _skMatrix");
+                this->write(std::to_string(c));
+                this->write(std::to_string(r));
+                this->write(") -> ");
+                this->write(to_wgsl_type(*field.fType));
+                this->writeLine(" {");
+                this->write("    return ");
+                this->write(to_wgsl_type(*field.fType));
+                this->write("(");
+                auto separator = String::Separator();
+                for (int column = 0; column < c; column++) {
+                    this->write(separator());
+                    this->write("m.c[");
+                    this->write(std::to_string(column));
+                    this->write("].r");
+                }
+                this->writeLine(");");
+                this->writeLine("}");
+            }
+        }
+    }
+}
+
+void WGSLCodeGenerator::writeUniformsAndBuffers() {
+    for (const ProgramElement* e : fProgram.elements()) {
+        // Iterate through the interface blocks.
+        if (!e->is<InterfaceBlock>()) {
+            continue;
+        }
+        const InterfaceBlock& ib = e->as<InterfaceBlock>();
+
+        // Determine if this interface block holds uniforms, buffers, or something else (skip it).
+        std::string_view addressSpace;
+        std::string_view accessMode;
+        MemoryLayout::Standard nativeLayout;
+        if (ib.var()->modifierFlags().isUniform()) {
+            addressSpace = "uniform";
+            nativeLayout = MemoryLayout::Standard::kWGSLUniform;
+        } else if (ib.var()->modifierFlags().isBuffer()) {
+            addressSpace = "storage";
+            nativeLayout = MemoryLayout::Standard::kWGSLStorage;
+            if (ib.var()->modifierFlags().isReadOnly()) {
+                accessMode = ", read";
+            } else if (ib.var()->modifierFlags().isWriteOnly()) {
+                accessMode = ", write";
+            } else {
+                accessMode = ", read_write";
+            }
+        } else {
+            continue;
+        }
+
+        this->writeUniformPolyfills(ib.var()->type().componentType(), nativeLayout);
+
+        // Create a struct to hold all of the fields from this InterfaceBlock.
+        SkASSERT(!ib.typeName().empty());
+        this->write("struct ");
+        this->write(ib.typeName());
+        this->writeLine(" {");
+
+        // If we have an anonymous interface block, assign a name like `_uniform0` or `_storage1`.
+        std::string instanceName;
+        if (ib.instanceName().empty()) {
+            instanceName = "_" + std::string(addressSpace) + std::to_string(fScratchCount++);
+            fInterfaceBlockNameMap[&ib.var()->type()] = instanceName;
+        } else {
+            instanceName = std::string(ib.instanceName());
+        }
+
+        // Find the struct type and fields used by this interface block.
+        const Type& ibType = ib.var()->type().componentType();
+        SkASSERT(ibType.isStruct());
+
+        SkSpan<const Field> ibFields = ibType.fields();
+        SkASSERT(!ibFields.empty());
+
+        MemoryLayout layout(MemoryLayout::Standard::k140);
+        this->writeFields(ibFields, &layout);
+        this->writeLine("};");
+        this->write("@group(");
+        this->write(std::to_string(std::max(0, ib.var()->layout().fSet)));
+        this->write(") @binding(");
+        this->write(std::to_string(std::max(0, ib.var()->layout().fBinding)));
+        this->write(") var<");
+        this->write(addressSpace);
+        this->write(accessMode);
+        this->write("> ");
+        this->write(instanceName);
+        this->write(" : ");
+        this->write(to_wgsl_type(ib.var()->type()));
+        this->writeLine(";");
+    }
+}
+
 void WGSLCodeGenerator::writeNonBlockUniformsForTests() {
+    bool declaredUniformsStruct = false;
+
     for (const ProgramElement* e : fProgram.elements()) {
         if (e->is<GlobalVarDeclaration>()) {
             const GlobalVarDeclaration& decls = e->as<GlobalVarDeclaration>();
             const Variable& var = *decls.varDeclaration().var();
             if (is_in_global_uniforms(var)) {
-                if (!fDeclaredUniformsStruct) {
+                if (!declaredUniformsStruct) {
                     this->write("struct _GlobalUniforms {\n");
-                    fDeclaredUniformsStruct = true;
+                    declaredUniformsStruct = true;
                 }
                 this->write("  ");
                 this->writeVariableDecl(var.type(), var.mangledName(), Delimiter::kComma);
             }
         }
     }
-    if (fDeclaredUniformsStruct) {
+    if (declaredUniformsStruct) {
         int binding = fProgram.fConfig->fSettings.fDefaultUniformBinding;
         int set = fProgram.fConfig->fSettings.fDefaultUniformSet;
         this->write("};\n");
@@ -2792,15 +3017,15 @@ void WGSLCodeGenerator::writeNonBlockUniformsForTests() {
 }
 
 std::string WGSLCodeGenerator::functionDependencyArgs(const FunctionDeclaration& f) {
-    FunctionDependencies* deps = fRequirements.dependencies.find(&f);
+    WGSLFunctionDependencies* deps = fRequirements.dependencies.find(&f);
     std::string args;
-    if (deps && *deps != FunctionDependencies::kNone) {
+    if (deps && *deps) {
         const char* separator = "";
-        if ((*deps & FunctionDependencies::kPipelineInputs) != FunctionDependencies::kNone) {
+        if (*deps & WGSLFunctionDependency::kPipelineInputs) {
             args += "_stageIn";
             separator = ", ";
         }
-        if ((*deps & FunctionDependencies::kPipelineOutputs) != FunctionDependencies::kNone) {
+        if (*deps & WGSLFunctionDependency::kPipelineOutputs) {
             args += separator;
             args += "_stageOut";
         }
@@ -2809,8 +3034,8 @@ std::string WGSLCodeGenerator::functionDependencyArgs(const FunctionDeclaration&
 }
 
 bool WGSLCodeGenerator::writeFunctionDependencyParams(const FunctionDeclaration& f) {
-    FunctionDependencies* deps = fRequirements.dependencies.find(&f);
-    if (!deps || *deps == FunctionDependencies::kNone) {
+    WGSLFunctionDependencies* deps = fRequirements.dependencies.find(&f);
+    if (!deps || !*deps) {
         return false;
     }
 
@@ -2819,13 +3044,13 @@ bool WGSLCodeGenerator::writeFunctionDependencyParams(const FunctionDeclaration&
         return false;
     }
     const char* separator = "";
-    if ((*deps & FunctionDependencies::kPipelineInputs) != FunctionDependencies::kNone) {
+    if (*deps & WGSLFunctionDependency::kPipelineInputs) {
         this->write("_stageIn: ");
         separator = ", ";
         this->write(structNamePrefix);
         this->write("In");
     }
-    if ((*deps & FunctionDependencies::kPipelineOutputs) != FunctionDependencies::kNone) {
+    if (*deps & WGSLFunctionDependency::kPipelineOutputs) {
         this->write(separator);
         this->write("_stageOut: ptr<function, ");
         this->write(structNamePrefix);

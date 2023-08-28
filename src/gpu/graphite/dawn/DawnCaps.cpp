@@ -113,7 +113,6 @@ TextureInfo DawnCaps::getDefaultSampledTextureInfo(SkColorType colorType,
 
     wgpu::TextureFormat format = this->getFormatFromColorType(colorType);
     if (format == wgpu::TextureFormat::Undefined) {
-        SkDebugf("colorType=%d is not supported\n", static_cast<int>(colorType));
         return {};
     }
 
@@ -128,10 +127,13 @@ TextureInfo DawnCaps::getDefaultSampledTextureInfo(SkColorType colorType,
 
 TextureInfo DawnCaps::getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo,
                                                 Discardable discardable) const {
+    if (fDefaultMSAASamples <= 1) {
+        return {};
+    }
     const DawnTextureSpec& singleSpec = singleSampledInfo.dawnTextureSpec();
 
     DawnTextureInfo info;
-    info.fSampleCount = this->defaultMSAASamples();
+    info.fSampleCount = fDefaultMSAASamples;
     info.fMipmapped   = Mipmapped::kNo;
     info.fFormat      = singleSpec.fFormat;
     info.fUsage       = wgpu::TextureUsage::RenderAttachment;
@@ -245,7 +247,9 @@ void DawnCaps::initCaps(const wgpu::Device& device) {
     fTextureDataRowBytesAlignment = 256;
 
     fResourceBindingReqs.fUniformBufferLayout = Layout::kStd140;
-    fResourceBindingReqs.fStorageBufferLayout = Layout::kStd430;
+    // TODO(skia:14639): We cannot use std430 layout for SSBOs until SkSL gracefully handles
+    // implicit array stride.
+    fResourceBindingReqs.fStorageBufferLayout = Layout::kStd140;
     fResourceBindingReqs.fSeparateTextureAndSamplerBinding = true;
 
     // TODO: support storage buffer
@@ -339,10 +343,10 @@ void DawnCaps::initFormatTable(const wgpu::Device& device) {
             ctInfo.fColorType = kBGRA_8888_SkColorType;
             ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
         }
-        // Format: BGRA8Unorm, Surface: kBGRX_8888
+        // Format: BGRA8Unorm, Surface: kRGB_888x
         {
             auto& ctInfo = info->fColorTypeInfos[ctIdx++];
-            ctInfo.fColorType = kBGR_888x_SkColorType;
+            ctInfo.fColorType = kRGB_888x_SkColorType;
             ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag;
         }
     }
@@ -467,8 +471,8 @@ void DawnCaps::initFormatTable(const wgpu::Device& device) {
 
     this->setColorType(kAlpha_8_SkColorType,          { wgpu::TextureFormat::R8Unorm });
     this->setColorType(kRGBA_8888_SkColorType,        { wgpu::TextureFormat::RGBA8Unorm });
-    this->setColorType(kRGB_888x_SkColorType,         { wgpu::TextureFormat::RGBA8Unorm });
-    this->setColorType(kBGR_888x_SkColorType,         {wgpu::TextureFormat::BGRA8Unorm});
+    this->setColorType(kRGB_888x_SkColorType,
+                       {wgpu::TextureFormat::RGBA8Unorm, wgpu::TextureFormat::BGRA8Unorm});
     this->setColorType(kBGRA_8888_SkColorType,        { wgpu::TextureFormat::BGRA8Unorm });
     this->setColorType(kGray_8_SkColorType,           { wgpu::TextureFormat::R8Unorm });
     this->setColorType(kR8_unorm_SkColorType,         { wgpu::TextureFormat::R8Unorm });
@@ -601,10 +605,6 @@ void DawnCaps::buildKeyForTexture(SkISize dimensions,
     builder[3] = (samplesKey                                   << 0) |
                  (static_cast<uint32_t>(isMipped)              << 3) |
                  (static_cast<uint32_t>(dawnSpec.fUsage)       << 4);
-}
-
-size_t DawnCaps::bytesPerPixel(const TextureInfo& info) const {
-    return DawnFormatBytesPerBlock(info.dawnTextureSpec().fFormat);
 }
 
 } // namespace skgpu::graphite

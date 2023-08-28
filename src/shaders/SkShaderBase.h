@@ -34,14 +34,6 @@ enum class SkTileMode;
 struct SkDeserialProcs;
 struct SkStageRec;
 
-#if defined(SK_GRAPHITE)
-namespace skgpu::graphite {
-class KeyContext;
-class PaintParamsKeyBuilder;
-class PipelineDataGatherer;
-}
-#endif
-
 namespace SkShaders {
 /**
  * This is used to accumulate matrices, starting with the CTM, when building up
@@ -72,7 +64,7 @@ public:
      * Returns a new MatrixRec that represents the existing total and pending matrix
      * pre-concat'ed with m.
      */
-    MatrixRec SK_WARN_UNUSED_RESULT concat(const SkMatrix& m) const;
+    [[nodiscard]] MatrixRec concat(const SkMatrix& m) const;
 
     /**
      * Appends a mul by the inverse of the pending local matrix to the pipeline. 'postInv' is an
@@ -80,8 +72,8 @@ public:
      * not invertible the std::optional result won't have a value and the pipeline will be
      * unmodified.
      */
-    std::optional<MatrixRec> SK_WARN_UNUSED_RESULT apply(const SkStageRec& rec,
-                                                         const SkMatrix& postInv = {}) const;
+    [[nodiscard]] std::optional<MatrixRec> apply(const SkStageRec& rec,
+                                                 const SkMatrix& postInv = {}) const;
 
     /**
      * FP matrices work differently than SkRasterPipeline. The starting coordinates provided to the
@@ -125,7 +117,7 @@ public:
     SkMatrix totalMatrix() const { return SkMatrix::Concat(fCTM, fTotalLocalMatrix); }
 
     /** Gets the inverse of totalMatrix(), if invertible. */
-    bool SK_WARN_UNUSED_RESULT totalInverse(SkMatrix* out) const {
+    [[nodiscard]] bool totalInverse(SkMatrix* out) const {
         return this->totalMatrix().invert(out);
     }
 
@@ -357,8 +349,7 @@ public:
      * only be called on a root-level effect. It assumes that the initial device coordinates have
      * not yet been seeded.
      */
-    SK_WARN_UNUSED_RESULT
-    bool appendRootStages(const SkStageRec& rec, const SkMatrix& ctm) const;
+    [[nodiscard]] bool appendRootStages(const SkStageRec& rec, const SkMatrix& ctm) const;
 
     /**
      * Adds stages to implement this shader. To ensure that the correct input coords are present
@@ -388,20 +379,6 @@ public:
      *  the localMatrix. If not, return nullptr and ignore the localMatrix parameter.
      */
     virtual sk_sp<SkShader> makeAsALocalMatrixShader(SkMatrix* localMatrix) const;
-
-#if defined(SK_GRAPHITE)
-    /**
-        Add implementation details, for the specified backend, of this SkShader to the
-        provided key.
-
-        @param keyContext backend context for key creation
-        @param builder    builder for creating the key for this SkShader
-        @param gatherer   if non-null, storage for this shader's data
-    */
-    virtual void addToKey(const skgpu::graphite::KeyContext& keyContext,
-                          skgpu::graphite::PaintParamsKeyBuilder* builder,
-                          skgpu::graphite::PipelineDataGatherer* gatherer) const;
-#endif
 
     static SkMatrix ConcatLocalMatrices(const SkMatrix& parentLM, const SkMatrix& childLM) {
 #if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK)  // b/256873449

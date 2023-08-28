@@ -9,7 +9,6 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkBitmaskEnum.h" // IWYU pragma: keep
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTo.h"
 #include "src/base/SkUTF.h"
@@ -39,6 +38,10 @@
         #define SKUNICODE_API
     #endif
 #endif
+
+namespace sknonstd {
+template <typename T> struct is_bitmask_enum;
+}
 
 class SKUNICODE_API SkBidiIterator {
 public:
@@ -87,6 +90,8 @@ class SKUNICODE_API SkUnicode {
             kTabulation = 0x40,
             kGlyphClusterStart = 0x80,
             kIdeographic = 0x100,
+            kEmoji = 0x200,
+            kWordBreak = 0x400,
         };
         enum class TextDirection {
             kLTR,
@@ -290,9 +295,12 @@ class SKUNICODE_API SkUnicode {
                 std::vector<SkUnicode::Position> words,
                 std::vector<SkUnicode::Position> graphemeBreaks,
                 std::vector<SkUnicode::LineBreakBefore> lineBreaks);
+
+        static std::unique_ptr<SkUnicode> MakeLibgraphemeBasedUnicode();
 };
 
 namespace sknonstd {
-    template <> struct is_bitmask_enum<SkUnicode::CodeUnitFlags> : std::true_type {};
+template <> struct is_bitmask_enum<SkUnicode::CodeUnitFlags> : std::true_type {};
 }  // namespace sknonstd
+
 #endif // SkUnicode_DEFINED

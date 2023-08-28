@@ -32,7 +32,7 @@ public:
     MakeWrapped(const SkMatrix* localMatrix, Args&&... args) {
         auto t = sk_make_sp<T>(std::forward<Args>(args)...);
         if (!localMatrix || localMatrix->isIdentity()) {
-            return std::move(t);
+            return t;
         }
         return sk_make_sp<SkLocalMatrixShader>(sk_sp<SkShader>(std::move(t)), *localMatrix);
     }
@@ -42,12 +42,6 @@ public:
 
     GradientType asGradient(GradientInfo* info, SkMatrix* localMatrix) const override;
     ShaderType type() const override { return ShaderType::kLocalMatrix; }
-
-#if defined(SK_GRAPHITE)
-    void addToKey(const skgpu::graphite::KeyContext&,
-                  skgpu::graphite::PaintParamsKeyBuilder*,
-                  skgpu::graphite::PipelineDataGatherer*) const override;
-#endif
 
     sk_sp<SkShader> makeAsALocalMatrixShader(SkMatrix* localMatrix) const override {
         if (localMatrix) {

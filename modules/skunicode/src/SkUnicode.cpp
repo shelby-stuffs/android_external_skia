@@ -4,17 +4,22 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
-#include "include/private/SkBitmaskEnum.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTemplates.h"
 #include "modules/skunicode/include/SkUnicode.h"
+#include "src/base/SkBitmaskEnum.h"
 
 using namespace skia_private;
 
 std::unique_ptr<SkUnicode> SkUnicode::Make() {
 #ifdef SK_UNICODE_ICU_IMPLEMENTATION
     std::unique_ptr<SkUnicode> unicode = SkUnicode::MakeIcuBasedUnicode();
+    if (unicode) {
+        return unicode;
+    }
+#endif
+#ifdef SK_UNICODE_LIBGRAPHEME_IMPLEMENTATION
+    std::unique_ptr<SkUnicode> unicode = SkUnicode::MakeLibgraphemeBasedUnicode();
     if (unicode) {
         return unicode;
     }

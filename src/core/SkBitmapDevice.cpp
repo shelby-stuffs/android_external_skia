@@ -552,11 +552,9 @@ void SkBitmapDevice::drawVertices(const SkVertices* vertices,
     BDDraw(this).drawVertices(vertices, std::move(blender), paint, skipColorXform);
 }
 
-#ifdef SK_ENABLE_SKSL
 void SkBitmapDevice::drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) {
-    // TODO: Implement
+    // TODO(brianosman): Implement, maybe with a subclass of BitmapDevice that has SkSL support.
 }
-#endif
 
 void SkBitmapDevice::drawAtlas(const SkRSXform xform[],
                                const SkRect tex[],
@@ -588,7 +586,8 @@ void SkBitmapDevice::drawSpecial(SkSpecialImage* src,
                                  const SkPaint& paint) {
     SkASSERT(!paint.getImageFilter());
     SkASSERT(!paint.getMaskFilter());
-    SkASSERT(!src->isTextureBacked());
+    SkASSERT(!src->isGaneshBacked());
+    SkASSERT(!src->isGraphiteBacked());
 
     SkBitmap resultBM;
     if (src->getROPixels(&resultBM)) {
@@ -602,19 +601,20 @@ void SkBitmapDevice::drawSpecial(SkSpecialImage* src,
     }
 }
 sk_sp<SkSpecialImage> SkBitmapDevice::makeSpecial(const SkBitmap& bitmap) {
-    return SkSpecialImage::MakeFromRaster(bitmap.bounds(), bitmap, this->surfaceProps());
+    return SkSpecialImages::MakeFromRaster(bitmap.bounds(), bitmap, this->surfaceProps());
 }
 
 sk_sp<SkSpecialImage> SkBitmapDevice::makeSpecial(const SkImage* image) {
-    return SkSpecialImage::MakeFromImage(nullptr, SkIRect::MakeWH(image->width(), image->height()),
-                                         image->makeNonTextureImage(), this->surfaceProps());
+    return SkSpecialImages::MakeFromRaster(SkIRect::MakeWH(image->width(), image->height()),
+                                           image->makeNonTextureImage(),
+                                           this->surfaceProps());
 }
 
 sk_sp<SkSpecialImage> SkBitmapDevice::snapSpecial(const SkIRect& bounds, bool forceCopy) {
     if (forceCopy) {
-        return SkSpecialImage::CopyFromRaster(bounds, fBitmap, this->surfaceProps());
+        return SkSpecialImages::CopyFromRaster(bounds, fBitmap, this->surfaceProps());
     } else {
-        return SkSpecialImage::MakeFromRaster(bounds, fBitmap, this->surfaceProps());
+        return SkSpecialImages::MakeFromRaster(bounds, fBitmap, this->surfaceProps());
     }
 }
 

@@ -38,9 +38,10 @@
 
 #if defined(SK_GANESH)
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/core/SkGpuBlurUtils.h"
+#include "src/gpu/ganesh/GrBlurUtils.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
+#include "src/gpu/ganesh/image/SkSpecialImage_Ganesh.h"
 #endif // defined(SK_GANESH)
 
 #if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE1
@@ -795,9 +796,8 @@ sk_sp<SkSpecialImage> copy_image_with_bounds(const skif::Context& ctx,
         sk_bzero(dst.getAddr32(0, y), dstWBytes);
     }
 
-    return SkSpecialImage::MakeFromRaster(SkIRect::MakeWH(dstBounds.width(),
-                                                          dstBounds.height()),
-                                          dst, ctx.surfaceProps());
+    return SkSpecialImages::MakeFromRaster(
+            SkIRect::MakeWH(dstBounds.width(), dstBounds.height()), dst, ctx.surfaceProps());
 }
 
 // TODO: Implement CPU backend for different fTileMode.
@@ -926,9 +926,8 @@ sk_sp<SkSpecialImage> cpu_blur(const skif::Context& ctx,
         }
     }
 
-    return SkSpecialImage::MakeFromRaster(SkIRect::MakeWH(dstBounds.width(),
-                                                          dstBounds.height()),
-                                          dst, ctx.surfaceProps());
+    return SkSpecialImages::MakeFromRaster(
+            SkIRect::MakeWH(dstBounds.width(), dstBounds.height()), dst, ctx.surfaceProps());
 }
 }  // namespace
 
@@ -969,7 +968,7 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::onFilterImage(const skif::Context& ctx,
     if (ctx.gpuBacked()) {
         // Ensure the input is in the destination's gamut. This saves us from having to do the
         // xform during the filter itself.
-        input = ImageToColorSpace(ctx, input.get());
+        input = SkSpecialImages::ImageToColorSpace(ctx, input.get());
         result = this->gpuFilter(ctx, sigma, input, inputBounds, dstBounds, inputOffset,
                                  &resultOffset);
     } else
@@ -993,8 +992,8 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::gpuFilter(const skif::Context& ctx,
                                                    SkIRect dstBounds,
                                                    SkIPoint inputOffset,
                                                    SkIPoint* offset) const {
-    if (SkGpuBlurUtils::IsEffectivelyZeroSigma(sigma.x()) &&
-        SkGpuBlurUtils::IsEffectivelyZeroSigma(sigma.y())) {
+    if (GrBlurUtils::IsEffectivelyZeroSigma(sigma.x()) &&
+        GrBlurUtils::IsEffectivelyZeroSigma(sigma.y())) {
         offset->fX = inputBounds.x() + inputOffset.fX;
         offset->fY = inputBounds.y() + inputOffset.fY;
         return input->makeSubset(inputBounds);
@@ -1002,7 +1001,7 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::gpuFilter(const skif::Context& ctx,
 
     auto context = ctx.getContext();
 
-    GrSurfaceProxyView inputView = input->view(context);
+    GrSurfaceProxyView inputView = SkSpecialImages::AsView(context, input);
     if (!inputView.proxy()) {
         return nullptr;
     }
@@ -1010,7 +1009,7 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::gpuFilter(const skif::Context& ctx,
 
     dstBounds.offset(input->subset().topLeft());
     inputBounds.offset(input->subset().topLeft());
-    auto sdc = SkGpuBlurUtils::GaussianBlur(
+    auto sdc = GrBlurUtils::GaussianBlur(
             context,
             std::move(inputView),
             SkColorTypeToGrColorType(input->colorType()),
@@ -1025,12 +1024,12 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::gpuFilter(const skif::Context& ctx,
         return nullptr;
     }
 
-    return SkSpecialImage::MakeDeferredFromGpu(context,
-                                               SkIRect::MakeSize(dstBounds.size()),
-                                               kNeedNewImageUniqueID_SpecialImage,
-                                               sdc->readSurfaceView(),
-                                               sdc->colorInfo(),
-                                               ctx.surfaceProps());
+    return SkSpecialImages::MakeDeferredFromGpu(context,
+                                                SkIRect::MakeSize(dstBounds.size()),
+                                                kNeedNewImageUniqueID_SpecialImage,
+                                                sdc->readSurfaceView(),
+                                                sdc->colorInfo(),
+                                                ctx.surfaceProps());
 }
 #endif
 

@@ -12,7 +12,6 @@
 #include "include/core/SkBlender.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkMatrix.h"
-#include "include/core/SkMesh.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
@@ -35,6 +34,10 @@
 #include "src/core/SkRecords.h"
 #include "src/effects/colorfilters/SkColorFilterBase.h"
 #include "src/utils/SkPatchUtils.h"
+
+#if defined(SK_ENABLE_SKSL)
+#include "include/core/SkMesh.h"
+#endif
 
 #include <algorithm>
 #include <optional>
@@ -91,9 +94,6 @@ namespace SkRecords {
 template <> void Draw::draw(const NoOp&) {}
 
 #define DRAW(T, call) template <> void Draw::draw(const T& r) { fCanvas->call; }
-#if !defined(SK_DISABLE_LEGACY_CANVAS_FLUSH)
-DRAW(Flush, flush())
-#endif
 DRAW(Restore, restore())
 DRAW(Save, save())
 DRAW(SaveLayer, saveLayer(SkCanvasPriv::ScaledBackdropLayer(r.bounds,
@@ -407,9 +407,6 @@ private:
             fSaveStack.back().bounds.join(bounds);
         }
     }
-#if !defined(SK_DISABLE_LEGACY_CANVAS_FLUSH)
-    Bounds bounds(const Flush&) const { return fCullRect; }
-#endif
 
     Bounds bounds(const DrawPaint&) const { return fCullRect; }
     Bounds bounds(const DrawBehind&) const { return fCullRect; }
@@ -498,16 +495,10 @@ private:
         return this->adjustAndMap(dst, &op.paint);
     }
 
-#if defined(SK_GANESH)
     Bounds bounds(const DrawSlug& op) const {
         SkRect dst = op.slug->sourceBoundsWithOrigin();
         return this->adjustAndMap(dst, &op.slug->initialPaint());
     }
-#else
-    Bounds bounds(const DrawSlug& op) const {
-        return SkRect::MakeEmpty();
-    }
-#endif
 
     Bounds bounds(const DrawDrawable& op) const {
         return this->adjustAndMap(op.worstCaseBounds, nullptr);

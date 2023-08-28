@@ -10,6 +10,7 @@
 #include "include/gpu/ShaderErrorHandler.h"
 #include "include/private/base/SkTArray.h"
 #include "src/core/SkSLTypeShared.h"
+#include "src/core/SkTraceEvent.h"
 #include "src/gpu/PipelineUtils.h"
 #include "src/gpu/graphite/AttachmentTypes.h"
 #include "src/gpu/graphite/Attribute.h"
@@ -437,9 +438,9 @@ static void setup_shader_stage_info(VkShaderStageFlagBits stage,
 }
 
 static VkPipelineLayout setup_pipeline_layout(const VulkanSharedContext* sharedContext,
-                                  bool hasStepUniforms,
-                                  bool hasFragment,
-                                  int numTextureSamplers) {
+                                              bool hasStepUniforms,
+                                              bool hasFragment,
+                                              int numTextureSamplers) {
     // Determine descriptor set layouts based upon the number of uniform buffers & texture/samplers.
     skia_private::STArray<2, VkDescriptorSetLayout> setLayouts;
     skia_private::STArray<VulkanGraphicsPipeline::kNumUniformBuffers, DescriptorData>
@@ -522,12 +523,26 @@ static void destroy_shader_modules(const VulkanSharedContext* sharedContext,
     }
 }
 
+static void setup_dynamic_state(VkPipelineDynamicStateCreateInfo* dynamicInfo,
+                                VkDynamicState* dynamicStates) {
+    memset(dynamicInfo, 0, sizeof(VkPipelineDynamicStateCreateInfo));
+    dynamicInfo->sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicInfo->pNext = VK_NULL_HANDLE;
+    dynamicInfo->flags = 0;
+    dynamicStates[0] = VK_DYNAMIC_STATE_VIEWPORT;
+    dynamicStates[1] = VK_DYNAMIC_STATE_SCISSOR;
+    dynamicStates[2] = VK_DYNAMIC_STATE_BLEND_CONSTANTS;
+    dynamicInfo->dynamicStateCount = 3;
+    dynamicInfo->pDynamicStates = dynamicStates;
+}
+
 sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
         const VulkanSharedContext* sharedContext,
         SkSL::Compiler* compiler,
         const RuntimeEffectDictionary* runtimeDict,
         const GraphicsPipelineDesc& pipelineDesc,
-        const RenderPassDesc& renderPassDesc) {
+        const RenderPassDesc& renderPassDesc,
+        VkPipelineCache pipelineCache) {
     SkSL::Program::Interface vsInterface, fsInterface;
     SkSL::ProgramSettings settings;
     settings.fForceNoRTFlip = true; // TODO: Confirm
@@ -544,14 +559,14 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
         return nullptr;
     }
 
-    const FragSkSLInfo fsSkSLInfo = GetSkSLFS(sharedContext->caps(),
-                                              sharedContext->shaderCodeDictionary(),
-                                              runtimeDict,
-                                              step,
-                                              pipelineDesc.paintParamsID(),
-                                              useShadingSsboIndex,
-                                              renderPassDesc.fWriteSwizzle);
-    const std::string& fsSkSL = fsSkSLInfo.fSkSL;
+    FragSkSLInfo fsSkSLInfo = GetSkSLFS(sharedContext->caps(),
+                                        sharedContext->shaderCodeDictionary(),
+                                        runtimeDict,
+                                        step,
+                                        pipelineDesc.paintParamsID(),
+                                        useShadingSsboIndex,
+                                        renderPassDesc.fWriteSwizzle);
+    std::string& fsSkSL = fsSkSLInfo.fSkSL;
     const bool localCoordsNeeded = fsSkSLInfo.fRequiresLocalCoords;
 
     bool hasFragment = !fsSkSL.empty();
@@ -575,11 +590,12 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
         }
     }
 
+    std::string vsSkSL = GetSkSLVS(sharedContext->caps()->resourceBindingRequirements(),
+                                   step,
+                                   useShadingSsboIndex,
+                                   localCoordsNeeded);
     if (!SkSLToSPIRV(compiler,
-                     GetSkSLVS(sharedContext->caps()->resourceBindingRequirements(),
-                               step,
-                               useShadingSsboIndex,
-                               localCoordsNeeded),
+                     vsSkSL,
                      SkSL::ProgramKind::kGraphiteVertex,
                      settings,
                      &vsSPIRV,
@@ -645,10 +661,24 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
         return nullptr;
     }
 
+    VkDynamicState dynamicStates[3];
+    VkPipelineDynamicStateCreateInfo dynamicInfo;
+    setup_dynamic_state(&dynamicInfo, dynamicStates);
+
+    VkPipelineRenderingCreateInfoKHR pipelineRenderingInfo;
+    memset(&pipelineRenderingInfo, 0, sizeof(VkPipelineRenderingCreateInfoKHR));
+    pipelineRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
+    pipelineRenderingInfo.colorAttachmentCount = 1;
+    VulkanTextureInfo textureInfo;
+    bool validTextureInfo =
+            renderPassDesc.fColorAttachment.fTextureInfo.getVulkanTextureInfo(&textureInfo);
+    pipelineRenderingInfo.pColorAttachmentFormats = validTextureInfo ? &textureInfo.fFormat
+                                                                     : VK_NULL_HANDLE;
+
     VkGraphicsPipelineCreateInfo pipelineCreateInfo;
     memset(&pipelineCreateInfo, 0, sizeof(VkGraphicsPipelineCreateInfo));
     pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineCreateInfo.pNext = nullptr;
+    pipelineCreateInfo.pNext = &pipelineRenderingInfo;
     pipelineCreateInfo.flags = 0;
     pipelineCreateInfo.stageCount = hasFragment ? 2 : 1;
     pipelineCreateInfo.pStages = &pipelineShaderStages[0];
@@ -660,9 +690,8 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
     pipelineCreateInfo.pMultisampleState = &multisampleInfo;
     pipelineCreateInfo.pDepthStencilState = &depthStencilInfo;
     pipelineCreateInfo.pColorBlendState = &colorBlendInfo;
-    pipelineCreateInfo.pDynamicState = VK_NULL_HANDLE; // TODO: Create & reference dynamicInfo.
+    pipelineCreateInfo.pDynamicState = &dynamicInfo;
     pipelineCreateInfo.layout = pipelineLayout;
-    // TODO - Determine/get VkRenderPass.
     pipelineCreateInfo.renderPass = VK_NULL_HANDLE;
     // For the vast majority of cases we only have one subpass so we default piplines to subpass 0.
     // TODO: However, if we need to load a resolve into msaa attachment for discardable msaa then
@@ -671,28 +700,69 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
     pipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineCreateInfo.basePipelineIndex = -1;
 
-    // TODO: Create pipeline.
+    VkPipeline vkPipeline;
+    VkResult result;
+    {
+        TRACE_EVENT0_ALWAYS("skia.shaders", "CreateGraphicsPipeline");
+        VULKAN_CALL_RESULT(sharedContext->interface(),
+                           result,
+                           CreateGraphicsPipelines(sharedContext->device(),
+                                                   pipelineCache,
+                                                   1,
+                                                   &pipelineCreateInfo,
+                                                   nullptr,
+                                                   &vkPipeline));
+    }
+    if (result != VK_SUCCESS) {
+        SkDebugf("Failed to create pipeline. Error: %d\n", result);
+        return nullptr;
+    }
 
     // After creating the pipeline object, we can clean up the VkShaderModule(s).
     destroy_shader_modules(sharedContext, vsModule, fsModule);
-    return sk_sp<VulkanGraphicsPipeline>(new VulkanGraphicsPipeline(sharedContext,
-                                                                    pipelineLayout,
-                                                                    hasFragment,
-                                                                    !step->uniforms().empty()));
+
+#if GRAPHITE_TEST_UTILS
+    GraphicsPipeline::Shaders pipelineShaders = {
+        std::move(vsSkSL),
+        std::move(fsSkSL),
+        "SPIR-V disassembly not available",
+        "SPIR-V disassembly not available",
+    };
+    GraphicsPipeline::Shaders* pipelineShadersPtr = &pipelineShaders;
+#else
+    GraphicsPipeline::Shaders* pipelineShadersPtr = nullptr;
+#endif
+
+    return sk_sp<VulkanGraphicsPipeline>(
+            new VulkanGraphicsPipeline(sharedContext,
+                                       pipelineShadersPtr,
+                                       pipelineLayout,
+                                       vkPipeline,
+                                       hasFragment,
+                                       !step->uniforms().empty(),
+                                       fsSkSLInfo.fNumTexturesAndSamplers));
 }
 
 VulkanGraphicsPipeline::VulkanGraphicsPipeline(const skgpu::graphite::SharedContext* sharedContext,
+                                               Shaders* pipelineShaders,
                                                VkPipelineLayout pipelineLayout,
+                                               VkPipeline pipeline,
                                                bool hasFragment,
-                                               bool hasStepUniforms)
-    : GraphicsPipeline(sharedContext)
+                                               bool hasStepUniforms,
+                                               int numTextureSamplers)
+    : GraphicsPipeline(sharedContext, pipelineShaders)
     , fPipelineLayout(pipelineLayout)
+    , fPipeline(pipeline)
     , fHasFragment(hasFragment)
-    , fHasStepUniforms(hasStepUniforms) { }
+    , fHasStepUniforms(hasStepUniforms)
+    , fNumTextureSamplers(numTextureSamplers) {}
 
 void VulkanGraphicsPipeline::freeGpuData() {
     auto sharedCtxt = static_cast<const VulkanSharedContext*>(this->sharedContext());
-    // TODO: Destroy pipeline.
+    if (fPipeline != VK_NULL_HANDLE) {
+        VULKAN_CALL(sharedCtxt->interface(),
+            DestroyPipeline(sharedCtxt->device(), fPipeline, nullptr));
+    }
     if (fPipelineLayout != VK_NULL_HANDLE) {
         VULKAN_CALL(sharedCtxt->interface(),
                     DestroyPipelineLayout(sharedCtxt->device(), fPipelineLayout, nullptr));

@@ -21,7 +21,6 @@
 #include <functional>
 #include <memory>
 
-#ifdef SK_ENABLE_SKSL
 #include "include/sksl/SkSLVersion.h"
 
 #ifdef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
@@ -48,14 +47,6 @@ class Context;
 class Variable;
 struct Program;
 }
-
-#if defined(SK_GRAPHITE)
-namespace skgpu::graphite {
-class KeyContext;
-class PaintParamsKeyBuilder;
-class PipelineDataGatherer;
-}  // namespace skgpu::graphite
-#endif
 
 class SkRuntimeEffectPriv {
 public:
@@ -130,14 +121,6 @@ public:
                                  skia_private::TArray<SkRuntimeEffect::ChildPtr>* children);
     static void WriteChildEffects(SkWriteBuffer& buffer,
                                   SkSpan<const SkRuntimeEffect::ChildPtr> children);
-
-#if defined(SK_GRAPHITE)
-static void AddChildrenToKey(SkSpan<const SkRuntimeEffect::ChildPtr> children,
-                             SkSpan<const SkRuntimeEffect::Child> childInfo,
-                             const skgpu::graphite::KeyContext& keyContext,
-                             skgpu::graphite::PaintParamsKeyBuilder* builder,
-                             skgpu::graphite::PipelineDataGatherer* gatherer);
-#endif
 };
 
 // These internal APIs for creating runtime effects vary from the public API in two ways:
@@ -208,7 +191,5 @@ private:
     SkSpan<const SkSL::SampleUsage> fSampleUsages;
 };
 #endif  // SK_ENABLE_SKSL_IN_RASTER_PIPELINE
-
-#endif  // SK_ENABLE_SKSL
 
 #endif  // SkRuntimeEffectPriv_DEFINED

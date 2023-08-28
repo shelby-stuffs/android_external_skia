@@ -89,6 +89,10 @@ void DrawContext::clear(const SkColor4f& clearColor) {
     // a fullscreen clear will overwrite anything that came before, so start a new DrawList
     // and clear any drawpasses that haven't been snapped yet
     fPendingDraws = std::make_unique<DrawList>();
+    if (fComputePathAtlas) {
+        fComputePathAtlas->reset();
+    }
+    fDispatchGroups.clear();
     fDrawPasses.clear();
 }
 
@@ -126,25 +130,20 @@ bool DrawContext::recordUpload(Recorder* recorder,
                                          std::move(condContext));
 }
 
-void DrawContext::recordPathAtlasDispatches(Recorder* recorder) {
-#ifdef SK_ENABLE_VELLO_SHADERS
-    ComputePathAtlas* pathAtlas = recorder->priv().atlasProvider()->computePathAtlas();
-    if (!pathAtlas) {
-        // Platform doesn't support compute
-        return;
+PathAtlas* DrawContext::getOrCreatePathAtlas(Recorder* recorder) {
+    if (!fComputePathAtlas) {
+        fComputePathAtlas = recorder->priv().atlasProvider()->createComputePathAtlas(recorder);
     }
-    auto dispatchGroup = pathAtlas->recordDispatches(recorder);
-    if (dispatchGroup) {
-        fDispatchGroups.push_back(std::move(dispatchGroup));
-    }
-    pathAtlas->reset();
-#endif  // SK_ENABLE_VELLO_SHADERS
+    return fComputePathAtlas.get();
 }
 
 void DrawContext::snapDrawPass(Recorder* recorder) {
     if (fPendingDraws->drawCount() == 0 && fPendingLoadOp != LoadOp::kClear) {
         return;
     }
+
+    // Instantiate the compute pass that may render an atlas texture used by this draw pass.
+    this->snapPathAtlasDispatches(recorder);
 
     auto pass = DrawPass::Make(recorder,
                                std::move(fPendingDraws),
@@ -176,20 +175,27 @@ RenderPassDesc RenderPassDesc::Make(const Caps* caps,
         // persistently associated with the framebuffer, in which case it's not discardable.
         desc.fColorAttachment.fTextureInfo = caps->getDefaultMSAATextureInfo(targetInfo,
                                                                              Discardable::kYes);
-        if (loadOp != LoadOp::kClear) {
-            desc.fColorAttachment.fLoadOp = LoadOp::kDiscard;
-        } else {
-            desc.fColorAttachment.fLoadOp = LoadOp::kClear;
-        }
-        desc.fColorAttachment.fStoreOp = StoreOp::kDiscard;
+        if (desc.fColorAttachment.fTextureInfo.isValid()) {
+            if (loadOp != LoadOp::kClear) {
+                desc.fColorAttachment.fLoadOp = LoadOp::kDiscard;
+            } else {
+                desc.fColorAttachment.fLoadOp = LoadOp::kClear;
+            }
+            desc.fColorAttachment.fStoreOp = StoreOp::kDiscard;
 
-        desc.fColorResolveAttachment.fTextureInfo = targetInfo;
-        if (loadOp != LoadOp::kLoad) {
-            desc.fColorResolveAttachment.fLoadOp = LoadOp::kDiscard;
+            desc.fColorResolveAttachment.fTextureInfo = targetInfo;
+            if (loadOp != LoadOp::kLoad) {
+                desc.fColorResolveAttachment.fLoadOp = LoadOp::kDiscard;
+            } else {
+                desc.fColorResolveAttachment.fLoadOp = LoadOp::kLoad;
+            }
+            desc.fColorResolveAttachment.fStoreOp = storeOp;
         } else {
-            desc.fColorResolveAttachment.fLoadOp = LoadOp::kLoad;
+            // fall back to single sampled
+            desc.fColorAttachment.fTextureInfo = targetInfo;
+            desc.fColorAttachment.fLoadOp = loadOp;
+            desc.fColorAttachment.fStoreOp = storeOp;
         }
-        desc.fColorResolveAttachment.fStoreOp = storeOp;
     } else {
         desc.fColorAttachment.fTextureInfo = targetInfo;
         desc.fColorAttachment.fLoadOp = loadOp;
@@ -255,7 +261,21 @@ sk_sp<Task> DrawContext::snapComputeTask(Recorder* recorder) {
     if (fDispatchGroups.empty()) {
         return nullptr;
     }
+    SkASSERT(fDispatchGroups.size() == 1);
     return ComputeTask::Make(std::move(fDispatchGroups));
+}
+
+void DrawContext::snapPathAtlasDispatches(Recorder* recorder) {
+    if (!fComputePathAtlas) {
+        // Platform doesn't support compute or atlas was never initialized.
+        return;
+    }
+    auto dispatchGroup = fComputePathAtlas->recordDispatches(recorder);
+    if (dispatchGroup) {
+        SkASSERT(fPendingDraws->hasAtlasDraws());
+        fDispatchGroups.push_back(std::move(dispatchGroup));
+    }
+    fComputePathAtlas->reset();
 }
 
 } // namespace skgpu::graphite

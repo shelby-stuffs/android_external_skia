@@ -103,6 +103,7 @@ void Surface::onAsyncRescaleAndReadPixels(const SkImageInfo& info,
 }
 
 void Surface::onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
+                                                bool readAlpha,
                                                 sk_sp<SkColorSpace> dstColorSpace,
                                                 SkIRect srcRect,
                                                 SkISize dstSize,
@@ -243,7 +244,7 @@ sk_sp<SkSurface> WrapBackendTexture(Recorder* recorder,
         return nullptr;
     }
 
-    sk_sp<TextureProxy> proxy(new TextureProxy(std::move(texture)));
+    sk_sp<TextureProxy> proxy = TextureProxy::Wrap(std::move(texture));
 
     sk_sp<Device> device = Device::Make(recorder,
                                         std::move(proxy),

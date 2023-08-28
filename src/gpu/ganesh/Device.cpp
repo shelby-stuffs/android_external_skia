@@ -95,6 +95,7 @@
 #include "src/gpu/ganesh/geometry/GrShape.h"
 #include "src/gpu/ganesh/geometry/GrStyledShape.h"
 #include "src/gpu/ganesh/image/GrImageUtils.h"
+#include "src/gpu/ganesh/image/SkSpecialImage_Ganesh.h"
 #include "src/text/GlyphRun.h"
 #include "src/text/gpu/SlugImpl.h"
 #include "src/text/gpu/SubRunContainer.h"
@@ -549,7 +550,7 @@ void Device::drawRect(const SkRect& rect, const SkPaint& paint) {
     if (paint.getMaskFilter() || paint.getPathEffect()) {
         GrStyledShape shape(rect, style);
 
-        GrBlurUtils::drawShapeWithMaskFilter(fContext.get(), fSurfaceDrawContext.get(),
+        GrBlurUtils::DrawShapeWithMaskFilter(fContext.get(), fSurfaceDrawContext.get(),
                                              this->clip(), paint, this->localToDevice(), shape);
         return;
     }
@@ -622,7 +623,7 @@ void Device::drawRRect(const SkRRect& rrect, const SkPaint& paint) {
         // A path effect will presumably transform this rrect into something else.
         GrStyledShape shape(rrect, style);
 
-        GrBlurUtils::drawShapeWithMaskFilter(fContext.get(), fSurfaceDrawContext.get(),
+        GrBlurUtils::DrawShapeWithMaskFilter(fContext.get(), fSurfaceDrawContext.get(),
                                              this->clip(), paint, this->localToDevice(), shape);
         return;
     }
@@ -691,7 +692,7 @@ void Device::drawDRRect(const SkRRect& outer, const SkRRect& inner, const SkPain
     // fixed by upgrading GrStyledShape to handle DRRects.
     GrStyledShape shape(path, paint);
 
-    GrBlurUtils::drawShapeWithMaskFilter(fContext.get(), fSurfaceDrawContext.get(), this->clip(),
+    GrBlurUtils::DrawShapeWithMaskFilter(fContext.get(), fSurfaceDrawContext.get(), this->clip(),
                                          paint, this->localToDevice(), shape);
 }
 
@@ -803,7 +804,7 @@ void Device::drawPath(const SkPath& origSrcPath, const SkPaint& paint, bool path
     // TODO: losing possible mutability of 'origSrcPath' here
     GrStyledShape shape(origSrcPath, paint);
 
-    GrBlurUtils::drawShapeWithMaskFilter(fContext.get(), fSurfaceDrawContext.get(), this->clip(),
+    GrBlurUtils::DrawShapeWithMaskFilter(fContext.get(), fSurfaceDrawContext.get(), this->clip(),
                                          paint, this->localToDevice(), shape);
 }
 
@@ -826,14 +827,14 @@ sk_sp<SkSpecialImage> Device::makeSpecial(const SkBitmap& bitmap) {
 
     // GrMakeCachedBitmapProxyView creates a tight copy of 'bitmap' so we don't have to subset
     // the special image
-    return SkSpecialImage::MakeDeferredFromGpu(fContext.get(),
-                                               rect,
-                                               bitmap.getGenerationID(),
-                                               std::move(view),
-                                               { SkColorTypeToGrColorType(bitmap.colorType()),
+    return SkSpecialImages::MakeDeferredFromGpu(fContext.get(),
+                                                rect,
+                                                bitmap.getGenerationID(),
+                                                std::move(view),
+                                                {SkColorTypeToGrColorType(bitmap.colorType()),
                                                  kPremul_SkAlphaType,
-                                                 bitmap.refColorSpace() },
-                                               this->surfaceProps());
+                                                 bitmap.refColorSpace()},
+                                                this->surfaceProps());
 }
 
 sk_sp<SkSpecialImage> Device::makeSpecial(const SkImage* image) {
@@ -844,13 +845,13 @@ sk_sp<SkSpecialImage> Device::makeSpecial(const SkImage* image) {
         auto [view, ct] = skgpu::ganesh::AsView(this->recordingContext(), image, GrMipmapped::kNo);
         SkASSERT(view);
 
-        return SkSpecialImage::MakeDeferredFromGpu(fContext.get(),
-                                                   SkIRect::MakeWH(image->width(), image->height()),
-                                                   image->uniqueID(),
-                                                   std::move(view),
-                                                   { ct, kPremul_SkAlphaType,
-                                                     image->refColorSpace() },
-                                                   this->surfaceProps());
+        return SkSpecialImages::MakeDeferredFromGpu(
+                fContext.get(),
+                SkIRect::MakeWH(image->width(), image->height()),
+                image->uniqueID(),
+                std::move(view),
+                {ct, kPremul_SkAlphaType, image->refColorSpace()},
+                this->surfaceProps());
     } else if (image->peekPixels(&pm)) {
         SkBitmap bm;
 
@@ -896,12 +897,12 @@ sk_sp<SkSpecialImage> Device::snapSpecial(const SkIRect& subset, bool forceCopy)
         finalSubset = SkIRect::MakeSize(view.dimensions());
     }
 
-    return SkSpecialImage::MakeDeferredFromGpu(fContext.get(),
-                                               finalSubset,
-                                               kNeedNewImageUniqueID_SpecialImage,
-                                               std::move(view),
-                                               GrColorInfo(this->imageInfo().colorInfo()),
-                                               this->surfaceProps());
+    return SkSpecialImages::MakeDeferredFromGpu(fContext.get(),
+                                                finalSubset,
+                                                kNeedNewImageUniqueID_SpecialImage,
+                                                std::move(view),
+                                                GrColorInfo(this->imageInfo().colorInfo()),
+                                                this->surfaceProps());
 }
 
 sk_sp<SkSpecialImage> Device::snapSpecialScaled(const SkIRect& subset, const SkISize& dstDims) {
@@ -928,12 +929,12 @@ sk_sp<SkSpecialImage> Device::snapSpecialScaled(const SkIRect& subset, const SkI
         return nullptr;
     }
 
-    return SkSpecialImage::MakeDeferredFromGpu(fContext.get(),
-                                               SkIRect::MakeSize(dstDims),
-                                               kNeedNewImageUniqueID_SpecialImage,
-                                               scaledContext->readSurfaceView(),
-                                               GrColorInfo(this->imageInfo().colorInfo()),
-                                               this->surfaceProps());
+    return SkSpecialImages::MakeDeferredFromGpu(fContext.get(),
+                                                SkIRect::MakeSize(dstDims),
+                                                kNeedNewImageUniqueID_SpecialImage,
+                                                scaledContext->readSurfaceView(),
+                                                GrColorInfo(this->imageInfo().colorInfo()),
+                                                this->surfaceProps());
 }
 
 void Device::drawDevice(SkBaseDevice* device,
@@ -952,15 +953,44 @@ void Device::drawImageRect(const SkImage* image,
                            const SkPaint& paint,
                            SkCanvas::SrcRectConstraint constraint) {
     ASSERT_SINGLE_OWNER
+
     GrAA aa = fSurfaceDrawContext->chooseAA(paint);
     SkCanvas::QuadAAFlags aaFlags = (aa == GrAA::kYes) ? SkCanvas::kAll_QuadAAFlags
                                                        : SkCanvas::kNone_QuadAAFlags;
-    TiledTextureUtils::DrawImageRect_Ganesh(this,
-                                            image,
-                                            src ? *src
-                                                : SkRect::MakeIWH(image->width(), image->height()),
-                                            dst, aaFlags, sampling, paint, constraint);
+
+    this->drawImageQuadDirect(image,
+                              src ? *src
+                                  : SkRect::MakeIWH(image->width(), image->height()),
+                              dst,
+                              /* dstClip= */ nullptr,
+                              aaFlags,
+                              /* preViewMatrix= */ nullptr,
+                              sampling,
+                              paint,
+                              constraint);
 }
+
+bool Device::drawAsTiledImageRect(SkCanvas* canvas,
+                                  const SkImage* image,
+                                  const SkRect* src,
+                                  const SkRect& dst,
+                                  const SkSamplingOptions& sampling,
+                                  const SkPaint& paint,
+                                  SkCanvas::SrcRectConstraint constraint) {
+    ASSERT_SINGLE_OWNER
+
+    GrAA aa = fSurfaceDrawContext->chooseAA(paint);
+    SkCanvas::QuadAAFlags aaFlags = (aa == GrAA::kYes) ? SkCanvas::kAll_QuadAAFlags
+                                                       : SkCanvas::kNone_QuadAAFlags;
+
+    return TiledTextureUtils::DrawAsTiledImageRect(canvas,
+                                                   image,
+                                                   src ? *src
+                                                       : SkRect::MakeIWH(image->width(),
+                                                                         image->height()),
+                                                   dst, aaFlags, sampling, &paint, constraint);
+}
+
 
 void Device::drawViewLattice(GrSurfaceProxyView view,
                              const GrColorInfo& info,
@@ -1058,7 +1088,9 @@ void Device::drawVertices(const SkVertices* vertices,
 void Device::drawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPaint& paint) {
     ASSERT_SINGLE_OWNER
     GR_CREATE_TRACE_MARKER_CONTEXT("skgpu::ganesh::Device", "drawMesh", fContext.get());
-    SkASSERT(mesh.isValid());
+    if (!mesh.isValid()) {
+        return;
+    }
 
     GrPaint grPaint;
     if (!init_vertices_paint(fContext.get(),
@@ -1289,6 +1321,7 @@ void Device::asyncRescaleAndReadPixels(const SkImageInfo& info,
 }
 
 void Device::asyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
+                                             bool readAlpha,
                                              sk_sp<SkColorSpace> dstColorSpace,
                                              const SkIRect& srcRect,
                                              SkISize dstSize,
@@ -1304,6 +1337,7 @@ void Device::asyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
     }
     sdc->asyncRescaleAndReadPixelsYUV420(dContext,
                                          yuvColorSpace,
+                                         readAlpha,
                                          std::move(dstColorSpace),
                                          srcRect,
                                          dstSize,

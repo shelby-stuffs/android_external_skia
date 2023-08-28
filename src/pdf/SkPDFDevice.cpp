@@ -973,14 +973,12 @@ void SkPDFDevice::drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPain
     // TODO: implement drawVertices
 }
 
-#ifdef SK_ENABLE_SKSL
 void SkPDFDevice::drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) {
     if (this->hasEmptyClip()) {
         return;
     }
     // TODO: implement drawMesh
 }
-#endif
 
 void SkPDFDevice::drawFormXObject(SkPDFIndirectReference xObject, SkDynamicMemoryWStream* content) {
     ScopedOutputMarkedContentTags mark(fNodeId, fDocument, content);
@@ -1727,7 +1725,7 @@ void SkPDFDevice::drawSpecial(SkSpecialImage* srcImg, const SkMatrix& localToDev
     if (this->hasEmptyClip()) {
         return;
     }
-    SkASSERT(!srcImg->isTextureBacked());
+    SkASSERT(!srcImg->isGaneshBacked() && !srcImg->isGraphiteBacked());
     SkASSERT(!paint.getMaskFilter() && !paint.getImageFilter());
 
     SkBitmap resultBM;
@@ -1739,12 +1737,12 @@ void SkPDFDevice::drawSpecial(SkSpecialImage* srcImg, const SkMatrix& localToDev
 }
 
 sk_sp<SkSpecialImage> SkPDFDevice::makeSpecial(const SkBitmap& bitmap) {
-    return SkSpecialImage::MakeFromRaster(bitmap.bounds(), bitmap, this->surfaceProps());
+    return SkSpecialImages::MakeFromRaster(bitmap.bounds(), bitmap, this->surfaceProps());
 }
 
 sk_sp<SkSpecialImage> SkPDFDevice::makeSpecial(const SkImage* image) {
-    return SkSpecialImage::MakeFromImage(nullptr, image->bounds(), image->makeNonTextureImage(),
-                                         this->surfaceProps());
+    return SkSpecialImages::MakeFromRaster(
+            image->bounds(), image->makeNonTextureImage(), this->surfaceProps());
 }
 
 SkImageFilterCache* SkPDFDevice::getImageFilterCache() {

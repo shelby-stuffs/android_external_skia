@@ -125,7 +125,6 @@ CORE_FILES = [
     "SkEdgeClipper.cpp",
     "SkEdgeClipper.h",
     "SkEffectPriv.h",
-    "SkEnumBitMask.h",
     "SkEnumerate.h",
     "SkExecutor.cpp",
     "SkFDot6.h",
@@ -151,8 +150,6 @@ CORE_FILES = [
     "SkGlyph.h",
     "SkGlyphRunPainter.cpp",
     "SkGlyphRunPainter.h",
-    "SkGpuBlurUtils.cpp",
-    "SkGpuBlurUtils.h",
     "SkGraphics.cpp",
     "SkIDChangeListener.cpp",
     "SkIPoint16.h",
@@ -190,8 +187,6 @@ CORE_FILES = [
     "SkMatrix.cpp",
     "SkMatrixPriv.h",
     "SkMatrixUtils.h",
-    "SkMesh.cpp",
-    "SkMeshPriv.h",
     "SkMessageBus.h",
     "SkMipmap.cpp",
     "SkMipmap.h",
@@ -267,7 +262,6 @@ CORE_FILES = [
     "SkRegion_path.cpp",
     "SkResourceCache.cpp",
     "SkResourceCache.h",
-    "SkRuntimeEffectPriv.h",
     "SkSafeRange.h",
     "SkSamplingPriv.h",
     "SkScalar.cpp",
@@ -350,9 +344,12 @@ split_srcs_and_hdrs(
 
 # These files are only needed if SkSL is enabled (GPU backend or SkRP).
 SKSL_FILES = [
-    "SkRuntimeEffect.cpp",
+    "SkMesh.cpp",
+    "SkMeshPriv.h",
     "SkRuntimeBlender.cpp",
     "SkRuntimeBlender.h",
+    "SkRuntimeEffect.cpp",
+    "SkRuntimeEffectPriv.h",
     "SkSLTypeShared.cpp",
     "SkSLTypeShared.h",
 ]

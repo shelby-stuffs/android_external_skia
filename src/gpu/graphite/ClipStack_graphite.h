@@ -24,6 +24,7 @@ namespace skgpu::graphite {
 class BoundsManager;
 class Device;
 class Geometry;
+class Renderer;
 
 // TODO: Port over many of the unit tests for skgpu/v1/ClipStack defined in GrClipStackTest since
 // those tests do a thorough job of enumerating the different element combinations.
@@ -88,6 +89,7 @@ public:
     Clip visitClipStackForDraw(const Transform&,
                                const Geometry&,
                                const SkStrokeRec&,
+                               const Renderer&,
                                ElementList* outEffectiveElements) const;
 
     // Update the per-clip element state for later rendering using pre-computed clip state data for
@@ -206,7 +208,7 @@ private:
         // Assuming that this element does not clip out the draw, returns the painters order the
         // draw must sort after.
         CompressedPaintersOrder updateForDraw(const BoundsManager* boundsManager,
-                                              const Rect& outerBounds,
+                                              const Rect& drawBounds,
                                               PaintersDepth drawZ);
 
         // Record a depth-only draw to the given device, restricted to the portion of the clip that

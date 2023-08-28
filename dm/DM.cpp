@@ -1008,10 +1008,7 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
                      "GM tests will be skipped.\n", gpuConfig->getTag().c_str());
                 return nullptr;
             }
-            if (gpuConfig->getTestThreading()) {
-                SkASSERT(!gpuConfig->getTestPersistentCache());
-                return new GPUThreadTestingSink(gpuConfig, grCtxOptions);
-            } else if (gpuConfig->getTestPersistentCache()) {
+            if (gpuConfig->getTestPersistentCache()) {
                 return new GPUPersistentCacheTestingSink(gpuConfig, grCtxOptions);
             } else if (gpuConfig->getTestPrecompile()) {
                 return new GPUPrecompileTestingSink(gpuConfig, grCtxOptions);
@@ -1050,7 +1047,6 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
         SINK("rgba",        RasterSink, kRGBA_8888_SkColorType);
         SINK("bgra",        RasterSink, kBGRA_8888_SkColorType);
         SINK("rgbx",        RasterSink, kRGB_888x_SkColorType);
-        SINK("bgrx",        RasterSink, kBGR_888x_SkColorType);
         SINK("1010102",     RasterSink, kRGBA_1010102_SkColorType);
         SINK("101010x",     RasterSink, kRGB_101010x_SkColorType);
         SINK("bgra1010102", RasterSink, kBGRA_1010102_SkColorType);

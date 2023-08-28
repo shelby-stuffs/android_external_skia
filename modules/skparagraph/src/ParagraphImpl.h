@@ -12,7 +12,6 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkBitmaskEnum.h"
 #include "include/private/base/SkOnce.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTemplates.h"
@@ -26,6 +25,7 @@
 #include "modules/skparagraph/src/Run.h"
 #include "modules/skparagraph/src/TextLine.h"
 #include "modules/skunicode/include/SkUnicode.h"
+#include "src/base/SkBitmaskEnum.h"
 #include "src/core/SkTHash.h"
 
 #include <memory>
@@ -210,6 +210,10 @@ public:
     void updateBackgroundPaint(size_t from, size_t to, SkPaint paint) override;
 
     void visit(const Visitor&) override;
+    void extendedVisit(const ExtendedVisitor&) override;
+    int getPath(int lineNumber, SkPath* dest) override;
+    bool containsColorFontOrBitmap(SkTextBlob* textBlob) override;
+    bool containsEmoji(SkTextBlob* textBlob) override;
 
     int getLineNumberAt(TextIndex codeUnitIndex) const override;
     bool getLineMetricsAt(int lineNumber, LineMetrics* lineMetrics) const override;

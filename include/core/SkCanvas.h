@@ -1974,11 +1974,11 @@ public:
     */
     void drawVertices(const sk_sp<SkVertices>& vertices, SkBlendMode mode, const SkPaint& paint);
 
-#if defined(SK_ENABLE_SKSL)
     /**
         Experimental, under active development, and subject to change without notice.
 
-        Draws a mesh using a user-defined specification (see SkMeshSpecification).
+        Draws a mesh using a user-defined specification (see SkMeshSpecification). Requires
+        a GPU backend or SkSL to be compiled in.
 
         SkBlender is ignored if SkMesh's specification does not output fragment shader color.
         Otherwise, it combines
@@ -1995,7 +1995,6 @@ public:
         @param paint     specifies the SkShader, used as SkVertices texture, may be nullptr
     */
     void drawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPaint& paint);
-#endif
 
     /** Draws a Coons patch: the interpolation of four cubics with shared corners,
         associating a color, and optionally a texture SkPoint, with each corner.
@@ -2249,9 +2248,7 @@ protected:
 
     virtual void onDrawVerticesObject(const SkVertices* vertices, SkBlendMode mode,
                                       const SkPaint& paint);
-#ifdef SK_ENABLE_SKSL
     virtual void onDrawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&);
-#endif
     virtual void onDrawAnnotation(const SkRect& rect, const char key[], SkData* value);
     virtual void onDrawShadowRec(const SkPath&, const SkDrawShadowRec&);
 
@@ -2296,8 +2293,8 @@ private:
     // notify our surface (if we have one) that we are about to draw, so it
     // can perform copy-on-write or invalidate any cached images
     // returns false if the copy failed
-    bool SK_WARN_UNUSED_RESULT predrawNotify(bool willOverwritesEntireSurface = false);
-    bool SK_WARN_UNUSED_RESULT predrawNotify(const SkRect*, const SkPaint*, ShaderOverrideOpacity);
+    [[nodiscard]] bool predrawNotify(bool willOverwritesEntireSurface = false);
+    [[nodiscard]] bool predrawNotify(const SkRect*, const SkPaint*, ShaderOverrideOpacity);
 
     enum class CheckForOverwrite : bool {
         kNo = false,
@@ -2546,26 +2543,6 @@ private:
     void validateClip() const;
 
     std::unique_ptr<sktext::GlyphRunBuilder> fScratchGlyphRunBuilder;
-
-#if !defined(SK_DISABLE_LEGACY_CANVAS_FLUSH)
-public:
-    /** Triggers the immediate execution of all pending draw operations.
-        If SkCanvas is associated with GPU surface, resolves all pending GPU operations.
-        If SkCanvas is associated with raster surface, has no effect; raster draw
-        operations are never deferred.
-
-        DEPRECATED: Replace usage with GrDirectContext::flush()
-    */
-    void flush();
-protected:
-    virtual void onFlush();
-#endif
-
-#if !defined(SK_LEGACY_GPU_GETTERS_CONST)
-public:
-    virtual GrRecordingContext* recordingContext();
-    virtual skgpu::graphite::Recorder* recorder();
-#endif
 };
 
 /** \class SkAutoCanvasRestore
