@@ -918,6 +918,9 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 				"AppleM1": {
 					"MacMini9.1": "arm64-64-Apple_M1",
 				},
+				"AppleIntel": {
+					"MacBookPro16.2": "x86-64",
+				},
 				"AVX": {
 					"VMware7.1": "x86-64",
 				},
@@ -928,6 +931,7 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 					"MacMini7.1":     "x86-64-i5-4278U",
 					"NUC5i7RYH":      "x86-64-i7-5557U",
 					"NUC9i7QN":       "x86-64-i7-9750H",
+					"NUC11TZi5":      "x86-64-avx2",
 				},
 				"AVX512": {
 					"GCE":  "x86-64-Skylake_GCE",
@@ -960,7 +964,7 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 				gpu, ok := map[string]string{
 					// At some point this might use the device ID, but for now it's like Chromebooks.
 					"GTX660":        "10de:11c0-26.21.14.4120",
-					"GTX960":        "10de:1401-31.0.15.3667",
+					"GTX960":        "10de:1401-31.0.15.3699",
 					"IntelHD4400":   "8086:0a16-20.19.15.4963",
 					"IntelIris540":  "8086:1926-31.0.101.2115",
 					"IntelIris6100": "8086:162b-20.19.15.4963",
@@ -970,7 +974,7 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 					"RadeonR9M470X": "1002:6646-26.20.13031.18002",
 					"QuadroP400":    "10de:1cb3-30.0.15.1179",
 					"RadeonVega6":   "1002:1636-31.0.14057.5006",
-					"RTX3060":       "10de:2489-31.0.15.3667",
+					"RTX3060":       "10de:2489-31.0.15.3699",
 				}[b.parts["cpu_or_gpu_value"]]
 				if !ok {
 					log.Fatalf("Entry %q not found in Win GPU mapping.", b.parts["cpu_or_gpu_value"])
@@ -1264,7 +1268,7 @@ func (b *jobBuilder) compile() string {
 		b.addTask(name, func(b *taskBuilder) {
 			recipe := "compile"
 			casSpec := CAS_COMPILE
-			if b.extraConfig("NoDEPS", "CMake", "Flutter", "NoPatch", "Vello") {
+			if b.extraConfig("NoDEPS", "CMake", "Flutter", "NoPatch", "Vello", "Fontations") {
 				recipe = "sync_and_compile"
 				casSpec = CAS_RUN_RECIPE
 				b.recipeProps(EXTRA_PROPS)
@@ -1320,6 +1324,10 @@ func (b *jobBuilder) compile() string {
 				}
 				b.asset("ccache_linux")
 				b.usesCCache()
+				if b.extraConfig("Fontations") {
+					b.usesBazel("linux_x64")
+					b.attempts(1)
+				}
 			} else if b.matchOs("Win") {
 				b.asset("win_toolchain")
 				if b.compiler("Clang") {
@@ -1339,7 +1347,7 @@ func (b *jobBuilder) compile() string {
 				if b.extraConfig("iOS") {
 					b.asset("provisioning_profile_ios")
 				}
-				if b.extraConfig("Vello") {
+				if b.extraConfig("Vello") || b.extraConfig("Fontations") {
 					// All of our current Mac compile machines are x64 Mac only.
 					b.usesBazel("mac_x64")
 					b.attempts(1)
@@ -2124,6 +2132,7 @@ var shorthandToLabel = map[string]labelAndSavedOutputDir{
 	"skottie_tool_gpu":               {"//modules/skottie:skottie_tool_gpu", ""},
 	"tests":                          {"//tests:linux_rbe_build", ""},
 	"experimental_bazel_test_client": {"//experimental/bazel_test/client:client_lib", ""},
+	"cpu_gms":                        {"//gm:cpu_gm_tests", ""},
 
 	// Android tests that run on a device. We store the //bazel-bin/tests directory into CAS for use
 	// by subsequent CI tasks.
@@ -2227,6 +2236,9 @@ func (b *jobBuilder) bazelTest() {
 	if taskdriverName == "precompiled" {
 		taskdriverName = "bazel_test_precompiled"
 	}
+	if taskdriverName == "gm" {
+		taskdriverName = "bazel_test_gm"
+	}
 
 	b.addTask(b.Name, func(b *taskBuilder) {
 		cmd := []string{"./" + taskdriverName,
@@ -2285,6 +2297,17 @@ func (b *jobBuilder) bazelTest() {
 			cmd = append(cmd,
 				"--command="+command,
 				"--command_workdir="+commandWorkDir)
+
+		case "bazel_test_gm":
+			cmd = append(cmd,
+				"--test_label="+labelAndSavedOutputDir.label,
+				"--test_config="+config,
+				"--goldctl_path=./cipd_bin_packages/goldctl",
+				"--git_commit="+specs.PLACEHOLDER_REVISION,
+				"--changelist_id="+specs.PLACEHOLDER_ISSUE,
+				"--patchset_order="+specs.PLACEHOLDER_PATCHSET,
+				"--tryjob_id="+specs.PLACEHOLDER_BUILDBUCKET_BUILD_ID)
+			b.cipd(CIPD_PKGS_GOLDCTL)
 
 		default:
 			panic("Unsupported Bazel taskdriver " + taskdriverName)
