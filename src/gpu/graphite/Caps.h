@@ -73,6 +73,9 @@ public:
                                                      Protected,
                                                      Renderable) const = 0;
 
+    virtual TextureInfo getTextureInfoForSampledCopy(const TextureInfo& textureInfo,
+                                                     Mipmapped mipmapped) const = 0;
+
     virtual TextureInfo getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo,
                                                   Discardable discardable) const = 0;
 
@@ -155,6 +158,13 @@ public:
     virtual SkColorType supportedReadPixelsColorType(SkColorType srcColorType,
                                                      const TextureInfo& srcTextureInfo,
                                                      SkColorType dstColorType) const = 0;
+
+    /**
+     * Checks whether the passed color type is renderable. If so, the same color type is passed
+     * back. If not, provides an alternative (perhaps lower bit depth and/or unorm instead of float)
+     * color type that is supported or kUnknown if there no renderable fallback format.
+     */
+    SkColorType getRenderableColorType(SkColorType) const;
 
     bool clampToBorderSupport() const { return fClampToBorderSupport; }
 
