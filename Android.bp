@@ -69,17 +69,13 @@ cc_defaults {
 
         x86: {
             srcs: [
-                "src/opts/SkOpts_avx.cpp",
                 "src/opts/SkOpts_hsw.cpp",
-                "src/opts/SkOpts_ssse3.cpp",
             ],
         },
 
         x86_64: {
             srcs: [
-                "src/opts/SkOpts_avx.cpp",
                 "src/opts/SkOpts_hsw.cpp",
-                "src/opts/SkOpts_ssse3.cpp",
             ],
         },
     },
@@ -2691,8 +2687,10 @@ cc_defaults {
         "experimental/sktext/tests/WrappedText.cpp",
         "modules/bentleyottmann/src/EventQueue.cpp",
         "modules/bentleyottmann/src/Point.cpp",
+        "modules/bentleyottmann/src/Segment.cpp",
         "modules/bentleyottmann/tests/EventQueueTest.cpp",
         "modules/bentleyottmann/tests/PointTest.cpp",
+        "modules/bentleyottmann/tests/SegmentTest.cpp",
         "modules/skottie/src/SkottieTest.cpp",
         "modules/skottie/tests/AudioLayer.cpp",
         "modules/skottie/tests/Expression.cpp",
@@ -3801,8 +3799,10 @@ cc_library_shared {
         "gm/yuvtorgbsubset.cpp",
         "modules/bentleyottmann/src/EventQueue.cpp",
         "modules/bentleyottmann/src/Point.cpp",
+        "modules/bentleyottmann/src/Segment.cpp",
         "modules/bentleyottmann/tests/EventQueueTest.cpp",
         "modules/bentleyottmann/tests/PointTest.cpp",
+        "modules/bentleyottmann/tests/SegmentTest.cpp",
         "modules/skcms/skcms.cc",
         "modules/sksg/src/SkSGClipEffect.cpp",
         "modules/sksg/src/SkSGColorFilter.cpp",

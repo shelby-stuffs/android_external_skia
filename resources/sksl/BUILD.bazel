@@ -122,6 +122,7 @@ skia_filegroup(
     name = "sksl_wgsl_tests_sources",
     srcs = [
         ":sksl_blend_tests",
+        ":sksl_folding_tests",
         ":sksl_shared_tests",
         ":sksl_wgsl_tests",
     ],
@@ -923,6 +924,7 @@ skia_filegroup(
         "shared/MatrixSwizzleStore.sksl",
         "shared/MatrixToVectorCast.sksl",
         "shared/MultipleAssignments.sksl",
+        "shared/NestedComparisonIntrinsics.sksl",
         "shared/NoFragCoordsPos.vert",
         "shared/NoFragCoordsPosRT.vert",
         "shared/NormalizationVert.vert",

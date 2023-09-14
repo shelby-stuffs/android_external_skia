@@ -100,9 +100,6 @@ static const struct {
     { "angle_mtl_es2",         "gpu", "api=angle_mtl_es2" },
     { "angle_mtl_es3",         "gpu", "api=angle_mtl_es3" },
     { "mock",                  "gpu", "api=mock" },
-#ifdef SK_DAWN
-    { "dawn",                  "gpu", "api=dawn" },
-#endif
 #ifdef SK_VULKAN
     { "vk",                    "gpu", "api=vulkan" },
     { "vkf16",                 "gpu", "api=vulkan,color=f16" },
@@ -365,12 +362,6 @@ static bool parse_option_gpu_api(const SkString&                      value,
 #ifdef SK_DIRECT3D
     if (value.equals("direct3d")) {
         *outContextType = GrContextFactory::kDirect3D_ContextType;
-        return true;
-    }
-#endif
-#ifdef SK_DAWN
-    if (value.equals("dawn")) {
-        *outContextType = GrContextFactory::kDawn_ContextType;
         return true;
     }
 #endif
@@ -686,14 +677,15 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString&         ta
 
 #if defined(SK_GRAPHITE)
 
-SkCommandLineConfigGraphite* parse_command_line_config_graphite(const SkString&           tag,
+SkCommandLineConfigGraphite* parse_command_line_config_graphite(const SkString& tag,
                                                                 const TArray<SkString>& vias,
-                                                                const SkString&           options) {
+                                                                const SkString& options) {
     using ContextType = sk_gpu_test::GrContextFactory::ContextType;
 
     ContextType contextType = sk_gpu_test::GrContextFactory::kMetal_ContextType;
     SkColorType colorType = kRGBA_8888_SkColorType;
     SkAlphaType alphaType = kPremul_SkAlphaType;
+    bool wgsl = false;
 
     bool parseSucceeded = false;
     ExtendedOptions extendedOptions(options, &parseSucceeded);
@@ -702,28 +694,25 @@ SkCommandLineConfigGraphite* parse_command_line_config_graphite(const SkString& 
     }
 
     bool validOptions = extendedOptions.get_option_graphite_api("api", &contextType) &&
-                        extendedOptions.get_option_gpu_color("color", &colorType, &alphaType);
+                        extendedOptions.get_option_gpu_color("color", &colorType, &alphaType) &&
+                        extendedOptions.get_option_bool("wgsl", &wgsl);
     if (!validOptions) {
         return nullptr;
     }
 
-    return new SkCommandLineConfigGraphite(tag,
-                                           vias,
-                                           contextType,
-                                           colorType,
-                                           alphaType);
+    return new SkCommandLineConfigGraphite(tag, vias, contextType, colorType, alphaType, wgsl);
 }
 
 #endif
 
-SkCommandLineConfigSvg::SkCommandLineConfigSvg(const SkString&           tag,
+SkCommandLineConfigSvg::SkCommandLineConfigSvg(const SkString& tag,
                                                const TArray<SkString>& viaParts,
-                                               int                       pageIndex)
+                                               int pageIndex)
         : SkCommandLineConfig(tag, SkString("svg"), viaParts), fPageIndex(pageIndex) {}
 
-SkCommandLineConfigSvg* parse_command_line_config_svg(const SkString&           tag,
+SkCommandLineConfigSvg* parse_command_line_config_svg(const SkString& tag,
                                                       const TArray<SkString>& vias,
-                                                      const SkString&           options) {
+                                                      const SkString& options) {
     // Defaults for SVG backend.
     int pageIndex = 0;
 
@@ -746,12 +735,12 @@ void ParseConfigs(const CommandLineFlags::StringArray& configs,
                   SkCommandLineConfigArray*            outResult) {
     outResult->clear();
     for (int i = 0; i < configs.size(); ++i) {
-        SkString           extendedBackend;
-        SkString           extendedOptions;
-        SkString           simpleBackend;
+        SkString         extendedBackend;
+        SkString         extendedOptions;
+        SkString         simpleBackend;
         TArray<SkString> vias;
 
-        SkString           tag(configs[i]);
+        SkString         tag(configs[i]);
         TArray<SkString> parts;
         SkStrSplit(tag.c_str(), "[", kStrict_SkStrSplitMode, &parts);
         if (parts.size() == 2) {
