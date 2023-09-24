@@ -47,6 +47,10 @@
 #include "src/gpu/ganesh/image/SkSpecialImage_Ganesh.h"
 #endif // defined(SK_GANESH)
 
+#if defined(SK_GANESH) || defined(SK_GRAPHITE)
+#include "src/gpu/BlurUtils.h"
+#endif
+
 #if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE1
     #include <xmmintrin.h>
     #define SK_PREFETCH(ptr) _mm_prefetch(reinterpret_cast<const char*>(ptr), _MM_HINT_T0)
@@ -995,8 +999,8 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::gpuFilter(const skif::Context& ctx,
                                                    SkIRect dstBounds,
                                                    SkIPoint inputOffset,
                                                    SkIPoint* offset) const {
-    if (GrBlurUtils::IsEffectivelyZeroSigma(sigma.x()) &&
-        GrBlurUtils::IsEffectivelyZeroSigma(sigma.y())) {
+    if (skgpu::BlurIsEffectivelyIdentity(sigma.x()) &&
+        skgpu::BlurIsEffectivelyIdentity(sigma.y())) {
         offset->fX = inputBounds.x() + inputOffset.fX;
         offset->fY = inputBounds.y() + inputOffset.fY;
         return input->makeSubset(inputBounds);
@@ -1077,18 +1081,13 @@ SkIRect SkBlurImageFilter::onFilterNodeBounds(const SkIRect& src, const SkMatrix
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 #include <utility>
 
 struct SkIPoint;
 
-#if defined(SK_GANESH)
-#include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/gpu/ganesh/GrBlurUtils.h"
-#include "src/gpu/ganesh/GrSurfaceProxyView.h"
-#include "src/gpu/ganesh/SurfaceDrawContext.h"
-#include "src/gpu/ganesh/image/SkSpecialImage_Ganesh.h"
-#endif // defined(SK_GANESH)
+#if defined(SK_GANESH) || defined(SK_GRAPHITE)
+#include "src/gpu/BlurUtils.h"
+#endif
 
 #if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE1
     #include <xmmintrin.h>
@@ -1951,56 +1950,6 @@ sk_sp<SkSpecialImage> cpu_blur(const skif::Context& ctx,
                                            ctx.surfaceProps());
 }
 
-// TODO: Migrate this to use the blur engine API and share with Graphite
-
-#if defined(SK_GANESH)
-sk_sp<SkSpecialImage> gpu_blur(const skif::Context& ctx,
-                               skif::LayerSpace<SkSize> sigma,
-                               const sk_sp<SkSpecialImage>& input,
-                               skif::LayerSpace<SkIRect> srcBounds,
-                               skif::LayerSpace<SkIRect> dstBounds) {
-    // A no-op blur should have been caught in onFilterImage()
-    SkASSERT(!GrBlurUtils::IsEffectivelyZeroSigma(sigma.width()) ||
-             !GrBlurUtils::IsEffectivelyZeroSigma(sigma.height()));
-
-    auto rContext = ctx.getContext();
-    SkASSERT(rContext);
-
-    GrSurfaceProxyView inputView = SkSpecialImages::AsView(rContext, input);
-    if (!inputView.proxy()) {
-        return nullptr;
-    }
-    SkASSERT(inputView.asTextureProxy());
-
-    // Update srcBounds and dstBounds to be relative to the underlying texture proxy of the input.
-    skif::LayerSpace<skif::IVector> proxyOffset =
-            skif::LayerSpace<SkIPoint>(input->subset().topLeft()) - srcBounds.topLeft();
-    dstBounds.offset(proxyOffset);
-    srcBounds.offset(proxyOffset);
-    auto sdc = GrBlurUtils::GaussianBlur(
-            rContext,
-            std::move(inputView),
-            SkColorTypeToGrColorType(input->colorType()),
-            input->alphaType(),
-            ctx.refColorSpace(),
-            SkIRect(dstBounds),
-            SkIRect(srcBounds),
-            sigma.width(),
-            sigma.height(),
-            SkTileMode::kDecal); // TODO: Inherit tile mode from input FilterResult
-    if (!sdc) {
-        return nullptr;
-    }
-
-    return SkSpecialImages::MakeDeferredFromGpu(rContext,
-                                                SkIRect::MakeSize(SkISize(dstBounds.size())),
-                                                kNeedNewImageUniqueID_SpecialImage,
-                                                sdc->readSurfaceView(),
-                                                sdc->colorInfo(),
-                                                ctx.surfaceProps());
-}
-#endif
-
 }  // namespace
 
 skif::FilterResult SkBlurImageFilter::onFilterImage(const skif::Context& ctx) const {
@@ -2008,16 +1957,6 @@ skif::FilterResult SkBlurImageFilter::onFilterImage(const skif::Context& ctx) co
             this->kernelBounds(ctx.mapping(), ctx.desiredOutput(), ctx.gpuBacked()));
 
     skif::FilterResult childOutput = this->getChildOutput(0, inputCtx);
-
-    // If childOutput completely fulfilled requiredInput, maxOutput will match the context's
-    // desired output, but if the output image is smaller, this will restrict the blur output
-    // to what is actual produceable.
-    skif::LayerSpace<SkIRect> maxOutput =
-            this->kernelBounds(ctx.mapping(), childOutput.layerBounds(), ctx.gpuBacked());
-    if (!maxOutput.intersect(ctx.desiredOutput())) {
-        return {};
-    }
-
     skif::LayerSpace<SkSize> sigma = this->mapSigma(ctx.mapping(), ctx.gpuBacked());
     if (sigma.width() == 0.f && sigma.height() == 0.f) {
         // No actual blur, so just return the input unmodified
@@ -2026,6 +1965,15 @@ skif::FilterResult SkBlurImageFilter::onFilterImage(const skif::Context& ctx) co
 
     SkASSERT(sigma.width() >= 0.f && sigma.width() <= kMaxSigma &&
              sigma.height() >= 0.f && sigma.height() <= kMaxSigma);
+
+    // TODO: This is equivalent to what Builder::blur() calculates under the hood, but is calculated
+    // *before* we apply any legacy tile mode since the legacy tiling did not actually cause the
+    // output to extend fully.
+    skif::LayerSpace<SkIRect> maxOutput =
+            this->kernelBounds(ctx.mapping(), childOutput.layerBounds(), ctx.gpuBacked());
+    if (!maxOutput.intersect(ctx.desiredOutput())) {
+        return {};
+    }
 
     if (fLegacyTileMode != SkTileMode::kDecal) {
         // Legacy tiling applied to the input image when there was no explicit crop rect. Use the
@@ -2036,9 +1984,21 @@ skif::FilterResult SkBlurImageFilter::onFilterImage(const skif::Context& ctx) co
                                             fLegacyTileMode);
     }
 
-    // TODO: Don't force resolve the input image if we end up having to downsample in order to fit
-    // under the maximum sigma w/o decimation. Instead we could resolve and do the first downscale
-    // at the same time.
+    // TODO(b/40039877): Once the CPU blur functions can handle tile modes and color types beyond
+    // N32, there won't be any need to branch on how to apply the blur to the filter result.
+    if (ctx.gpuBacked()) {
+        // For non-legacy tiling, 'maxOutput' is equal to the desired output. For decal's it matches
+        // what Builder::blur() calculates internally. For legacy tiling, however, it's dependent on
+        // the original child output's bounds ignoring the tile mode's effect.
+        skif::Context croppedOutput = ctx.withNewDesiredOutput(maxOutput);
+        skif::FilterResult::Builder builder{croppedOutput};
+        builder.add(childOutput);
+        return builder.blur(sigma);
+    }
+
+    // The CPU blur does not yet support tile modes so explicitly resolve it to a special image that
+    // has the tiling rendered into the pixels.
+
     auto [resolvedChildOutput, origin] = childOutput.imageAndOffset(inputCtx);
     if (!resolvedChildOutput) {
         return {};
@@ -2048,25 +2008,9 @@ skif::FilterResult SkBlurImageFilter::onFilterImage(const skif::Context& ctx) co
                                                           resolvedChildOutput->width(),
                                                           resolvedChildOutput->height())};
 
-    if (resolvedChildOutput->isGaneshBacked()) {
-        // Ganesh GPU blur
-#if defined(SK_GANESH)
-        return skif::FilterResult{gpu_blur(ctx, sigma, std::move(resolvedChildOutput),
-                                           srcBounds, maxOutput),
-                                  maxOutput.topLeft()};
-#else
-        // w/o ganesh being built, no special image should return true from isGaneshBacked()
-        SkUNREACHABLE;
-#endif
-    } else if (resolvedChildOutput->isGraphiteBacked()) {
-        // TODO(b/294102906 Implement graphite blurs
-        return skif::FilterResult{std::move(resolvedChildOutput), origin};
-    } else {
-        // CPU blur
-        return skif::FilterResult{cpu_blur(ctx, sigma, std::move(resolvedChildOutput),
-                                           srcBounds, maxOutput),
-                                  maxOutput.topLeft()};
-    }
+    return skif::FilterResult{cpu_blur(ctx, sigma, std::move(resolvedChildOutput),
+                                       srcBounds, maxOutput),
+                              maxOutput.topLeft()};
 }
 
 skif::LayerSpace<SkSize> SkBlurImageFilter::mapSigma(const skif::Mapping& mapping,
@@ -2086,16 +2030,16 @@ skif::LayerSpace<SkSize> SkBlurImageFilter::mapSigma(const skif::Mapping& mappin
     // Disable bluring on axes that are not finite, or that are small enough that the blur is
     // effectively an identity.
     if (!SkScalarIsFinite(sigma.width()) || (!gpuBacked && calculate_window(sigma.width()) <= 1)
-#if defined(SK_GANESH)
-        || (gpuBacked && GrBlurUtils::IsEffectivelyZeroSigma(sigma.width()))
+#if defined(SK_GANESH) || defined(SK_GRAPHITE)
+        || (gpuBacked && skgpu::BlurIsEffectivelyIdentity(sigma.width()))
 #endif
     ) {
         sigma = skif::LayerSpace<SkSize>({0.f, sigma.height()});
     }
 
     if (!SkScalarIsFinite(sigma.height()) || (!gpuBacked && calculate_window(sigma.height()) <= 1)
-#if defined(SK_GANESH)
-        || (gpuBacked && GrBlurUtils::IsEffectivelyZeroSigma(sigma.height()))
+#if defined(SK_GANESH) || defined(SK_GRAPHITE)
+        || (gpuBacked && skgpu::BlurIsEffectivelyIdentity(sigma.height()))
 #endif
     ) {
         sigma = skif::LayerSpace<SkSize>({sigma.width(), 0.f});

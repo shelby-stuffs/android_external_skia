@@ -17,6 +17,7 @@
 #include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/UniformManager.h"
 #include "src/gpu/graphite/dawn/DawnCaps.h"
+#include "src/gpu/graphite/dawn/DawnErrorChecker.h"
 #include "src/gpu/graphite/dawn/DawnGraphiteUtilsPriv.h"
 #include "src/gpu/graphite/dawn/DawnResourceProvider.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
@@ -262,7 +263,6 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
     SkSL::ProgramSettings settings;
 
     settings.fForceNoRTFlip = true;
-    settings.fSPIRVDawnCompatMode = true;
 
     ShaderErrorHandler* errorHandler = caps.shaderErrorHandler();
 
@@ -321,9 +321,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
     }
 
     wgpu::RenderPipelineDescriptor descriptor;
-#if defined(SK_DEBUG)
     descriptor.label = step->name();
-#endif
 
     // Fragment state
     skgpu::BlendEquation equation = blendInfo.fEquation;
@@ -552,26 +550,29 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
     descriptor.multisample.mask = 0xFFFFFFFF;
     descriptor.multisample.alphaToCoverageEnabled = false;
 
-    auto pipeline = device.CreateRenderPipeline(&descriptor);
-    if (!pipeline) {
+    DawnErrorChecker errorChecker(device);
+    wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&descriptor);
+    SkASSERT(pipeline);
+    if (errorChecker.popErrorScopes() != DawnErrorType::kNoError) {
         return {};
     }
 
-#if GRAPHITE_TEST_UTILS
-    GraphicsPipeline::Shaders pipelineShaders = {
-        std::move(vsSkSL),
-        std::move(fsSkSL),
-        "SPIR-V disassembly not available",
-        "SPIR-V disassembly not available",
-    };
-    GraphicsPipeline::Shaders* pipelineShadersPtr = &pipelineShaders;
+#if defined(GRAPHITE_TEST_UTILS)
+    GraphicsPipeline::PipelineInfo pipelineInfo = {
+            pipelineDesc.renderStepID(),
+            pipelineDesc.paintParamsID(),
+            std::move(vsSkSL),
+            std::move(fsSkSL),
+            enableWGSL ? std::move(vsCode) : std::string("SPIR-V disassembly not available"),
+            enableWGSL ? std::move(fsCode) : std::string("SPIR-V disassembly not available")};
+    GraphicsPipeline::PipelineInfo* pipelineInfoPtr = &pipelineInfo;
 #else
-    GraphicsPipeline::Shaders* pipelineShadersPtr = nullptr;
+    GraphicsPipeline::PipelineInfo* pipelineInfoPtr = nullptr;
 #endif
 
     return sk_sp<DawnGraphicsPipeline>(
             new DawnGraphicsPipeline(sharedContext,
-                                     pipelineShadersPtr,
+                                     pipelineInfoPtr,
                                      std::move(pipeline),
                                      step->primitiveType(),
                                      depthStencilSettings.fStencilReferenceValue,
@@ -580,13 +581,13 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
 }
 
 DawnGraphicsPipeline::DawnGraphicsPipeline(const skgpu::graphite::SharedContext* sharedContext,
-                                           Shaders* pipelineShaders,
+                                           PipelineInfo* pipelineInfo,
                                            wgpu::RenderPipeline renderPipeline,
                                            PrimitiveType primitiveType,
                                            uint32_t refValue,
                                            bool hasStepUniforms,
                                            bool hasFragment)
-        : GraphicsPipeline(sharedContext, pipelineShaders)
+        : GraphicsPipeline(sharedContext, pipelineInfo)
         , fRenderPipeline(std::move(renderPipeline))
         , fPrimitiveType(primitiveType)
         , fStencilReferenceValue(refValue)

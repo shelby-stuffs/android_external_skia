@@ -50,6 +50,7 @@
 #include "tests/Test.h"
 #include "tests/TestUtils.h"
 #include "tools/ToolUtils.h"
+#include "tools/gpu/ContextType.h"
 #include "tools/gpu/ManagedBackendTexture.h"
 #include "tools/gpu/ProxyUtils.h"
 
@@ -80,6 +81,7 @@
 #endif
 
 #if defined(SK_VULKAN)
+#include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
 #include "include/gpu/vk/GrVkTypes.h"
 #include "src/gpu/ganesh/vk/GrVkCaps.h"
 #include <vulkan/vulkan_core.h>
@@ -186,7 +188,7 @@ static bool isBGRA8(const GrBackendFormat& format) {
         case GrBackendApi::kVulkan: {
 #ifdef SK_VULKAN
             VkFormat vkFormat;
-            format.asVkFormat(&vkFormat);
+            GrBackendFormats::AsVkFormat(format, &vkFormat);
             return vkFormat == VK_FORMAT_B8G8R8A8_UNORM;
 #else
             return false;
@@ -207,9 +209,6 @@ static bool isBGRA8(const GrBackendFormat& format) {
             return false;
 #endif
         }
-        case GrBackendApi::kDawn: {
-            return false;
-        }
         case GrBackendApi::kMock: {
             SkTextureCompressionType compression = format.asMockCompressionType();
             if (compression != SkTextureCompressionType::kNone) {
@@ -217,6 +216,9 @@ static bool isBGRA8(const GrBackendFormat& format) {
             }
 
             return format.asMockColorType() == GrColorType::kBGRA_8888;
+        }
+        case GrBackendApi::kUnsupported: {
+            return false;
         }
     }
     SkUNREACHABLE;
@@ -233,7 +235,7 @@ static bool isRGB(const GrBackendFormat& format) {
         case GrBackendApi::kVulkan: {
 #ifdef SK_VULKAN
             VkFormat vkFormat;
-            format.asVkFormat(&vkFormat);
+            GrBackendFormats::AsVkFormat(format, &vkFormat);
             return vkFormat == VK_FORMAT_R8G8B8_UNORM;
 #else
             return false;
@@ -243,10 +245,10 @@ static bool isRGB(const GrBackendFormat& format) {
             return false;  // Metal doesn't even pretend to support this
         case GrBackendApi::kDirect3D:
             return false;  // Not supported in Direct3D 12
-        case GrBackendApi::kDawn:
-            return false;
         case GrBackendApi::kMock:
             return format.asMockColorType() == GrColorType::kRGB_888;
+        case GrBackendApi::kUnsupported:
+            return false;
     }
     SkUNREACHABLE;
 }
@@ -580,7 +582,7 @@ enum class VkLayout {
 void check_vk_tiling(const GrBackendTexture& backendTex) {
 #if defined(SK_VULKAN) && defined(SK_DEBUG)
     GrVkImageInfo vkII;
-    if (backendTex.getVkImageInfo(&vkII)) {
+    if (GrBackendTextures::GetVkImageInfo(backendTex, &vkII)) {
         SkASSERT(VK_IMAGE_TILING_OPTIMAL == vkII.fImageTiling);
     }
 #endif
@@ -756,9 +758,9 @@ void color_type_backend_allocation_test(const sk_gpu_test::ContextInfo& ctxInfo,
 }
 
 DEF_GANESH_TEST(ColorTypeBackendAllocationTest, reporter, options, CtsEnforcement::kApiLevel_T) {
-    for (int t = 0; t < sk_gpu_test::GrContextFactory::kContextTypeCnt; ++t) {
-        auto type = static_cast<sk_gpu_test::GrContextFactory::ContextType>(t);
-        if (!sk_gpu_test::GrContextFactory::IsRenderingContext(type)) {
+    for (int t = 0; t < skgpu::kContextTypeCount; ++t) {
+        auto type = static_cast<skgpu::ContextType>(t);
+        if (!skgpu::IsRenderingContext(type)) {
             continue;
         }
         sk_gpu_test::GrContextFactory factory(options);
@@ -783,10 +785,10 @@ DEF_GANESH_TEST(ColorTypeBackendAllocationTest, reporter, options, CtsEnforcemen
 ///////////////////////////////////////////////////////////////////////////////
 #ifdef SK_GL
 
-DEF_GANESH_TEST_FOR_ALL_GL_CONTEXTS(GLBackendAllocationTest,
-                                    reporter,
-                                    ctxInfo,
-                                    CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(GLBackendAllocationTest,
+                               reporter,
+                               ctxInfo,
+                               CtsEnforcement::kApiLevel_T) {
     sk_gpu_test::GLTestContext* glCtx = ctxInfo.glContext();
     GrGLStandard standard = glCtx->gl()->fStandard;
     auto context = ctxInfo.directContext();
@@ -998,7 +1000,7 @@ DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkBackendAllocationTest,
             continue;
         }
 
-        GrBackendFormat format = GrBackendFormat::MakeVk(combo.fFormat);
+        GrBackendFormat format = GrBackendFormats::MakeVk(combo.fFormat);
 
         for (auto mipmapped : { GrMipmapped::kNo, GrMipmapped::kYes }) {
             if (GrMipmapped::kYes == mipmapped && !vkCaps->mipmapSupport()) {
@@ -1011,7 +1013,7 @@ DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkBackendAllocationTest,
                     // We must also check whether we allow rendering to the format using the
                     // color type.
                     if (!vkCaps->isFormatAsColorTypeRenderable(
-                            combo.fColorType, GrBackendFormat::MakeVk(combo.fFormat), 1)) {
+                            combo.fColorType, GrBackendFormats::MakeVk(combo.fFormat), 1)) {
                         continue;
                     }
                 }

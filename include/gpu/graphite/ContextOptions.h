@@ -82,7 +82,13 @@ struct SK_API ContextOptions {
      */
     bool fEnableWGSL = false;
 
-#if GRAPHITE_TEST_UTILS
+    static constexpr size_t kDefaultContextBudget = 256 * (1 << 20);
+    /**
+     * What is the budget for GPU resources allocated and held by the Context.
+     */
+    size_t fGpuBudgetInBytes = kDefaultContextBudget;
+
+#if defined(GRAPHITE_TEST_UTILS)
     /**
      * Private options that are only meant for testing within Skia's tools.
      */

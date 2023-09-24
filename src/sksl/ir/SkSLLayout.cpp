@@ -19,14 +19,17 @@ namespace SkSL {
 std::string Layout::paddedDescription() const {
     std::string result;
     auto separator = SkSL::String::Separator();
-    if (fFlags & LayoutFlag::kSPIRV) {
-        result += separator() + "spirv";
+    if (fFlags & LayoutFlag::kVulkan) {
+        result += separator() + "vulkan";
     }
     if (fFlags & LayoutFlag::kMetal) {
         result += separator() + "metal";
     }
-    if (fFlags & LayoutFlag::kWGSL) {
-        result += separator() + "wgsl";
+    if (fFlags & LayoutFlag::kWebGPU) {
+        result += separator() + "webgpu";
+    }
+    if (fFlags & LayoutFlag::kDirect3D) {
+        result += separator() + "direct3d";
     }
     if (fFlags & LayoutFlag::kRGBA8) {
         result += separator() + "rgba8";
@@ -116,9 +119,10 @@ bool Layout::checkPermittedLayout(const Context& context,
         { LayoutFlag::kSet,                      "set"},
         { LayoutFlag::kBuiltin,                  "builtin"},
         { LayoutFlag::kInputAttachmentIndex,     "input_attachment_index"},
-        { LayoutFlag::kSPIRV,                    "spirv"},
+        { LayoutFlag::kVulkan,                   "vulkan"},
         { LayoutFlag::kMetal,                    "metal"},
-        { LayoutFlag::kWGSL,                     "wgsl"},
+        { LayoutFlag::kWebGPU,                   "webgpu"},
+        { LayoutFlag::kDirect3D,                 "direct3d"},
         { LayoutFlag::kRGBA8,                    "rgba8"},
         { LayoutFlag::kRGBA32F,                  "rgba32f"},
         { LayoutFlag::kR32F,                     "r32f"},
@@ -147,8 +151,9 @@ bool Layout::checkPermittedLayout(const Context& context,
         context.fErrors->error(pos, "'binding' modifier cannot coexist with 'texture'/'sampler'");
         success = false;
     }
-    // The `texture` and `sampler` flags are only allowed when explicitly targeting Metal and WGSL.
-    if (!(layoutFlags & (LayoutFlag::kMetal | LayoutFlag::kWGSL))) {
+    // The `texture` and `sampler` flags are only allowed when explicitly targeting Metal, WebGPU or
+    // Direct3D.
+    if (!(layoutFlags & (LayoutFlag::kMetal | LayoutFlag::kWebGPU | LayoutFlag::kDirect3D))) {
         permittedLayoutFlags &= ~LayoutFlag::kTexture;
         permittedLayoutFlags &= ~LayoutFlag::kSampler;
     }

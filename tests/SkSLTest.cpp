@@ -544,30 +544,23 @@ static void test_raster_pipeline(skiatest::Reporter* r,
 
 
 #if defined(SK_GANESH)
-static bool is_rendering_context_but_not_dawn(sk_gpu_test::GrContextFactory::ContextType type) {
-    return sk_gpu_test::GrContextFactory::IsRenderingContext(type) &&
-           sk_gpu_test::GrContextFactory::ContextTypeBackend(type) != GrBackendApi::kDawn;
-}
-
-#define DEF_GANESH_SKSL_TEST(flags, ctsEnforcement, name, path)                 \
-    DEF_CONDITIONAL_GANESH_TEST_FOR_CONTEXTS(SkSL##name##_Ganesh,               \
-                                             is_rendering_context_but_not_dawn, \
-                                             r,                                 \
-                                             ctxInfo,                           \
-                                             nullptr,                           \
-                                             is_gpu(flags),                     \
-                                             ctsEnforcement) {                  \
-        test_ganesh(r, ctxInfo.directContext(), path, flags);                   \
+#define DEF_GANESH_SKSL_TEST(flags, ctsEnforcement, name, path) \
+    DEF_CONDITIONAL_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkSL##name##_Ganesh, \
+                                                       r,                   \
+                                                       ctxInfo,             \
+                                                       is_gpu(flags),       \
+                                                       ctsEnforcement) {    \
+        test_ganesh(r, ctxInfo.directContext(), path, flags);               \
     }
 #else
 #define DEF_GANESH_SKSL_TEST(flags, ctsEnforcement, name, path) /* Ganesh is disabled */
 #endif
 
 #if defined(SK_GRAPHITE)
-static bool is_native_context_or_dawn(sk_gpu_test::GrContextFactory::ContextType type) {
+static bool is_native_context_or_dawn(skgpu::ContextType type) {
     // This avoids re-testing Dawn over and over again against every possible API.
-    return sk_gpu_test::GrContextFactory::IsNativeBackend(type) ||
-           type == sk_gpu_test::GrContextFactory::kDawn_ContextType;
+    return skgpu::IsNativeBackend(type) ||
+           type == skgpu::ContextType::kDawn;
 }
 
 static void force_wgsl_in_dawn(skgpu::graphite::ContextOptions* options) {

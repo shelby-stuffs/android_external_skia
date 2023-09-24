@@ -1073,9 +1073,10 @@ SkSL::Layout Parser::layout() {
             {"blend_support_all_equations", SkSL::LayoutFlag::kBlendSupportAllEquations},
             {"push_constant",               SkSL::LayoutFlag::kPushConstant},
             {"color",                       SkSL::LayoutFlag::kColor},
-            {"spirv",                       SkSL::LayoutFlag::kSPIRV},
+            {"vulkan",                      SkSL::LayoutFlag::kVulkan},
             {"metal",                       SkSL::LayoutFlag::kMetal},
-            {"wgsl",                        SkSL::LayoutFlag::kWGSL},
+            {"webgpu",                      SkSL::LayoutFlag::kWebGPU},
+            {"direct3d",                    SkSL::LayoutFlag::kDirect3D},
             {"rgba8",                       SkSL::LayoutFlag::kRGBA8},
             {"rgba32f",                     SkSL::LayoutFlag::kRGBA32F},
             {"r32f",                        SkSL::LayoutFlag::kR32F},
@@ -1253,7 +1254,11 @@ const Type* Parser::findType(Position pos,
             return context.fTypes.fPoison.get();
         }
     }
-    return modifiers ? type->applyQualifiers(context, &modifiers->fFlags, modifiers->fPosition)
+    Position qualifierRange = modifiers->fPosition;
+    if (qualifierRange.startOffset() == qualifierRange.endOffset()) {
+        qualifierRange = this->rangeFrom(qualifierRange);
+    }
+    return modifiers ? type->applyQualifiers(context, &modifiers->fFlags, qualifierRange)
                      : type;
 }
 
