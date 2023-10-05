@@ -261,6 +261,11 @@ void VarDeclaration::ErrorCheck(const Context& context,
                 // Only non-opaque types allow `in` and `out`.
                 permitted |= ModifierFlag::kIn | ModifierFlag::kOut;
             }
+            if (ProgramConfig::IsFragment(context.fConfig->fKind) && baseType->isStruct() &&
+                !baseType->isInterfaceBlock()) {
+                // Only structs in fragment shaders allow `pixel_local`.
+                permitted |= ModifierFlag::kPixelLocal;
+            }
             if (ProgramConfig::IsCompute(context.fConfig->fKind)) {
                 // Only compute shaders allow `workgroup`.
                 if (!baseType->isOpaque() || baseType->isAtomic()) {
@@ -274,6 +279,15 @@ void VarDeclaration::ErrorCheck(const Context& context,
     }
 
     LayoutFlags permittedLayoutFlags = LayoutFlag::kAll;
+
+    // Pixel format modifiers are required on storage textures, and forbidden on other types.
+    if (baseType->isStorageTexture()) {
+        if (!(layout.fFlags & LayoutFlag::kAllPixelFormats)) {
+            context.fErrors->error(pos, "storage textures must declare a pixel format");
+        }
+    } else {
+        permittedLayoutFlags &= ~LayoutFlag::kAllPixelFormats;
+    }
 
     // The `texture` and `sampler` modifiers can be present respectively on a texture and sampler or
     // simultaneously on a combined image-sampler but they are not permitted on any other type.

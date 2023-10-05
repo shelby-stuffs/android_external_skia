@@ -24,13 +24,15 @@ namespace {
 
 // These are all the valid wgpu::TextureFormat that we currently support in Skia.
 // They are roughly ordered from most frequently used to least to improve lookup times in arrays.
-static constexpr wgpu::TextureFormat kFormats[] = {
+static constexpr wgpu::TextureFormat kFormats[skgpu::graphite::DawnCaps::kFormatCnt] = {
     wgpu::TextureFormat::RGBA8Unorm,
     wgpu::TextureFormat::R8Unorm,
+    wgpu::TextureFormat::R16Unorm,
     wgpu::TextureFormat::BGRA8Unorm,
     wgpu::TextureFormat::RGBA16Float,
     wgpu::TextureFormat::R16Float,
     wgpu::TextureFormat::RG8Unorm,
+    wgpu::TextureFormat::RG16Unorm,
     wgpu::TextureFormat::RGB10A2Unorm,
     wgpu::TextureFormat::RG16Float,
 
@@ -48,7 +50,7 @@ namespace skgpu::graphite {
 DawnCaps::DawnCaps(const wgpu::Device& device, const ContextOptions& options)
     : Caps() {
     this->initCaps(device, options);
-    this->initShaderCaps();
+    this->initShaderCaps(device);
     this->initFormatTable(device);
     this->finishInitialization(options);
 }
@@ -248,6 +250,12 @@ SkColorType DawnCaps::supportedReadPixelsColorType(SkColorType srcColorType,
 }
 
 void DawnCaps::initCaps(const wgpu::Device& device, const ContextOptions& options) {
+#if defined(GRAPHITE_TEST_UTILS)
+    wgpu::AdapterProperties props;
+    device.GetAdapter().GetProperties(&props);
+    this->setDeviceName(props.name);
+#endif
+
     wgpu::SupportedLimits limits;
     if (!device.GetLimits(&limits)) {
         SkASSERT(false);
@@ -282,10 +290,9 @@ void DawnCaps::initCaps(const wgpu::Device& device, const ContextOptions& option
             device.HasFeature(wgpu::FeatureName::MSAARenderToSingleSampled);
 
     fTransientAttachmentSupport = device.HasFeature(wgpu::FeatureName::TransientAttachments);
-    fEnableWGSL = options.fEnableWGSL;
 }
 
-void DawnCaps::initShaderCaps() {
+void DawnCaps::initShaderCaps(const wgpu::Device& device) {
     SkSL::ShaderCaps* shaderCaps = fShaderCaps.get();
 
     // WGSL does not support infinities regardless of hardware support. There are discussions around
@@ -294,6 +301,10 @@ void DawnCaps::initShaderCaps() {
 
     // WGSL supports shader derivatives in the fragment shader
     shaderCaps->fShaderDerivativeSupport = true;
+
+    if (device.HasFeature(wgpu::FeatureName::DualSourceBlending)) {
+        shaderCaps->fDualSourceBlendingSupport = true;
+    }
 }
 
 void DawnCaps::initFormatTable(const wgpu::Device& device) {
@@ -348,6 +359,27 @@ void DawnCaps::initFormatTable(const wgpu::Device& device) {
             ctInfo.fColorType = kGray_8_SkColorType;
             ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag;
             ctInfo.fReadSwizzle = skgpu::Swizzle("rrr1");
+        }
+    }
+
+    const bool supportNorm16 = device.HasFeature(wgpu::FeatureName::Norm16TextureFormats);
+    // TODO(crbug.com/dawn/1856): Support storage binding for compute shader in Dawn.
+    // Format: R16Unorm
+    {
+        info = &fFormatTable[GetFormatIndex(wgpu::TextureFormat::R16Unorm)];
+        if (supportNorm16) {
+            info->fFlags = FormatInfo::kAllFlags;
+            info->fColorTypeInfoCount = 1;
+            info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
+            int ctIdx = 0;
+            // Format: R16Unorm, Surface: kA16_unorm
+            {
+                auto& ctInfo = info->fColorTypeInfos[ctIdx++];
+                ctInfo.fColorType = kA16_unorm_SkColorType;
+                ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
+                ctInfo.fReadSwizzle = skgpu::Swizzle("000r");
+                ctInfo.fWriteSwizzle = skgpu::Swizzle("a000");
+            }
         }
     }
 
@@ -417,6 +449,24 @@ void DawnCaps::initFormatTable(const wgpu::Device& device) {
             auto& ctInfo = info->fColorTypeInfos[ctIdx++];
             ctInfo.fColorType = kR8G8_unorm_SkColorType;
             ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
+        }
+    }
+
+    // TODO(crbug.com/dawn/1856): Support storage binding for compute shader in Dawn.
+    // Format: RG16Unorm
+    {
+        info = &fFormatTable[GetFormatIndex(wgpu::TextureFormat::RG16Unorm)];
+        if (supportNorm16) {
+            info->fFlags = FormatInfo::kAllFlags;
+            info->fColorTypeInfoCount = 1;
+            info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
+            int ctIdx = 0;
+            // Format: RG16Unorm, Surface: kR16G16_unorm
+            {
+                auto& ctInfo = info->fColorTypeInfos[ctIdx++];
+                ctInfo.fColorType = kR16G16_unorm_SkColorType;
+                ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
+            }
         }
     }
 
@@ -491,6 +541,7 @@ void DawnCaps::initFormatTable(const wgpu::Device& device) {
     std::fill_n(fColorTypeToFormatTable, kSkColorTypeCnt, wgpu::TextureFormat::Undefined);
 
     this->setColorType(kAlpha_8_SkColorType,          { wgpu::TextureFormat::R8Unorm });
+    this->setColorType(kA16_unorm_SkColorType,        { wgpu::TextureFormat::R16Unorm });
     this->setColorType(kRGBA_8888_SkColorType,        { wgpu::TextureFormat::RGBA8Unorm });
     this->setColorType(kRGB_888x_SkColorType,
                        {wgpu::TextureFormat::RGBA8Unorm, wgpu::TextureFormat::BGRA8Unorm});
@@ -500,6 +551,7 @@ void DawnCaps::initFormatTable(const wgpu::Device& device) {
     this->setColorType(kRGBA_F16_SkColorType,         { wgpu::TextureFormat::RGBA16Float });
     this->setColorType(kA16_float_SkColorType,        { wgpu::TextureFormat::R16Float });
     this->setColorType(kR8G8_unorm_SkColorType,       { wgpu::TextureFormat::RG8Unorm });
+    this->setColorType(kR16G16_unorm_SkColorType,     { wgpu::TextureFormat::RG16Unorm });
     this->setColorType(kRGBA_1010102_SkColorType,     { wgpu::TextureFormat::RGB10A2Unorm });
     this->setColorType(kR16G16_float_SkColorType,     { wgpu::TextureFormat::RG16Float });
 }
@@ -521,7 +573,7 @@ size_t DawnCaps::GetFormatIndex(wgpu::TextureFormat format) {
 
 void DawnCaps::setColorType(SkColorType colorType,
                             std::initializer_list<wgpu::TextureFormat> formats) {
-    static_assert(std::tuple_size<decltype(fFormatTable)>::value == std::size(kFormats),
+    static_assert(std::size(kFormats) == kFormatCnt,
                   "Size is not same for DawnCaps::fFormatTable and kFormats");
 #ifdef SK_DEBUG
     for (size_t i = 0; i < std::size(fFormatTable); ++i) {

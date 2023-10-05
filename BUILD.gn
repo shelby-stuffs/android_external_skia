@@ -699,7 +699,8 @@ if (skia_compile_modules) {
         dir = get_path_info(dst, "dir")
         name = get_path_info(dst, "name")
         ext = get_path_info(dst, "extension")
-        if (ext == "rts" || ext == "rtcf" || ext == "rtb") {
+        if (ext == "rts" || ext == "rtcf" || ext == "rtb" || ext == "mfrag" ||
+            ext == "mvert") {
           response_file_contents += [ rebase_path(src) ]
           sources += [ src ]
           outputs += [ target_out_dir + "/" +
@@ -754,7 +755,7 @@ if (skia_compile_sksl_tests) {
     include_dirs = [ "." ]
     deps = [
       ":run_sksllex",
-      "//third_party/externals/dawn/src/tint:libtint",
+      "//third_party/externals/dawn/src/tint/api:api",
       "//third_party/externals/spirv-tools:spvtools",
       "//third_party/externals/spirv-tools:spvtools_val",
       "//third_party/spirv-cross:spirv_cross",

@@ -15,6 +15,8 @@ namespace skgpu { class ShaderErrorHandler; }
 
 namespace skgpu::graphite {
 
+struct ContextOptionsPriv;
+
 struct SK_API ContextOptions {
     ContextOptions() {}
 
@@ -75,37 +77,16 @@ struct SK_API ContextOptions {
     bool fAllowMultipleGlyphCacheTextures = true;
     bool fSupportBilerpFromGlyphAtlas = false;
 
-    /**
-     * In the Dawn backend, controls SkSL compilation to native code. When false, we emit SPIR-V and
-     * rely on Tint's SPIR-V Reader. When true, we emit native WGSL.
-     * TODO(b/40044196): once WGSL is stable, remove this flag and always emit WGSL.
-     */
-    bool fEnableWGSL = false;
-
     static constexpr size_t kDefaultContextBudget = 256 * (1 << 20);
     /**
      * What is the budget for GPU resources allocated and held by the Context.
      */
     size_t fGpuBudgetInBytes = kDefaultContextBudget;
 
-#if defined(GRAPHITE_TEST_UTILS)
     /**
      * Private options that are only meant for testing within Skia's tools.
      */
-
-    int  fMaxTextureSizeOverride = SK_MaxS32;
-
-    /**
-     * Maximum width and height of internal texture atlases.
-     */
-    int  fMaxTextureAtlasSize = 2048;
-
-    /**
-     * If true, will store a pointer in Recorder that points back to the Context
-     * that created it. Used by readPixels() and other methods that normally require a Context.
-     */
-    bool fStoreContextRefInRecorder = false;
-#endif
+    ContextOptionsPriv* fOptionsPriv = nullptr;
 };
 
 }  // namespace skgpu::graphite

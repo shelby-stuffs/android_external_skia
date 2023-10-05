@@ -137,7 +137,7 @@ export interface CanvasKit {
      * @param lightPos - The 3D position of the light relative to the canvas plane. This is
      *                   independent of the canvas's current matrix.
      * @param lightRadius - The radius of the disc light.
-     * @param flags - See SkShadowFlags.h; 0 means use default options.
+     * @param flags - See SkShadowUtils.h; 0 means use default options.
      * @param dstRect - if provided, the bounds will be copied into this rect instead of allocating
      *                  a new one.
      * @returns The bounding rectangle or null if it could not be computed.
@@ -502,6 +502,8 @@ export interface CanvasKit {
     readonly StrokeJoin: StrokeJoinEnumValues;
     readonly TileMode: TileModeEnumValues;
     readonly VertexMode: VertexModeEnumValues;
+    readonly InputState: InputStateEnumValues;
+    readonly ModifierKey: ModifierKeyEnumValues;
 
     // Core Constants
     readonly TRANSPARENT: Color;
@@ -964,6 +966,21 @@ export interface ManagedSkottieAnimation extends SkottieAnimation {
     getColorSlot(key: string): Color | null;
     getScalarSlot(key: string): number | null;
     getVec2Slot(key: string): Vector2 | null;
+
+    // Attach a WYSIWYG editor to the text layer identified by 'id' and 'index' (multiple layers
+    // can be grouped with the same ID).
+    // Other layers with the same ID are attached as dependents, and updated on the fly as the
+    // edited layer changes.
+    attachEditor(id: string, index: number): boolean;
+
+    // Enable/disable the current editor.
+    enableEditor(enable: boolean): void;
+
+    // Send key events to the active editor.
+    dispatchEditorKey(key: string): boolean;
+
+    // Send pointer events to the active editor, in canvas coordinates.
+    dispatchEditorPointer(x: number, y: number, state: InputState, modifier: ModifierKey): boolean;
 }
 
 /**
@@ -1548,7 +1565,7 @@ export interface Canvas extends EmbindObject<"Canvas"> {
      * @param lightRadius - The radius of the disc light.
      * @param ambientColor - The color of the ambient shadow.
      * @param spotColor -  The color of the spot shadow.
-     * @param flags - See SkShadowFlags.h; 0 means use default options.
+     * @param flags - See SkShadowUtils.h; 0 means use default options.
      */
     drawShadow(path: Path, zPlaneParams: InputVector3, lightPos: InputVector3, lightRadius: number,
                ambientColor: InputColor, spotColor: InputColor, flags: number): void;
@@ -4386,6 +4403,8 @@ export type StrokeCap = EmbindEnumEntity;
 export type StrokeJoin = EmbindEnumEntity;
 export type TileMode = EmbindEnumEntity;
 export type VertexMode = EmbindEnumEntity;
+export type InputState = EmbindEnumEntity;
+export type ModifierKey = EmbindEnumEntity;
 
 export type Affinity = EmbindEnumEntity;
 export type DecorationStyle = EmbindEnumEntity;
@@ -4681,4 +4700,21 @@ export interface VertexModeEnumValues extends EmbindEnum {
     Triangles: VertexMode;
     TrianglesStrip: VertexMode;
     TriangleFan: VertexMode;
+}
+
+export interface InputStateEnumValues extends EmbindEnum {
+    Down: InputState;
+    Up: InputState;
+    Move: InputState;
+    Right: InputState;  // fling only
+    Left: InputState;  // fling only
+}
+
+export interface ModifierKeyEnumValues extends EmbindEnum {
+    None: ModifierKey;
+    Shift: ModifierKey;
+    Control: ModifierKey;
+    Option: ModifierKey;
+    Command: ModifierKey;
+    FirstPress: ModifierKey;
 }

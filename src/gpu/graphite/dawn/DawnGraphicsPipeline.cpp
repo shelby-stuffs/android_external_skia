@@ -16,6 +16,7 @@
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/UniformManager.h"
+#include "src/gpu/graphite/dawn/DawnAsyncWait.h"
 #include "src/gpu/graphite/dawn/DawnCaps.h"
 #include "src/gpu/graphite/dawn/DawnErrorChecker.h"
 #include "src/gpu/graphite/dawn/DawnGraphiteUtilsPriv.h"
@@ -238,25 +239,6 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
                                                        const GraphicsPipelineDesc& pipelineDesc,
                                                        const RenderPassDesc& renderPassDesc) {
     const DawnCaps& caps = *static_cast<const DawnCaps*>(sharedContext->caps());
-    const bool enableWGSL = caps.enableWGSL();
-
-    using SkSLCompileFn = bool (*)(SkSL::Compiler*,
-                                   const std::string&,
-                                   SkSL::ProgramKind,
-                                   const SkSL::ProgramSettings&,
-                                   std::string*,
-                                   SkSL::Program::Interface*,
-                                   ShaderErrorHandler*);
-    const SkSLCompileFn kSkSLCompileFn = enableWGSL ? SkSLToWGSL
-                                                    : SkSLToSPIRV;
-
-    using DawnCompileFn = bool (*)(const DawnSharedContext* sharedContext,
-                                   const std::string&,
-                                   wgpu::ShaderModule* module,
-                                   ShaderErrorHandler*);
-    const DawnCompileFn kDawnCompileFn = enableWGSL ? DawnCompileWGSLShaderModule
-                                                    : DawnCompileSPIRVShaderModule;
-
     const auto& device = sharedContext->device();
 
     SkSL::Program::Interface vsInterface, fsInterface;
@@ -289,16 +271,16 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
 
     bool hasFragment = !fsSkSL.empty();
     if (hasFragment) {
-        if (!kSkSLCompileFn(compiler,
-                            fsSkSL,
-                            SkSL::ProgramKind::kGraphiteFragment,
-                            settings,
-                            &fsCode,
-                            &fsInterface,
-                            errorHandler)) {
+        if (!SkSLToWGSL(compiler,
+                        fsSkSL,
+                        SkSL::ProgramKind::kGraphiteFragment,
+                        settings,
+                        &fsCode,
+                        &fsInterface,
+                        errorHandler)) {
             return {};
         }
-        if (!kDawnCompileFn(sharedContext, fsCode, &fsModule, errorHandler)) {
+        if (!DawnCompileWGSLShaderModule(sharedContext, fsCode, &fsModule, errorHandler)) {
             return {};
         }
     }
@@ -307,16 +289,16 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
                                          step,
                                          useShadingSsboIndex,
                                          localCoordsNeeded);
-    if (!kSkSLCompileFn(compiler,
-                        vsSkSL,
-                        SkSL::ProgramKind::kGraphiteVertex,
-                        settings,
-                        &vsCode,
-                        &vsInterface,
-                        errorHandler)) {
+    if (!SkSLToWGSL(compiler,
+                    vsSkSL,
+                    SkSL::ProgramKind::kGraphiteVertex,
+                    settings,
+                    &vsCode,
+                    &vsInterface,
+                    errorHandler)) {
         return {};
     }
-    if (!kDawnCompileFn(sharedContext, vsCode, &vsModule, errorHandler)) {
+    if (!DawnCompileWGSLShaderModule(sharedContext, vsCode, &vsModule, errorHandler)) {
         return {};
     }
 
@@ -550,21 +532,44 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
     descriptor.multisample.mask = 0xFFFFFFFF;
     descriptor.multisample.alphaToCoverageEnabled = false;
 
-    DawnErrorChecker errorChecker(device);
-    wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&descriptor);
-    SkASSERT(pipeline);
-    if (errorChecker.popErrorScopes() != DawnErrorType::kNoError) {
+    struct PipelineAsyncArg {
+        PipelineAsyncArg(const wgpu::Device& device) : sync(device) {}
+        DawnAsyncWait sync;
+        wgpu::RenderPipeline pipeline;
+    };
+    PipelineAsyncArg asyncArg(device);
+
+    device.CreateRenderPipelineAsync(
+            &descriptor,
+            [](WGPUCreatePipelineAsyncStatus status,
+               WGPURenderPipeline pipeline,
+               char const* message,
+               void* userdata) {
+                PipelineAsyncArg* arg = static_cast<PipelineAsyncArg*>(userdata);
+
+                if (status != WGPUCreatePipelineAsyncStatus_Success) {
+                    SKGPU_LOG_E("Failed to create render pipeline (%d): %s", status, message);
+                    arg->pipeline = nullptr;
+                } else {
+                    arg->pipeline = wgpu::RenderPipeline::Acquire(pipeline);
+                }
+                arg->sync.signal();
+            },
+            &asyncArg);
+
+    asyncArg.sync.busyWait();
+
+    if (asyncArg.pipeline == nullptr) {
         return {};
     }
 
 #if defined(GRAPHITE_TEST_UTILS)
-    GraphicsPipeline::PipelineInfo pipelineInfo = {
-            pipelineDesc.renderStepID(),
-            pipelineDesc.paintParamsID(),
-            std::move(vsSkSL),
-            std::move(fsSkSL),
-            enableWGSL ? std::move(vsCode) : std::string("SPIR-V disassembly not available"),
-            enableWGSL ? std::move(fsCode) : std::string("SPIR-V disassembly not available")};
+    GraphicsPipeline::PipelineInfo pipelineInfo = {pipelineDesc.renderStepID(),
+                                                   pipelineDesc.paintParamsID(),
+                                                   std::move(vsSkSL),
+                                                   std::move(fsSkSL),
+                                                   std::move(vsCode),
+                                                   std::move(fsCode)};
     GraphicsPipeline::PipelineInfo* pipelineInfoPtr = &pipelineInfo;
 #else
     GraphicsPipeline::PipelineInfo* pipelineInfoPtr = nullptr;
@@ -573,7 +578,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
     return sk_sp<DawnGraphicsPipeline>(
             new DawnGraphicsPipeline(sharedContext,
                                      pipelineInfoPtr,
-                                     std::move(pipeline),
+                                     std::move(asyncArg.pipeline),
                                      step->primitiveType(),
                                      depthStencilSettings.fStencilReferenceValue,
                                      !step->uniforms().empty(),

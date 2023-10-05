@@ -143,47 +143,10 @@ public:
     Unflatten(SkReadBuffer& buffer);
 
 protected:
-    // DEPRECATED: Will be removed once cropping is handled by a standalone image filter
-    class CropRect {
-    public:
-        enum CropEdge {
-            kHasLeft_CropEdge   = 0x01,
-            kHasTop_CropEdge    = 0x02,
-            kHasWidth_CropEdge  = 0x04,
-            kHasHeight_CropEdge = 0x08,
-            kHasAll_CropEdge    = 0x0F,
-        };
-        CropRect() : fFlags(0) {}
-        explicit CropRect(const SkRect* rect)
-            : fRect(rect ? *rect : SkRect::MakeEmpty()), fFlags(rect ? kHasAll_CropEdge : 0x0) {}
-
-        // CropRect(const CropRect&) = default;
-
-        uint32_t flags() const { return fFlags; }
-        const SkRect& rect() const { return fRect; }
-
-        /**
-         *  Apply this cropRect to the imageBounds. If a given edge of the cropRect is not set, then
-         *  the corresponding edge from imageBounds will be used. If "embiggen" is true, the crop
-         *  rect is allowed to enlarge the size of the rect, otherwise it may only reduce the rect.
-         *  Filters that can affect transparent black should pass "true", while all other filters
-         *  should pass "false".
-         *
-         *  Note: imageBounds is in "device" space, as the output cropped rectangle will be, so the
-         *  matrix is ignored for those. It is only applied to the cropRect's bounds.
-         */
-        void applyTo(const SkIRect& imageBounds, const SkMatrix& matrix, bool embiggen,
-                     SkIRect* cropped) const;
-
-    private:
-        SkRect fRect;
-        uint32_t fFlags;
-    };
-
     class Common {
     public:
         /**
-         *  Attempt to unflatten the cropRect and the expected number of input filters.
+         *  Attempt to unflatten the expected number of input filters.
          *  If any number of input filters is valid, pass -1.
          *  If this fails (i.e. corrupt buffer or contents) then return false and common will
          *  be left uninitialized.
@@ -192,50 +155,27 @@ protected:
          */
         bool unflatten(SkReadBuffer&, int expectedInputs);
 
-        std::optional<SkRect> optionalCropRect() const {
-            if (fCropRect.flags()) {
-                return fCropRect.rect();
-            } else {
-                return {};
-            }
-        }
+        std::optional<SkRect> cropRect() const { return fCropRect; }
 
-        const SkRect* cropRect() const {
-            return fCropRect.flags() != 0x0 ? &fCropRect.rect() : nullptr;
-        }
         int inputCount() const { return fInputs.size(); }
         sk_sp<SkImageFilter>* inputs() { return fInputs.begin(); }
 
         sk_sp<SkImageFilter> getInput(int index) { return fInputs[index]; }
 
     private:
-        CropRect fCropRect;
+        // Old SKPs (version less than kRemoveDeprecatedCropRect may have this set).
+        std::optional<SkRect> fCropRect;
+
         // most filters accept at most 2 input-filters
         skia_private::STArray<2, sk_sp<SkImageFilter>, true> fInputs;
     };
 
     SkImageFilter_Base(sk_sp<SkImageFilter> const* inputs, int inputCount,
-                       const SkRect* cropRect, std::optional<bool> usesSrc = {});
+                       std::optional<bool> usesSrc = {});
 
     ~SkImageFilter_Base() override;
 
     void flatten(SkWriteBuffer&) const override;
-
-    // DEPRECATED - Use the private context-only variant
-    virtual sk_sp<SkSpecialImage> onFilterImage(const skif::Context&, SkIPoint* offset) const {
-        return nullptr;
-    }
-
-    // DEPRECATED - Override onGetOutputLayerBounds and onGetInputLayerBounds instead. The
-    // node-specific and aggregation functions are no longer separated in the current API. A helper
-    // function is provided to do the default recursion for the common filter case.
-    virtual SkIRect onFilterBounds(const SkIRect&, const SkMatrix& ctm,
-                                   MapDirection, const SkIRect* inputRect) const;
-    virtual SkIRect onFilterNodeBounds(const SkIRect&, const SkMatrix& ctm,
-                                       MapDirection, const SkIRect* inputRect) const;
-
-    // DEPRECRATED - Call the Context-only getChildOutput()
-    sk_sp<SkSpecialImage> filterInput(int index, const skif::Context& ctx, SkIPoint* offset) const;
 
     // Helper function to calculate the required input/output of a specific child filter,
     // automatically handling if the child filter is null.
@@ -258,79 +198,6 @@ protected:
     // `withNewDesiredOutput`.
     skif::FilterResult getChildOutput(int index, const skif::Context& ctx) const;
 
-    /**
-     *  Returns whether any edges of the crop rect have been set. The crop
-     *  rect is set at construction time, and determines which pixels from the
-     *  input image will be processed, and which pixels in the output image will be allowed.
-     *  The size of the crop rect should be
-     *  used as the size of the destination image. The origin of this rect
-     *  should be used to offset access to the input images, and should also
-     *  be added to the "offset" parameter in onFilterImage.
-     *
-     *  DEPRECATED - Remove once cropping is handled by a separate filter
-     */
-    bool cropRectIsSet() const { return fCropRect.flags() != 0x0; }
-
-    // DEPRECATED - Remove once cropping is handled by a separate filter
-    CropRect getCropRect() const { return fCropRect; }
-
-    // DEPRECATED - Remove once cropping is handled by a separate filter
-    const CropRect* getCropRectIfSet() const {
-        return this->cropRectIsSet() ? &fCropRect : nullptr;
-    }
-
-    /** Given a "srcBounds" rect, computes destination bounds for this filter.
-     *  "dstBounds" are computed by transforming the crop rect by the context's
-     *  CTM, applying it to the initial bounds, and intersecting the result with
-     *  the context's clip bounds.  "srcBounds" (if non-null) are computed by
-     *  intersecting the initial bounds with "dstBounds", to ensure that we never
-     *  sample outside of the crop rect (this restriction may be relaxed in the
-     *  future).
-     *
-     *  DEPRECATED - Remove once cropping is handled by a separate filter, although it may be
-     *  necessary to provide a similar convenience function to compute the output bounds given the
-     *  images returned by filterInput().
-     */
-    bool applyCropRect(const skif::Context&, const SkIRect& srcBounds, SkIRect* dstBounds) const;
-
-    /** A variant of the above call which takes the original source bitmap and
-     *  source offset. If the resulting crop rect is not entirely contained by
-     *  the source bitmap's bounds, it creates a new bitmap in "result" and
-     *  pads the edges with transparent black. In that case, the srcOffset is
-     *  modified to be the same as the bounds, since no further adjustment is
-     *  needed by the caller. This version should only be used by filters
-     *  which are not capable of processing a smaller source bitmap into a
-     *  larger destination.
-     *
-     *  DEPRECATED - Remove once cropping is handled by a separate filter.
-     */
-    sk_sp<SkSpecialImage> applyCropRectAndPad(const skif::Context&,
-                                              SkSpecialImage* src,
-                                              SkIPoint* srcOffset,
-                                              SkIRect* bounds) const;
-
-    /**
-     *  Creates a modified Context for use when recursing up the image filter DAG.
-     *  The clip bounds are adjusted to accommodate any margins that this
-     *  filter requires by calling this node's
-     *  onFilterNodeBounds(..., kReverse_MapDirection).
-     */
-    // TODO (michaelludwig) - I don't think this is necessary to keep as protected. Other than the
-    // real use case in recursing through the DAG for filterInput(), it feels wrong for blur and
-    // other filters to need to call it.
-    skif::Context mapContext(const skif::Context& ctx) const;
-
-    // If 'srcBounds' will sample outside the border of 'originalSrcBounds' (i.e., the sample
-    // will wrap around to the other side) we must preserve the far side of the src along that
-    // axis (e.g., if we will sample beyond the left edge of the src, the right side must be
-    // preserved for the repeat sampling to work).
-    // DEPRECATED - Remove once cropping is handled by a separate filter, that can also handle all
-    // tile modes (including repeat) properly
-    static SkIRect DetermineRepeatedSrcBound(const SkIRect& srcBounds,
-                                             const SkIVector& filterOffset,
-                                             const SkISize& filterSize,
-                                             const SkIRect& originalSrcBounds);
-
 private:
     friend class SkImageFilter;
     // For PurgeCache()
@@ -344,7 +211,7 @@ private:
 
     /**
      *  Return true (and returns a ref'd colorfilter) if this node in the DAG is just a colorfilter
-     *  w/o CropRect constraints.
+     *  w/o cropping constraints.
      */
     virtual bool onIsColorFilterNode(SkColorFilter** /*filterPtr*/) const { return false; }
 
@@ -383,7 +250,7 @@ private:
      *  to safely handle these null and empty images and return an image filling the context's clip
      *  bounds as if its input filtered image were transparent black.
      */
-    virtual skif::FilterResult onFilterImage(const skif::Context& context) const;
+    virtual skif::FilterResult onFilterImage(const skif::Context& context) const = 0;
 
     /**
      *  Calculates the necessary input layer size in order for the final output of the filter to
@@ -392,47 +259,30 @@ private:
      *  node require for input in order to satisfy (as its own output), the input needs of its
      *  parent?".
      *
-     *  If 'recurse' is true, this function is responsible for recursing to its child image filters
-     *  and accounting for what they require to meet this filter's input requirements. It is up to
-     *  the filter to determine how to aggregate these inputs, but a helper function is provided for
-     *  the common case where the final required layer size is the union of the child filters'
-     *  required inputs, evaluated on what this filter requires for itself. 'recurse' is kNo
-     *  when mapping Contexts while actually filtering images, since the child recursion is
-     *  happening at a higher level.
-     *
      *  Unlike the public getInputBounds(), all internal bounds calculations are done in the shared
      *  layer space defined by 'mapping'.
-     *
-     *  The default implementation assumes that current filter requires an input equal to
-     *  'desiredOutputBounds', and passes this down to its child filters, and returns the union of
-     *  their required inputs.
      */
     virtual skif::LayerSpace<SkIRect> onGetInputLayerBounds(
             const skif::Mapping& mapping, const skif::LayerSpace<SkIRect>& desiredOutput,
-            const skif::LayerSpace<SkIRect>& contentBounds) const;
+            const skif::LayerSpace<SkIRect>& contentBounds) const = 0;
 
     /**
      *  Calculates the output bounds that this filter node would touch when processing an input
      *  sized to 'contentBounds'. This function is responsible for recursing to its child image
      *  filters and accounting for what they output. It is up to the filter to determine how to
-     *  aggregate the outputs of its children, but a helper function is provided for the common
-     *  case where the filter output is the union of its child outputs.
+     *  aggregate the outputs of its children.
      *
      *  Unlike the public getOutputBounds(), all internal bounds calculations are done in the
      *  shared layer space defined by 'mapping'.
-     *
-     *  The default implementation assumes that the output of this filter is equal to the union of
-     *  the outputs of its child filters evaluated with 'contentBounds'.
      */
     // TODO (michaelludwig) - When layerMatrix = I, this function could be used to implement
     // onComputeFastBounds() instead of making filters implement the essentially the same calcs x2
     virtual skif::LayerSpace<SkIRect> onGetOutputLayerBounds(
-            const skif::Mapping& mapping, const skif::LayerSpace<SkIRect>& contentBounds) const;
+            const skif::Mapping& mapping, const skif::LayerSpace<SkIRect>& contentBounds) const = 0;
 
     skia_private::AutoSTArray<2, sk_sp<SkImageFilter>> fInputs;
 
     bool fUsesSrcInput;
-    CropRect fCropRect;
     uint32_t fUniqueID; // Globally unique
 
     using INHERITED = SkImageFilter;

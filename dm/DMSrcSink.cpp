@@ -90,6 +90,7 @@
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/Surface.h"
+#include "include/private/gpu/graphite/ContextOptionsPriv.h"
 // TODO: Remove this src include once we figure out public readPixels call for Graphite.
 #include "src/gpu/graphite/Surface_Graphite.h"
 #include "tools/graphite/ContextFactory.h"
@@ -1513,7 +1514,7 @@ sk_sp<SkSurface> GPUSink::createDstSurface(GrDirectContext* context, SkISize siz
                                                              info,
                                                              kTopLeft_GrSurfaceOrigin,
                                                              fSampleCount,
-                                                             GrMipmapped::kNo,
+                                                             skgpu::Mipmapped::kNo,
                                                              GrProtected::kNo,
                                                              &props);
             break;
@@ -1580,7 +1581,7 @@ Result GPUSink::onDraw(const Src& src, SkBitmap* dst, SkWStream*, SkString* log,
     if (!result.isOk()) {
         return result;
     }
-    direct->flushAndSubmit(surface);
+    direct->flushAndSubmit(surface.get(), GrSyncCpu::kNo);
     if (FLAGS_gpuStats) {
         direct->priv().dumpCacheStats(log);
         direct->priv().dumpGpuStats(log);
@@ -1835,7 +1836,7 @@ Result GPUDDLSink::ddlDraw(const Src& src,
                                            // to free the backendTextures. This is complicated a
                                            // bit by which thread possesses the direct context.
                                            dContext->flush();
-                                           dContext->submit(true);
+                                           dContext->submit(GrSyncCpu::kYes);
                                        });
 
     // The backend textures are created on the gpuThread by the 'uploadAllToGPU' call.
@@ -2082,15 +2083,18 @@ Result RasterSink::draw(const Src& src, SkBitmap* dst, SkWStream*, SkString*) co
 GraphiteSink::GraphiteSink(const SkCommandLineConfigGraphite* config)
         : fContextType(config->getContextType())
         , fColorType(config->getColorType())
-        , fAlphaType(config->getAlphaType()) {
-    fBaseContextOptions.fEnableWGSL = config->getWGSL();
-}
+        , fAlphaType(config->getAlphaType()) {}
 
 Result GraphiteSink::draw(const Src& src,
                           SkBitmap* dst,
                           SkWStream* dstStream,
                           SkString* log) const {
     skgpu::graphite::ContextOptions options = fBaseContextOptions;
+    // If we've copied context options from an external source we can't trust that the
+    // priv pointer is still in scope, so assume it should be NULL and set our own up.
+    SkASSERT(!options.fOptionsPriv);
+    skgpu::graphite::ContextOptionsPriv optionsPriv;
+    options.fOptionsPriv = &optionsPriv;
 
     src.modifyGraphiteContextOptions(&options);
 

@@ -232,6 +232,7 @@ static SkString load_source(skiatest::Reporter* r,
 }
 
 static void test_one_permutation(skiatest::Reporter* r,
+                                 std::string_view deviceName,
                                  SkSurface* surface,
                                  const char* testFile,
                                  const char* permutationSuffix,
@@ -266,11 +267,13 @@ static void test_one_permutation(skiatest::Reporter* r,
     if (!success) {
         static_assert(kWidth  == 2);
         static_assert(kHeight == 2);
-        ERRORF(r, "Expected%s: solid green. Actual:\n"
+        ERRORF(r, "Expected%s: solid green. Actual output from %.*s:\n"
                   "RRGGBBAA RRGGBBAA\n"
                   "%02X%02X%02X%02X %02X%02X%02X%02X\n"
                   "%02X%02X%02X%02X %02X%02X%02X%02X",
                   permutationSuffix,
+                  (int)deviceName.size(), deviceName.data(),
+
                   SkColorGetR(color[0][0]), SkColorGetG(color[0][0]),
                   SkColorGetB(color[0][0]), SkColorGetA(color[0][0]),
 
@@ -286,16 +289,17 @@ static void test_one_permutation(skiatest::Reporter* r,
 }
 
 static void test_permutations(skiatest::Reporter* r,
+                              std::string_view deviceName,
                               SkSurface* surface,
                               const char* testFile,
                               bool strictES2) {
     SkRuntimeEffect::Options options = strictES2 ? SkRuntimeEffect::Options{}
                                                  : SkRuntimeEffectPriv::ES3Options();
     options.forceUnoptimized = false;
-    test_one_permutation(r, surface, testFile, "", options);
+    test_one_permutation(r, deviceName, surface, testFile, "", options);
 
     options.forceUnoptimized = true;
-    test_one_permutation(r, surface, testFile, " (Unoptimized)", options);
+    test_one_permutation(r, deviceName, surface, testFile, " (Unoptimized)", options);
 }
 
 static void test_cpu(skiatest::Reporter* r, const char* testFile, SkSLTestFlags flags) {
@@ -305,7 +309,7 @@ static void test_cpu(skiatest::Reporter* r, const char* testFile, SkSLTestFlags 
     const SkImageInfo info = SkImageInfo::MakeN32Premul(kWidth, kHeight);
     sk_sp<SkSurface> surface(SkSurfaces::Raster(info));
 
-    test_permutations(r, surface.get(), testFile, /*strictES2=*/true);
+    test_permutations(r, "SkRP", surface.get(), testFile, /*strictES2=*/true);
 }
 
 #if defined(SK_GANESH)
@@ -332,12 +336,13 @@ static void test_ganesh(skiatest::Reporter* r,
     // Create a GPU-backed Ganesh surface.
     const SkImageInfo info = SkImageInfo::MakeN32Premul(kWidth, kHeight);
     sk_sp<SkSurface> surface(SkSurfaces::RenderTarget(ctx, skgpu::Budgeted::kNo, info));
+    std::string_view deviceName = ctx->priv().caps()->deviceName();
 
     if (shouldRunGPU) {
-        test_permutations(r, surface.get(), testFile, /*strictES2=*/true);
+        test_permutations(r, deviceName, surface.get(), testFile, /*strictES2=*/true);
     }
     if (shouldRunGPU_ES3) {
-        test_permutations(r, surface.get(), testFile, /*strictES2=*/false);
+        test_permutations(r, deviceName, surface.get(), testFile, /*strictES2=*/false);
     }
 }
 #endif
@@ -358,11 +363,6 @@ static void test_graphite(skiatest::Reporter* r,
 
 #if defined(SK_DAWN)
     if (ctx->backend() == skgpu::BackendApi::kDawn) {
-        // We always force-enable WGSL via `force_wgsl_in_dawn` below. Dawn's SPIR-V Reader has
-        // known limitations that we will bump into otherwise (some of our tests cause it to emit
-        // malformed WGSL).
-        SkASSERT(static_cast<const skgpu::graphite::DawnCaps*>(ctx->priv().caps())->enableWGSL());
-
         // If this is a test that requires the GPU to generate NaN values, we don't run it in Dawn.
         // (WGSL/Dawn does not support infinity or NaN even if the GPU natively does.)
         if (flags & SkSLTestFlag::UsesNaN) {
@@ -371,10 +371,6 @@ static void test_graphite(skiatest::Reporter* r,
     }
 #endif
 
-#if defined(SK_BUILD_FOR_UNIX) && !defined(SK_DEBUG)
-    // TODO(b/297239696): re-enable these tests once Graphite works properly here
-    return;
-#else
     // Create a GPU-backed Graphite surface.
     std::unique_ptr<skgpu::graphite::Recorder> recorder = ctx->makeRecorder();
 
@@ -382,14 +378,14 @@ static void test_graphite(skiatest::Reporter* r,
                                                 kRGBA_8888_SkColorType,
                                                 kPremul_SkAlphaType);
     sk_sp<SkSurface> surface = SkSurfaces::RenderTarget(recorder.get(), info);
+    std::string_view deviceName = ctx->priv().caps()->deviceName();
 
     if (shouldRunGPU) {
-        test_permutations(r, surface.get(), testFile, /*strictES2=*/true);
+        test_permutations(r, deviceName, surface.get(), testFile, /*strictES2=*/true);
     }
     if (shouldRunGPU_ES3) {
-        test_permutations(r, surface.get(), testFile, /*strictES2=*/false);
+        test_permutations(r, deviceName, surface.get(), testFile, /*strictES2=*/false);
     }
-#endif
 }
 #endif
 
@@ -563,16 +559,12 @@ static bool is_native_context_or_dawn(skgpu::ContextType type) {
            type == skgpu::ContextType::kDawn;
 }
 
-static void force_wgsl_in_dawn(skgpu::graphite::ContextOptions* options) {
-    options->fEnableWGSL = true;
-}
-
 #define DEF_GRAPHITE_SKSL_TEST(flags, ctsEnforcement, name, path)         \
     DEF_CONDITIONAL_GRAPHITE_TEST_FOR_CONTEXTS(SkSL##name##_Graphite,     \
                                                is_native_context_or_dawn, \
                                                r,                         \
                                                context,                   \
-                                               force_wgsl_in_dawn,        \
+                                               /*opt_filter=*/nullptr,    \
                                                is_gpu(flags),             \
                                                ctsEnforcement) {          \
         test_graphite(r, context, path, flags);                           \
@@ -770,6 +762,7 @@ SKSL_TEST(ES3 | GPU_ES3, kNever,      DoWhileControlFlow,              "shared/D
 SKSL_TEST(CPU | GPU,     kApiLevel_T, EmptyBlocksES2,                  "shared/EmptyBlocksES2.sksl")
 SKSL_TEST(ES3 | GPU_ES3, kNever,      EmptyBlocksES3,                  "shared/EmptyBlocksES3.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, ForLoopControlFlow,              "shared/ForLoopControlFlow.sksl")
+SKSL_TEST(CPU | GPU,     kNextRelease,ForLoopShadowing,                "shared/ForLoopShadowing.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, FunctionAnonymousParameters,     "shared/FunctionAnonymousParameters.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, FunctionArgTypeMatch,            "shared/FunctionArgTypeMatch.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, FunctionReturnTypeMatch,         "shared/FunctionReturnTypeMatch.sksl")

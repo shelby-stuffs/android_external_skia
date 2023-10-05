@@ -273,7 +273,7 @@ namespace {
 
 class TestImageFilter : public SkImageFilter_Base {
 public:
-    TestImageFilter() : SkImageFilter_Base(nullptr, 0, nullptr), fVisited(false) {}
+    TestImageFilter() : SkImageFilter_Base(nullptr, 0), fVisited(false) {}
 
     bool visited() const { return fVisited; }
 
@@ -287,6 +287,19 @@ private:
     skif::FilterResult onFilterImage(const skif::Context& ctx) const override {
         fVisited = true;
         return ctx.source();
+    }
+
+    skif::LayerSpace<SkIRect> onGetInputLayerBounds(
+            const skif::Mapping& mapping,
+            const skif::LayerSpace<SkIRect>& desiredOutput,
+            const skif::LayerSpace<SkIRect>& contentBounds) const override {
+        return desiredOutput;
+    }
+
+    skif::LayerSpace<SkIRect> onGetOutputLayerBounds(
+            const skif::Mapping& mapping,
+            const skif::LayerSpace<SkIRect>& contentBounds) const override {
+        return contentBounds;
     }
 
     mutable bool fVisited;

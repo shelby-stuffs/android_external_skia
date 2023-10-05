@@ -27,6 +27,7 @@ skia_filegroup(
     name = "sksl_minify_tests_sources",
     srcs = [
         ":sksl_folding_tests",
+        ":sksl_minify_tests",
         ":sksl_rte_tests",
     ],
     visibility = ["//tools/sksl-minify:__pkg__"],
@@ -122,6 +123,7 @@ skia_filegroup(
     name = "sksl_wgsl_tests_sources",
     srcs = [
         ":sksl_blend_tests",
+        ":sksl_compute_tests",
         ":sksl_folding_tests",
         ":sksl_shared_tests",
         ":sksl_wgsl_tests",
@@ -388,6 +390,9 @@ skia_filegroup(
         "errors/OverflowUintLiteral.sksl",
         "errors/OverloadedBuiltin.sksl",
         "errors/OverloadedMain.sksl",
+        "errors/PixelFormatMismatch.compute",
+        "errors/PixelFormatMissing.compute",
+        "errors/PixelFormatOverloads.compute",
         "errors/PrecisionQualifiersDisallowed.sksl",
         "errors/PrivateTypes.rts",
         "errors/PrivateVariables.rts",
@@ -455,6 +460,7 @@ skia_filegroup(
         "errors/ReturnFromVoid.rts",
         "errors/ReturnMissingValue.rts",
         "errors/ReturnTypeMismatch.rts",
+        "errors/SamplerExternalOES.frag",
         "errors/SelfReferentialInitializerExpression.rts",
         "errors/SpuriousFloat.rts",
         "errors/StructMemberReservedName.rts",
@@ -610,6 +616,14 @@ skia_filegroup(
         "metal/OutVarsRequireLocation.sksl",
         "metal/SamplerGlobals.sksl",
         "metal/SwizzleHelper.sksl",
+    ],
+)
+
+skia_filegroup(
+    name = "sksl_minify_tests",
+    srcs = [
+        "minify/MeshFragment.mfrag",
+        "minify/MeshVertex.mvert",
     ],
 )
 
@@ -887,6 +901,7 @@ skia_filegroup(
         "shared/EmptyBlocksES3.sksl",
         "shared/ForLoopControlFlow.sksl",
         "shared/ForLoopMultipleInit.sksl",
+        "shared/ForLoopShadowing.sksl",
         "shared/FragCoords.sksl",
         "shared/FragCoordsNoRTFlip.sksl",
         "shared/FunctionAnonymousParameters.sksl",
@@ -965,6 +980,7 @@ skia_filegroup(
         "shared/ReturnsValueOnEveryPathES2.sksl",
         "shared/ReturnsValueOnEveryPathES3.sksl",
         "shared/SampleLocations.vert",
+        "shared/SampleMask.sksl",
         "shared/ScalarConversionConstructorsES2.sksl",
         "shared/ScalarConversionConstructorsES3.sksl",
         "shared/ScopedSymbol.sksl",
@@ -1088,15 +1104,16 @@ skia_filegroup(
         "wgsl/IndexExpression.sksl",
         "wgsl/InterfaceBlockUniforms.sksl",
         "wgsl/MainDoesNotHaveFragCoordParameter.sksl",
-        "wgsl/MainHasFragCoordParameter.sksl",
         "wgsl/MainHasVoidReturn.sksl",
         "wgsl/MatrixConstructorDiagonal.sksl",
         "wgsl/OutParams.sksl",
+        "wgsl/PixelLocalStorage.sksl",
         "wgsl/Sample.sksl",
-        "wgsl/TernaryThenShortCircuit.sksl",
+        "wgsl/TextureIntrinsics.compute",
         "wgsl/UniformArrays.sksl",
         "wgsl/UniformMatrices.sksl",
         "wgsl/UserDefinedPipelineIO.sksl",
         "wgsl/VertexPositionOutputIsAlwaysDeclared.vert",
+        "wgsl/WorkgroupSize.compute",
     ],
 )

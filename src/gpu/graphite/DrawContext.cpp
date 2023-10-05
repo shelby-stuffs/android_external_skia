@@ -131,6 +131,7 @@ bool DrawContext::recordUpload(Recorder* recorder,
 }
 
 PathAtlas* DrawContext::getOrCreatePathAtlas(Recorder* recorder) {
+    // TODO: Determine whether to use SoftwarePathAtlas
     if (!fComputePathAtlas) {
         fComputePathAtlas = recorder->priv().atlasProvider()->createComputePathAtlas(recorder);
     }
@@ -151,7 +152,9 @@ void DrawContext::snapDrawPass(Recorder* recorder) {
                                this->imageInfo(),
                                std::make_pair(fPendingLoadOp, fPendingStoreOp),
                                fPendingClearColor);
-    fDrawPasses.push_back(std::move(pass));
+    if (pass) {
+        fDrawPasses.push_back(std::move(pass));
+    }
     fPendingDraws = std::make_unique<DrawList>();
     fPendingLoadOp = LoadOp::kLoad;
     fPendingStoreOp = StoreOp::kStore;
@@ -254,6 +257,10 @@ sk_sp<Task> DrawContext::snapRenderPassTask(Recorder* recorder) {
 }
 
 sk_sp<Task> DrawContext::snapUploadTask(Recorder* recorder) {
+    if (fSoftwarePathAtlas) {
+        fSoftwarePathAtlas->recordUploads(this, recorder);
+    }
+
     if (!fPendingUploads || fPendingUploads->size() == 0) {
         return nullptr;
     }
@@ -280,7 +287,8 @@ void DrawContext::snapPathAtlasDispatches(Recorder* recorder) {
     }
     auto dispatchGroup = fComputePathAtlas->recordDispatches(recorder);
     if (dispatchGroup) {
-        SkASSERT(fPendingDraws->hasAtlasDraws());
+        // For now this check is valid as all coverage mask draws involve dispatches
+        SkASSERT(fPendingDraws->hasCoverageMaskDraws());
         fDispatchGroups.push_back(std::move(dispatchGroup));
     }
     fComputePathAtlas->reset();

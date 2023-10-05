@@ -96,6 +96,7 @@ static ModifierFlags parse_modifier_token(Token::Kind token) {
         case Token::Kind::TK_READONLY:       return ModifierFlag::kReadOnly;
         case Token::Kind::TK_WRITEONLY:      return ModifierFlag::kWriteOnly;
         case Token::Kind::TK_BUFFER:         return ModifierFlag::kBuffer;
+        case Token::Kind::TK_PIXELLOCAL:     return ModifierFlag::kPixelLocal;
         default:                             return ModifierFlag::kNone;
     }
 }
@@ -610,7 +611,7 @@ bool Parser::functionDeclarationEnd(Position start,
 
     SkSL::FunctionDeclaration* decl = nullptr;
     if (validParams) {
-        decl = SkSL::FunctionDeclaration::Convert(ThreadContext::Context(),
+        decl = SkSL::FunctionDeclaration::Convert(fCompiler.context(),
                                                   this->rangeFrom(start),
                                                   modifiers,
                                                   this->text(name),

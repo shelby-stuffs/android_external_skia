@@ -205,6 +205,16 @@ public:
         return sCaps;
     }
 
+    static const SkSL::ShaderCaps* NoExternalTextureSupport() {
+        static const SkSL::ShaderCaps* sCaps = [] {
+            std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
+            caps->fVersionDeclString = "#version 400";
+            caps->fExternalTextureSupport = false;
+            return caps.release();
+        }();
+        return sCaps;
+    }
+
     static const SkSL::ShaderCaps* RemovePowWithConstantExponent() {
         static const SkSL::ShaderCaps* sCaps = [] {
             std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
@@ -386,6 +396,9 @@ static bool detect_shader_settings(const std::string& text,
                 if (consume_suffix(&settingsText, " NoBuiltinFMASupport")) {
                     *caps = Factory::NoBuiltinFMASupport();
                 }
+                if (consume_suffix(&settingsText, " NoExternalTextureSupport")) {
+                    *caps = Factory::NoExternalTextureSupport();
+                }
                 if (consume_suffix(&settingsText, " RemovePowWithConstantExponent")) {
                     *caps = Factory::RemovePowWithConstantExponent();
                 }
@@ -532,8 +545,7 @@ static ResultCode process_command(SkSpan<std::string> args) {
     }
 
     std::ifstream in(inputPath);
-    std::string text((std::istreambuf_iterator<char>(in)),
-                       std::istreambuf_iterator<char>());
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     if (in.rdstate()) {
         printf("error reading '%s'\n", inputPath.c_str());
         return ResultCode::kInputError;

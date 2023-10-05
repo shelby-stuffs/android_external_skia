@@ -14,7 +14,6 @@
 #include "include/gpu/GrBackendSemaphore.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "include/private/SkShadowFlags.h"
 #include "include/private/gpu/ganesh/GrImageContext.h"
 #include "include/utils/SkShadowUtils.h"
 #include "src/base/SkVx.h"
@@ -158,7 +157,7 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::Make(GrRecordingContext*
                                                              SkISize dimensions,
                                                              const GrBackendFormat& format,
                                                              int sampleCnt,
-                                                             GrMipmapped mipmapped,
+                                                             skgpu::Mipmapped mipmapped,
                                                              GrProtected isProtected,
                                                              skgpu::Swizzle readSwizzle,
                                                              skgpu::Swizzle writeSwizzle,
@@ -209,7 +208,7 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::Make(GrRecordingContext*
                                                              const SkSurfaceProps& surfaceProps,
                                                              std::string_view label,
                                                              int sampleCnt,
-                                                             GrMipmapped mipmapped,
+                                                             skgpu::Mipmapped mipmapped,
                                                              GrProtected isProtected,
                                                              GrSurfaceOrigin origin,
                                                              skgpu::Budgeted budgeted) {
@@ -251,7 +250,7 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::MakeWithFallback(
         SkISize dimensions,
         const SkSurfaceProps& surfaceProps,
         int sampleCnt,
-        GrMipmapped mipmapped,
+        skgpu::Mipmapped mipmapped,
         GrProtected isProtected,
         GrSurfaceOrigin origin,
         skgpu::Budgeted budgeted) {
@@ -2113,7 +2112,7 @@ bool SurfaceDrawContext::setupDstProxyView(const SkRect& opBounds,
     auto copy = GrSurfaceProxy::Copy(fContext,
                                      this->asSurfaceProxyRef(),
                                      this->origin(),
-                                     GrMipmapped::kNo,
+                                     skgpu::Mipmapped::kNo,
                                      copyRect,
                                      fit,
                                      skgpu::Budgeted::kYes,
