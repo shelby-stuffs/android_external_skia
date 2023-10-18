@@ -85,6 +85,7 @@
 #include "src/shaders/SkShaderBase.h"
 #include "src/shaders/SkTransformShader.h"
 #include "src/shaders/SkTriColorShader.h"
+#include "src/shaders/SkWorkingColorSpaceShader.h"
 #include "src/shaders/gradients/SkConicalGradient.h"
 #include "src/shaders/gradients/SkGradientBaseShader.h"
 #include "src/shaders/gradients/SkLinearGradient.h"
@@ -220,13 +221,17 @@ static std::unique_ptr<GrFragmentProcessor> make_blender_fp(
             rtb->uniforms(),
             fpArgs.fDstColorInfo->colorSpace());
     SkASSERT(uniforms);
+    GrFPArgs childArgs(fpArgs.fContext,
+                       fpArgs.fDstColorInfo,
+                       fpArgs.fSurfaceProps,
+                       GrFPArgs::Scope::kRuntimeEffect);
     auto [success, fp] = make_effect_fp(rtb->effect(),
                                         "runtime_blender",
                                         std::move(uniforms),
                                         std::move(srcFP),
                                         std::move(dstFP),
                                         rtb->children(),
-                                        fpArgs);
+                                        childArgs);
 
     return success ? std::move(fp) : nullptr;
 }
@@ -410,7 +415,7 @@ static GrFPResult make_colorfilter_fp(GrRecordingContext* context,
             filter->effect()->uniforms(), filter->uniforms(), colorInfo.colorSpace());
     SkASSERT(uniforms);
 
-    GrFPArgs childArgs(context, &colorInfo, props);
+    GrFPArgs childArgs(context, &colorInfo, props, GrFPArgs::Scope::kRuntimeEffect);
     return make_effect_fp(filter->effect(),
                           "runtime_color_filter",
                           std::move(uniforms),
@@ -624,7 +629,9 @@ static std::unique_ptr<GrFragmentProcessor> make_shader_fp(const SkImageShader* 
                                            args.fDstColorInfo->colorSpace(),
                                            kPremul_SkAlphaType);
 
-        if (shader->image()->isAlphaOnly()) {
+        // Alpha-only image shaders are tinted by the input color (typically the paint color).
+        // We suppress that behavior when sampled from a runtime effect.
+        if (shader->image()->isAlphaOnly() && args.fScope != GrFPArgs::Scope::kRuntimeEffect) {
             fp = GrBlendFragmentProcessor::Make<SkBlendMode::kDstIn>(std::move(fp), nullptr);
         }
     }
@@ -778,13 +785,15 @@ static std::unique_ptr<GrFragmentProcessor> make_shader_fp(const SkRuntimeShader
 
     bool success;
     std::unique_ptr<GrFragmentProcessor> fp;
+    GrFPArgs childArgs(
+            args.fContext, args.fDstColorInfo, args.fSurfaceProps, GrFPArgs::Scope::kRuntimeEffect);
     std::tie(success, fp) = make_effect_fp(shader->effect(),
                                            "runtime_shader",
                                            std::move(uniforms),
                                            /*inputFP=*/nullptr,
                                            /*destColorFP=*/nullptr,
                                            shader->children(),
-                                           args);
+                                           childArgs);
     if (!success) {
         return nullptr;
     }
@@ -806,6 +815,30 @@ static std::unique_ptr<GrFragmentProcessor> make_shader_fp(const SkTriColorShade
                                                            const GrFPArgs&,
                                                            const SkShaders::MatrixRec&) {
     return nullptr;
+}
+
+static std::unique_ptr<GrFragmentProcessor> make_shader_fp(const SkWorkingColorSpaceShader* shader,
+                                                           const GrFPArgs& args,
+                                                           const SkShaders::MatrixRec& mRec) {
+    const GrColorInfo* dstInfo = args.fDstColorInfo;
+    sk_sp<SkColorSpace> dstCS = dstInfo->refColorSpace();
+    if (!dstCS) {
+        dstCS = SkColorSpace::MakeSRGB();
+    }
+
+    GrColorInfo dst     = {dstInfo->colorType(), dstInfo->alphaType(), dstCS},
+                working = {dstInfo->colorType(), dstInfo->alphaType(), shader->workingSpace()};
+    GrFPArgs workingArgs(args.fContext, &working, args.fSurfaceProps, args.fScope);
+
+    auto childFP = Make(shader->shader().get(), workingArgs, mRec);
+    if (!childFP) {
+        return nullptr;
+    }
+
+    auto childWithWorkingInput = GrFragmentProcessor::Compose(
+            std::move(childFP), GrColorSpaceXformEffect::Make(nullptr, dst, working));
+
+    return GrColorSpaceXformEffect::Make(std::move(childWithWorkingInput), working, dst);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////

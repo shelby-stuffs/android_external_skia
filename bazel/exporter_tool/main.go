@@ -113,7 +113,7 @@ var gniExportDescs = []exporter.GNIExportDesc{
 		{Var: "skia_discardable_memory_chromium",
 			Rules: []string{"//include/private/chromium:discardable_memory_hdrs"}},
 		{Var: "skia_no_slug_srcs",
-			Rules: []string{"//src/text:no_slug_srcs"}},
+			Rules: []string{}},
 	},
 	},
 	{GNI: "gn/effects.gni", Vars: []exporter.GNIFileListExportDesc{
@@ -205,8 +205,9 @@ var gniExportDescs = []exporter.GNIExportDesc{
 		// This order was the order the original file was in. It could be alphabetized if we like.
 		{Var: "sksl_error_tests", Rules: []string{"//resources/sksl:sksl_error_tests"}},
 		{Var: "sksl_glsl_tests", Rules: []string{"//resources/sksl:sksl_glsl_tests"}},
+		{Var: "sksl_mesh_tests", Rules: []string{"//resources/sksl:sksl_mesh_tests"}},
+		{Var: "sksl_mesh_error_tests", Rules: []string{"//resources/sksl:sksl_mesh_error_tests"}},
 		{Var: "sksl_metal_tests", Rules: []string{"//resources/sksl:sksl_metal_tests"}},
-		{Var: "sksl_minify_tests", Rules: []string{"//resources/sksl:sksl_minify_tests"}},
 		{Var: "sksl_spirv_tests", Rules: []string{"//resources/sksl:sksl_spirv_tests"}},
 		{Var: "sksl_wgsl_tests", Rules: []string{"//resources/sksl:sksl_wgsl_tests"}},
 		{Var: "sksl_shared_tests", Rules: []string{"//resources/sksl:sksl_shared_tests"}},
@@ -466,6 +467,8 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			Rules: []string{"//modules/skshaper/src:base_srcs"}},
 		{Var: "skia_shaper_harfbuzz_sources",
 			Rules: []string{"//modules/skshaper/src:harfbuzz_srcs"}},
+		{Var: "skia_shaper_skunicode_sources",
+			Rules: []string{"//modules/skshaper/src:skunicode_srcs"}},
 		{Var: "skia_shaper_coretext_sources",
 			Rules: []string{"//modules/skshaper/src:coretext_srcs"}},
 		{Var: "skia_shaper_tests",

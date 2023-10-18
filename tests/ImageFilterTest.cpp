@@ -29,6 +29,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkSerialProcs.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkSurface.h"
@@ -38,6 +39,7 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
 #include "include/effects/SkPerlinNoiseShader.h"
+#include "include/encode/SkPngEncoder.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrTypes.h"
 #include "include/private/base/SkTArray.h"
@@ -114,13 +116,13 @@ private:
     skif::LayerSpace<SkIRect> onGetInputLayerBounds(
             const skif::Mapping& mapping,
             const skif::LayerSpace<SkIRect>& desiredOutput,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override {
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override {
         return desiredOutput;
     }
 
-    skif::LayerSpace<SkIRect> onGetOutputLayerBounds(
+    std::optional<skif::LayerSpace<SkIRect>> onGetOutputLayerBounds(
             const skif::Mapping& mapping,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override {
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override {
         return contentBounds;
     }
 
@@ -1657,7 +1659,11 @@ DEF_TEST(ImageFilterImageSourceSerialization, reporter) {
     sk_sp<SkImage> image(surface->makeImageSnapshot());
     sk_sp<SkImageFilter> filter(SkImageFilters::Image(std::move(image), SkFilterMode::kNearest));
 
-    sk_sp<SkData> data(filter->serialize());
+    SkSerialProcs sProcs;
+    sProcs.fImageProc = [](SkImage* img, void*) -> sk_sp<SkData> {
+        return SkPngEncoder::Encode(as_IB(img)->directContext(), img, SkPngEncoder::Options{});
+    };
+    sk_sp<SkData> data(filter->serialize(&sProcs));
     sk_sp<SkImageFilter> unflattenedFilter = SkImageFilter::Deserialize(data->data(), data->size());
     REPORTER_ASSERT(reporter, unflattenedFilter);
 

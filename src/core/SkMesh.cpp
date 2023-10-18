@@ -64,6 +64,7 @@ using VertexBuffer = SkMesh::VertexBuffer;
 #define RETURN_SUCCESS return std::make_tuple(true, SkString{})
 
 using Uniform = SkMeshSpecification::Uniform;
+using Child = SkMeshSpecification::Child;
 
 static std::vector<Uniform>::iterator find_uniform(std::vector<Uniform>& uniforms,
                                                    std::string_view name) {
@@ -74,6 +75,7 @@ static std::vector<Uniform>::iterator find_uniform(std::vector<Uniform>& uniform
 static std::tuple<bool, SkString>
 gather_uniforms_and_check_for_main(const SkSL::Program& program,
                                    std::vector<Uniform>* uniforms,
+                                   std::vector<Child>* children,
                                    SkMeshSpecification::Uniform::Flags stage,
                                    size_t* offset) {
     bool foundMain = false;
@@ -89,28 +91,37 @@ gather_uniforms_and_check_for_main(const SkSL::Program& program,
             const SkSL::VarDeclaration& varDecl = global.declaration()->as<SkSL::VarDeclaration>();
             const SkSL::Variable& var = *varDecl.var();
             if (var.modifierFlags().isUniform()) {
-                auto iter = find_uniform(*uniforms, var.name());
-                const auto& context = *program.fContext;
-                if (iter == uniforms->end()) {
-                    uniforms->push_back(SkRuntimeEffectPriv::VarAsUniform(var, context, offset));
-                    uniforms->back().flags |= stage;
+                if (var.type().isEffectChild()) {
+                    // TODO(b/40045302): add support for child effects.
+                    // This is a child effect; add it to our list of children.
+                    children->push_back(SkRuntimeEffectPriv::VarAsChild(var, children->size()));
                 } else {
-                    // Check that the two declarations are equivalent
-                    size_t ignoredOffset = 0;
-                    auto uniform = SkRuntimeEffectPriv::VarAsUniform(var, context, &ignoredOffset);
-                    if (uniform.isArray() != iter->isArray() ||
-                        uniform.type      != iter->type      ||
-                        uniform.count     != iter->count) {
-                        return {false, SkStringPrintf("Uniform %.*s declared with different types"
-                                                      " in vertex and fragment shaders.",
-                                                      (int)iter->name.size(), iter->name.data())};
+                    auto iter = find_uniform(*uniforms, var.name());
+                    const auto& context = *program.fContext;
+                    if (iter == uniforms->end()) {
+                        uniforms->push_back(SkRuntimeEffectPriv::VarAsUniform(var, context, offset));
+                        uniforms->back().flags |= stage;
+                    } else {
+                        // Check that the two declarations are equivalent
+                        size_t ignoredOffset = 0;
+                        auto uniform = SkRuntimeEffectPriv::VarAsUniform(var, context,
+                                                                         &ignoredOffset);
+                        if (uniform.isArray() != iter->isArray() ||
+                            uniform.type      != iter->type      ||
+                            uniform.count     != iter->count) {
+                            return {false,
+                                    SkStringPrintf("Uniform %.*s declared with different types"
+                                                   " in vertex and fragment shaders.",
+                                                   (int)var.name().size(), var.name().data())};
+                        }
+                        if (uniform.isColor() != iter->isColor()) {
+                            return {false,
+                                    SkStringPrintf("Uniform %.*s declared with different color"
+                                                   " layout in vertex and fragment shaders.",
+                                                   (int)var.name().size(), var.name().data())};
+                        }
+                        (*iter).flags |= stage;
                     }
-                    if (uniform.isColor() != iter->isColor()) {
-                        return {false, SkStringPrintf("Uniform %.*s declared with different color"
-                                                      " layout in vertex and fragment shaders.",
-                                                      (int)iter->name.size(), iter->name.data())};
-                    }
-                    (*iter).flags |= stage;
                 }
             }
         }
@@ -486,6 +497,7 @@ SkMeshSpecification::Result SkMeshSpecification::MakeFromSourceWithStructs(
     }
 
     std::vector<Uniform> uniforms;
+    std::vector<Child> children;
     size_t offset = 0;
 
     SkSL::Compiler compiler(SkSL::ShaderCapsFactory::Standalone());
@@ -507,6 +519,7 @@ SkMeshSpecification::Result SkMeshSpecification::MakeFromSourceWithStructs(
     if (auto [result, error] = gather_uniforms_and_check_for_main(
                 *vsProgram,
                 &uniforms,
+                &children,
                 SkMeshSpecification::Uniform::Flags::kVertex_Flag,
                 &offset);
         !result) {
@@ -529,6 +542,7 @@ SkMeshSpecification::Result SkMeshSpecification::MakeFromSourceWithStructs(
     if (auto [result, error] = gather_uniforms_and_check_for_main(
                 *fsProgram,
                 &uniforms,
+                &children,
                 SkMeshSpecification::Uniform::Flags::kFragment_Flag,
                 &offset);
         !result) {
@@ -567,6 +581,7 @@ SkMeshSpecification::Result SkMeshSpecification::MakeFromSourceWithStructs(
                                                                passthroughLocalCoordsVaryingIndex,
                                                                deadVaryingMask,
                                                                std::move(uniforms),
+                                                               std::move(children),
                                                                std::move(vsProgram),
                                                                std::move(fsProgram),
                                                                ct,
@@ -584,6 +599,7 @@ SkMeshSpecification::SkMeshSpecification(
         int                                  passthroughLocalCoordsVaryingIndex,
         uint32_t                             deadVaryingMask,
         std::vector<Uniform>                 uniforms,
+        std::vector<Child>                   children,
         std::unique_ptr<const SkSL::Program> vs,
         std::unique_ptr<const SkSL::Program> fs,
         ColorType                            ct,
@@ -592,6 +608,7 @@ SkMeshSpecification::SkMeshSpecification(
         : fAttributes(attributes.begin(), attributes.end())
         , fVaryings(varyings.begin(), varyings.end())
         , fUniforms(std::move(uniforms))
+        , fChildren(std::move(children))
         , fVS(std::move(vs))
         , fFS(std::move(fs))
         , fStride(stride)
@@ -664,6 +681,27 @@ SkMesh::Result SkMesh::Make(sk_sp<SkMeshSpecification> spec,
                             size_t vertexOffset,
                             sk_sp<const SkData> uniforms,
                             const SkRect& bounds) {
+    return Make(std::move(spec),
+                mode,
+                std::move(vb),
+                vertexCount,
+                vertexOffset,
+                std::move(uniforms),
+                /*children=*/{},
+                bounds);
+}
+
+SkMesh::Result SkMesh::Make(sk_sp<SkMeshSpecification> spec,
+                            Mode mode,
+                            sk_sp<VertexBuffer> vb,
+                            size_t vertexCount,
+                            size_t vertexOffset,
+                            sk_sp<const SkData> uniforms,
+                            SkSpan<ChildPtr> children,
+                            const SkRect& bounds) {
+    // TODO(b/40045302): support for `children` is a work-in-progress
+    SkASSERT(children.empty());
+
     SkMesh mesh;
     mesh.fSpec     = std::move(spec);
     mesh.fMode     = mode;
@@ -689,6 +727,33 @@ SkMesh::Result SkMesh::MakeIndexed(sk_sp<SkMeshSpecification> spec,
                                    size_t indexOffset,
                                    sk_sp<const SkData> uniforms,
                                    const SkRect& bounds) {
+    return MakeIndexed(std::move(spec),
+                       mode,
+                       std::move(vb),
+                       vertexCount,
+                       vertexOffset,
+                       std::move(ib),
+                       indexCount,
+                       indexOffset,
+                       std::move(uniforms),
+                       /*children=*/{},
+                       bounds);
+}
+
+SkMesh::Result SkMesh::MakeIndexed(sk_sp<SkMeshSpecification> spec,
+                                   Mode mode,
+                                   sk_sp<VertexBuffer> vb,
+                                   size_t vertexCount,
+                                   size_t vertexOffset,
+                                   sk_sp<IndexBuffer> ib,
+                                   size_t indexCount,
+                                   size_t indexOffset,
+                                   sk_sp<const SkData> uniforms,
+                                   SkSpan<ChildPtr> children,
+                                   const SkRect& bounds) {
+    // TODO(b/40045302): support for `children` is a work-in-progress
+    SkASSERT(children.empty());
+
     if (!ib) {
         // We check this before calling validate to disambiguate from a non-indexed mesh where
         // IB is expected to be null.
@@ -734,6 +799,11 @@ std::tuple<bool, SkString> SkMesh::validate() const {
 
     if (!fVB) {
         FAIL_MESH_VALIDATE("A vertex buffer is required.");
+    }
+
+    if (!fSpec->children().empty()) {
+        // TODO(b/40045302): add support for child effects in SkMesh
+        FAIL_MESH_VALIDATE("effects are not permitted in mesh fragment shaders");
     }
 
     auto vb = static_cast<SkMeshPriv::VB*>(fVB.get());

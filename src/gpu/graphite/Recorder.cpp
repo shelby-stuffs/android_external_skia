@@ -16,6 +16,7 @@
 #include "include/gpu/graphite/Recording.h"
 
 #include "src/core/SkConvertPixels.h"
+#include "src/core/SkTraceEvent.h"
 #include "src/gpu/AtlasTypes.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/graphite/AtlasProvider.h"
@@ -77,9 +78,9 @@ RecorderOptions::RecorderOptions(const RecorderOptions&) = default;
 RecorderOptions::~RecorderOptions() = default;
 
 /**************************************************************************************************/
-static int32_t next_id() {
-    static std::atomic<int32_t> nextID{1};
-    int32_t id;
+static uint32_t next_id() {
+    static std::atomic<uint32_t> nextID{1};
+    uint32_t id;
     do {
         id = nextID.fetch_add(1, std::memory_order_relaxed);
     } while (id == SK_InvalidGenID);
@@ -92,18 +93,18 @@ Recorder::Recorder(sk_sp<SharedContext> sharedContext, const RecorderOptions& op
         , fGraph(new TaskGraph)
         , fUniformDataCache(new UniformDataCache)
         , fTextureDataCache(new TextureDataCache)
-        , fRecorderID(next_id())
+        , fUniqueID(next_id())
         , fAtlasProvider(std::make_unique<AtlasProvider>(this))
         , fTokenTracker(std::make_unique<TokenTracker>())
         , fStrikeCache(std::make_unique<sktext::gpu::StrikeCache>())
-        , fTextBlobCache(std::make_unique<sktext::gpu::TextBlobRedrawCoordinator>(fRecorderID)) {
+        , fTextBlobCache(std::make_unique<sktext::gpu::TextBlobRedrawCoordinator>(fUniqueID)) {
     fClientImageProvider = options.fImageProvider;
     if (!fClientImageProvider) {
         fClientImageProvider = DefaultImageProvider::Make();
     }
 
     fResourceProvider = fSharedContext->makeResourceProvider(this->singleOwner(),
-                                                             fRecorderID,
+                                                             fUniqueID,
                                                              options.fGpuBudgetInBytes);
     fDrawBufferManager.reset( new DrawBufferManager(fResourceProvider.get(),
                                                     fSharedContext->caps()));
@@ -134,6 +135,7 @@ Recorder::~Recorder() {
 BackendApi Recorder::backend() const { return fSharedContext->backend(); }
 
 std::unique_ptr<Recording> Recorder::snap() {
+    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
     ASSERT_SINGLE_OWNER
     for (auto& device : fTrackedDevices) {
         device->flushPendingWorkToRecorder();
@@ -176,7 +178,9 @@ std::unique_ptr<Recording> Recorder::snap() {
         fTargetProxyDevice.reset();
         fTargetProxyCanvas.reset();
     }
-    std::unique_ptr<Recording> recording(new Recording(std::move(fGraph),
+    std::unique_ptr<Recording> recording(new Recording(fNextRecordingID++,
+                                                       fUniqueID,
+                                                       std::move(fGraph),
                                                        std::move(nonVolatileLazyProxies),
                                                        std::move(volatileLazyProxies),
                                                        std::move(targetProxyData),
@@ -190,12 +194,14 @@ std::unique_ptr<Recording> Recorder::snap() {
     fTextureDataCache = std::make_unique<TextureDataCache>();
     fUniformDataCache = std::make_unique<UniformDataCache>();
 
-    // inject an initial task to maintain atlas state for next Recording
-    auto uploads = std::make_unique<UploadList>();
-    fAtlasProvider->textAtlasManager()->recordUploads(uploads.get(), /*useCachedUploads=*/true);
-    if (uploads->size() > 0) {
-        sk_sp<Task> uploadTask = UploadTask::Make(uploads.get());
-        this->priv().add(std::move(uploadTask));
+    if (!this->priv().caps()->disableCachedGlyphUploads()) {
+        // inject an initial task to maintain atlas state for next Recording
+        auto uploads = std::make_unique<UploadList>();
+        fAtlasProvider->textAtlasManager()->recordUploads(uploads.get(), /*useCachedUploads=*/true);
+        if (uploads->size() > 0) {
+            sk_sp<Task> uploadTask = UploadTask::Make(uploads.get());
+            this->priv().add(std::move(uploadTask));
+        }
     }
 
     return recording;

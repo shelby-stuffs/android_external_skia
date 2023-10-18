@@ -47,7 +47,6 @@ SKIA_PUBLIC_HDRS = [
     "include/core/SkDocument.h",
     "include/core/SkDrawLooper.h",
     "include/core/SkDrawable.h",
-    "include/core/SkEncodedImageFormat.h",  # TODO(kjlubick) remove this shim
     "include/core/SkExecutor.h",
     "include/core/SkFlattenable.h",
     "include/core/SkFont.h",
@@ -1456,6 +1455,8 @@ BASE_SRCS_ALL = [
     "src/shaders/SkTransformShader.h",
     "src/shaders/SkTriColorShader.cpp",
     "src/shaders/SkTriColorShader.h",
+    "src/shaders/SkWorkingColorSpaceShader.cpp",
+    "src/shaders/SkWorkingColorSpaceShader.h",
     "src/shaders/gradients/SkConicalGradient.cpp",
     "src/shaders/gradients/SkConicalGradient.h",
     "src/shaders/gradients/SkGradientBaseShader.cpp",
@@ -1704,9 +1705,9 @@ BASE_SRCS_ALL = [
     "src/text/gpu/TextBlobRedrawCoordinator.h",
     "src/text/gpu/VertexFiller.cpp",
     "src/text/gpu/VertexFiller.h",
+    "src/text/SlugFromBuffer.cpp",
     "src/text/StrikeForGPU.cpp",
     "src/text/StrikeForGPU.h",
-    "src/text/TextBlobMailbox.h",
     "src/utils/SkAnimCodecPlayer.cpp",
     "src/utils/SkBase64.cpp",
     "src/utils/SkBitSet.h",
@@ -1816,6 +1817,7 @@ CODEC_SRCS_LIMITED = [
     "src/codec/SkColorPalette.h",
     "src/codec/SkEncodedInfo.cpp",
     "src/codec/SkFrameHolder.h",
+    "src/codec/SkImageGenerator_FromEncoded.cpp",
     "src/codec/SkJpegCodec.cpp",
     "src/codec/SkJpegCodec.h",
     "src/codec/SkJpegDecoderMgr.cpp",
@@ -1952,7 +1954,6 @@ PORTS_SRCS_UNIX = [
     "src/ports/SkFontMgr_fontconfig_factory.cpp",
     "src/ports/SkFontMgr_fontconfig.cpp",
     "src/ports/SkGlobalInitialization_default.cpp",
-    "src/ports/SkImageGenerator_skia.cpp",
     "src/ports/SkMemory_malloc.cpp",
     "src/ports/SkOSFile_posix.cpp",
     "src/ports/SkOSFile_stdio.cpp",
@@ -1979,7 +1980,6 @@ PORTS_SRCS_ANDROID = [
     "src/ports/SkFontMgr_custom_empty.cpp",
     "src/ports/SkFontMgr_custom.h",
     "src/ports/SkGlobalInitialization_default.cpp",
-    "src/ports/SkImageGenerator_skia.cpp",
     "src/ports/SkMemory_malloc.cpp",
     "src/ports/SkOSFile_posix.cpp",
     "src/ports/SkOSFile_stdio.cpp",
@@ -1991,7 +1991,6 @@ PORTS_SRCS_ANDROID_NO_FONT = [
     "src/ports/SkDebug_android.cpp",
     "src/ports/SkFontMgr_empty_factory.cpp",
     "src/ports/SkGlobalInitialization_default.cpp",
-    "src/ports/SkImageGenerator_skia.cpp",
     "src/ports/SkMemory_malloc.cpp",
     "src/ports/SkOSFile_posix.cpp",
     "src/ports/SkOSFile_stdio.cpp",
@@ -2009,7 +2008,6 @@ PORTS_SRCS_IOS = [
     "src/ports/SkFontMgr_mac_ct.cpp",
     "src/ports/SkFontMgr_mac_ct_factory.cpp",
     "src/ports/SkGlobalInitialization_default.cpp",
-    "src/ports/SkImageGenerator_skia.cpp",
     "src/ports/SkImageGeneratorCG.cpp",
     "src/ports/SkMemory_malloc.cpp",
     "src/ports/SkOSFile_ios.h",
@@ -2039,7 +2037,6 @@ PORTS_SRCS_FUCHSIA = [
     "src/ports/SkFontMgr_empty_factory.cpp",
     "src/ports/SkFontMgr_fuchsia.cpp",
     "src/ports/SkGlobalInitialization_default.cpp",
-    "src/ports/SkImageGenerator_skia.cpp",
     "src/ports/SkMemory_malloc.cpp",
     "src/ports/SkOSFile_posix.cpp",
     "src/ports/SkOSFile_stdio.cpp",
@@ -2063,7 +2060,6 @@ PORTS_SRCS_WASM = [
     "src/ports/SkFontMgr_custom_embedded.cpp",
     "src/ports/SkFontMgr_empty_factory.cpp",
     "src/ports/SkGlobalInitialization_default.cpp",
-    "src/ports/SkImageGenerator_skia.cpp",
     "src/ports/SkMemory_malloc.cpp",
     "src/ports/SkOSFile_posix.cpp",
     "src/ports/SkOSFile_stdio.cpp",
@@ -2391,6 +2387,7 @@ SKOTTIE_LIB_HDRS = [
     "modules/skottie/include/Skottie.h",
     "modules/skottie/include/SkottieProperty.h",
     "modules/skottie/include/SlotManager.h",
+    "modules/skottie/include/TextShaper.h",
 ]
 
 # We omit SkottieTool and SkottieTest as they are not needed for production code.
@@ -2477,12 +2474,12 @@ SKOTTIE_LIB_SRCS = [
     "modules/skottie/src/text/Font.h",
     "modules/skottie/src/text/RangeSelector.cpp",
     "modules/skottie/src/text/RangeSelector.h",
-    "modules/skottie/src/text/SkottieShaper.cpp",
     "modules/skottie/src/text/SkottieShaper.h",
     "modules/skottie/src/text/TextAdapter.cpp",
     "modules/skottie/src/text/TextAdapter.h",
     "modules/skottie/src/text/TextAnimator.cpp",
     "modules/skottie/src/text/TextAnimator.h",
+    "modules/skottie/src/text/TextShaper.cpp",
     "modules/skottie/src/text/TextValue.cpp",
     "modules/skottie/src/text/TextValue.h",
     "modules/skottie/src/Transform.cpp",
@@ -2506,11 +2503,13 @@ SKOTTIE_UTILS_SRCS = [
 ################################################################################
 
 SKOTTIE_SHAPER_HDRS = [
+    "modules/skottie/include/TextShaper.h",
+    # transitional
     "modules/skottie/src/text/SkottieShaper.h",
 ]
 
 SKOTTIE_SHAPER_SRCS = [
-    "modules/skottie/src/text/SkottieShaper.cpp",
+    "modules/skottie/src/text/TextShaper.cpp",
 ]
 
 ################################################################################
@@ -2555,6 +2554,7 @@ SKSHAPER_HARFBUZZ_SRCS = [
     "modules/skshaper/src/SkShaper.cpp",
     "modules/skshaper/src/SkShaper_harfbuzz.cpp",
     "modules/skshaper/src/SkShaper_primitive.cpp",
+    "modules/skshaper/src/SkShaper_skunicode.cpp",
 ]
 
 SKSHAPER_CORETEXT_SRCS = [

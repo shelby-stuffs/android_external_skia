@@ -12,6 +12,7 @@
 #include "include/core/SkM44.h"
 #include "include/core/SkMatrix.h"
 #include "include/private/SkColorData.h"
+#include "src/core/SkColorSpaceXformSteps.h"
 #include "src/gpu/graphite/TextureProxy.h"
 
 namespace skgpu::graphite {
@@ -103,6 +104,19 @@ private:
     KeyContextWithLocalMatrix& operator=(const KeyContextWithLocalMatrix&) = delete;
 
     SkMatrix fStorage;
+};
+
+class KeyContextWithColorInfo : public KeyContext {
+public:
+    KeyContextWithColorInfo(const KeyContext& other, const SkColorInfo& info) : KeyContext(other) {
+        SkASSERT(fPaintColor.isOpaque());
+        SkColorSpaceXformSteps(fDstColorInfo, info).apply(fPaintColor.vec());
+        fDstColorInfo = info;
+    }
+
+private:
+    KeyContextWithColorInfo(const KeyContextWithColorInfo&) = delete;
+    KeyContextWithColorInfo& operator=(const KeyContextWithColorInfo&) = delete;
 };
 
 } // namespace skgpu::graphite

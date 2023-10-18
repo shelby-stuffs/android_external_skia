@@ -32,15 +32,7 @@ private:
                   PaintParamsKeyBuilder* builder) const override {
         SkASSERT(desiredCombination == 0); // The blend mode blender only ever has one combination
 
-        SkSpan<const float> coeffs = skgpu::GetPorterDuffBlendConstants(fBlendMode);
-        if (!coeffs.empty()) {
-            CoeffBlenderBlock::BeginBlock(keyContext, builder, /* gatherer= */ nullptr, coeffs);
-            builder->endBlock();
-        } else {
-            BlendModeBlenderBlock::BeginBlock(
-                    keyContext, builder, /* gatherer= */ nullptr, fBlendMode);
-            builder->endBlock();
-        }
+        AddModeBlend(keyContext, builder, /* gatherer= */ nullptr, fBlendMode);
     }
 
 
@@ -55,6 +47,8 @@ sk_sp<PrecompileBlender> PrecompileBlender::Mode(SkBlendMode blendMode) {
 class PrecompileColorShader : public PrecompileShader {
 public:
     PrecompileColorShader() {}
+
+    bool isConstant() const override { return true; }
 
 private:
     void addToKey(const KeyContext& keyContext,
@@ -457,9 +451,9 @@ sk_sp<PrecompileMaskFilter> PrecompileMaskFilters::Blur() {
 }
 
 //--------------------------------------------------------------------------------------------------
-class PrecompileBlendColorFilter : public PrecompileColorFilter {
+class PrecompileBlendModeColorFilter : public PrecompileColorFilter {
 public:
-    PrecompileBlendColorFilter() {}
+    PrecompileBlendModeColorFilter() {}
 
 private:
     void addToKey(const KeyContext& keyContext,
@@ -467,12 +461,15 @@ private:
                   PaintParamsKeyBuilder* builder) const override {
         SkASSERT(desiredCombination == 0);
 
-        AddColorBlendBlock(keyContext, builder, /* gatherer= */ nullptr, SkBlendMode::kSrcOver, {});
+        // Here, kSrcOver and the white color are just a stand-ins for some later blend mode
+        // and color.
+        AddBlendModeColorFilter(keyContext, builder, /* gatherer= */ nullptr,
+                                SkBlendMode::kSrcOver, SK_PMColor4fWHITE);
     }
 };
 
 sk_sp<PrecompileColorFilter> PrecompileColorFilters::Blend() {
-    return sk_make_sp<PrecompileBlendColorFilter>();
+    return sk_make_sp<PrecompileBlendModeColorFilter>();
 }
 
 //--------------------------------------------------------------------------------------------------

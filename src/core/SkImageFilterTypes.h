@@ -36,6 +36,7 @@ class FilterResultTestAccess;  // for testing
 class SkImageFilter_Base;
 class GrRecordingContext;
 class SkBitmap;
+class SkBlender;
 class SkDevice;
 class SkImage;
 class SkImageFilter;
@@ -116,8 +117,12 @@ public:
 
     explicit operator const T&() const { return fData; }
 
-    static const ParameterSpace<T>* Optional(const T* ptr) {
-        return static_cast<const ParameterSpace<T>*>(reinterpret_cast<const void*>(ptr));
+    static std::optional<ParameterSpace<T>> Optional(const T* ptr) {
+        if (ptr) {
+            return ParameterSpace(*ptr);
+        } else {
+            return {};
+        }
     }
 private:
     T fData;
@@ -384,6 +389,8 @@ public:
     explicit operator const SkIRect&() const { return fData; }
 
     static LayerSpace<SkIRect> Empty() { return LayerSpace<SkIRect>(SkIRect::MakeEmpty()); }
+
+    static constexpr std::optional<LayerSpace<SkIRect>> Unbounded() { return {}; }
 
     // Utility function to iterate a collection of items that can map to LayerSpace<SkIRect> bounds
     // and returns the union of those bounding boxes. 'boundsFn' will be invoked with i = 0 to
@@ -776,6 +783,11 @@ public:
     // away entirely.
     std::pair<sk_sp<SkSpecialImage>, LayerSpace<SkIPoint>> imageAndOffset(const Context& ctx) const;
 
+     // Draw this FilterResult into 'target' by applying the remaining layer-to-device transform of
+     // 'mapping', using the provided 'blender' to composite the effective image on top of 'target'.
+     // If 'blender' is null, it's equivalent to kSrcOver blending.
+    void draw(const Context& ctx, SkDevice* target, const SkBlender* blender) const;
+
     class Builder;
 
     enum class ShaderFlags : int {
@@ -804,23 +816,51 @@ private:
     resolve(const Context& ctx, LayerSpace<SkIRect> dstBounds,
             bool preserveTransparency=false) const;
 
-    // Returns true if tiling and color filtering affect pixels outside of the image's bounds that
-    // are within the layer bounds (limited to 'dstBounds'). This does not consider the layer bounds
-    // which are considered separately in isCropped().
-    bool modifiesPixelsBeyondImage(const LayerSpace<SkIRect>& dstBounds) const;
+    enum class BoundsAnalysis : int {
+        // The image can be drawn directly, without needing to apply tiling, or handling how any
+        // color filter might affect transparent black.
+        kSimple = 0,
+        // The image's tiling or color filter modify pixels beyond the image and those regions are
+        // visible when rendering to the 'dstBounds'.
+        kEffectsVisible = 1 << 0,
+        // The crop boundary induced by `fLayerBounds` is visible when rendering to the 'dstBounds',
+        // although this could be either because it intersects the image's content or because the
+        // effects modify transparent black and fill out to the layer bounds.
+        kLayerCropVisible = 1 << 1
+    };
+    SK_DECL_BITMASK_OPS_FRIENDS(BoundsAnalysis)
 
-    // Returns true if the effects of the fLayerBounds crop are visible when this image is drawn
-    // with 'xtraTransform' restricted to 'dstBounds'.
-    bool isCropped(const LayerSpace<SkMatrix>& xtraTransform,
-                   const LayerSpace<SkIRect>& dstBounds) const;
+    // Determine what effects are visible based on the target 'dstBounds' and extra transform that
+    // will be applied when this FilterResult is drawn. These are not LayerSpace because the
+    // 'xtraTransform' may be either a within-layer transform, or a layer-to-device space transform.
+    // The 'dstBounds' should be in the same coordinate space that 'xtraTransform' maps to. When
+    // that is the identity matrix, 'dstBounds' is in layer space.
+    //
+    // Set 'blendAffectsTransparentBlack' to true when drawing a FilterResult with the non-default
+    // src-over blend and the blend modifies transparent black.
+    SkEnumBitMask<BoundsAnalysis> analyzeBounds(const SkMatrix& xtraTransform,
+                                                const SkIRect& dstBounds,
+                                                bool blendAffectsTransparentBlack) const;
+    SkEnumBitMask<BoundsAnalysis> analyzeBounds(const LayerSpace<SkIRect>& dstBounds) const {
+        return this->analyzeBounds(SkMatrix::I(), SkIRect(dstBounds),
+                                   /*blendAffectsTransparentBlack=*/false);
+    }
 
     // Draw directly to the device, which draws the same image as produced by resolve() but can be
     // useful if multiple operations need to be performed on the canvas.
     //
     // This assumes that the device's transform is set to match the current layer space coordinate
-    // system. This will concat any internal extra transform and apply clipping as necessary, but
-    // will restore the device to the original state before returning.
-    void draw(SkDevice* device, const LayerSpace<SkIRect>& dstBounds) const;
+    // system. This will concat any internal extra transform and apply clipping as necessary. If
+    // 'preserveDeviceState' is true it will undo any modifications. This can be set to false if the
+    // device is a one-off that will be snapped to an image after this returns.
+    //
+    // If 'blender' is null, the filter result is drawn with src-over blending. If it's not, it will
+    // be drawn using the given 'blender', filling the device's current clip when the blend
+    // modifies transparent black.
+    void draw(const Context& ctx,
+              SkDevice* device,
+              bool preserveDeviceState,
+              const SkBlender* blender=nullptr) const;
 
     // Returns the FilterResult as a shader, ideally without resolving to an axis-aligned image.
     // 'xtraSampling' is the sampling that any parent shader applies to the FilterResult.
@@ -854,6 +894,7 @@ private:
     LayerSpace<SkIRect>   fLayerBounds;
 };
 SK_MAKE_BITMASK_OPS(FilterResult::ShaderFlags)
+SK_MAKE_BITMASK_OPS(FilterResult::BoundsAnalysis)
 
 // A FilterResult::Builder is used to render one or more FilterResults or other sources into
 // a new FilterResult. It automatically aggregates the incoming bounds to minimize the output's

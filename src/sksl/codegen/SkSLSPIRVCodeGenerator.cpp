@@ -234,7 +234,6 @@ SPIRVCodeGenerator::Intrinsic SPIRVCodeGenerator::getIntrinsic(IntrinsicKind ik)
         PACK(Snorm2x16);
         PACK(Unorm2x16);
         PACK(Half2x16);
-        PACK(Double2x32);
 #undef PACK
 
         case k_length_IntrinsicKind:        return ALL_GLSL(Length);
@@ -598,8 +597,8 @@ void SPIRVCodeGenerator::writeInstruction(SpvOp_ opCode, int32_t word1, int32_t 
     this->writeWord(word8, out);
 }
 
-SPIRVCodeGenerator::Instruction SPIRVCodeGenerator::BuildInstructionKey(
-        SpvOp_ opCode, const TArray<Word>& words) {
+SPIRVCodeGenerator::Instruction SPIRVCodeGenerator::BuildInstructionKey(SpvOp_ opCode,
+                                                                        const TArray<Word>& words) {
     // Assemble a cache key for this instruction.
     Instruction key;
     key.fOp = opCode;
@@ -2010,14 +2009,6 @@ SpvId SPIRVCodeGenerator::castScalarToType(SpvId inputExprId,
     return inputExprId;
 }
 
-SpvId SPIRVCodeGenerator::writeFloatConstructor(const AnyConstructor& c, OutputStream& out) {
-    SkASSERT(c.argumentSpan().size() == 1);
-    SkASSERT(c.type().isFloat());
-    const Expression& ctorExpr = *c.argumentSpan().front();
-    SpvId expressionId = this->writeExpression(ctorExpr, out);
-    return this->castScalarToFloat(expressionId, ctorExpr.type(), c.type(), out);
-}
-
 SpvId SPIRVCodeGenerator::castScalarToFloat(SpvId inputId, const Type& inputType,
                                             const Type& outputType, OutputStream& out) {
     // Casting a float to float is a no-op.
@@ -2042,14 +2033,6 @@ SpvId SPIRVCodeGenerator::castScalarToFloat(SpvId inputId, const Type& inputType
         return NA;
     }
     return result;
-}
-
-SpvId SPIRVCodeGenerator::writeIntConstructor(const AnyConstructor& c, OutputStream& out) {
-    SkASSERT(c.argumentSpan().size() == 1);
-    SkASSERT(c.type().isSigned());
-    const Expression& ctorExpr = *c.argumentSpan().front();
-    SpvId expressionId = this->writeExpression(ctorExpr, out);
-    return this->castScalarToSignedInt(expressionId, ctorExpr.type(), c.type(), out);
 }
 
 SpvId SPIRVCodeGenerator::castScalarToSignedInt(SpvId inputId, const Type& inputType,
@@ -2079,14 +2062,6 @@ SpvId SPIRVCodeGenerator::castScalarToSignedInt(SpvId inputId, const Type& input
     return result;
 }
 
-SpvId SPIRVCodeGenerator::writeUIntConstructor(const AnyConstructor& c, OutputStream& out) {
-    SkASSERT(c.argumentSpan().size() == 1);
-    SkASSERT(c.type().isUnsigned());
-    const Expression& ctorExpr = *c.argumentSpan().front();
-    SpvId expressionId = this->writeExpression(ctorExpr, out);
-    return this->castScalarToUnsignedInt(expressionId, ctorExpr.type(), c.type(), out);
-}
-
 SpvId SPIRVCodeGenerator::castScalarToUnsignedInt(SpvId inputId, const Type& inputType,
                                                   const Type& outputType, OutputStream& out) {
     // Casting an unsigned int to unsigned int is a no-op.
@@ -2112,14 +2087,6 @@ SpvId SPIRVCodeGenerator::castScalarToUnsignedInt(SpvId inputId, const Type& inp
         return NA;
     }
     return result;
-}
-
-SpvId SPIRVCodeGenerator::writeBooleanConstructor(const AnyConstructor& c, OutputStream& out) {
-    SkASSERT(c.argumentSpan().size() == 1);
-    SkASSERT(c.type().isBoolean());
-    const Expression& ctorExpr = *c.argumentSpan().front();
-    SpvId expressionId = this->writeExpression(ctorExpr, out);
-    return this->castScalarToBoolean(expressionId, ctorExpr.type(), c.type(), out);
 }
 
 SpvId SPIRVCodeGenerator::castScalarToBoolean(SpvId inputId, const Type& inputType,

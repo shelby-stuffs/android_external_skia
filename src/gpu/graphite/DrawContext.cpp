@@ -13,6 +13,7 @@
 
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
+#include "src/core/SkTraceEvent.h"
 #include "src/gpu/graphite/AtlasProvider.h"
 #include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/Caps.h"
@@ -130,12 +131,18 @@ bool DrawContext::recordUpload(Recorder* recorder,
                                          std::move(condContext));
 }
 
-PathAtlas* DrawContext::getOrCreatePathAtlas(Recorder* recorder) {
-    // TODO: Determine whether to use SoftwarePathAtlas
+PathAtlas* DrawContext::getComputePathAtlas(Recorder* recorder) {
     if (!fComputePathAtlas) {
         fComputePathAtlas = recorder->priv().atlasProvider()->createComputePathAtlas(recorder);
     }
     return fComputePathAtlas.get();
+}
+
+PathAtlas* DrawContext::getSoftwarePathAtlas(Recorder* recorder) {
+    if (!fSoftwarePathAtlas) {
+        fSoftwarePathAtlas = recorder->priv().atlasProvider()->createSoftwarePathAtlas();
+    }
+    return fSoftwarePathAtlas.get();
 }
 
 void DrawContext::snapDrawPass(Recorder* recorder) {
@@ -236,6 +243,9 @@ sk_sp<Task> DrawContext::snapRenderPassTask(Recorder* recorder) {
         return nullptr;
     }
 
+    TRACE_EVENT_INSTANT1("skia.gpu", TRACE_FUNC, TRACE_EVENT_SCOPE_THREAD,
+                         "# passes", fDrawPasses.size());
+
     const Caps* caps = recorder->priv().caps();
 
     // TODO: At this point we would determine all the targets used by the drawPasses,
@@ -259,12 +269,15 @@ sk_sp<Task> DrawContext::snapRenderPassTask(Recorder* recorder) {
 sk_sp<Task> DrawContext::snapUploadTask(Recorder* recorder) {
     if (fSoftwarePathAtlas) {
         fSoftwarePathAtlas->recordUploads(this, recorder);
+        fSoftwarePathAtlas->reset();
     }
 
     if (!fPendingUploads || fPendingUploads->size() == 0) {
         return nullptr;
     }
 
+    TRACE_EVENT_INSTANT1("skia.gpu", TRACE_FUNC, TRACE_EVENT_SCOPE_THREAD,
+                         "# uploads", fPendingUploads->size());
     sk_sp<Task> uploadTask = UploadTask::Make(fPendingUploads.get());
 
     fPendingUploads = std::make_unique<UploadList>();
@@ -276,6 +289,10 @@ sk_sp<Task> DrawContext::snapComputeTask(Recorder* recorder) {
     if (fDispatchGroups.empty()) {
         return nullptr;
     }
+
+    TRACE_EVENT_INSTANT1("skia.gpu", TRACE_FUNC, TRACE_EVENT_SCOPE_THREAD,
+                         "# groups", fDispatchGroups.size());
+
     SkASSERT(fDispatchGroups.size() == 1);
     return ComputeTask::Make(std::move(fDispatchGroups));
 }
