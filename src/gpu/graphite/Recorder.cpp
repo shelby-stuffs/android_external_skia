@@ -320,7 +320,7 @@ bool Recorder::updateBackendTexture(const BackendTexture& backendTex,
     return true;
 }
 
-void Recorder::deleteBackendTexture(BackendTexture& texture) {
+void Recorder::deleteBackendTexture(const BackendTexture& texture) {
     ASSERT_SINGLE_OWNER
 
     if (!texture.isValid() || texture.backend() != this->backend()) {
@@ -358,6 +358,11 @@ void Recorder::performDeferredCleanup(std::chrono::milliseconds msNotUsed) {
 
     auto purgeTime = skgpu::StdSteadyClock::now() - msNotUsed;
     fResourceProvider->purgeResourcesNotUsedSince(purgeTime);
+}
+
+size_t Recorder::currentBudgetedBytes() const {
+    ASSERT_SINGLE_OWNER
+    return fResourceProvider->getResourceCacheCurrentBudgetedBytes();
 }
 
 void RecorderPriv::add(sk_sp<Task> task) {

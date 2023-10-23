@@ -10,6 +10,7 @@ const int $kReadSwizzleRGB1 = 1;
 const int $kReadSwizzleRRRR = 2;
 const int $kReadSwizzleRRR1 = 3;
 const int $kReadSwizzleBGRA = 4;
+const int $kReadSwizzle000R = 5;
 
 const int $kFilterModeNearest = 0;
 const int $kFilterModeLinear  = 1;
@@ -30,7 +31,7 @@ const int $kColorSpaceXformFlagPremul = 0x10;
 const float $kLinearInset = 0.5 + 0.00001;
 
 $pure half4 sk_error() {
-    return half4(1.0, 0.0, 1.0, 1.0);
+    return half4(1.0, 0.0, 0.0, 1.0);
 }
 
 $pure half4 sk_passthrough(half4 color) {
@@ -51,6 +52,8 @@ $pure half4 $apply_swizzle(int swizzleType, half4 color) {
             return color.rrr1;
         case $kReadSwizzleBGRA:
             return color.bgra;
+        case $kReadSwizzle000R:
+            return color.000r;
         default:
             return color;
     }

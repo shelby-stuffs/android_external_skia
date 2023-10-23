@@ -162,6 +162,7 @@ public:
         Capitalization            fCapitalization = Shaper::Capitalization::kNone;
         size_t                    fMaxLines       = 0;  // when auto-sizing, 0 -> no max
         uint32_t                  fFlags          = 0;
+        const char*               fLocale         = nullptr;
     };
 
     // Performs text layout along an infinite horizontal line, starting at |point|.

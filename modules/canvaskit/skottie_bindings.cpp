@@ -18,6 +18,7 @@
 #include "modules/skresources/include/SkResources.h"
 #include "modules/sksg/include/SkSGInvalidationController.h"
 #include "modules/skunicode/include/SkUnicode.h"
+#include "src/base/SkUTF.h"
 #include "tools/skui/InputState.h"
 #include "tools/skui/ModifierKey.h"
 
@@ -387,7 +388,28 @@ public:
         return markers;
     }
 
+    JSArray copyStringArrayToJSArray(skia_private::TArray<SkString> slotIDs) const {
+        JSArray retVal = emscripten::val::array();
+        for (auto slotID : slotIDs) {
+            retVal.call<void>("push", emscripten::val(slotID.c_str()));
+        }
+        return retVal;
+    }
+
     // Slot Manager API
+    JSObject getSlotInfo() const {
+        JSObject slotInfoJS = emscripten::val::object();
+        auto slotInfo = fSlotMgr->getSlotInfo();
+
+        slotInfoJS.set("colorSlotIDs", copyStringArrayToJSArray(slotInfo.fColorSlotIDs));
+        slotInfoJS.set("scalarSlotIDs", copyStringArrayToJSArray(slotInfo.fScalarSlotIDs));
+        slotInfoJS.set("vec2SlotIDs", copyStringArrayToJSArray(slotInfo.fVec2SlotIDs));
+        slotInfoJS.set("imageSlotIDs", copyStringArrayToJSArray(slotInfo.fImageSlotIDs));
+        slotInfoJS.set("textSlotIDs", copyStringArrayToJSArray(slotInfo.fTextSlotIDs));
+
+        return slotInfoJS;
+    }
+
     void getColorSlot(const std::string& slotID, WASMPointerF32 outPtr) {
         SkColor4f c4f;
         if (auto c = fSlotMgr->getColorSlot(SkString(slotID))) {
@@ -543,16 +565,22 @@ public:
             if (key == "ArrowRight") return ']';
             if (key == "Backspace")  return '\\';
 
-            // Passthrough regular keys.
-            if (key.size() == 1) return key[0];
+            const char* str = key.c_str();
+            const char* end = str + key.size();
+            const SkUnichar uch = SkUTF::NextUTF8(&str, end);
 
-            // Ignored.
-            return '\0';
+            // Pass through single code points, ignore everything else.
+            return str == end ? uch : -1;
         };
 
-        return fTextEditor
-                ? fTextEditor->onCharInput(key2char(key))
-                : false;
+        if (fTextEditor) {
+            const auto uch = key2char(key);
+            if (uch != -1) {
+                return fTextEditor->onCharInput(uch);
+            }
+        }
+
+        return false;
     }
 
     bool dispatchEditorPointer(float x, float y, skui::InputState state, skui::ModifierKey mod) {
@@ -664,6 +692,7 @@ EMSCRIPTEN_BINDINGS(Skottie) {
         .function("getTextProps"     , &ManagedAnimation::getTextProps)
         .function("setText"          , &ManagedAnimation::setText)
         .function("getTransformProps", &ManagedAnimation::getTransformProps)
+        .function("getSlotInfo"      , &ManagedAnimation::getSlotInfo)
         .function("_getColorSlot"    , &ManagedAnimation::getColorSlot)
         .function("_setColorSlot"    , optional_override([](ManagedAnimation& self, const std::string& key, WASMPointerF32 cPtr) {
             SkColor4f color = ptrToSkColor4f(cPtr);

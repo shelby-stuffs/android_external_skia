@@ -739,7 +739,7 @@ void Context::checkAsyncWorkCompletion() {
     fQueueManager->checkForFinishedWork(SyncToCpu::kNo);
 }
 
-void Context::deleteBackendTexture(BackendTexture& texture) {
+void Context::deleteBackendTexture(const BackendTexture& texture) {
     ASSERT_SINGLE_OWNER
 
     if (!texture.isValid() || texture.backend() != this->backend()) {
@@ -763,6 +763,11 @@ void Context::performDeferredCleanup(std::chrono::milliseconds msNotUsed) {
 
     auto purgeTime = skgpu::StdSteadyClock::now() - msNotUsed;
     fResourceProvider->purgeResourcesNotUsedSince(purgeTime);
+}
+
+size_t Context::currentBudgetedBytes() const {
+    ASSERT_SINGLE_OWNER
+    return fResourceProvider->getResourceCacheCurrentBudgetedBytes();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////

@@ -85,6 +85,11 @@ struct TextPropertyValue {
     bool                    fHasFill        = false,
                             fHasStroke      = false;
     sk_sp<GlyphDecorator>   fDecorator;
+                            // The locale to be used for text shaping, in BCP47 form.  This includes
+                            // support for RFC6067 extensions, so one can e.g. select strict line
+                            // breaking rules for certain scripts: ja-u-lb-strict.
+                            // Pass an empty string to use the system locale.
+    SkString                fLocale;
 
     bool operator==(const TextPropertyValue& other) const;
     bool operator!=(const TextPropertyValue& other) const;

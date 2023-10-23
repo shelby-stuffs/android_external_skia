@@ -19,8 +19,8 @@
 namespace skgpu::graphite {
 
 class ComputePathAtlas;
+class RasterPathAtlas;
 class Recorder;
-class SoftwarePathAtlas;
 class TextAtlasManager;
 class TextureProxy;
 
@@ -37,11 +37,11 @@ public:
     TextAtlasManager* textAtlasManager() const { return fTextAtlasManager.get(); }
 
     enum class PathAtlasFlags : unsigned {
-        kNone     = 0b000,
+        kNone    = 0b000,
         // ComputePathAtlas is supported
-        kCompute  = 0b001,
-        // SoftwarePathAtlas is supported
-        kSoftware = 0b010,
+        kCompute = 0b001,
+        // RasterPathAtlas is supported
+        kRaster  = 0b010,
     };
     SK_DECL_BITMASK_OPS_FRIENDS(PathAtlasFlags);
 
@@ -53,11 +53,11 @@ public:
     // Creates a new transient atlas handler that uses compute shaders to rasterize coverage masks
     // for path rendering. This method returns nullptr if compute shaders are not supported by the
     // owning Recorder's context.
-    std::unique_ptr<ComputePathAtlas> createComputePathAtlas(Recorder*) const;
+    std::unique_ptr<ComputePathAtlas> createComputePathAtlas() const;
 
-    // Creates a new atlas handler that uses the CPU pipeline to rasterize coverage masks
+    // Creates a new atlas handler that uses the CPU raster pipeline to create coverage masks
     // for path rendering.
-    std::unique_ptr<SoftwarePathAtlas> createSoftwarePathAtlas() const;
+    std::unique_ptr<RasterPathAtlas> createRasterPathAtlas() const;
 
     // Return a TextureProxy with the given dimensions and color type.
     sk_sp<TextureProxy> getAtlasTexture(

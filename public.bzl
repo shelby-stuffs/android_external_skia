@@ -145,6 +145,7 @@ SKIA_PUBLIC_HDRS = [
     "include/gpu/ganesh/SkMeshGanesh.h",
     "include/gpu/ganesh/SkSurfaceGanesh.h",
     "include/gpu/ganesh/gl/GrGLBackendSurface.h",
+    "include/gpu/ganesh/gl/GrGLDirectContext.h",
     "include/gpu/ganesh/mtl/SkSurfaceMetal.h",
     "include/gpu/ganesh/vk/GrVkBackendSurface.h",
     "include/gpu/gl/egl/GrGLMakeEGLInterface.h",
@@ -750,7 +751,6 @@ BASE_SRCS_ALL = [
     "src/effects/imagefilters/SkColorFilterImageFilter.cpp",
     "src/effects/imagefilters/SkComposeImageFilter.cpp",
     "src/effects/imagefilters/SkCropImageFilter.cpp",
-    "src/effects/imagefilters/SkCropImageFilter.h",
     "src/effects/imagefilters/SkDisplacementMapImageFilter.cpp",
     "src/effects/imagefilters/SkDropShadowImageFilter.cpp",
     "src/effects/imagefilters/SkImageImageFilter.cpp",
@@ -1658,12 +1658,12 @@ BASE_SRCS_ALL = [
     "src/sksl/ir/SkSLVariableReference.h",
     # We do not include src/sksl/lex/* because that is only needed to regenerate the lexer.
     "src/sksl/spirv.h",
-    "src/sksl/tracing/SkSLTraceHook.cpp",
-    "src/sksl/tracing/SkSLTraceHook.h",
-    "src/sksl/tracing/SkSLDebugTracePriv.cpp",
-    "src/sksl/tracing/SkSLDebugTracePriv.h",
     "src/sksl/tracing/SkSLDebugTracePlayer.cpp",
     "src/sksl/tracing/SkSLDebugTracePlayer.h",
+    "src/sksl/tracing/SkSLDebugTracePriv.cpp",
+    "src/sksl/tracing/SkSLDebugTracePriv.h",
+    "src/sksl/tracing/SkSLTraceHook.cpp",
+    "src/sksl/tracing/SkSLTraceHook.h",
     "src/sksl/transform/SkSLAddConstToVarModifiers.cpp",
     "src/sksl/transform/SkSLEliminateDeadFunctions.cpp",
     "src/sksl/transform/SkSLEliminateDeadGlobalVariables.cpp",
@@ -1897,6 +1897,7 @@ base_gl_srcs = [
     "src/gpu/ganesh/gl/GrGLContext.cpp",
     "src/gpu/ganesh/gl/GrGLContext.h",
     "src/gpu/ganesh/gl/GrGLDefines.h",
+    "src/gpu/ganesh/gl/GrGLDirectContext.cpp",
     "src/gpu/ganesh/gl/GrGLExtensions.cpp",
     "src/gpu/ganesh/gl/GrGLGLSL.cpp",
     "src/gpu/ganesh/gl/GrGLGLSL.h",
@@ -2235,7 +2236,6 @@ ANDROID_DEFINES = [
 ]
 IOS_DEFINES = [
     "SK_BUILD_FOR_IOS",
-    "SK_GL",
     "SK_CODEC_DECODES_JPEG",
 ]
 WASM_DEFINES = [

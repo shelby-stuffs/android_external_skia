@@ -334,7 +334,7 @@ DEF_TEST(Skottie_Props, reporter) {
     const auto& texts = observer->texts();
     REPORTER_ASSERT(reporter, texts.size() == 1);
     REPORTER_ASSERT(reporter, texts[0].node_name.equals("layer_1"));
-    REPORTER_ASSERT(reporter, texts[0].handle->get() == skottie::TextPropertyValue({
+    skottie::TextPropertyValue text_prop({
       test_typeface,
       SkString("inline_text"),
       100,
@@ -357,8 +357,13 @@ DEF_TEST(Skottie_Props, reporter) {
       SkPaint::Join::kDefault_Join,
       false,
       false,
-      nullptr
-    }));
+      nullptr,
+      SkString()
+    });
+    REPORTER_ASSERT(reporter, texts[0].handle->get() == text_prop);
+    text_prop.fLocale = "custom_lc";
+    texts[0].handle->set(text_prop);
+    REPORTER_ASSERT(reporter, texts[0].handle->get() == text_prop);
 }
 
 DEF_TEST(Skottie_Props_Revalidation, reporter) {

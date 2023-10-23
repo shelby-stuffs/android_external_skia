@@ -37,7 +37,8 @@ bool TextPropertyValue::operator==(const TextPropertyValue& other) const {
         && fStrokeJoin == other.fStrokeJoin
         && fHasFill == other.fHasFill
         && fHasStroke == other.fHasStroke
-        && fDecorator == other.fDecorator;
+        && fDecorator == other.fDecorator
+        && fLocale == other.fLocale;
 }
 
 bool TextPropertyValue::operator!=(const TextPropertyValue& other) const {

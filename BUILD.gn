@@ -1974,8 +1974,6 @@ if (skia_enable_tools) {
       "tools/gpu/TestOps.h",
       "tools/gpu/YUVUtils.cpp",
       "tools/gpu/YUVUtils.h",
-      "tools/gpu/gl/GLTestContext.cpp",  # See comment below about
-                                         # GrContextFactory workaround.
       "tools/gpu/mock/MockTestContext.cpp",
     ]
     sources += skia_utils_gpu
@@ -1984,6 +1982,7 @@ if (skia_enable_tools) {
     frameworks = []
 
     if (skia_use_gl) {
+      sources += [ "tools/gpu/gl/GLTestContext.cpp" ]
       if (is_ios) {
         sources += [ "tools/gpu/gl/iOS/CreatePlatformGLTestContext_iOS.mm" ]
         frameworks += [ "OpenGLES.framework" ]
@@ -2287,6 +2286,9 @@ if (skia_enable_tools) {
       if (skia_use_metal) {
         sources += graphite_metal_tests_sources
       }
+      if (skia_use_vulkan) {
+        sources += graphite_vulkan_tests_sources
+      }
     }
     if (!skia_enable_ganesh) {
       sources -= ganesh_tests_sources
@@ -2418,7 +2420,8 @@ if (skia_enable_tools) {
       ]
     }
 
-    if (!skia_enable_optimize_size && !skia_use_fontations) {
+    if (!skia_enable_optimize_size && !skia_use_fontations &&
+        !skia_enable_vello_shaders) {
       # optional separate library to dlopen when running CanvasStateTests.
       skia_shared_library("canvas_state_lib") {
         sources = [
