@@ -699,7 +699,8 @@ if (skia_compile_modules) {
         dir = get_path_info(dst, "dir")
         name = get_path_info(dst, "name")
         ext = get_path_info(dst, "extension")
-        if (ext == "rts" || ext == "rtcf" || ext == "rtb") {
+        if (ext == "rts" || ext == "rtcf" || ext == "rtb" || ext == "mfrag" ||
+            ext == "mvert") {
           response_file_contents += [ rebase_path(src) ]
           sources += [ src ]
           outputs += [ target_out_dir + "/" +
@@ -754,7 +755,7 @@ if (skia_compile_sksl_tests) {
     include_dirs = [ "." ]
     deps = [
       ":run_sksllex",
-      "//third_party/externals/dawn/src/tint:libtint",
+      "//third_party/externals/dawn/src/tint/api:api",
       "//third_party/externals/spirv-tools:spvtools",
       "//third_party/externals/spirv-tools:spvtools_val",
       "//third_party/spirv-cross:spirv_cross",
@@ -1378,7 +1379,10 @@ optional("typeface_fontations") {
     "src/ports/SkTypeface_fontations_priv.h",
   ]
 
-  sources_for_tests = [ "tests/FontationsTest.cpp" ]
+  sources_for_tests = [
+    "tests/FontationsTest.cpp",
+    "tests/FontationsFtCompTest.cpp",
+  ]
 }
 
 optional("webp_decode") {
@@ -1511,7 +1515,6 @@ skia_component("skia") {
     "src/codec/SkSampledCodec.cpp",
     "src/ports/SkDiscardableMemory_none.cpp",
     "src/ports/SkGlobalInitialization_default.cpp",
-    "src/ports/SkImageGenerator_skia.cpp",
     "src/ports/SkMemory_malloc.cpp",
     "src/ports/SkOSFile_stdio.cpp",
     "src/sfnt/SkOTTable_name.cpp",
@@ -1951,6 +1954,8 @@ if (skia_enable_tools) {
       "tools/gpu/BackendSurfaceFactory.h",
       "tools/gpu/BackendTextureImageFactory.cpp",
       "tools/gpu/BackendTextureImageFactory.h",
+      "tools/gpu/ContextType.cpp",
+      "tools/gpu/ContextType.h",
       "tools/gpu/FlushFinishTracker.cpp",
       "tools/gpu/FlushFinishTracker.h",
       "tools/gpu/GrContextFactory.cpp",
@@ -1969,8 +1974,6 @@ if (skia_enable_tools) {
       "tools/gpu/TestOps.h",
       "tools/gpu/YUVUtils.cpp",
       "tools/gpu/YUVUtils.h",
-      "tools/gpu/gl/GLTestContext.cpp",  # See comment below about
-                                         # GrContextFactory workaround.
       "tools/gpu/mock/MockTestContext.cpp",
     ]
     sources += skia_utils_gpu
@@ -1979,6 +1982,7 @@ if (skia_enable_tools) {
     frameworks = []
 
     if (skia_use_gl) {
+      sources += [ "tools/gpu/gl/GLTestContext.cpp" ]
       if (is_ios) {
         sources += [ "tools/gpu/gl/iOS/CreatePlatformGLTestContext_iOS.mm" ]
         frameworks += [ "OpenGLES.framework" ]
@@ -2140,6 +2144,8 @@ if (skia_enable_tools) {
       "tools/SkSharingProc.cpp",
       "tools/SkSharingProc.h",
       "tools/Stats.h",
+      "tools/TestFontDataProvider.cpp",
+      "tools/TestFontDataProvider.h",
       "tools/ToolUtils.cpp",
       "tools/ToolUtils.h",
       "tools/UrlDataManager.cpp",
@@ -2280,6 +2286,9 @@ if (skia_enable_tools) {
       if (skia_use_metal) {
         sources += graphite_metal_tests_sources
       }
+      if (skia_use_vulkan) {
+        sources += graphite_vulkan_tests_sources
+      }
     }
     if (!skia_enable_ganesh) {
       sources -= ganesh_tests_sources
@@ -2411,7 +2420,8 @@ if (skia_enable_tools) {
       ]
     }
 
-    if (!skia_enable_optimize_size && !skia_use_fontations) {
+    if (!skia_enable_optimize_size && !skia_use_fontations &&
+        !skia_enable_vello_shaders) {
       # optional separate library to dlopen when running CanvasStateTests.
       skia_shared_library("canvas_state_lib") {
         sources = [
@@ -2923,8 +2933,6 @@ if (skia_enable_tools) {
         "tools/viewer/SkSLSlide.h",
         "tools/viewer/SkottieSlide.cpp",
         "tools/viewer/SkottieSlide.h",
-        "tools/viewer/SkottieTextEditor.cpp",
-        "tools/viewer/SkottieTextEditor.h",
         "tools/viewer/Slide.h",
         "tools/viewer/SlideDir.cpp",
         "tools/viewer/SlideDir.h",

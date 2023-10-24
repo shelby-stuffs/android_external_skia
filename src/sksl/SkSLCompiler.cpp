@@ -7,11 +7,11 @@
 
 #include "src/sksl/SkSLCompiler.h"
 
-#include "include/private/SkSLDefines.h"
 #include "include/private/base/SkDebug.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLDefines.h"
 #include "src/sksl/SkSLInliner.h"
 #include "src/sksl/SkSLModuleLoader.h"
 #include "src/sksl/SkSLOutputStream.h"
@@ -596,7 +596,7 @@ bool Compiler::toMetal(Program& program, std::string* out) {
 static bool validate_wgsl(ErrorReporter& reporter, const std::string& wgsl, std::string* warnings) {
     // Verify that the WGSL we produced is valid.
     tint::Source::File srcFile("", wgsl);
-    tint::Program program(tint::reader::wgsl::Parse(&srcFile));
+    tint::Program program(tint::wgsl::reader::Parse(&srcFile));
 
     if (program.Diagnostics().contains_errors()) {
         // The program isn't valid WGSL. In debug, report the error via SkDEBUGFAIL. We also append

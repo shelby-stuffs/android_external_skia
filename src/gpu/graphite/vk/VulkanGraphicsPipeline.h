@@ -27,6 +27,7 @@ class GraphicsPipelineDesc;
 class RuntimeEffectDictionary;
 class VulkanSharedContext;
 struct RenderPassDesc;
+class VulkanRenderPass;
 
 class VulkanGraphicsPipeline final : public GraphicsPipeline {
 public:
@@ -65,6 +66,7 @@ public:
                                               const RuntimeEffectDictionary*,
                                               const GraphicsPipelineDesc&,
                                               const RenderPassDesc&,
+                                              sk_sp<VulkanRenderPass> compatibleRenderPass,
                                               VkPipelineCache);
 
     ~VulkanGraphicsPipeline() override {}
@@ -79,16 +81,16 @@ public:
         return fPipeline;
     }
 
-    bool hasFragment() const { return fHasFragment; }
+    bool hasFragmentUniforms() const { return fHasFragmentUniforms; }
     bool hasStepUniforms() const { return fHasStepUniforms; }
     int numTextureSamplers() const { return fNumTextureSamplers; }
 
 private:
     VulkanGraphicsPipeline(const skgpu::graphite::SharedContext* sharedContext,
-                           Shaders* pipelineShaders,
+                           PipelineInfo* pipelineInfo,
                            VkPipelineLayout,
                            VkPipeline,
-                           bool hasFragment,
+                           bool hasFragmentUniforms,
                            bool hasStepUniforms,
                            int numTextureSamplers);
 
@@ -96,7 +98,7 @@ private:
 
     VkPipelineLayout fPipelineLayout = VK_NULL_HANDLE;
     VkPipeline fPipeline = VK_NULL_HANDLE;
-    bool fHasFragment = false;
+    bool fHasFragmentUniforms = false;
     bool fHasStepUniforms = false;
     int fNumTextureSamplers = 0;
 };

@@ -22,7 +22,10 @@ class MtlSharedContext;
 
 class MtlResourceProvider final : public ResourceProvider {
 public:
-    MtlResourceProvider(SharedContext* sharedContext, SingleOwner*, uint32_t recorderID);
+    MtlResourceProvider(SharedContext* sharedContext,
+                        SingleOwner*,
+                        uint32_t recorderID,
+                        size_t resourceBudget);
     ~MtlResourceProvider() override {}
 
     sk_sp<Texture> createWrappedTexture(const BackendTexture&) override;
@@ -45,7 +48,7 @@ private:
                                  SkTileMode yTileMode) override;
 
     BackendTexture onCreateBackendTexture(SkISize dimensions, const TextureInfo&) override;
-    void onDeleteBackendTexture(BackendTexture&) override;
+    void onDeleteBackendTexture(const BackendTexture&) override;
 
     sk_cfp<id<MTLDepthStencilState>> findOrCreateCompatibleDepthStencilState(
             const DepthStencilSettings&);

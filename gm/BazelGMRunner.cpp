@@ -9,7 +9,6 @@
  */
 
 #include "gm/gm.h"
-#include "gm/surface_manager/SurfaceManager.h"
 #include "gm/vias/Draw.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
@@ -25,6 +24,7 @@
 #include "src/utils/SkJSONWriter.h"
 #include "src/utils/SkOSPath.h"
 #include "tools/HashAndEncode.h"
+#include "tools/testrunners/surface_manager/SurfaceManager.h"
 
 #include <ctime>
 #include <filesystem>
@@ -57,7 +57,8 @@ static DEFINE_string(surfaceConfig,
                      "",
                      "Name of the Surface configuration to use (e.g. \"8888\"). This determines "
                      "how we construct the SkSurface from which we get the SkCanvas that GMs will "
-                     "draw on. See file //gm/surface_manager/SurfaceManager.h for details.");
+                     "draw on. See file //tools/testrunners/surface_manager/SurfaceManager.h for "
+                     "details.");
 
 static DEFINE_string(via,
                      "direct",  // Equivalent to running DM without a via.
@@ -104,20 +105,22 @@ static std::string write_png_and_json_files(std::string name,
 
     // Gather all Gold keys.
     std::map<std::string, std::string> keys = {
-            {"image_md5", md5.c_str()},
             {"build_system", "bazel"},
     };
     keys.merge(surfaceGoldKeys);
     keys.merge(gmGoldKeys);
 
-    // Write JSON file with MD5 hash.
+    // Write JSON file with MD5 hash and Gold key-value pairs.
     SkFILEWStream jsonFile(jsonPath);
     SkJSONWriter jsonWriter(&jsonFile, SkJSONWriter::Mode::kPretty);
     jsonWriter.beginObject();  // Root object.
+    jsonWriter.appendString("md5", md5);
+    jsonWriter.beginObject("keys");  // "keys" dictionary.
     for (auto const& [param, value] : keys) {
         jsonWriter.appendString(param.c_str(), SkString(value));
     }
-    jsonWriter.endObject();
+    jsonWriter.endObject();  // "keys" dictionary.
+    jsonWriter.endObject();  // Root object.
 
     return "";
 }
@@ -154,8 +157,8 @@ void run_gm(std::unique_ptr<skiagm::GM> gm, std::string config, std::string outp
     SkDebugf("[%s] GM: %s\n", now().c_str(), gm->getName().c_str());
 
     // Create surface and canvas.
-    std::unique_ptr<SurfaceManager> surfaceManager =
-            SurfaceManager::FromConfig(config, gm->getISize().width(), gm->getISize().height());
+    std::unique_ptr<SurfaceManager> surfaceManager = SurfaceManager::FromConfig(
+            config, SurfaceOptions{gm->getISize().width(), gm->getISize().height()});
     if (surfaceManager == nullptr) {
         SK_ABORT("Unknown --surfaceConfig flag value: %s.", config.c_str());
     }

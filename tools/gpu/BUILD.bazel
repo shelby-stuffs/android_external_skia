@@ -12,6 +12,8 @@ skia_cc_library(
         "BackendSurfaceFactory.h",
         "BackendTextureImageFactory.cpp",
         "BackendTextureImageFactory.h",
+        "ContextType.cpp",
+        "ContextType.h",
         "FenceSync.h",
         "FlushFinishTracker.cpp",
         "FlushFinishTracker.h",
@@ -54,9 +56,11 @@ skia_cc_library(
         "GrContextFactory.h",
     ],
     visibility = [
-        "//gm/surface_manager:__pkg__",
+        "//bench:__pkg__",
+        "//bench/benchmark_target:__pkg__",
         "//modules/skottie:__pkg__",
         "//tests:__pkg__",
+        "//tools/testrunners/surface_manager:__pkg__",
         "//tools/viewer:__pkg__",
     ],
     deps = ["//:skia_internal"] + select_multi({

@@ -69,7 +69,6 @@
     SKSL_INTRINSIC(lessThan)         \
     SKSL_INTRINSIC(log2)             \
     SKSL_INTRINSIC(log)              \
-    SKSL_INTRINSIC(makeSampler2D)    \
     SKSL_INTRINSIC(matrixCompMult)   \
     SKSL_INTRINSIC(matrixInverse)    \
     SKSL_INTRINSIC(max)              \
@@ -81,7 +80,6 @@
     SKSL_INTRINSIC(notEqual)         \
     SKSL_INTRINSIC(not )             \
     SKSL_INTRINSIC(outerProduct)     \
-    SKSL_INTRINSIC(packDouble2x32)   \
     SKSL_INTRINSIC(packHalf2x16)     \
     SKSL_INTRINSIC(packSnorm2x16)    \
     SKSL_INTRINSIC(packSnorm4x8)     \
@@ -115,7 +113,6 @@
     SKSL_INTRINSIC(transpose)        \
     SKSL_INTRINSIC(trunc)            \
     SKSL_INTRINSIC(uintBitsToFloat)  \
-    SKSL_INTRINSIC(unpackDouble2x32) \
     SKSL_INTRINSIC(unpackHalf2x16)   \
     SKSL_INTRINSIC(unpackSnorm2x16)  \
     SKSL_INTRINSIC(unpackSnorm4x8)   \

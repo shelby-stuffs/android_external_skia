@@ -9,8 +9,9 @@
 #define skgpu_graphite_PathAtlas_DEFINED
 
 #include "include/core/SkStrokeRec.h"
+#include "src/core/SkAutoPixmapStorage.h"
 #include "src/gpu/RectanizerSkyline.h"
-#include "src/gpu/graphite/geom/AtlasShape.h"
+#include "src/gpu/graphite/geom/CoverageMaskShape.h"
 
 #ifdef SK_ENABLE_VELLO_SHADERS
 #include "src/gpu/graphite/compute/VelloRenderer.h"
@@ -20,6 +21,8 @@
 
 namespace skgpu::graphite {
 
+class Caps;
+class DrawContext;
 class Recorder;
 class Rect;
 class Shape;
@@ -46,8 +49,9 @@ public:
      * Searches the atlas for a slot that can fit a coverage mask for a clipped shape with the given
      * bounds in device coordinates and submits the mask to be drawn into the found atlas region.
      *
-     * Returns false if a the shape cannot fit in the atlas. Otherwise, returns true and populates
-     * `outAtlasBounds` with the atlas-space boundaries of the mask region.
+     * If the shape will fit in the atlas, returns the TextureProxy where the shape data will be
+     * stored and populates `outAtlasBounds` with the atlas-space boundaries of the mask region.
+     * Otherwise, returns nullptr;
      *
      * The bounds of the atlas entry is laid out with a 1 pixel outset from the given dimensions.
      *
@@ -63,49 +67,34 @@ public:
      *
      * The stroke-and-fill style is drawn as a single combined coverage mask containing the stroke
      * and the fill.
-     *
-     * This method lazily creates a TextureProxy that can be referenced by tasks that want to sample
-     * the atlas.
      */
-    bool addShape(Recorder*,
-                  const Rect& transformedShapeBounds,
-                  const Shape& shape,
-                  const Transform& localToDevice,
-                  const SkStrokeRec& style,
-                  AtlasShape::MaskInfo* outMaskInfo);
+    const TextureProxy* addShape(Recorder*,
+                                 const Rect& transformedShapeBounds,
+                                 const Shape& shape,
+                                 const Transform& localToDevice,
+                                 const SkStrokeRec& style,
+                                 CoverageMaskShape::MaskInfo* outMaskInfo);
 
-    // Clear all scheduled atlas draws and free up atlas allocations. After this call the atlas can
-    // be considered cleared and available for new shape insertions. However this method does not
-    // have any bearing on the contents of the atlas texture itself, which may be in use by GPU
-    // commands that are in-flight or yet to be submitted.
-    void reset();
-
-    // Returns a pointer to the atlas texture.
-    const TextureProxy* texture() const { return fTexture.get(); }
-
-    uint32_t width() const { return static_cast<uint32_t>(fRectanizer.width()); }
-    uint32_t height() const { return static_cast<uint32_t>(fRectanizer.height()); }
+    uint32_t width() const { return fWidth; }
+    uint32_t height() const { return fHeight; }
 
 protected:
+    virtual const TextureProxy* addRect(Recorder* recorder,
+                                        skvx::float2 atlasSize,
+                                        SkIPoint16* pos) = 0;
     virtual void onAddShape(const Shape&,
                             const Transform& transform,
                             const Rect& atlasBounds,
                             skvx::int2 deviceOffset,
                             const SkStrokeRec&) = 0;
-    virtual void onReset() = 0;
 
-private:
-    skgpu::RectanizerSkyline fRectanizer;
+    struct MaskFormat {
+        SkColorType fColorType = kUnknown_SkColorType;
+        bool requiresStorageUsage = false;
+    };
 
-    // A PathAtlas lazily requests a texture from the AtlasProvider when the first shape gets added
-    // to it and references the same texture for the duration of its lifetime. A reference to this
-    // texture is stored here, which is used by AtlasShapeRenderStep when encoding the render pass.
-    //
-    // TODO: Rather than permanently assigning a texture we may want PathAtlases to request one from
-    // a pool on demand while encoding a dispatch. Currently all PathAtlases reference the same
-    // TextureProxy and the RenderStep can reference it easily via the PathAtlas. We may want to
-    // revise how a RenderStep obtains the correct texture if we move to a pooled approach.
-    sk_sp<TextureProxy> fTexture;
+    uint32_t fWidth;
+    uint32_t fHeight;
 };
 
 class DispatchGroup;
@@ -125,6 +114,31 @@ class ComputePathAtlas : public PathAtlas {
 public:
     ComputePathAtlas();
     virtual std::unique_ptr<DispatchGroup> recordDispatches(Recorder*) const = 0;
+
+    // Clear all scheduled atlas draws and free up atlas allocations, if necessary. After this call
+    // the atlas can be considered cleared and available for new shape insertions. However this
+    // method does not have any bearing on the contents of any atlas textures themselves, which may
+    // be in use by GPU commands that are in-flight or yet to be submitted.
+    void reset();
+
+protected:
+    const TextureProxy* texture() const { return fTexture.get(); }
+    const TextureProxy* addRect(Recorder* recorder,
+                                skvx::float2 atlasSize,
+                                SkIPoint16* pos) override;
+
+    virtual void onReset() = 0;
+
+private:
+    bool initializeTextureIfNeeded(Recorder*);
+
+    skgpu::RectanizerSkyline fRectanizer;
+
+    // ComputePathAtlas lazily requests a texture from the AtlasProvider when the first shape gets
+    // added to it and references the same texture for the duration of its lifetime. A reference to
+    // this texture is stored here, which is used by AtlasShapeRenderStep when encoding the render
+    // pass.
+    sk_sp<TextureProxy> fTexture;
 };
 
 #ifdef SK_ENABLE_VELLO_SHADERS

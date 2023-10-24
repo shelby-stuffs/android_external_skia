@@ -8,8 +8,9 @@
 #ifndef SkOpts_DEFINED
 #define SkOpts_DEFINED
 
-#include "include/core/SkTypes.h"
 #include "src/core/SkRasterPipelineOpList.h"
+
+#include <cstddef>
 
 /**
  * SkOpts (short for SkOptimizations) is a mechanism where we can ship with multiple implementations
@@ -56,11 +57,6 @@
  */
 
 struct SkRasterPipelineStage;
-
-#define SK_OPTS_TARGET_DEFAULT 0x00
-#define SK_OPTS_TARGET_SSSE3   0x01
-#define SK_OPTS_TARGET_AVX     0x02
-#define SK_OPTS_TARGET_HSW     0x04
 
 namespace SkOpts {
     // Call to replace pointers to portable functions with pointers to CPU-specific functions.

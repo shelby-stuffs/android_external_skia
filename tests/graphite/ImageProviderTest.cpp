@@ -17,6 +17,7 @@
 #include "include/gpu/graphite/Image.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/Surface.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkMipmapBuilder.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/RecorderPriv.h"
@@ -49,7 +50,7 @@ sk_sp<SkImage> create_and_attach_mipmaps(sk_sp<SkImage> img) {
 
     int count = builder.countLevels();
 
-    SkASSERT_RELEASE(count == std::size(mipLevelColors));
+    SkASSERT_RELEASE(count == SkToInt(std::size(mipLevelColors)));
 
     for (int i = 0; i < count; ++i) {
         SkPixmap pm = builder.level(i);
@@ -466,7 +467,8 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(MakeColorSpace_Test, reporter, context,
         skiatest::ReporterContext subtest(reporter, testcase.name);
         sk_sp<SkImage> orig = testcase.fFactory(recorder.get());
 
-        SkASSERT(orig->colorType() == kRGBA_8888_SkColorType);
+        SkASSERT(orig->colorType() == kRGBA_8888_SkColorType ||
+                 orig->colorType() == kBGRA_8888_SkColorType);
         SkASSERT(!orig->colorSpace() || orig->colorSpace() == SkColorSpace::MakeSRGB().get());
 
         for (bool mipmapped : {false, true}) {

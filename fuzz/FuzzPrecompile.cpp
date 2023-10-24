@@ -409,16 +409,17 @@ void fuzz_graphite(Fuzz* fuzz, Context* context, int depth = 9) {
 DEF_FUZZ(Precompile, fuzz) {
     skiatest::graphite::ContextFactory factory;
 
-    sk_gpu_test::GrContextFactory::ContextType contextType;
+    skgpu::ContextType contextType;
 #if defined(SK_METAL)
-    contextType = sk_gpu_test::GrContextFactory::kMetal_ContextType;
+    contextType = skgpu::ContextType::kMetal;
 #elif defined(SK_VULKAN)
-    contextType = sk_gpu_test::GrContextFactory::kVulkan_ContextType;
+    contextType = skgpu::ContextType::kVulkan;
 #else
-    contextType = sk_gpu_test::GrContextFactory::kMock_ContextType;
+    contextType = skgpu::ContextType::kMock;
 #endif
 
-    auto [_, context] = factory.getContextInfo(contextType);
+    skiatest::graphite::ContextInfo ctxInfo = factory.getContextInfo(contextType);
+    skgpu::graphite::Context* context = ctxInfo.fContext;
     if (!context) {
         return;
     }

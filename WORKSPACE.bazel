@@ -1,5 +1,8 @@
 workspace(name = "skia")
 
+load("//bazel:deps.bzl", "bazel_deps", "c_plus_plus_deps")
+bazel_deps()
+
 load("//toolchain:download_toolchains.bzl", "download_toolchains_for_skia")
 
 download_toolchains_for_skia("clang_linux_amd64", "clang_mac", "ndk_linux_amd64")
@@ -27,29 +30,6 @@ emsdk_deps()
 load("@emsdk//:emscripten_deps.bzl", emsdk_emscripten_deps = "emscripten_deps")
 
 emsdk_emscripten_deps(emscripten_version = "3.1.44")
-
-http_archive(
-    name = "bazel_skylib",
-    sha256 = "c6966ec828da198c5d9adbaa94c05e3a1c7f21bd012a0b29ba8ddbccb2c93b0d",
-    urls = gcs_mirror_url(
-        sha256 = "c6966ec828da198c5d9adbaa94c05e3a1c7f21bd012a0b29ba8ddbccb2c93b0d",
-        url = "https://github.com/bazelbuild/bazel-skylib/releases/download/1.1.1/bazel-skylib-1.1.1.tar.gz",
-    ),
-)
-
-load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
-
-bazel_skylib_workspace()
-
-http_archive(
-    name = "bazel_toolchains",
-    sha256 = "e52789d4e89c3e2dc0e3446a9684626a626b6bec3fde787d70bae37c6ebcc47f",
-    strip_prefix = "bazel-toolchains-5.1.1",
-    urls = gcs_mirror_url(
-        sha256 = "e52789d4e89c3e2dc0e3446a9684626a626b6bec3fde787d70bae37c6ebcc47f",
-        url = "https://github.com/bazelbuild/bazel-toolchains/archive/refs/tags/v5.1.1.tar.gz",
-    ),
-)
 
 load("@bazel_toolchains//repositories:repositories.bzl", bazel_toolchains_repositories = "repositories")
 
@@ -375,8 +355,6 @@ local_repository(
     path = "include/config",
 )
 
-load("//bazel:deps.bzl", "git_repos_from_deps")
-
 # This are two lists of Bazel repository names, which is brought in by the following macro.
 # It is here for easier grepping, i.e. someone trying to find where a label like @brotli//:brotlidec
 # was defined. If a dep has its own BUILD rules, then one will need to go to its git repository
@@ -411,11 +389,12 @@ load("//bazel:deps.bzl", "git_repos_from_deps")
 # @vello - //bazel/external/vello:BUILD.bazel
 # @vulkan_headers - //bazel/external/vulkan_headers:BUILD.bazel
 # @vulkan_tools - //bazel/external/vulkan_tools:BUILD.bazel
+# @vulkan_utility_libraries - //bazel/external/vulkan_utility_libraries:BUILD.bazel
 # @vulkanmemoryallocator - //bazel/external/vulkanmemoryallocator:BUILD.bazel
 # @wuffs - //bazel/external/wuffs:BUILD.bazel
 # @zlib_skia - //bazel/external/zlib_skia:BUILD.bazel
 #### END GENERATED LIST OF THIRD_PARTY DEPS
-git_repos_from_deps()
+c_plus_plus_deps()
 
 # In order to copy the Freetype configurations into the checked out Freetype folder,
 # it is easiest to treat them as a third-party dependency from the perspective of Freetype.
@@ -564,7 +543,7 @@ load(
 # Pulls the gcr.io/skia-public/debugger-app-base container.
 container_pull(
     name = "debugger-app-base",
-    digest = "sha256:24c6e5d875d298c741e8c2917a94e1d548400eb8a9517d2a90f93833cbba5469",
+    digest = "sha256:72a86e8cc35e6d5d5abde1c169876d6e799aa3a07c079b5a1c0510759e02be2f",
     registry = "gcr.io",
     repository = "skia-public/debugger-app-base",
 )
@@ -572,7 +551,7 @@ container_pull(
 # Pulls the gcr.io/skia-public/jsfiddle-base container.
 container_pull(
     name = "jsfiddle-base",
-    digest = "sha256:2e999b8eedf768b6deae7405789ccdac92dcc01c36720f268c9d1b58fcd8ec1b",
+    digest = "sha256:3605928905e47e6fb0ca832e032fb468777eda28bfb56c395f270057915e5d6a",
     registry = "gcr.io",
     repository = "skia-public/jsfiddle-base",
 )
@@ -580,7 +559,7 @@ container_pull(
 # Pulls the gcr.io/skia-public/shaders-base container.
 container_pull(
     name = "shaders-base",
-    digest = "sha256:6246ccdc88e01a5dc92d83e9a0698d76f53529978df070f7c93ecbfb3226d10d",
+    digest = "sha256:84356d9e8452ce2ed1284c270aa51728fe60b1b9159a29b2cc1e02841b33e163",
     registry = "gcr.io",
     repository = "skia-public/shaders-base",
 )
@@ -588,7 +567,7 @@ container_pull(
 # Pulls the gcr.io/skia-public/skottie-base container.
 container_pull(
     name = "skottie-base",
-    digest = "sha256:d5998642c25ba6826e7e69628c64fbf618d50196fd6256a323b6582581a49f79",
+    digest = "sha256:bbf6a30f67f486a9513633bb1df0d96b0637a76c55886f62ea9477cbd0717678",
     registry = "gcr.io",
     repository = "skia-public/skottie-base",
 )

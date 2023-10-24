@@ -21,7 +21,6 @@
 #include "src/gpu/graphite/DrawContext.h"
 #include "src/gpu/graphite/DrawList.h"
 #include "src/gpu/graphite/DrawParams.h"
-#include "src/gpu/graphite/ImageUtils.h"
 #include "src/gpu/graphite/Image_Graphite.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/PathAtlas.h"
@@ -316,7 +315,7 @@ static constexpr int kGridCellSize = 16;
 static constexpr int kMaxBruteForceN = 64;
 
 Device::Device(Recorder* recorder, sk_sp<DrawContext> dc, bool addInitialClear)
-        : SkBaseDevice(dc->imageInfo(), dc->surfaceProps())
+        : SkDevice(dc->imageInfo(), dc->surfaceProps())
         , fRecorder(recorder)
         , fDC(std::move(dc))
         , fClip(this)
@@ -359,10 +358,9 @@ SkStrikeDeviceInfo Device::strikeDeviceInfo() const {
     return {this->surfaceProps(), this->scalerContextFlags(), &fSDFTControl};
 }
 
-SkBaseDevice* Device::onCreateDevice(const CreateInfo& info, const SkPaint*) {
+sk_sp<SkDevice> Device::createDevice(const CreateInfo& info, const SkPaint*) {
     // TODO: Inspect the paint and create info to determine if there's anything that has to be
     // modified to support inline subpasses.
-    // TODO: onCreateDevice really should return sk_sp<SkBaseDevice>...
     SkSurfaceProps props(this->surfaceProps().flags(), info.fPixelGeometry);
 
     // Skia's convention is to only clear a device if it is non-opaque.
@@ -373,8 +371,7 @@ SkBaseDevice* Device::onCreateDevice(const CreateInfo& info, const SkPaint*) {
                 skgpu::Budgeted::kYes,
                 Mipmapped::kNo,
                 props,
-                addInitialClear)
-            .release();
+                addInitialClear);
 }
 
 sk_sp<SkSurface> Device::makeSurface(const SkImageInfo& ii, const SkSurfaceProps& props) {
@@ -434,7 +431,7 @@ TextureProxyView TextureProxyView::Copy(Recorder* recorder,
 }
 
 bool Device::onReadPixels(const SkPixmap& pm, int srcX, int srcY) {
-#if GRAPHITE_TEST_UTILS
+#if defined(GRAPHITE_TEST_UTILS)
     if (Context* context = fRecorder->priv().context()) {
         this->flushPendingWorkToRecorder();
         // Add all previous commands generated to the command buffer.
@@ -502,7 +499,7 @@ bool Device::onWritePixels(const SkPixmap& src, int x, int y) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-bool Device::onClipIsAA() const {
+bool Device::isClipAntiAliased() const {
     // All clips are AA'ed unless it's wide-open, empty, or a device-rect with integer coordinates
     ClipStack::ClipState type = fClip.clipState();
     if (type == ClipStack::ClipState::kWideOpen || type == ClipStack::ClipState::kEmpty) {
@@ -516,24 +513,12 @@ bool Device::onClipIsAA() const {
     }
 }
 
-SkBaseDevice::ClipType Device::onGetClipType() const {
-    ClipStack::ClipState state = fClip.clipState();
-    if (state == ClipStack::ClipState::kEmpty) {
-        return ClipType::kEmpty;
-    } else if (state == ClipStack::ClipState::kDeviceRect ||
-               state == ClipStack::ClipState::kWideOpen) {
-        return ClipType::kRect;
-    } else {
-        return ClipType::kComplex;
-    }
-}
-
-SkIRect Device::onDevClipBounds() const {
+SkIRect Device::devClipBounds() const {
     return rect_to_pixelbounds(fClip.conservativeBounds());
 }
 
 // TODO: This is easy enough to support, but do we still need this API in Skia at all?
-void Device::onAsRgnClip(SkRegion* region) const {
+void Device::android_utils_clipAsRgn(SkRegion* region) const {
     SkIRect bounds = this->devClipBounds();
     // Assume wide open and then perform intersect/difference operations reducing the region
     region->setRect(bounds);
@@ -552,20 +537,20 @@ void Device::onAsRgnClip(SkRegion* region) const {
     }
 }
 
-void Device::onClipRect(const SkRect& rect, SkClipOp op, bool aa) {
+void Device::clipRect(const SkRect& rect, SkClipOp op, bool aa) {
     SkASSERT(op == SkClipOp::kIntersect || op == SkClipOp::kDifference);
     // TODO: Snap rect edges to pixel bounds if non-AA and axis-aligned?
     fClip.clipShape(this->localToDeviceTransform(), Shape{rect}, op);
 }
 
-void Device::onClipRRect(const SkRRect& rrect, SkClipOp op, bool aa) {
+void Device::clipRRect(const SkRRect& rrect, SkClipOp op, bool aa) {
     SkASSERT(op == SkClipOp::kIntersect || op == SkClipOp::kDifference);
     // TODO: Snap rrect edges to pixel bounds if non-AA and axis-aligned? Is that worth doing to
     // seam with non-AA rects even if the curves themselves are AA'ed?
     fClip.clipShape(this->localToDeviceTransform(), Shape{rrect}, op);
 }
 
-void Device::onClipPath(const SkPath& path, SkClipOp op, bool aa) {
+void Device::clipPath(const SkPath& path, SkClipOp op, bool aa) {
     SkASSERT(op == SkClipOp::kIntersect || op == SkClipOp::kDifference);
     // TODO: Ensure all path inspection is handled here or in SkCanvas, and that non-AA rects as
     // paths are routed appropriately.
@@ -578,7 +563,7 @@ void Device::onClipShader(sk_sp<SkShader> shader) {
 }
 
 // TODO: Is clipRegion() on the deprecation chopping block. If not it should be...
-void Device::onClipRegion(const SkRegion& globalRgn, SkClipOp op) {
+void Device::clipRegion(const SkRegion& globalRgn, SkClipOp op) {
     SkASSERT(op == SkClipOp::kIntersect || op == SkClipOp::kDifference);
 
     Transform globalToDevice{this->globalToDevice()};
@@ -597,7 +582,7 @@ void Device::onClipRegion(const SkRegion& globalRgn, SkClipOp op) {
     }
 }
 
-void Device::onReplaceClip(const SkIRect& rect) {
+void Device::replaceClip(const SkIRect& rect) {
     // ReplaceClip() is currently not intended to be supported in Graphite since it's only used
     // for emulating legacy clip ops in Android Framework, and apps/devices that require that
     // should not use Graphite. However, if it needs to be supported, we could probably implement
@@ -618,7 +603,7 @@ void Device::drawPaint(const SkPaint& paint) {
     // We never want to do a fullscreen clear on a fully-lazy render target, because the device size
     // may be smaller than the final surface we draw to, in which case we don't want to fill the
     // entire final surface.
-    if (this->clipIsWideOpen() && !fDC->target()->isFullyLazy()) {
+    if (this->isClipWideOpen() && !fDC->target()->isFullyLazy()) {
         if (!paint_depends_on_dst(paint)) {
             if (std::optional<SkColor4f> color = extract_paint_color(paint, fDC->colorInfo())) {
                 // do fullscreen clear
@@ -885,7 +870,7 @@ void Device::drawAtlasSubRun(const sktext::gpu::AtlasSubRun* subRun,
             // We flush every Device because the glyphs that are being flushed/referenced are not
             // necessarily specific to this Device. This addresses both multiple SkSurfaces within
             // a Recorder, and nested layers.
-            ATRACE_ANDROID_FRAMEWORK_ALWAYS("Atlas full");
+            TRACE_EVENT_INSTANT0("skia.gpu", "Glyph atlas full", TRACE_EVENT_SCOPE_NAME_THREAD);
             fRecorder->priv().flushTrackedDevices();
         }
     }
@@ -966,6 +951,8 @@ void Device::drawGeometry(const Transform& localToDevice,
     SkASSERT(!SkToBool(paint.getPathEffect()) || (flags & DrawFlags::kIgnorePathEffect));
     SkASSERT(!SkToBool(paint.getMaskFilter()) || (flags & DrawFlags::kIgnoreMaskFilter));
 
+    // TODO: Some renderer decisions could depend on the clip (see PathAtlas::addShape for
+    // one workaround) so we should figure out how to remove this circular dependency.
     auto [renderer, pathAtlas] =
             this->chooseRenderer(localToDevice, geometry, style, /*requireMSAA=*/false);
     if (!renderer) {
@@ -1006,39 +993,38 @@ void Device::drawGeometry(const Transform& localToDevice,
 
     // If an atlas path renderer was chosen we need to insert the shape into the atlas and schedule
     // it to be drawn.
-    AtlasShape::MaskInfo atlasMaskInfo;  // only used if `pathAtlas != nullptr`
+    CoverageMaskShape::MaskInfo atlasMaskInfo;  // only used if `pathAtlas != nullptr`
 
-    // It is possible for the transformed shape bounds to be fully clipped out while the draw still
-    // produces coverage due to an inverse fill. In this case, don't render any mask;
-    // AtlasShapeRenderStep will automatically handle the simple fill.
-    if (pathAtlas != nullptr && !clip.transformedShapeBounds().isEmptyNegativeOrNaN()) {
-        bool foundAtlasSpace = pathAtlas->addShape(recorder(),
-                                                   clip.transformedShapeBounds(),
-                                                   geometry.shape(),
-                                                   localToDevice,
-                                                   style,
-                                                   &atlasMaskInfo);
+    const TextureProxy* pathAtlasTextureProxy = nullptr;
+    if (pathAtlas != nullptr) {
+        pathAtlasTextureProxy = pathAtlas->addShape(recorder(),
+                                                    clip.transformedShapeBounds(),
+                                                    geometry.shape(),
+                                                    localToDevice,
+                                                    style,
+                                                    &atlasMaskInfo);
 
         // If there was no space in the atlas and we haven't flushed already, then flush pending
         // work to clear up space in the atlas. If we had already flushed once (which would have
         // cleared the atlas) then the atlas is too small for this shape.
-        if (!foundAtlasSpace && !needsFlush) {
+        if (!pathAtlasTextureProxy && !needsFlush) {
             this->flushPendingWorkToRecorder();
 
             // Try inserting the shape again.
-            foundAtlasSpace = pathAtlas->addShape(recorder(),
-                                                  clip.transformedShapeBounds(),
-                                                  geometry.shape(),
-                                                  localToDevice,
-                                                  style,
-                                                  &atlasMaskInfo);
+            pathAtlasTextureProxy = pathAtlas->addShape(recorder(),
+                                                        clip.transformedShapeBounds(),
+                                                        geometry.shape(),
+                                                        localToDevice,
+                                                        style,
+                                                        &atlasMaskInfo);
         }
 
-        if (!foundAtlasSpace) {
-            SKGPU_LOG_E("Shape is too large for path atlas!");
-            // TODO(b/285195175): This can happen if the atlas is not large enough. Handle this case
-            // in `chooseRenderer` and make sure that the atlas path renderer is not chosen if the
-            // path is larger than the atlas texture.
+        if (!pathAtlasTextureProxy) {
+            SKGPU_LOG_E("Failed to add shape to atlas!");
+            // TODO(b/285195175): This can happen if the atlas is not large enough or a compatible
+            // atlas texture cannot be created. Handle the first case in `chooseRenderer` and make
+            // sure that the atlas path renderer is not chosen if the path is larger than the atlas
+            // texture.
             return;
         }
     }
@@ -1097,14 +1083,17 @@ void Device::drawGeometry(const Transform& localToDevice,
         order.dependsOnStencil(setIndex);
     }
 
-    // If the atlas path renderer was chosen, then schedule the shape to be rendered into the atlas
-    // and record a single AtlashShape draw.
+    // If an atlas path renderer was chosen, then record a single CoverageMaskShape draw.
+    // The shape will be scheduled to be rendered or uploaded into the atlas during the
+    // next invocation of flushPendingWorkToRecorder().
     if (pathAtlas != nullptr) {
-        // Record the draw as a fill since stroking is handled by the atlas render.
-        Geometry atlasShape(
-                AtlasShape(geometry.shape(), pathAtlas, localToDevice.inverse(), atlasMaskInfo));
+        // Record the draw as a fill since stroking is handled by the atlas render/upload.
+        Geometry coverageMask(CoverageMaskShape(geometry.shape(),
+                                                pathAtlasTextureProxy,
+                                                localToDevice.inverse(),
+                                                atlasMaskInfo));
         fDC->recordDraw(
-                renderer, Transform::Identity(), atlasShape, clip, order, &shading, nullptr);
+                renderer, Transform::Identity(), coverageMask, clip, order, &shading, nullptr);
     } else {
         if (styleType == SkStrokeRec::kStroke_Style ||
             styleType == SkStrokeRec::kHairline_Style ||
@@ -1217,20 +1206,26 @@ std::pair<const Renderer*, PathAtlas*> Device::chooseRenderer(const Transform& l
         return {renderers->analyticRRect(), nullptr};
     }
 
+    PathAtlas* pathAtlas = nullptr;
     // Prefer compute atlas draws if supported. This currently implicitly filters out clip draws as
     // they require MSAA. Eventually we may want to route clip shapes to the atlas as well but not
     // if hardware MSAA is required.
     // TODO(b/285195175): There may be reasons to prefer tessellation, e.g. if the shape is large
     // and hardware MSAA looks acceptable.
-    // TODO(b/280927548): Currently we assume `pathAtlas` is a GPU compute path atlas and select it
-    // if it's supported (this should be always nullptr if SK_ENABLE_VELLO_SHADERS isn't defined).
-    // This will likely need to provide more information about the PathAtlas' rendering algorithm
-    // when we support non-compute PathAtlases, which may factor into the renderer choice.
-    PathAtlas* pathAtlas = fDC->getOrCreatePathAtlas(fRecorder);
-    if (!requireMSAA && pathAtlas) {
+    AtlasProvider* atlasProvider = fRecorder->priv().atlasProvider();
+    if (atlasProvider->isAvailable(AtlasProvider::PathAtlasFlags::kCompute)) {
         // TODO: vello can't do correct strokes yet. Maybe this shouldn't get selected for stroke
         // renders until all stroke styles are supported?
-        return {renderers->atlasShape(), pathAtlas};
+        pathAtlas = fDC->getComputePathAtlas(fRecorder);
+    // Only use CPU rendered paths when multisampling is disabled
+    // TODO: enable other uses of the software path renderer
+    } else if (fRecorder->priv().caps()->defaultMSAASamplesCount() <= 1 &&
+               atlasProvider->isAvailable(AtlasProvider::PathAtlasFlags::kRaster)) {
+        pathAtlas = fDC->getRasterPathAtlas(fRecorder);
+    }
+    // We currently always use a coverage mask renderer if a `PathAtlas` is selected.
+    if (!requireMSAA && pathAtlas) {
+        return {renderers->coverageMask(), pathAtlas};
     }
 
     // If we got here, it requires tessellated path rendering or an MSAA technique applied to a
@@ -1282,6 +1277,7 @@ std::pair<const Renderer*, PathAtlas*> Device::chooseRenderer(const Transform& l
 }
 
 void Device::flushPendingWorkToRecorder() {
+    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
     SkASSERT(fRecorder);
 
     // TODO: we may need to further split this function up since device->device drawList and
@@ -1330,12 +1326,6 @@ bool Device::needsFlushBeforeDraw(int numNewDraws, DstReadRequirement dstReadReq
             (DrawList::kMaxDraws - fDC->pendingDrawCount()) < numNewDraws ||
             // Need flush if this draw needs to copy the dst surface for reading.
             dstReadReq == DstReadRequirement::kTextureCopy;
-}
-
-void Device::drawDevice(SkBaseDevice* device,
-                        const SkSamplingOptions& sampling,
-                        const SkPaint& paint) {
-    this->SkBaseDevice::drawDevice(device, sampling, paint);
 }
 
 void Device::drawSpecial(SkSpecialImage* special,

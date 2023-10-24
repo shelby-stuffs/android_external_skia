@@ -18,7 +18,10 @@ class DawnTexture;
 
 class DawnResourceProvider final : public ResourceProvider {
 public:
-    DawnResourceProvider(SharedContext* sharedContext, SingleOwner*, uint32_t recorderID);
+    DawnResourceProvider(SharedContext* sharedContext,
+                         SingleOwner*,
+                         uint32_t recorderID,
+                         size_t resourceBudget);
     ~DawnResourceProvider() override;
 
     sk_sp<Texture> createWrappedTexture(const BackendTexture&) override;
@@ -42,7 +45,7 @@ private:
                                  SkTileMode yTileMode) override;
 
     BackendTexture onCreateBackendTexture(SkISize dimensions, const TextureInfo&) override;
-    void onDeleteBackendTexture(BackendTexture&) override;
+    void onDeleteBackendTexture(const BackendTexture&) override;
 
     const DawnSharedContext* dawnSharedContext() const;
 

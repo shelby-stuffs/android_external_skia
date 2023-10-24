@@ -73,13 +73,19 @@ public:
                                                  SkTileMode yTileMode);
 
     BackendTexture createBackendTexture(SkISize dimensions, const TextureInfo&);
-    void deleteBackendTexture(BackendTexture&);
+    void deleteBackendTexture(const BackendTexture&);
 
     ProxyCache* proxyCache() { return fResourceCache->proxyCache(); }
 
     size_t getResourceCacheLimit() const { return fResourceCache->getMaxBudget(); }
+    size_t getResourceCacheCurrentBudgetedBytes() const {
+        return fResourceCache->currentBudgetedBytes();
+    }
 
-#if GRAPHITE_TEST_UTILS
+    void freeGpuResources();
+    void purgeResourcesNotUsedSince(StdSteadyClock::time_point purgeTime);
+
+#if defined(GRAPHITE_TEST_UTILS)
     ResourceCache* resourceCache() { return fResourceCache.get(); }
     const SharedContext* sharedContext() { return fSharedContext; }
 #endif
@@ -87,7 +93,8 @@ public:
 protected:
     ResourceProvider(SharedContext* sharedContext,
                      SingleOwner* singleOwner,
-                     uint32_t recorderID);
+                     uint32_t recorderID,
+                     size_t resourceBudget);
 
     SharedContext* fSharedContext;
     // Each ResourceProvider owns one local cache; for some resources it also refers out to the
@@ -112,7 +119,7 @@ private:
                                               skgpu::Budgeted);
 
     virtual BackendTexture onCreateBackendTexture(SkISize dimensions, const TextureInfo&) = 0;
-    virtual void onDeleteBackendTexture(BackendTexture&) = 0;
+    virtual void onDeleteBackendTexture(const BackendTexture&) = 0;
 };
 
 } // namespace skgpu::graphite

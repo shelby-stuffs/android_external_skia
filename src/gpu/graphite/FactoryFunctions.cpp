@@ -11,9 +11,11 @@
 #include "src/gpu/Blend.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/PaintParams.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #include "src/gpu/graphite/Precompile.h"
 #include "src/gpu/graphite/PrecompileBasePriv.h"
+#include "src/gpu/graphite/ReadSwizzle.h"
 #include "src/shaders/SkShaderBase.h"
 
 namespace skgpu::graphite {
@@ -31,15 +33,7 @@ private:
                   PaintParamsKeyBuilder* builder) const override {
         SkASSERT(desiredCombination == 0); // The blend mode blender only ever has one combination
 
-        SkSpan<const float> coeffs = skgpu::GetPorterDuffBlendConstants(fBlendMode);
-        if (!coeffs.empty()) {
-            CoeffBlenderBlock::BeginBlock(keyContext, builder, /* gatherer= */ nullptr, coeffs);
-            builder->endBlock();
-        } else {
-            BlendModeBlenderBlock::BeginBlock(
-                    keyContext, builder, /* gatherer= */ nullptr, fBlendMode);
-            builder->endBlock();
-        }
+        AddModeBlend(keyContext, builder, /* gatherer= */ nullptr, fBlendMode);
     }
 
 
@@ -55,6 +49,8 @@ class PrecompileColorShader : public PrecompileShader {
 public:
     PrecompileColorShader() {}
 
+    bool isConstant() const override { return true; }
+
 private:
     void addToKey(const KeyContext& keyContext,
                   int desiredCombination,
@@ -64,9 +60,8 @@ private:
 
         constexpr SkPMColor4f kUnusedColor = { 1, 0, 0, 1 };
 
-        SolidColorShaderBlock::BeginBlock(keyContext, builder, /* gatherer= */ nullptr,
-                                          kUnusedColor); // color isn't used w/o a gatherer
-        builder->endBlock();
+        SolidColorShaderBlock::AddBlock(keyContext, builder, /* gatherer= */ nullptr,
+                                        kUnusedColor); // color isn't used w/o a gatherer
     }
 
 };
@@ -280,14 +275,15 @@ private:
     void addToKey(const KeyContext& keyContext,
                   int desiredCombination,
                   PaintParamsKeyBuilder* builder) const override {
-        if (desiredCombination == 0) {
-            ImageShaderBlock::BeginBlock(keyContext, builder,
-                                        /* gatherer= */ nullptr, /* imgData= */ nullptr);
-        } else {
-            ImageShaderBlock::BeginCubicBlock(keyContext, builder,
-                                              /* gatherer= */ nullptr, /* imgData= */ nullptr);
-        }
-        builder->endBlock();
+        static constexpr SkSamplingOptions kDefaultCubicSampling(SkCubicResampler::Mitchell());
+        static constexpr SkSamplingOptions kDefaultSampling;
+
+        ImageShaderBlock::ImageData imgData(desiredCombination > 0 ? kDefaultCubicSampling
+                                                                   : kDefaultSampling,
+                                            SkTileMode::kClamp, SkTileMode::kClamp,
+                                            SkRect::MakeEmpty(), ReadSwizzle::kRGBA);
+
+        ImageShaderBlock::AddBlock(keyContext, builder, /* gatherer= */ nullptr, imgData);
     }
 };
 
@@ -323,15 +319,18 @@ private:
         GradientShaderBlocks::GradientData gradData(fType, kStopVariants[intrinsicCombination]);
 
         // TODO: we may need SkLocalMatrixShader-wrapped versions too
-        ColorFilterShaderBlock::BeginBlock(keyContext, builder, /* gatherer= */ nullptr);
-            GradientShaderBlocks::BeginBlock(keyContext, builder,
-                                             /* gatherer= */ nullptr, gradData);
-            builder->endBlock();
-
-            ColorSpaceTransformBlock::BeginBlock(keyContext, builder,
-                                                 /* gatherer= */ nullptr, /* data= */ nullptr);
-            builder->endBlock();
-        builder->endBlock();
+        Compose(keyContext, builder, /* gatherer= */ nullptr,
+                /* addInnerToKey= */ [&]() -> void {
+                    GradientShaderBlocks::BeginBlock(keyContext, builder, /* gatherer= */ nullptr,
+                                                     gradData);
+                    builder->endBlock();
+                },
+                /* addOuterToKey= */  [&]() -> void {
+                    ColorSpaceTransformBlock::BeginBlock(keyContext, builder,
+                                                         /* gatherer= */ nullptr,
+                                                         /* data= */ nullptr);
+                    builder->endBlock();
+                });
     }
 
     SkShaderBase::GradientType fType;
@@ -413,12 +412,14 @@ private:
         int desiredColorFilterCombination = desiredCombination / numShaderCombos;
         SkASSERT(desiredColorFilterCombination < numColorFilterCombos);
 
-        ColorFilterShaderBlock::BeginBlock(keyContext, builder, /* gatherer= */ nullptr);
-
-        fShader->priv().addToKey(keyContext, desiredShaderCombination, builder);
-        fColorFilter->priv().addToKey(keyContext, desiredColorFilterCombination, builder);
-
-        builder->endBlock();
+        Compose(keyContext, builder, /* gatherer= */ nullptr,
+                /* addInnerToKey= */ [&]() -> void {
+                    fShader->priv().addToKey(keyContext, desiredShaderCombination, builder);
+                },
+                /* addOuterToKey= */ [&]() -> void {
+                    fColorFilter->priv().addToKey(keyContext, desiredColorFilterCombination,
+                                                  builder);
+                });
     }
 
     sk_sp<PrecompileShader> fShader;
@@ -451,9 +452,9 @@ sk_sp<PrecompileMaskFilter> PrecompileMaskFilters::Blur() {
 }
 
 //--------------------------------------------------------------------------------------------------
-class PrecompileBlendColorFilter : public PrecompileColorFilter {
+class PrecompileBlendModeColorFilter : public PrecompileColorFilter {
 public:
-    PrecompileBlendColorFilter() {}
+    PrecompileBlendModeColorFilter() {}
 
 private:
     void addToKey(const KeyContext& keyContext,
@@ -461,12 +462,15 @@ private:
                   PaintParamsKeyBuilder* builder) const override {
         SkASSERT(desiredCombination == 0);
 
-        AddColorBlendBlock(keyContext, builder, /* gatherer= */ nullptr, SkBlendMode::kSrcOver, {});
+        // Here, kSrcOver and the white color are just a stand-ins for some later blend mode
+        // and color.
+        AddBlendModeColorFilter(keyContext, builder, /* gatherer= */ nullptr,
+                                SkBlendMode::kSrcOver, SK_PMColor4fWHITE);
     }
 };
 
 sk_sp<PrecompileColorFilter> PrecompileColorFilters::Blend() {
-    return sk_make_sp<PrecompileBlendColorFilter>();
+    return sk_make_sp<PrecompileBlendModeColorFilter>();
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -599,6 +603,8 @@ void add_children_to_key(const KeyContext& keyContext,
 
     SkASSERT(optionSet.size() == childInfo.size());
 
+    KeyContextWithScope childContext(keyContext, KeyContext::Scope::kRuntimeEffect);
+
     int remainingCombinations = desiredCombination;
 
     for (size_t index = 0; index < optionSet.size(); ++index) {
@@ -611,27 +617,31 @@ void add_children_to_key(const KeyContext& keyContext,
 
         std::optional<ChildType> type = childOption.type();
         if (type == ChildType::kShader) {
-            childOption.shader()->priv().addToKey(keyContext, curCombo, builder);
+            childOption.shader()->priv().addToKey(childContext, curCombo, builder);
         } else if (type == ChildType::kColorFilter) {
-            childOption.colorFilter()->priv().addToKey(keyContext, curCombo, builder);
+            childOption.colorFilter()->priv().addToKey(childContext, curCombo, builder);
         } else if (type == ChildType::kBlender) {
-            childOption.blender()->priv().addToKey(keyContext, curCombo, builder);
+            childOption.blender()->priv().addToKey(childContext, curCombo, builder);
         } else {
             SkASSERT(curCombo == 0);
 
             // We don't have a child effect. Substitute in a no-op effect.
             switch (childInfo[index].type) {
                 case ChildType::kShader:
+                    // A missing shader returns transparent black
+                    SolidColorShaderBlock::AddBlock(
+                            childContext, builder, /* gatherer= */ nullptr, {0, 0, 0, 0});
+                    break;
+
                 case ChildType::kColorFilter:
                     // A "passthrough" shader returns the input color as-is.
-                    PriorOutputBlock::BeginBlock(keyContext, builder, /* gatherer= */ nullptr);
-                    builder->endBlock();
+                    builder->addBlock(BuiltInCodeSnippetID::kPriorOutput);
                     break;
 
                 case ChildType::kBlender:
                     // A "passthrough" blender performs `blend_src_over(src, dest)`.
                     BlendModeBlenderBlock::BeginBlock(
-                            keyContext, builder, /* gatherer= */ nullptr, SkBlendMode::kSrcOver);
+                            childContext, builder, /* gatherer= */ nullptr, SkBlendMode::kSrcOver);
                     builder->endBlock();
                     break;
             }

@@ -22,8 +22,7 @@
 #include "include/core/SkTypeface.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
-#include "src/effects/imagefilters/SkCropImageFilter.h"
-#include "src/gpu/ganesh/effects/GrMatrixConvolutionEffect.h"
+#include "src/gpu/BlurUtils.h"
 #include "tools/ToolUtils.h"
 
 #include <vector>
@@ -80,7 +79,8 @@ protected:
                         kernelOffset, tileMode, convolveAlpha, nullptr, tileBoundary);
             }
             case kLarge_KernelFixture: {
-                static_assert(49 > GrMatrixConvolutionEffect::kMaxUniformSize);
+                // This ensures the texture fallback path will be taken
+                static_assert(49 > skgpu::kMaxBlurSamples);
                 // All 1s except center value, which is -47 (sum of 1).
                 std::vector<SkScalar> kernel(49, SkIntToScalar(1));
                 kernel[24] = SkIntToScalar(-47);
@@ -99,7 +99,7 @@ protected:
         SkPaint paint;
         auto filter = this->makeFilter(kernelOffset, tileMode, convolveAlpha);
         if (cropRect) {
-            filter = SkMakeCropImageFilter(SkRect::Make(*cropRect), std::move(filter));
+            filter = SkImageFilters::Crop(SkRect::Make(*cropRect), std::move(filter));
         }
         paint.setImageFilter(std::move(filter));
         canvas->save();

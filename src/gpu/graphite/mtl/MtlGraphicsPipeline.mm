@@ -262,7 +262,7 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(const MtlSharedContext* sha
                                                      uint32_t stencilRefValue,
                                                      const BlendInfo& blendInfo,
                                                      const RenderPassDesc& renderPassDesc,
-                                                     Shaders* pipelineShaders) {
+                                                     PipelineInfo* pipelineInfo) {
     id<MTLLibrary> vsLibrary = std::get<0>(vertexMain);
     id<MTLLibrary> fsLibrary = std::get<0>(fragmentMain);
     if (!vsLibrary || !fsLibrary) {
@@ -288,7 +288,8 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(const MtlSharedContext* sha
                                                       blendInfo);
     (*psoDescriptor).colorAttachments[0] = mtlColorAttachment;
 
-    (*psoDescriptor).sampleCount = renderPassDesc.fColorAttachment.fTextureInfo.numSamples();
+    (*psoDescriptor).rasterSampleCount =
+            renderPassDesc.fColorAttachment.fTextureInfo.numSamples();
 
     const MtlTextureSpec& mtlDSSpec =
             renderPassDesc.fDepthStencilAttachment.fTextureInfo.mtlTextureSpec();
@@ -314,18 +315,18 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(const MtlSharedContext* sha
     }
 
     return sk_sp<MtlGraphicsPipeline>(new MtlGraphicsPipeline(sharedContext,
-                                                              pipelineShaders,
+                                                              pipelineInfo,
                                                               std::move(pso),
                                                               std::move(dss),
                                                               stencilRefValue));
 }
 
 MtlGraphicsPipeline::MtlGraphicsPipeline(const skgpu::graphite::SharedContext* sharedContext,
-                                         Shaders* pipelineShaders,
+                                         PipelineInfo* pipelineInfo,
                                          sk_cfp<id<MTLRenderPipelineState>> pso,
                                          sk_cfp<id<MTLDepthStencilState>> dss,
                                          uint32_t refValue)
-        : GraphicsPipeline(sharedContext, pipelineShaders)
+        : GraphicsPipeline(sharedContext, pipelineInfo)
         , fPipelineState(std::move(pso))
         , fDepthStencilState(dss)
         , fStencilReferenceValue(refValue) {}

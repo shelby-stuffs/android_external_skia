@@ -154,8 +154,6 @@ ShaderInfo::ShaderInfo(UniquePaintParamsID id,
     // the root to initialize the HW blend info.
     SkDEBUGCODE(bool fixedFuncBlendFound = false;)
     for (const ShaderNode* root : fRootNodes) {
-        fSnippetRequirementFlags |= root->requiredFlags();
-
         // TODO: This is brittle as it relies on PaintParams::toKey() putting the final fixed
         // function blend block at the root level. This can be improved with more structure to the
         // key creation.
@@ -171,6 +169,8 @@ ShaderInfo::ShaderInfo(UniquePaintParamsID id,
             SkASSERT(static_cast<int>(fBlendMode) >= 0 &&
                      fBlendMode <= SkBlendMode::kLastCoeffMode);
             fBlendInfo = gBlendTable[static_cast<int>(fBlendMode)];
+        } else {
+            fSnippetRequirementFlags |= root->requiredFlags();
         }
     }
 }
@@ -220,6 +220,7 @@ std::string ShaderInfo::toSkSL(const Caps* caps,
                                const RenderStep* step,
                                const bool useStorageBuffers,
                                int* numTexturesAndSamplersUsed,
+                               int* numPaintUniforms,
                                Swizzle writeSwizzle) {
     const bool defineLocalCoordsVarying = this->needsLocalCoords();
     std::string preamble = EmitVaryings(step,
@@ -237,14 +238,16 @@ std::string ShaderInfo::toSkSL(const Caps* caps,
                 /*bufferID=*/1, "Step", bindingReqs.fUniformBufferLayout, step->uniforms());
     }
     if (this->ssboIndex()) {
-        preamble += EmitPaintParamsStorageBuffer(/*bufferID=*/2, "FS", "fs", fRootNodes);
+        preamble += EmitPaintParamsStorageBuffer(/*bufferID=*/2, "FS", "fs", fRootNodes,
+                                                 numPaintUniforms);
     } else {
         preamble += EmitPaintParamsUniforms(
                 /*bufferID=*/2,
                 "FS",
                 useStorageBuffers ? bindingReqs.fStorageBufferLayout
                                   : bindingReqs.fUniformBufferLayout,
-                fRootNodes);
+                fRootNodes,
+                numPaintUniforms);
     }
 
     {
@@ -288,7 +291,12 @@ std::string ShaderInfo::toSkSL(const Caps* caps,
                                 kUnusedDstColor,
                                 this->needsLocalCoords() ? "localCoordsVar" : kUnusedLocalCoords};
     for (const ShaderNode* node : fRootNodes) {
-        args.fPriorStageOutput = emit_glue_code_for_entry(*this, node, args, &mainBody);
+        // This exclusion of the final Blend can be removed once we've resolved the final
+        // blend parenting issue w/in the key
+        if (node->codeSnippetId() >= kBuiltInCodeSnippetIDCount ||
+            node->codeSnippetId() < kFixedFunctionBlendModeIDOffset) {
+            args.fPriorStageOutput = emit_glue_code_for_entry(*this, node, args, &mainBody);
+        }
     }
 
     if (writeSwizzle != Swizzle::RGBA()) {
@@ -310,10 +318,7 @@ std::string ShaderInfo::toSkSL(const Caps* caps,
                         : skgpu::GetBlendFormula(
                                   /*isOpaque=*/false, /*hasCoverage=*/true, fBlendMode);
 
-        const bool needsSurfaceColorForCoverage =
-                this->needsSurfaceColor() || (coverageBlendFormula.hasSecondaryOutput() &&
-                                              !caps->shaderCaps()->fDualSourceBlendingSupport);
-        if (needsSurfaceColorForCoverage) {
+        if (this->needsSurfaceColor()) {
             // If this draw uses a non-coherent dst read, we want to keep the existing dst color (or
             // whatever has been previously drawn) when there's no coverage. This helps for batching
             // text draws that need to read from a dst copy for blends. However, this only helps the
@@ -338,6 +343,13 @@ std::string ShaderInfo::toSkSL(const Caps* caps,
                     &mainBody,
                     "sk_FragColor = %s * outputCoverage + surfaceColor * (1.0 - outputCoverage);",
                     outColor);
+            if (coverage == Coverage::kLCD) {
+                SkSL::String::appendf(
+                        &mainBody,
+                        "half3 lerpRGB = mix(surfaceColor.aaa, %s.aaa, outputCoverage.rgb);"
+                        "sk_FragColor.a = max(max(lerpRGB.r, lerpRGB.g), lerpRGB.b);",
+                        outColor);
+            }
 
         } else {
             fBlendInfo = {coverageBlendFormula.equation(),
@@ -346,6 +358,11 @@ std::string ShaderInfo::toSkSL(const Caps* caps,
                           SK_PMColor4fTRANSPARENT,
                           coverageBlendFormula.modifiesDst()};
 
+            if (coverage == Coverage::kLCD) {
+                mainBody += "outputCoverage.a = max(max(outputCoverage.r, "
+                                                       "outputCoverage.g), "
+                                                   "outputCoverage.b);";
+            }
             append_color_output(
                     &mainBody, coverageBlendFormula.primaryOutput(), "sk_FragColor", outColor);
             if (coverageBlendFormula.hasSecondaryOutput()) {
@@ -572,24 +589,21 @@ std::string GenerateDstReadSampleExpression(const ShaderInfo& shaderInfo,
             get_mangled_uniform_name(shaderInfo, entry->fUniforms[0], node->keyIndex());
     std::string helperFnName = get_mangled_name(entry->fStaticFunctionName, node->keyIndex());
 
-    return SkSL::String::printf("%s(%s, %s, %s)",
+    return SkSL::String::printf("%s(%s, %s)",
                                 helperFnName.c_str(),
-                                args.fPriorStageOutput.data(),
                                 coords.c_str(),
                                 sampler.c_str());
 }
 
-// Emit a surfaceColor global, and a function that passes through a half4 value and initializes
-// surfaceColor as a side effect.
 std::string GenerateDstReadSamplePreamble(const ShaderInfo& shaderInfo, const ShaderNode* node) {
     std::string helperFnName =
             get_mangled_name(node->entry()->fStaticFunctionName, node->keyIndex());
 
     return SkSL::String::printf(
-            "half4 surfaceColor;"
-            "half4 %s(half4 priorStageOutput, float4 coords, sampler2D dstSampler) {"
+            "half4 surfaceColor;"  // we save off the original dstRead color to combine w/ coverage
+            "half4 %s(float4 coords, sampler2D dstSampler) {"
                 "surfaceColor = sample(dstSampler, (sk_FragCoord.xy - coords.xy) * coords.zw);"
-                "return priorStageOutput;"
+                "return surfaceColor;"
             "}",
             helperFnName.c_str());
 }
@@ -601,10 +615,7 @@ std::string GenerateDstReadFetchExpression(const ShaderInfo& shaderInfo,
     std::string helperFnName =
             get_mangled_name(node->entry()->fStaticFunctionName, node->keyIndex());
 
-    return SkSL::String::printf(
-            "%s(%s)",
-            helperFnName.c_str(),
-            args.fPriorStageOutput.data());
+    return SkSL::String::printf("%s()", helperFnName.c_str());
 }
 
 std::string GenerateDstReadFetchPreamble(const ShaderInfo& shaderInfo, const ShaderNode* node) {
@@ -612,10 +623,10 @@ std::string GenerateDstReadFetchPreamble(const ShaderInfo& shaderInfo, const Sha
             get_mangled_name(node->entry()->fStaticFunctionName, node->keyIndex());
 
     return SkSL::String::printf(
-            "half4 surfaceColor;"
-            "half4 %s(half4 priorStageOutput) {"
+            "half4 surfaceColor;"  // we save off the original dstRead color to combine w/ coverage
+            "half4 %s() {"
                 "surfaceColor = sk_LastFragColor;"
-                "return priorStageOutput;"
+                "return surfaceColor;"
             "}",
             helperFnName.c_str());
 }
@@ -805,8 +816,6 @@ std::string GenerateLocalMatrixPreamble(const ShaderInfo& shaderInfo,
 }
 
 //--------------------------------------------------------------------------------------------------
-static constexpr int kNumXferFnCoeffs = 7;
-
 static constexpr Uniform kImageShaderUniforms[] = {
         { "imgSize",               SkSLType::kFloat2 },
         { "subset",                SkSLType::kFloat4 },
@@ -814,13 +823,12 @@ static constexpr Uniform kImageShaderUniforms[] = {
         { "tilemodeY",             SkSLType::kInt },
         { "filterMode",            SkSLType::kInt },
         { "readSwizzle",           SkSLType::kInt },
-        // The next 6 uniforms are for the color space transformation
+        // The next 5 uniforms are for the color space transformation
         { "csXformFlags",          SkSLType::kInt },
         { "csXformSrcKind",        SkSLType::kInt },
-        { "csXformSrcCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
         { "csXformGamutTransform", SkSLType::kHalf3x3 },
         { "csXformDstKind",        SkSLType::kInt },
-        { "csXformDstCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
+        { "csXformCoeffs",         SkSLType::kHalf4x4 },
 };
 
 static constexpr Uniform kCubicImageShaderUniforms[] = {
@@ -830,13 +838,12 @@ static constexpr Uniform kCubicImageShaderUniforms[] = {
         { "tilemodeY",             SkSLType::kInt },
         { "cubicCoeffs",           SkSLType::kHalf4x4 },
         { "readSwizzle",           SkSLType::kInt },
-        // The next 6 uniforms are for the color space transformation
+        // The next 5 uniforms are for the color space transformation
         { "csXformFlags",          SkSLType::kInt },
         { "csXformSrcKind",        SkSLType::kInt },
-        { "csXformSrcCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
         { "csXformGamutTransform", SkSLType::kHalf3x3 },
         { "csXformDstKind",        SkSLType::kInt },
-        { "csXformDstCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
+        { "csXformCoeffs",         SkSLType::kHalf4x4 },
 };
 
 static constexpr TextureAndSampler kISTexturesAndSamplers[] = {
@@ -863,6 +870,8 @@ static_assert(3 == static_cast<int>(ReadSwizzle::kRRR1),
               "ImageShader code depends on ReadSwizzle");
 static_assert(4 == static_cast<int>(ReadSwizzle::kBGRA),
               "ImageShader code depends on ReadSwizzle");
+static_assert(5 == static_cast<int>(ReadSwizzle::k000R),
+              "ImageShader code depends on ReadSwizzle");
 
 static constexpr char kImageShaderName[] = "sk_image_shader";
 static constexpr char kCubicImageShaderName[] = "sk_cubic_image_shader";
@@ -886,10 +895,9 @@ static constexpr Uniform kYUVImageShaderUniforms[] = {
         // The next 6 uniforms are for the color space transformation
         { "csXformFlags",          SkSLType::kInt },
         { "csXformSrcKind",        SkSLType::kInt },
-        { "csXformSrcCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
         { "csXformGamutTransform", SkSLType::kHalf3x3 },
         { "csXformDstKind",        SkSLType::kInt },
-        { "csXformDstCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
+        { "csXformCoeffs",         SkSLType::kHalf4x4 },
 };
 
 static constexpr TextureAndSampler kYUVISTexturesAndSamplers[] = {
@@ -1015,11 +1023,6 @@ std::string GenerateBlendShaderPreamble(const ShaderInfo& shaderInfo,
 }
 
 //--------------------------------------------------------------------------------------------------
-static constexpr char kColorFilterShaderName[] = "ColorFilterShader";
-
-static constexpr int kNumColorFilterShaderChildren = 2;
-
-//--------------------------------------------------------------------------------------------------
 static constexpr char kRuntimeShaderName[] = "RuntimeEffect";
 
 class GraphitePipelineCallbacks : public SkSL::PipelineStage::Callbacks {
@@ -1137,9 +1140,9 @@ static constexpr Uniform kMatrixColorFilterUniforms[] = {
 static constexpr char kMatrixColorFilterName[] = "sk_matrix_colorfilter";
 
 //--------------------------------------------------------------------------------------------------
-static constexpr char kComposeColorFilterName[] = "ComposeColorFilter";
+static constexpr char kComposeName[] = "Compose";
 
-static constexpr int kNumComposeColorFilterChildren = 2;
+static constexpr int kNumComposeChildren = 2;
 
 // Compose two children, assuming the first child is the innermost.
 std::string GenerateNestedChildrenPreamble(const ShaderInfo& shaderInfo,
@@ -1179,10 +1182,9 @@ static constexpr char kGaussianColorFilterName[] = "sk_gaussian_colorfilter";
 static constexpr Uniform kColorSpaceTransformUniforms[] = {
         { "flags",          SkSLType::kInt },
         { "srcKind",        SkSLType::kInt },
-        { "srcCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
         { "gamutTransform", SkSLType::kHalf3x3 },
         { "dstKind",        SkSLType::kInt },
-        { "dstCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
+        { "csXformCoeffs",  SkSLType::kHalf4x4 },
 };
 
 static_assert(0 == static_cast<int>(skcms_TFType_Invalid),
@@ -1217,28 +1219,6 @@ static constexpr char kErrorName[] = "sk_error";
 static constexpr char kPassthroughShaderName[] = "sk_passthrough";
 
 //--------------------------------------------------------------------------------------------------
-
-// This method generates the glue code for the case where the SkBlendMode-based blending is
-// handled with fixed function blending.
-std::string GenerateFixedFunctionBlenderExpression(const ShaderInfo&,
-                                                   const ShaderNode* node,
-                                                   const ShaderSnippet::Args& args) {
-    SkASSERT(node->codeSnippetId() >= kFixedFunctionBlendModeIDOffset &&
-             node->codeSnippetId() < kBuiltInCodeSnippetIDCount);
-    SkASSERT(node->numChildren() == 0);
-
-    // The actual blending is set up via the fixed function pipeline so we don't actually
-    // need to access the blend mode in the glue code.
-    return std::string(args.fPriorStageOutput);
-}
-
-//--------------------------------------------------------------------------------------------------
-
-std::string GenerateDstColorExpression(const ShaderInfo&,
-                                       const ShaderNode* node,
-                                       const ShaderSnippet::Args& args) {
-    return "surfaceColor";
-}
 
 std::string GeneratePrimitiveColorExpression(const ShaderInfo&,
                                              const ShaderNode* node,
@@ -1625,18 +1605,6 @@ ShaderCodeDictionary::ShaderCodeDictionary() {
             GenerateDefaultPreamble,
             kNoChildren
     };
-
-    fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kColorFilterShader] = {
-            "ColorFilterShader",
-            {},      // no uniforms
-            SnippetRequirementFlags::kNone,
-            { },     // no samplers
-            kColorFilterShaderName,
-            GenerateDefaultExpression,
-            GenerateNestedChildrenPreamble,
-            kNumColorFilterShaderChildren
-    };
-
     // SkColorFilter snippets
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kMatrixColorFilter] = {
             "MatrixColorFilter",
@@ -1647,16 +1615,6 @@ ShaderCodeDictionary::ShaderCodeDictionary() {
             GenerateDefaultExpression,
             GenerateDefaultPreamble,
             kNoChildren
-    };
-    fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kComposeColorFilter] = {
-            "ComposeColorFilter",
-            { },     // no uniforms
-            SnippetRequirementFlags::kPriorStageOutput,
-            { },     // no samplers
-            kComposeColorFilterName,
-            GenerateDefaultExpression,
-            GenerateNestedChildrenPreamble,
-            kNumComposeColorFilterChildren
     };
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kTableColorFilter] = {
             "TableColorFilter",
@@ -1720,16 +1678,6 @@ ShaderCodeDictionary::ShaderCodeDictionary() {
             kNoChildren
     };
 
-    fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kDstColor] = {
-            "DstColor",
-            { },          // no uniforms
-            SnippetRequirementFlags::kSurfaceColor,
-            { },          // no samplers
-            "dst color",  // no static sksl
-            GenerateDstColorExpression,
-            GenerateDefaultPreamble,
-            kNoChildren
-    };
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kPrimitiveColor] = {
             "PrimitiveColor",
             { },                // no uniforms
@@ -1744,7 +1692,7 @@ ShaderCodeDictionary::ShaderCodeDictionary() {
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kDstReadSample] = {
             "DstReadSample",
             SkSpan(kDstReadSampleUniforms),
-            SnippetRequirementFlags::kNone,
+            SnippetRequirementFlags::kSurfaceColor,
             SkSpan(kDstReadSampleTexturesAndSamplers),
             "InitSurfaceColor",
             GenerateDstReadSampleExpression,
@@ -1754,12 +1702,22 @@ ShaderCodeDictionary::ShaderCodeDictionary() {
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kDstReadFetch] = {
             "DstReadFetch",
             { },     // no uniforms
-            SnippetRequirementFlags::kNone,
+            SnippetRequirementFlags::kSurfaceColor,
             { },     // no samplers
             "InitSurfaceColor",
             GenerateDstReadFetchExpression,
             GenerateDstReadFetchPreamble,
             kNoChildren
+    };
+    fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kCompose] = {
+            "Compose",
+            { },     // no uniforms
+            SnippetRequirementFlags::kPriorStageOutput,
+            { },     // no samplers
+            kComposeName,
+            GenerateDefaultExpression,
+            GenerateNestedChildrenPreamble,
+            kNumComposeChildren
     };
 
     // Fixed-function blend mode snippets are all the same, their functionality is entirely defined
@@ -1769,10 +1727,11 @@ ShaderCodeDictionary::ShaderCodeDictionary() {
         fBuiltInCodeSnippets[ffBlendModeID] = {
                 SkBlendMode_Name(static_cast<SkBlendMode>(i)),
                 { },     // no uniforms
-                SnippetRequirementFlags::kNone,
+                SnippetRequirementFlags::kPriorStageOutput |
+                SnippetRequirementFlags::kBlenderDstColor,
                 { },     // no samplers
-                "",  // fixed function blending doesn't use static SkSL
-                GenerateFixedFunctionBlenderExpression,
+                skgpu::BlendFuncName(static_cast<SkBlendMode>(i)),
+                GenerateDefaultExpression,
                 GenerateDefaultPreamble,
                 kNoChildren
         };

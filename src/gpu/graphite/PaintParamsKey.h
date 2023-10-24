@@ -58,6 +58,10 @@ public:
     // a fixed function blend (with 1 child being the main effect)).
     SkSpan<const ShaderNode*> getRootNodes(const ShaderCodeDictionary*, SkArenaAlloc*) const;
 
+#if defined(GRAPHITE_TEST_UTILS)
+    // Converts the key to a structured list of snippet names for debugging purposes.
+    SkString toString(const ShaderCodeDictionary* dict) const;
+#endif
 #ifdef SK_DEBUG
     void dump(const ShaderCodeDictionary*) const;
 #endif
@@ -126,6 +130,12 @@ public:
     // Check that the builder has been reset to its initial state prior to creating a new key.
     void checkReset();
 #endif
+
+    // Helper to add blocks that don't have children
+    void addBlock(BuiltInCodeSnippetID id) {
+        this->beginBlock(id);
+        this->endBlock();
+    }
 
 private:
     friend class AutoLockBuilderAsKey; // for lockAsKey() and unlock()

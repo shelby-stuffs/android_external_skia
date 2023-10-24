@@ -6,8 +6,11 @@ Instead, do:
 """
 
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
+load("//bazel:gcs_mirror.bzl", "gcs_mirror_url")
 
-def git_repos_from_deps(ws = "@"):
+def c_plus_plus_deps(ws = "@skia"):
     """A list of native Bazel git rules to download third party git repositories
 
        These are in the order they appear in //DEPS.
@@ -26,7 +29,7 @@ def git_repos_from_deps(ws = "@"):
     new_git_repository(
         name = "dawn",
         build_file = ws + "//bazel/external/dawn:BUILD.bazel",
-        commit = "beaf20f90f1bf21d235c99d5b49b8bb507b722b2",
+        commit = "a42cebae4e42103c82ca58e5abdc2ba9fcffae84",
         remote = "https://dawn.googlesource.com/dawn.git",
     )
 
@@ -53,14 +56,14 @@ def git_repos_from_deps(ws = "@"):
     new_git_repository(
         name = "freetype",
         build_file = ws + "//bazel/external/freetype:BUILD.bazel",
-        commit = "5769f13a6b9fafa3840726f06dde07e755501a16",
+        commit = "45903920b984540bb629bc89f4c010159c23a89a",
         remote = "https://chromium.googlesource.com/chromium/src/third_party/freetype2.git",
     )
 
     new_git_repository(
         name = "harfbuzz",
         build_file = ws + "//bazel/external/harfbuzz:BUILD.bazel",
-        commit = "f94508edd60e26a015586c37c29104d6bdc26462",
+        commit = "4cfc6d8e173e800df086d7be078da2e8c5cfca19",
         remote = "https://chromium.googlesource.com/external/github.com/harfbuzz/harfbuzz.git",
     )
 
@@ -122,7 +125,7 @@ def git_repos_from_deps(ws = "@"):
     new_git_repository(
         name = "libwebp",
         build_file = ws + "//bazel/external/libwebp:BUILD.bazel",
-        commit = "fd7bb21c0cb56e8a82e9bfa376164b842f433f3b",
+        commit = "2af26267cdfcb63a88e5c74a85927a12d6ca1d76",
         remote = "https://chromium.googlesource.com/webm/libwebp.git",
     )
 
@@ -157,41 +160,48 @@ def git_repos_from_deps(ws = "@"):
     new_git_repository(
         name = "spirv_cross",
         build_file = ws + "//bazel/external/spirv_cross:BUILD.bazel",
-        commit = "633dc301350952a9a895c8db42eed371ea969a64",
+        commit = "37fee00a71b5a47247c1cf20256a3f794537c6c0",
         remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/SPIRV-Cross",
     )
 
     git_repository(
         name = "spirv_headers",
-        commit = "d790ced752b5bfc06b6988baadef6eb2d16bdf96",
+        commit = "e867c06631767a2d96424cbec530f9ee5e78180f",
         remote = "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Headers.git",
     )
 
     git_repository(
         name = "spirv_tools",
-        commit = "abd548b8178026b1ac1675deb0abcd43ae9c1907",
+        commit = "4fab7435bf2e1be1abb6d308bdd6298ac95de88d",
         remote = "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Tools.git",
     )
 
     new_git_repository(
         name = "vello",
         build_file = ws + "//bazel/external/vello:BUILD.bazel",
-        commit = "443539891c4c1eb3ca4ed891d251cbf4097c9a9c",
+        commit = "ee3a076b291d206c361431cc841407adf265c692",
         remote = "https://skia.googlesource.com/external/github.com/linebender/vello.git",
     )
 
     new_git_repository(
         name = "vulkan_headers",
         build_file = ws + "//bazel/external/vulkan_headers:BUILD.bazel",
-        commit = "85c2334e92e215cce34e8e0ed8b2dce4700f4a50",
+        commit = "6f0d6550e61f204a42f8c1bcea82b61802e27d66",
         remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Headers",
     )
 
     new_git_repository(
         name = "vulkan_tools",
         build_file = ws + "//bazel/external/vulkan_tools:BUILD.bazel",
-        commit = "b441f434a036d6fe463ba944c8d7e0a9cd30faa6",
+        commit = "e483d0dfc7b33483cefd80632d141fe0bacdfb9a",
         remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Tools",
+    )
+
+    new_git_repository(
+        name = "vulkan_utility_libraries",
+        build_file = ws + "//bazel/external/vulkan_utility_libraries:BUILD.bazel",
+        commit = "beadc7e034521e09cf5c82c9bdae952bb13144bf",
+        remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Utility-Libraries",
     )
 
     new_git_repository(
@@ -206,4 +216,26 @@ def git_repos_from_deps(ws = "@"):
         build_file = ws + "//bazel/external/zlib_skia:BUILD.bazel",
         commit = "c876c8f87101c5a75f6014b0f832499afeb65b73",
         remote = "https://chromium.googlesource.com/chromium/src/third_party/zlib",
+    )
+
+def bazel_deps():
+    maybe(
+        http_archive,
+        name = "bazel_skylib",
+        sha256 = "c6966ec828da198c5d9adbaa94c05e3a1c7f21bd012a0b29ba8ddbccb2c93b0d",
+        urls = gcs_mirror_url(
+            sha256 = "c6966ec828da198c5d9adbaa94c05e3a1c7f21bd012a0b29ba8ddbccb2c93b0d",
+            url = "https://github.com/bazelbuild/bazel-skylib/releases/download/1.1.1/bazel-skylib-1.1.1.tar.gz",
+        ),
+    )
+
+    maybe(
+        http_archive,
+        name = "bazel_toolchains",
+        sha256 = "e52789d4e89c3e2dc0e3446a9684626a626b6bec3fde787d70bae37c6ebcc47f",
+        strip_prefix = "bazel-toolchains-5.1.1",
+        urls = gcs_mirror_url(
+            sha256 = "e52789d4e89c3e2dc0e3446a9684626a626b6bec3fde787d70bae37c6ebcc47f",
+            url = "https://github.com/bazelbuild/bazel-toolchains/archive/refs/tags/v5.1.1.tar.gz",
+        ),
     )

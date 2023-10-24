@@ -95,7 +95,8 @@ DstReadRequirement GetDstReadRequirement(const Caps* caps,
     const bool hasCoverage = coverage != Coverage::kNone;
     BlendFormula blendFormula = isLCD ? skgpu::GetLCDBlendFormula(*blendMode)
                                       : skgpu::GetBlendFormula(false, hasCoverage, *blendMode);
-    if (blendFormula.hasSecondaryOutput() && !caps->shaderCaps()->fDualSourceBlendingSupport) {
+    if ((blendFormula.hasSecondaryOutput() && !caps->shaderCaps()->fDualSourceBlendingSupport) ||
+        (coverage == Coverage::kLCD && blendMode != SkBlendMode::kSrcOver)) {
         return caps->getDstReadRequirement();
     }
 
@@ -141,7 +142,8 @@ std::string get_uniforms(Layout layout,
     return result;
 }
 
-std::string get_node_uniforms(Layout layout, const ShaderNode* node, int* offset) {
+std::string get_node_uniforms(Layout layout, const ShaderNode* node, int* offset,
+                              int* numUniforms) {
     std::string result;
     SkSpan<const Uniform> uniforms = node->entry()->fUniforms;
 
@@ -151,13 +153,14 @@ std::string get_node_uniforms(Layout layout, const ShaderNode* node, int* offset
         result += get_uniforms(layout, uniforms, offset, node->keyIndex());
     }
 
+    *numUniforms += uniforms.size();
     for (const ShaderNode* child : node->children()) {
-        result += get_node_uniforms(layout, child, offset);
+        result += get_node_uniforms(layout, child, offset, numUniforms);
     }
     return result;
 }
 
-std::string get_node_ssbo_fields(const ShaderNode* node) {
+std::string get_node_ssbo_fields(const ShaderNode* node, int* numUniforms) {
     std::string result;
     SkSpan<const Uniform> uniforms = node->entry()->fUniforms;
 
@@ -175,8 +178,9 @@ std::string get_node_ssbo_fields(const ShaderNode* node) {
         }
     }
 
+    *numUniforms += uniforms.size();
     for (const ShaderNode* child : node->children()) {
-        result += get_node_ssbo_fields(child);
+        result += get_node_ssbo_fields(child, numUniforms);
     }
     return result;
 }
@@ -209,14 +213,20 @@ std::string get_node_texture_samplers(const ResourceBindingRequirements& binding
 std::string EmitPaintParamsUniforms(int bufferID,
                                     const char* name,
                                     const Layout layout,
-                                    SkSpan<const ShaderNode*> nodes) {
+                                    SkSpan<const ShaderNode*> nodes,
+                                    int* numUniforms) {
     int offset = 0;
 
     std::string result = get_uniform_header(bufferID, name);
     for (const ShaderNode* n : nodes) {
-        result += get_node_uniforms(layout, n, &offset);
+        result += get_node_uniforms(layout, n, &offset, numUniforms);
     }
     result.append("};\n\n");
+
+    if (!*numUniforms) {
+        // No uniforms were added
+        return {};
+    }
 
     return result;
 }
@@ -238,14 +248,20 @@ std::string EmitPaintParamsStorageBuffer(
         int bufferID,
         const char* bufferTypePrefix,
         const char* bufferNamePrefix,
-        SkSpan<const ShaderNode*> nodes) {
+        SkSpan<const ShaderNode*> nodes,
+        int* numUniforms) {
 
     std::string result;
     SkSL::String::appendf(&result, "struct %sUniformData {\n", bufferTypePrefix);
     for (const ShaderNode* n : nodes) {
-        result += get_node_ssbo_fields(n);
+        result += get_node_ssbo_fields(n, numUniforms);
     }
     result.append("};\n\n");
+
+    if (!*numUniforms) {
+        // No uniforms were added
+        return {};
+    }
 
     SkSL::String::appendf(&result,
                           "layout (binding=%d) buffer %sUniforms {\n"
@@ -285,7 +301,7 @@ std::string EmitSamplerLayout(const ResourceBindingRequirements& bindingReqs, in
     if (bindingReqs.fSeparateTextureAndSamplerBinding) {
         int samplerIndex = (*binding)++;
         int textureIndex = (*binding)++;
-        result = SkSL::String::printf("layout(wgsl, %ssampler=%d, texture=%d)",
+        result = SkSL::String::printf("layout(webgpu, %ssampler=%d, texture=%d)",
                                       distinctIndexRange,
                                       samplerIndex,
                                       textureIndex);
@@ -433,7 +449,8 @@ FragSkSLInfo BuildFragmentSkSL(const Caps* caps,
     result.fSkSL = shaderInfo.toSkSL(caps,
                                      step,
                                      useStorageBuffers,
-                                     /*numTexturesAndSamplersUsed=*/&result.fNumTexturesAndSamplers,
+                                     &result.fNumTexturesAndSamplers,
+                                     &result.fNumPaintUniforms,
                                      writeSwizzle);
 
     // Extract blend info after integrating the RenderStep into the final fragment shader in case
@@ -444,12 +461,63 @@ FragSkSLInfo BuildFragmentSkSL(const Caps* caps,
     return result;
 }
 
-std::string BuildComputeSkSL(const Caps*, const ComputeStep* step) {
+std::string BuildComputeSkSL(const Caps* caps, const ComputeStep* step) {
     std::string sksl =
             SkSL::String::printf("layout(local_size_x=%u, local_size_y=%u, local_size_z=%u) in;\n",
                                  step->localDispatchSize().fWidth,
                                  step->localDispatchSize().fHeight,
                                  step->localDispatchSize().fDepth);
+
+    const auto& bindingReqs = caps->resourceBindingRequirements();
+    bool distinctRanges = bindingReqs.fDistinctIndexRanges;
+    bool separateSampler = bindingReqs.fSeparateTextureAndSamplerBinding;
+
+    int index = 0;
+    int texIdx = 0;
+    // NOTE: SkSL Metal codegen always assigns the same binding index to a texture and its sampler.
+    // TODO: This could cause sampler indices to not be tightly packed if the sampler2D declaration
+    // comes after 1 or more storage texture declarations (which don't have samplers). An optional
+    // "layout(msl, sampler=T, texture=T)" syntax to count them separately (like we do for WGSL)
+    // could come in handy here but it's not supported in MSL codegen yet.
+
+    for (const ComputeStep::ResourceDesc& r : step->resources()) {
+        using Type = ComputeStep::ResourceType;
+        switch (r.fType) {
+            case Type::kUniformBuffer:
+                SkSL::String::appendf(&sksl, "layout(binding=%d) uniform ", index++);
+                sksl += r.fSkSL;
+                break;
+            case Type::kStorageBuffer:
+                SkSL::String::appendf(&sksl, "layout(binding=%d) buffer ", index++);
+                sksl += r.fSkSL;
+                break;
+            case Type::kWriteOnlyStorageTexture:
+                SkSL::String::appendf(&sksl, "layout(binding=%d, rgba8) writeonly texture2D ",
+                                      distinctRanges ? texIdx++ : index++);
+                sksl += r.fSkSL;
+                break;
+            case Type::kReadOnlyTexture:
+                SkSL::String::appendf(&sksl, "layout(binding=%d, rgba8) readonly texture2D ",
+                                      distinctRanges ? texIdx++ : index++);
+                sksl += r.fSkSL;
+                break;
+            case Type::kSampledTexture:
+                if (distinctRanges) {
+                    SkSL::String::appendf(&sksl, "layout(metal, binding=%d) ", texIdx++);
+                } else if (separateSampler) {
+                    SkSL::String::appendf(
+                            &sksl, "layout(webgpu, sampler=%d, texture=%d) ", index, index + 1);
+                    index += 2;
+                } else {
+                    SkSL::String::appendf(&sksl, "layout(binding=%d) ", index++);
+                }
+                sksl += "sampler2D ";
+                sksl += r.fSkSL;
+                break;
+        }
+        sksl += ";\n";
+    }
+
     sksl += step->computeSkSL();
     return sksl;
 }
