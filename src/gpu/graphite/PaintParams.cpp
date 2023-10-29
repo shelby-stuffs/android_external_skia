@@ -154,11 +154,9 @@ void AddModeBlend(const KeyContext& keyContext,
                   SkBlendMode bm) {
     SkSpan<const float> coeffs = skgpu::GetPorterDuffBlendConstants(bm);
     if (!coeffs.empty()) {
-        CoeffBlenderBlock::BeginBlock(keyContext, builder, gatherer, coeffs);
-        builder->endBlock();
+        CoeffBlenderBlock::AddBlock(keyContext, builder, gatherer, coeffs);
     } else {
-        BlendModeBlenderBlock::BeginBlock(keyContext, builder, gatherer, bm);
-        builder->endBlock();
+        BlendModeBlenderBlock::AddBlock(keyContext, builder, gatherer, bm);
     }
 }
 
@@ -173,10 +171,8 @@ void AddDstReadBlock(const KeyContext& keyContext,
         case DstReadRequirement::kTextureCopy:
             [[fallthrough]];
         case DstReadRequirement::kTextureSample:
-            DstReadSampleBlock::BeginBlock(keyContext, builder, gatherer,
-                                           keyContext.dstTexture(),
-                                           keyContext.dstOffset());
-            builder->endBlock();
+            DstReadSampleBlock::AddBlock(keyContext, builder, gatherer, keyContext.dstTexture(),
+                                         keyContext.dstOffset());
             break;
         case DstReadRequirement::kFramebufferFetch:
             builder->addBlock(BuiltInCodeSnippetID::kDstReadFetch);
@@ -188,23 +184,18 @@ void AddDitherBlock(const KeyContext& keyContext,
                     PaintParamsKeyBuilder* builder,
                     PipelineDataGatherer* gatherer,
                     SkColorType ct) {
+    static const SkBitmap gLUT = skgpu::MakeDitherLUT();
 
-    sk_sp<TextureProxy> proxy;
-    if (gatherer) {
-        static const SkBitmap gLUT = skgpu::MakeDitherLUT();
-
-        proxy = RecorderPriv::CreateCachedProxy(keyContext.recorder(), gLUT);
-        if (!proxy) {
-            SKGPU_LOG_W("Couldn't create dither shader's LUT");
-            builder->addBlock(BuiltInCodeSnippetID::kPriorOutput);
-            return;
-        }
+    sk_sp<TextureProxy> proxy = RecorderPriv::CreateCachedProxy(keyContext.recorder(), gLUT);
+    if (keyContext.recorder() && !proxy) {
+        SKGPU_LOG_W("Couldn't create dither shader's LUT");
+        builder->addBlock(BuiltInCodeSnippetID::kPriorOutput);
+        return;
     }
 
     DitherShaderBlock::DitherData data(skgpu::DitherRangeForConfig(ct), std::move(proxy));
 
-    DitherShaderBlock::BeginBlock(keyContext, builder, gatherer, data);
-    builder->endBlock();
+    DitherShaderBlock::AddBlock(keyContext, builder, gatherer, data);
 }
 
 void PaintParams::addPaintColorToKey(const KeyContext& keyContext,
@@ -213,7 +204,7 @@ void PaintParams::addPaintColorToKey(const KeyContext& keyContext,
     if (fShader) {
         AddToKey(keyContext, keyBuilder, gatherer, fShader.get());
     } else {
-        SolidColorShaderBlock::AddBlock(keyContext, keyBuilder, gatherer, keyContext.paintColor());
+        RGBPaintColorBlock::AddBlock(keyContext, keyBuilder, gatherer);
     }
 }
 
@@ -245,6 +236,16 @@ void PaintParams::handlePrimitiveColor(const KeyContext& keyContext,
 void PaintParams::handlePaintAlpha(const KeyContext& keyContext,
                                    PaintParamsKeyBuilder* keyBuilder,
                                    PipelineDataGatherer* gatherer) const {
+
+    if (!fShader && !fPrimitiveBlender) {
+        // If there is no shader and no primitive blending the input to the colorFilter stage
+        // is just the premultiplied paint color.
+        SkPMColor4f paintColor = PaintParams::Color4fPrepForDst(fColor,
+                                                                keyContext.dstColorInfo()).premul();
+        SolidColorShaderBlock::AddBlock(keyContext, keyBuilder, gatherer, paintColor);
+        return;
+    }
+
     if (fColor.fA != 1.0f) {
         Blend(keyContext, keyBuilder, gatherer,
               /* addBlendToKey= */ [&] () -> void {
@@ -254,8 +255,7 @@ void PaintParams::handlePaintAlpha(const KeyContext& keyContext,
                   this->handlePrimitiveColor(keyContext, keyBuilder, gatherer);
               },
               /* addDstToKey= */ [&]() -> void {
-                  SolidColorShaderBlock::AddBlock(keyContext, keyBuilder, gatherer,
-                                                  {0, 0, 0, fColor.fA});
+                  AlphaOnlyPaintColorBlock::AddBlock(keyContext, keyBuilder, gatherer);
               });
     } else {
         this->handlePrimitiveColor(keyContext, keyBuilder, gatherer);

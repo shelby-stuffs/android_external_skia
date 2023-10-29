@@ -1,5 +1,5 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_cc_deps", "skia_filegroup", "split_srcs_and_hdrs")
 load("//bazel:flags.bzl", "bool_flag")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_cc_deps", "skia_filegroup", "split_srcs_and_hdrs")
 
 licenses(["notice"])
 
@@ -46,6 +46,7 @@ CORE_FILES = [
     "GrGLTextureRenderTarget.cpp",
     "GrGLTextureRenderTarget.h",
     "GrGLTypesPriv.cpp",
+    "GrGLTypesPriv.h",
     "GrGLUniformHandler.cpp",
     "GrGLUniformHandler.h",
     "GrGLUtil.cpp",

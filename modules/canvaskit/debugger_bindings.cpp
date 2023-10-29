@@ -15,7 +15,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/encode/SkPngEncoder.h"
-#include "include/utils/SkBase64.h"
+#include "src/base/SkBase64.h"
 #include "src/core/SkPicturePriv.h"
 #include "src/utils/SkJSONWriter.h"
 #include "src/utils/SkMultiPictureDocument.h"
@@ -266,7 +266,7 @@ class SkpDebugPlayer {
     // Return type is the PNG data as a base64 encoded string with prepended URI.
     std::string getImageResource(int index) {
       sk_sp<SkData> pngData = SkPngEncoder::Encode(nullptr, fImages[index].get(), {});
-      size_t len = SkBase64::Encode(pngData->data(), pngData->size(), nullptr);
+      size_t len = SkBase64::EncodedSize(pngData->size());
       SkString dst;
       dst.resize(len);
       SkBase64::Encode(pngData->data(), pngData->size(), dst.data());

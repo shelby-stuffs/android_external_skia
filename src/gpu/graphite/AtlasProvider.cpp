@@ -17,9 +17,9 @@
 namespace skgpu::graphite {
 
 AtlasProvider::AtlasProvider(Recorder* recorder)
-        : fTextAtlasManager(std::make_unique<TextAtlasManager>(recorder)) {
-    // Disable for now.
-    //fPathAtlasFlags |= PathAtlasFlags::kRaster;
+        : fTextAtlasManager(std::make_unique<TextAtlasManager>(recorder))
+        , fRasterPathAtlas(std::make_unique<RasterPathAtlas>()) {
+    fPathAtlasFlags |= PathAtlasFlags::kRaster;
 #ifdef SK_ENABLE_VELLO_SHADERS
     if (recorder->priv().caps()->computeSupport()) {
         fPathAtlasFlags |= PathAtlasFlags::kCompute;
@@ -36,21 +36,20 @@ std::unique_ptr<ComputePathAtlas> AtlasProvider::createComputePathAtlas() const 
     return nullptr;
 }
 
-std::unique_ptr<RasterPathAtlas> AtlasProvider::createRasterPathAtlas() const {
-    if (fPathAtlasFlags & PathAtlasFlags::kRaster) {
-        return std::make_unique<RasterPathAtlas>();
-    }
-    return nullptr;
+RasterPathAtlas* AtlasProvider::getRasterPathAtlas() const {
+    return fRasterPathAtlas.get();
 }
 
 sk_sp<TextureProxy> AtlasProvider::getAtlasTexture(Recorder* recorder,
                                                    uint16_t width,
                                                    uint16_t height,
                                                    SkColorType colorType,
+                                                   uint16_t identifier,
                                                    bool requireStorageUsage) {
     uint64_t key = static_cast<uint64_t>(width)  << 48 |
                    static_cast<uint64_t>(height) << 32 |
-                   static_cast<uint64_t>(colorType);
+                   static_cast<uint64_t>(colorType) << 16 |
+                   static_cast<uint64_t>(identifier);
     auto iter = fTexturePool.find(key);
     if (iter != fTexturePool.end()) {
         return iter->second;

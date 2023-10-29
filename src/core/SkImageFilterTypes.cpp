@@ -26,6 +26,7 @@
 #include "src/core/SkBlenderBase.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkDevice.h"
+#include "src/core/SkImageFilterCache.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkRectPriv.h"
@@ -310,7 +311,9 @@ public:
         // It is assumed the caller has already accounted for the desired output, or it's a
         // situation where the desired output shouldn't apply (e.g. this surface will be transformed
         // to align with the actual desired output via FilterResult metadata).
-        auto device = ctx.makeDevice(SkISize(dstBounds.size()), props);
+        auto device = ctx.backend()->makeDevice(SkISize(dstBounds.size()),
+                                                ctx.refColorSpace(),
+                                                props);
         if (!device) {
             return;
         }
@@ -353,66 +356,68 @@ private:
     LayerSpace<SkIRect> fDstBounds;
 };
 
-} // anonymous namespace
+class RasterBackend : public Backend {
+public:
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
+    RasterBackend(const SkSurfaceProps& surfaceProps, SkColorType colorType)
+            : Backend(SkImageFilterCache::Get(), surfaceProps, colorType) {}
 
-Functors MakeRasterFunctors() {
-    auto makeDeviceFunctor = [](const SkImageInfo& imageInfo,
-                                const SkSurfaceProps& props) -> sk_sp<SkDevice> {
+    sk_sp<SkDevice> makeDevice(SkISize size,
+                               sk_sp<SkColorSpace> colorSpace,
+                               const SkSurfaceProps* props) const override {
+        SkImageInfo imageInfo = SkImageInfo::Make(size,
+                                                  this->colorType(),
+                                                  kPremul_SkAlphaType,
+                                                  std::move(colorSpace));
         SkBitmap bitmap;
         if (!bitmap.tryAllocPixels(imageInfo)) {
             return nullptr;
         }
 
-        return sk_make_sp<SkBitmapDevice>(bitmap, props);
-    };
-    auto makeImageFunctor = [](const SkIRect& subset,
-                               sk_sp<SkImage> image,
-                               const SkSurfaceProps& props) {
-        return SkSpecialImages::MakeFromRaster(subset, image, props);
-    };
-    auto makeCachedBitmapFunctor = [](const SkBitmap& data) {
+        return sk_make_sp<SkBitmapDevice>(bitmap, props ? *props : this->surfaceProps());
+    }
+
+    sk_sp<SkSpecialImage> makeImage(const SkIRect& subset, sk_sp<SkImage> image) const override {
+        return SkSpecialImages::MakeFromRaster(subset, image, this->surfaceProps());
+    }
+
+    sk_sp<SkImage> getCachedBitmap(const SkBitmap& data) const override {
         return SkImages::RasterFromBitmap(data);
-    };
+    }
 
-    // TODO: For now pass null for the blur image functor so that SkBlurImageFilter uses its N32
-    // implementation.
-    return Functors(makeDeviceFunctor, makeImageFunctor, makeCachedBitmapFunctor,
-                    /*blurImageFunctor=*/ nullptr);
-}
+    sk_sp<SkSpecialImage> blur(SkSize sigma,
+                               sk_sp<SkSpecialImage> input,
+                               SkIRect srcRect,
+                               SkIRect dstRect,
+                               sk_sp<SkColorSpace>) const override {
+        return nullptr;
+    }
 
-Context Context::MakeRaster(const ContextInfo& info) {
+    bool isBlurSupported() const override {
+        return false;
+    }
+};
+
+} // anonymous namespace
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+Backend::Backend(sk_sp<SkImageFilterCache> cache,
+                 const SkSurfaceProps& surfaceProps,
+                 const SkColorType colorType)
+        : fCache(std::move(cache))
+        , fSurfaceProps(surfaceProps)
+        , fColorType(colorType) {}
+
+Backend::~Backend() = default;
+
+sk_sp<Backend> MakeRasterBackend(const SkSurfaceProps& surfaceProps, SkColorType colorType) {
     // TODO (skbug:14286): Remove this forcing to 8888. Many legacy image filters only support
     // N32 on CPU, but once they are implemented in terms of draws and SkSL they will support
     // all color types, like the GPU backends.
-    ContextInfo n32 = info;
-    n32.fColorType = kN32_SkColorType;
+    colorType = kN32_SkColorType;
 
-    return Context(n32, MakeRasterFunctors());
-}
-
-sk_sp<SkDevice> Context::makeDevice(const SkISize& size, const SkSurfaceProps* props) const {
-    SkASSERT(fFunctors.fMakeDeviceFunctor);
-    if (!props) {
-        props = &fInfo.fSurfaceProps;
-    }
-
-    SkImageInfo imageInfo = SkImageInfo::Make(size,
-                                              fInfo.fColorType,
-                                              kPremul_SkAlphaType,
-                                              sk_ref_sp(fInfo.fColorSpace));
-    return fFunctors.fMakeDeviceFunctor(imageInfo, *props);
-}
-
-sk_sp<SkSpecialImage> Context::makeImage(const SkIRect& subset, sk_sp<SkImage> image) const {
-    SkASSERT(fFunctors.fMakeImageFunctor);
-    return fFunctors.fMakeImageFunctor(subset, image, fInfo.fSurfaceProps);
-}
-
-sk_sp<SkImage> Context::getCachedBitmap(const SkBitmap& data) const {
-    SkASSERT(fFunctors.fMakeCachedBitmapFunctor);
-    return fFunctors.fMakeCachedBitmapFunctor(data);
+    return sk_make_sp<RasterBackend>(surfaceProps, colorType);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -675,16 +680,22 @@ SkEnumBitMask<FilterResult::BoundsAnalysis> FilterResult::analyzeBounds(
         // If there is no transparency-affecting color filter and it's just decal tiling, it doesn't
         // matter how the image geometry overlaps with the dst bounds.
         // We only need to check how the image geometry overlaps the dst bounds if there's a color
-        // filter that affects transparent black, or there's non-decal tiling
-        if ((fColorFilter && as_CFB(fColorFilter)->affectsTransparentBlack()) ||
-            fTileMode != SkTileMode::kDecal ||
-            blendAffectsTransparentBlack) {
+        // filter that affects transparent black, or there's non-decal tiling, or there's a blend
+        // that modifies transparent black (applied post layer clip).
+        const bool hasFillingEffectPreLayerClip =
+                (fColorFilter && as_CFB(fColorFilter)->affectsTransparentBlack()) ||
+                    fTileMode != SkTileMode::kDecal;
+        if (hasFillingEffectPreLayerClip || blendAffectsTransparentBlack) {
             // If the image does not completely cover the render bounds, then the effects of tiling
             // won't be visible; otherwise add the analysis flag.
             if (!SkRectPriv::QuadContainsRect(SkMatrix::Concat(xtraTransform, SkMatrix(fTransform)),
                                               SkIRect::MakeSize(fImage->dimensions()),
                                               dstBounds)) {
-                fillsLayerBounds = true;
+                // We add the effects-visible flag for any reason, but we only mark the effect as
+                // filling layer bounds if there's an effect that applies *before* the layer clip.
+                // If it's just a non-transparency-preserving blend, that applies after the layer
+                // clip so the layer boundary wouldn't be made visible by the blend.
+                fillsLayerBounds = hasFillingEffectPreLayerClip;
                 analysis |= BoundsAnalysis::kEffectsVisible;
             }
         }
@@ -1136,7 +1147,9 @@ void FilterResult::draw(const Context& ctx,
     // detected and some GPUs' linear filtering doesn't exactly match nearest-neighbor and can
     // lead to leaks beyond the image's subset. Detect and reduce sampling explicitly.
     SkSamplingOptions sampling = fSamplingOptions;
-    if (sampling == kDefaultSampling && is_nearly_integer_translation(fTransform)) {
+    if (sampling == kDefaultSampling &&
+        is_nearly_integer_translation(fTransform) &&
+        is_nearly_integer_translation(skif::LayerSpace<SkMatrix>(device->localToDevice()))) {
         sampling = {};
     }
 
@@ -1240,7 +1253,8 @@ FilterResult FilterResult::MakeFromPicture(const Context& ctx,
     // knowledge of the pixel geometry.
     // TODO: Should we just generally do this for layers with image filters? Or can we preserve it
     // for layers that are still axis-aligned?
-    SkSurfaceProps props = ctx.surfaceProps().cloneWithPixelGeometry(kUnknown_SkPixelGeometry);
+    SkSurfaceProps props = ctx.backend()->surfaceProps()
+                                         .cloneWithPixelGeometry(kUnknown_SkPixelGeometry);
     AutoSurface surface{ctx, dstBounds, /*renderInParameterSpace=*/true, &props};
     if (surface) {
         surface->clipRect(SkRect(cullRect));
@@ -1275,7 +1289,7 @@ FilterResult FilterResult::MakeFromImage(const Context& ctx,
     SkIRect srcSubset = RoundOut(srcRect);
     if (SkRect::Make(srcSubset) == srcRect) {
         // Construct an SkSpecialImage from the subset directly instead of drawing.
-        sk_sp<SkSpecialImage> specialImage = ctx.makeImage(srcSubset, std::move(image));
+        sk_sp<SkSpecialImage> specialImage = ctx.backend()->makeImage(srcSubset, std::move(image));
 
         // Treat the srcRect's top left as "layer" space since we are folding the src->dst transform
         // and the param->layer transform into a single transform step.
@@ -1406,7 +1420,7 @@ FilterResult FilterResult::Builder::blur(const LayerSpace<SkSize>& sigma) {
 
     // TODO: The blur functor is only supported for GPU contexts; SkBlurImageFilter should have
     // detected this.
-    SkASSERT(fContext.fFunctors.fBlurImageFunctor);
+    SkASSERT(fContext.backend()->isBlurSupported());
 
     // TODO: De-duplicate this logic between SkBlurImageFilter, here, and skgpu::BlurUtils.
     skif::LayerSpace<SkISize> radii =
@@ -1444,12 +1458,11 @@ FilterResult FilterResult::Builder::blur(const LayerSpace<SkSize>& sigma) {
     // for creating their own target surfaces.
     auto srcRelativeOutput = outputBounds;
     srcRelativeOutput.offset(-origin);
-    image = fContext.fFunctors.fBlurImageFunctor(SkSize(sigma),
-                                                 image,
-                                                 SkIRect::MakeSize(image->dimensions()),
-                                                 SkIRect(srcRelativeOutput),
-                                                 fContext.refColorSpace(),
-                                                 fContext.surfaceProps());
+    image = fContext.backend()->blur(SkSize(sigma),
+                                     image,
+                                     SkIRect::MakeSize(image->dimensions()),
+                                     SkIRect(srcRelativeOutput),
+                                     fContext.refColorSpace());
 
     // TODO: Allow the blur functor to provide an upscaling transform that is applied to the
     // FilterResult so that a render pass can possibly be elided if this is the final operation.

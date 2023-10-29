@@ -1,7 +1,7 @@
+load("@skia_user_config//:copts.bzl", "DEFAULT_OBJC_COPTS")
 load("//:defines.bzl", "DEFAULT_DEFINES", "DEFAULT_LOCAL_DEFINES")
 load("//bazel:gen_compile_flags_txt_linux_amd64.bzl", "gen_compile_flags_txt_linux_amd64")
 load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_cc_library", "skia_objc_library")
-load("@skia_user_config//:copts.bzl", "DEFAULT_OBJC_COPTS")
 
 licenses(["notice"])
 
@@ -88,12 +88,6 @@ alias(
 )
 
 alias(
-    name = "default_malloc",
-    actual = "//src/ports:default_malloc",
-    visibility = ["//visibility:public"],
-)
-
-alias(
     name = "pathops",
     actual = "//src/pathops:pathops",
     visibility = ["//visibility:public"],
@@ -102,12 +96,6 @@ alias(
 alias(
     name = "png_decode_codec",
     actual = "//src/codec:png_decode",
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "png_encode_codec",
-    actual = "//src/codec:png_encode",
     visibility = ["//visibility:public"],
 )
 

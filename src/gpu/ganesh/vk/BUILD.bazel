@@ -1,5 +1,5 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
 load("//bazel:flags.bzl", "bool_flag")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
 
 licenses(["notice"])
 
@@ -23,6 +23,7 @@ VK_FILES = [
     "GrVkDescriptorSet.h",
     "GrVkDescriptorSetManager.cpp",
     "GrVkDescriptorSetManager.h",
+    "GrVkDirectContext.cpp",
     "GrVkFramebuffer.cpp",
     "GrVkFramebuffer.h",
     "GrVkGpu.cpp",
@@ -63,6 +64,7 @@ VK_FILES = [
     "GrVkTextureRenderTarget.cpp",
     "GrVkTextureRenderTarget.h",
     "GrVkTypesPriv.cpp",
+    "GrVkTypesPriv.h",
     "GrVkUniformHandler.cpp",
     "GrVkUniformHandler.h",
     "GrVkUtil.cpp",

@@ -10,6 +10,7 @@
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/Surface.h"
+#include "include/private/gpu/graphite/ContextOptionsPriv.h"
 #include "src/gpu/AtlasTypes.h"
 #include "src/gpu/graphite/AtlasProvider.h"
 #include "src/gpu/graphite/Buffer.h"
@@ -24,6 +25,7 @@
 #include "src/gpu/graphite/Image_Graphite.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/PathAtlas.h"
+#include "src/gpu/graphite/RasterPathAtlas.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/Renderer.h"
 #include "src/gpu/graphite/RendererProvider.h"
@@ -1200,9 +1202,23 @@ std::pair<const Renderer*, PathAtlas*> Device::chooseRenderer(const Transform& l
         return {nullptr, nullptr};
     }
 
+    // Path rendering options. For now the strategy is very simple and not optimal:
+    // I. Use tessellation if MSAA is required for an effect.
+    // II: otherwise:
+    //    1. Always use compute AA if supported unless it was excluded by ContextOptions.
+    //    2. Use CPU raster AA if hardware MSAA is disabled or it was explicitly requested by
+    //       ContextOptions.
+    //    3. Otherwise use tessellation.
+#if defined(GRAPHITE_TEST_UTILS)
+    PathRendererStrategy strategy = fRecorder->priv().caps()->requestedPathRendererStrategy();
+#else
+    PathRendererStrategy strategy = PathRendererStrategy::kDefault;
+#endif
+
     const Shape& shape = geometry.shape();
     // We can't use this renderer if we require MSAA for an effect (i.e. clipping or stroke+fill).
-    if (!requireMSAA && is_simple_shape(shape, type)) {
+    if (!requireMSAA && is_simple_shape(shape, type) &&
+        strategy == PathRendererStrategy::kDefault) {
         return {renderers->analyticRRect(), nullptr};
     }
 
@@ -1213,15 +1229,19 @@ std::pair<const Renderer*, PathAtlas*> Device::chooseRenderer(const Transform& l
     // TODO(b/285195175): There may be reasons to prefer tessellation, e.g. if the shape is large
     // and hardware MSAA looks acceptable.
     AtlasProvider* atlasProvider = fRecorder->priv().atlasProvider();
-    if (atlasProvider->isAvailable(AtlasProvider::PathAtlasFlags::kCompute)) {
+    if (atlasProvider->isAvailable(AtlasProvider::PathAtlasFlags::kCompute) &&
+        (strategy == PathRendererStrategy::kComputeAnalyticAA ||
+         strategy == PathRendererStrategy::kDefault)) {
         // TODO: vello can't do correct strokes yet. Maybe this shouldn't get selected for stroke
         // renders until all stroke styles are supported?
         pathAtlas = fDC->getComputePathAtlas(fRecorder);
     // Only use CPU rendered paths when multisampling is disabled
     // TODO: enable other uses of the software path renderer
-    } else if (fRecorder->priv().caps()->defaultMSAASamplesCount() <= 1 &&
-               atlasProvider->isAvailable(AtlasProvider::PathAtlasFlags::kRaster)) {
-        pathAtlas = fDC->getRasterPathAtlas(fRecorder);
+    } else if (atlasProvider->isAvailable(AtlasProvider::PathAtlasFlags::kRaster) &&
+               strategy == PathRendererStrategy::kRasterAA) {
+        // TODO: With the default strategy, enable this if
+        // fRecorder->priv().caps()->defaultMSAASamplesCount() <= 1
+        pathAtlas = atlasProvider->getRasterPathAtlas();
     }
     // We currently always use a coverage mask renderer if a `PathAtlas` is selected.
     if (!requireMSAA && pathAtlas) {
@@ -1393,8 +1413,9 @@ sk_sp<SkSpecialImage> Device::snapSpecial(const SkIRect& subset, bool forceCopy)
                                          this->surfaceProps());
 }
 
-skif::Context Device::createContext(const skif::ContextInfo& ctxInfo) const {
-    return skif::MakeGraphiteContext(fRecorder, ctxInfo);
+sk_sp<skif::Backend> Device::createImageFilteringBackend(const SkSurfaceProps& surfaceProps,
+                                                         SkColorType colorType) const {
+    return skif::MakeGraphiteBackend(fRecorder, surfaceProps, colorType);
 }
 
 TextureProxy* Device::target() { return fDC->target(); }

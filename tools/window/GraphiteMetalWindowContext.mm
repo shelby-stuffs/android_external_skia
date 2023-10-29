@@ -17,7 +17,7 @@
 #include "include/gpu/graphite/mtl/MtlGraphiteUtils.h"
 #include "include/private/gpu/graphite/ContextOptionsPriv.h"
 #include "src/base/SkMathPriv.h"
-#include "tools/ToolUtils.h"
+#include "tools/GpuToolUtils.h"
 #include "tools/window/GraphiteMetalWindowContext.h"
 
 using skwindow::DisplayParams;
@@ -57,13 +57,11 @@ void GraphiteMetalWindowContext::initializeContext() {
     backendContext.fDevice.retain((skgpu::graphite::MtlHandle)fDevice.get());
     backendContext.fQueue.retain((skgpu::graphite::MtlHandle)fQueue.get());
 
-    skgpu::graphite::ContextOptions contextOptions;
-    contextOptions.fDisableCachedGlyphUploads = true;
-    skgpu::graphite::ContextOptionsPriv contextOptionsPriv;
-    // Needed to make synchronous readPixels work
-    contextOptionsPriv.fStoreContextRefInRecorder = true;
-    contextOptions.fOptionsPriv = &contextOptionsPriv;
-    fGraphiteContext = skgpu::graphite::ContextFactory::MakeMetal(backendContext, contextOptions);
+    fDisplayParams.fGraphiteContextOptions.fOptions.fDisableCachedGlyphUploads = true;
+    // Needed to make synchronous readPixels work:
+    fDisplayParams.fGraphiteContextOptions.fPriv.fStoreContextRefInRecorder = true;
+    fGraphiteContext = skgpu::graphite::ContextFactory::MakeMetal(
+            backendContext, fDisplayParams.fGraphiteContextOptions.fOptions);
     fGraphiteRecorder = fGraphiteContext->makeRecorder(ToolUtils::CreateTestingRecorderOptions());
     // TODO
 //    if (!fGraphiteContext && fDisplayParams.fMSAASampleCount > 1) {
