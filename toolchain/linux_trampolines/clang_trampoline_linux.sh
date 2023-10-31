@@ -115,7 +115,14 @@ supported_files_or_dirs=(
   "src/gpu/ganesh/gl/GrGLDirectContext.cpp"
   "src/gpu/ganesh/gl/GrGLGpu.cpp"
   "src/gpu/ganesh/ops/AtlasTextOp.cpp"
+  "src/gpu/ganesh/vk/GrVkDirectContext.cpp"
   "src/pdf/SkJpeg"
+  "tools/DecodeUtils.cpp"
+  "tools/EncodeUtils.cpp"
+  "tools/GpuToolUtils.cpp"
+  "tools/Resources.cpp"
+  "tools/SvgPathExtractor.cpp"
+  "tools/ToolUtils.cpp"
 
   # See //bazel/generate_cpp_files_for_headers.bzl and //include/BUILD.bazel for more.
   "include/gen/"
