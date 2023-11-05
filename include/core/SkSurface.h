@@ -605,7 +605,8 @@ public:
 
     /** Inserts a list of GPU semaphores that the current GPU-backed API must wait on before
         executing any more commands on the GPU for this surface. We only guarantee blocking
-        fragment shader work, but may block earlier stages as well depending on the backend.
+        transfer and fragment shader work, but may block earlier stages as well depending on the
+        backend.
         If this call returns false, then the GPU back-end will not wait on any passed in
         semaphores, and the client will still own the semaphores, regardless of the value of
         deleteSemaphoresAfterWait.

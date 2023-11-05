@@ -444,7 +444,11 @@ void add_color_space_uniforms(const SkColorSpaceXformSteps& steps, PipelineDataG
     SkMatrix gamutTransform;
     if (steps.flags.gamut_transform) {
         // TODO: it seems odd to copy this into an SkMatrix just to write it to the gatherer
-        gamutTransform.set9(steps.src_to_dst_matrix);
+        // src_to_dst_matrix is column-major, SkMatrix is row-major.
+        const float* m = steps.src_to_dst_matrix;
+        gamutTransform.setAll(m[0], m[3], m[6],
+                              m[1], m[4], m[7],
+                              m[2], m[5], m[8]);
     }
     gatherer->writeHalf(gamutTransform);
 
@@ -492,6 +496,18 @@ void add_cubic_image_uniform_data(const ShaderCodeDictionary* dict,
     add_color_space_uniforms(imgData.fSteps, gatherer);
 }
 
+void add_hw_image_uniform_data(const ShaderCodeDictionary* dict,
+                               const ImageShaderBlock::ImageData& imgData,
+                               PipelineDataGatherer* gatherer) {
+    SkASSERT(!imgData.fSampling.useCubic);
+    VALIDATE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kHWImageShader)
+
+    gatherer->write(SkSize::Make(imgData.fImgSize));
+    gatherer->write(SkTo<int>(imgData.fReadSwizzle));
+
+    add_color_space_uniforms(imgData.fSteps, gatherer);
+}
+
 } // anonymous namespace
 
 ImageShaderBlock::ImageData::ImageData(const SkSamplingOptions& sampling,
@@ -508,6 +524,14 @@ ImageShaderBlock::ImageData::ImageData(const SkSamplingOptions& sampling,
     SkASSERT(fSteps.flags.mask() == 0);   // By default, the colorspace should have no effect
 }
 
+static bool can_do_tiling_in_hw(const Caps* caps, const ImageShaderBlock::ImageData& imgData) {
+    if (!caps->clampToBorderSupport() && (imgData.fTileModes[0] == SkTileMode::kDecal ||
+                                          imgData.fTileModes[1] == SkTileMode::kDecal)) {
+        return false;
+    }
+    return imgData.fSubset.contains(SkRect::Make(imgData.fImgSize));
+}
+
 void ImageShaderBlock::AddBlock(const KeyContext& keyContext,
                                 PaintParamsKeyBuilder* builder,
                                 PipelineDataGatherer* gatherer,
@@ -518,9 +542,18 @@ void ImageShaderBlock::AddBlock(const KeyContext& keyContext,
         return;
     }
 
-    gatherer->add(imgData.fSampling, imgData.fTileModes, imgData.fTextureProxy);
+    const Caps* caps = keyContext.caps();
+    const bool doTilingInHw = !imgData.fSampling.useCubic && can_do_tiling_in_hw(caps, imgData);
 
-    if (imgData.fSampling.useCubic) {
+    static constexpr SkTileMode kDefaultTileModes[2] = {SkTileMode::kClamp, SkTileMode::kClamp};
+    gatherer->add(imgData.fSampling,
+                  doTilingInHw ? imgData.fTileModes : kDefaultTileModes,
+                  imgData.fTextureProxy);
+
+    if (doTilingInHw) {
+        add_hw_image_uniform_data(keyContext.dict(), imgData, gatherer);
+        builder->addBlock(BuiltInCodeSnippetID::kHWImageShader);
+    } else if (imgData.fSampling.useCubic) {
         add_cubic_image_uniform_data(keyContext.dict(), imgData, gatherer);
         builder->addBlock(BuiltInCodeSnippetID::kCubicImageShader);
     } else {
@@ -767,7 +800,7 @@ void TableColorFilterBlock::AddBlock(const KeyContext& keyContext,
                                      PaintParamsKeyBuilder* builder,
                                      PipelineDataGatherer* gatherer,
                                      const TableColorFilterData& data) {
-    SkASSERT(data.fTextureProxy);
+    SkASSERT(data.fTextureProxy || !keyContext.recorder());
 
     add_table_colorfilter_uniform_data(keyContext.dict(), data, gatherer);
 
@@ -985,6 +1018,8 @@ void AddToKey(const KeyContext& keyContext,
     SkUNREACHABLE;
 }
 
+//--------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------
 static SkPMColor4f map_color(const SkColor4f& c, SkColorSpace* src, SkColorSpace* dst) {
     SkPMColor4f color = {c.fR, c.fG, c.fB, c.fA};
     SkColorSpaceXformSteps(src, kUnpremul_SkAlphaType, dst, kPremul_SkAlphaType).apply(color.vec());
@@ -1009,9 +1044,9 @@ static void add_to_key(const KeyContext& keyContext,
     SkASSERT(filter);
 
     constexpr SkAlphaType kAlphaType = kPremul_SkAlphaType;
-    ColorSpaceTransformBlock::ColorSpaceTransformData data(
-            filter->src().get(), kAlphaType, filter->dst().get(), kAlphaType);
-    ColorSpaceTransformBlock::AddBlock(keyContext, builder, gatherer, data);
+    ColorSpaceTransformBlock::ColorSpaceTransformData csData(filter->src().get(), kAlphaType,
+                                                             filter->dst().get(), kAlphaType);
+    ColorSpaceTransformBlock::AddBlock(keyContext, builder, gatherer, csData);
 }
 
 static void add_to_key(const KeyContext& keyContext,
@@ -1211,10 +1246,10 @@ static void add_to_key(const KeyContext& keyContext,
     SkASSERT(shader);
 
     Compose(keyContext, builder, gatherer,
-            /* emitInnerToKey= */ [&]() -> void {
+            /* addInnerToKey= */ [&]() -> void {
                 AddToKey(keyContext, builder, gatherer, shader->shader().get());
             },
-            /* emitOuterToKey= */ [&]() -> void {
+            /* addOuterToKey= */ [&]() -> void {
                 AddToKey(keyContext, builder, gatherer, shader->filter().get());
             });
 }

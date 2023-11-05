@@ -63,6 +63,8 @@ void RasterPathAtlas::recordUploads(DrawContext* dc, Recorder* recorder) {
         }
         pageIter.next();
     }
+
+    this->reset();
 }
 
 bool RasterPathAtlas::Page::initializeTextureIfNeeded(Recorder* recorder, uint16_t identifier) {
@@ -73,7 +75,7 @@ bool RasterPathAtlas::Page::initializeTextureIfNeeded(Recorder* recorder, uint16
                                                   fRectanizer.height(),
                                                   kAlpha_8_SkColorType,
                                                   identifier,
-                                                  /*requiresStorageUsage=*/false);
+                                                  /*requireStorageUsage=*/false);
     }
     return fTexture != nullptr;
 }
@@ -162,7 +164,7 @@ skgpu::UniqueKey generate_key(const Shape& shape,
         // all cases we might see.
         uint32_t styleBits = strokeRec.isHairlineStyle() ? ((strokeRec.getCap() << 1) | 1) : 0;
         builder[6] = fracBits | (styleBits << 16);
-        shape.writeKey(&builder[7]);
+        shape.writeKey(&builder[7], /*includeInverted=*/false);
     }
     return maskKey;
 }

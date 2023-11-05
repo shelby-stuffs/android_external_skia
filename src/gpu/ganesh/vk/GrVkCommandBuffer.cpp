@@ -626,8 +626,10 @@ bool GrVkPrimaryCommandBuffer::submitToQueue(
                 vkWaitSems.push_back(waitSemaphores[i]->semaphore());
                 // We only block the fragment stage since client provided resources are not used
                 // before the fragment stage. This allows the driver to begin vertex work while
-                // waiting on the semaphore.
-                vkWaitStages.push_back(VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+                // waiting on the semaphore. We also add in the transfer stage for uses of clients
+                // calling read or write pixels.
+                vkWaitStages.push_back(VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                                       VK_PIPELINE_STAGE_TRANSFER_BIT);
             }
         }
         submitted = submit_to_queue(gpu, queue, fSubmitFence, vkWaitSems.size(),

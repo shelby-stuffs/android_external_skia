@@ -35,7 +35,7 @@
 #include <functional>
 #include <iterator>
 
-static sk_sp<SkImage> picture_to_image(sk_sp<SkPicture> pic) {
+static sk_sp<SkImage> picture_to_image(const sk_sp<SkPicture>& pic) {
     SkIRect r = pic->cullRect().round();
     auto surf = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(r.width(), r.height()));
     surf->getCanvas()->drawPicture(pic);
@@ -198,7 +198,7 @@ DEF_TEST(serial_procs_picture, reporter) {
     test_pictures(reporter, p0, 1, true);
 }
 
-static sk_sp<SkPicture> make_picture(sk_sp<SkTypeface> tf0, sk_sp<SkTypeface> tf1) {
+static sk_sp<SkPicture> make_picture(const sk_sp<SkTypeface>& tf0, const sk_sp<SkTypeface>& tf1) {
     SkPictureRecorder rec;
     SkCanvas* canvas = rec.beginRecording(100, 100);
     SkPaint paint;

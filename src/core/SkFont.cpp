@@ -325,7 +325,11 @@ SkTypeface* SkFont::getTypefaceOrDefault() const {
 }
 
 sk_sp<SkTypeface> SkFont::refTypefaceOrDefault() const {
+#if !defined(SK_DISABLE_LEGACY_DEFAULT_TYPEFACE)
     return fTypeface ? fTypeface : SkTypeface::MakeDefault();
+#else
+    return fTypeface ? fTypeface : SkTypeface::MakeEmpty();
+#endif
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -353,7 +357,7 @@ SkRect SkFontPriv::GetFontBounds(const SkFont& font) {
     m.setScale(font.getSize() * font.getScaleX(), font.getSize());
     m.postSkew(font.getSkewX(), 0);
 
-    SkTypeface* typeface = font.getTypefaceOrDefault();
+    SkTypeface* typeface = SkFontPriv::GetTypefaceOrDefault(font);
 
     SkRect bounds;
     m.mapRect(&bounds, typeface->getBounds());
@@ -396,7 +400,7 @@ void SkFontPriv::GlyphsToUnichars(const SkFont& font, const SkGlyphID glyphs[], 
         return;
     }
 
-    auto typeface = font.getTypefaceOrDefault();
+    auto typeface = SkFontPriv::GetTypefaceOrDefault(font);
     const unsigned numGlyphsInTypeface = typeface->countGlyphs();
     AutoTArray<SkUnichar> unichars(static_cast<size_t>(numGlyphsInTypeface));
     typeface->getGlyphToUnicodeMap(unichars.get());

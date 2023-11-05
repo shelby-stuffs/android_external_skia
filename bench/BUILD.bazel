@@ -1,5 +1,6 @@
 load("//bazel:cc_test_with_flags.bzl", "cc_test_with_flags")
 load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_cc_library", "skia_filegroup")
+load("//tools/testrunners/benchmark:android_benchmark_test.bzl", "android_benchmark_test")
 
 licenses(["notice"])
 
@@ -42,12 +43,6 @@ cc_test_with_flags(
         "--surfaceConfig",
         "nonrendering",
         "--autoTuneLoops",
-        # Example keys. For CI tasks, these should be set by the task driver.
-        "--key",
-        "key-1",
-        "value-1",
-        "key-2",
-        "value-2",
     ],
     set_flags = {
         "include_encoder": [
@@ -67,12 +62,6 @@ cc_test_with_flags(
         "--surfaceConfig",
         "8888",
         "--autoTuneLoops",
-        # Example keys. For CI tasks, these should be set by the task driver.
-        "--key",
-        "key-1",
-        "value-1",
-        "key-2",
-        "value-2",
     ],
     set_flags = {
         "include_encoder": [
@@ -92,17 +81,50 @@ cc_test_with_flags(
         "--surfaceConfig",
         "gles",
         "--autoTuneLoops",
-        # Example keys. For CI tasks, these should be set by the task driver.
-        "--key",
-        "key-1",
-        "value-1",
-        "key-2",
-        "value-2",
     ],
     set_flags = {
         "include_encoder": [
             "png_encode_codec",
         ],
     },
+    deps = [":benchmarks_base"],
+)
+
+android_benchmark_test(
+    name = "cpu_nonrendering_android_test",
+    srcs = [
+        "GradientBench.cpp",
+        "TextBlobBench.cpp",
+    ],
+    extra_args = [
+        "--autoTuneLoops",
+    ],
+    surface_config = "nonrendering",
+    deps = [":benchmarks_base"],
+)
+
+android_benchmark_test(
+    name = "cpu_8888_android_test",
+    srcs = [
+        "GradientBench.cpp",
+        "TextBlobBench.cpp",
+    ],
+    extra_args = [
+        "--autoTuneLoops",
+    ],
+    surface_config = "8888",
+    deps = [":benchmarks_base"],
+)
+
+android_benchmark_test(
+    name = "gpu_gles_android_test",
+    srcs = [
+        "GradientBench.cpp",
+        "TextBlobBench.cpp",
+    ],
+    extra_args = [
+        "--autoTuneLoops",
+    ],
+    surface_config = "gles",
     deps = [":benchmarks_base"],
 )
