@@ -50,6 +50,7 @@
 #include "src/core/SkConvertPixels.h"
 #include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkImageInfoPriv.h"
+#include "src/core/SkImagePriv.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkRRectPriv.h"
@@ -152,40 +153,6 @@ std::optional<SkColor4f> extract_paint_color(const SkPaint& paint,
 
 SkIRect rect_to_pixelbounds(const Rect& r) {
     return r.makeRoundOut().asSkIRect();
-}
-
-bool create_img_shader_paint(sk_sp<SkImage> image,
-                             const SkRect& subset,
-                             SkCanvas::SrcRectConstraint constraint,
-                             const SkSamplingOptions& sampling,
-                             const SkMatrix* localMatrix,
-                             SkPaint* paint) {
-    bool imageIsAlphaOnly = SkColorTypeIsAlphaOnly(image->colorType());
-
-    sk_sp<SkShader> imgShader;
-    if (constraint == SkCanvas::kStrict_SrcRectConstraint) {
-        imgShader = SkImageShader::MakeSubset(std::move(image), subset,
-                                              SkTileMode::kClamp, SkTileMode::kClamp,
-                                              sampling, localMatrix);
-    } else {
-        imgShader = image->makeShader(SkTileMode::kClamp, SkTileMode::kClamp,
-                                      sampling, localMatrix);
-    }
-    if (!imgShader) {
-        SKGPU_LOG_W("Couldn't create subset image shader");
-        return false;
-    }
-    if (imageIsAlphaOnly && paint->getShader()) {
-        // Compose the image shader with the paint's shader. Alpha images+shaders should output the
-        // texture's alpha multiplied by the shader's color. DstIn (d*sa) will achieve this with
-        // the source image and dst shader (MakeBlend takes dst first, src second).
-        imgShader = SkShaders::Blend(SkBlendMode::kDstIn, paint->refShader(), std::move(imgShader));
-    }
-
-    paint->setStyle(SkPaint::kFill_Style);
-    paint->setShader(std::move(imgShader));
-    paint->setPathEffect(nullptr);  // neither drawSpecial nor drawImageRect support path effects
-    return true;
 }
 
 bool is_simple_shape(const Shape& shape, SkStrokeRec::Style type) {
@@ -729,22 +696,6 @@ void Device::drawEdgeAAImageSet(const SkCanvas::ImageSetEntry set[], int count,
         // Similarly, if it has an extra transform, those must be provided
         SkASSERT(set[i].fMatrixIndex < 0 || preViewMatrices);
 
-        SkRect imgBounds = SkRect::Make(set[i].fImage->bounds());
-        SkRect src = set[i].fSrcRect;
-        SkRect dst = set[i].fDstRect;
-
-        // TODO: All of this logic should be handled in SkCanvas, since it's the same for every
-        // backend.
-        SkASSERT(src.isFinite() && dst.isFinite() && dst.isSorted());
-        SkMatrix localMatrix = SkMatrix::RectToRect(src, dst);
-        if (!imgBounds.contains(src)) {
-            if (!src.intersect(imgBounds)) {
-                continue; // Nothing to draw for this entry
-            }
-            // Update dst to match smaller src
-            dst = localMatrix.mapRect(src);
-        }
-
         auto [ imageToDraw, newSampling ] =
                 skgpu::graphite::GetGraphiteBacked(this->recorder(), set[i].fImage.get(), sampling);
         if (!imageToDraw) {
@@ -755,11 +706,14 @@ void Device::drawEdgeAAImageSet(const SkCanvas::ImageSetEntry set[], int count,
         // TODO: Produce an image shading paint key and data directly without having to reconstruct
         // the equivalent SkPaint for each entry. Reuse the key and data between entries if possible
         paintWithShader.setShader(paint.refShader());
-        if (!create_img_shader_paint(std::move(imageToDraw), src, constraint, newSampling,
-                                     &localMatrix, &paintWithShader)) {
+        paintWithShader.setAlphaf(paint.getAlphaf() * set[i].fAlpha);
+        SkRect dst = SkModifyPaintAndDstForDrawImageRect(
+                    imageToDraw.get(), newSampling, set[i].fSrcRect, set[i].fDstRect,
+                    constraint == SkCanvas::kStrict_SrcRectConstraint,
+                    &paintWithShader);
+        if (dst.isEmpty()) {
             return;
         }
-        paintWithShader.setAlphaf(paint.getAlphaf() * set[i].fAlpha);
 
         auto flags =
                 SkEnumBitMask<EdgeAAQuad::Flags>(static_cast<EdgeAAQuad::Flags>(set[i].fAAFlags));
@@ -888,6 +842,12 @@ void Device::drawGeometry(const Transform& localToDevice,
     if (!localToDevice.valid()) {
         // If the transform is not invertible or not finite then drawing isn't well defined.
         SKGPU_LOG_W("Skipping draw with non-invertible/non-finite transform.");
+        return;
+    }
+
+    if (geometry.isShape() && geometry.shape().isPath() && geometry.shape().path().isEmpty()) {
+        // Don't try to draw any empty paths
+        SKGPU_LOG_D("Skipping empty path.");
         return;
     }
 
@@ -1195,8 +1155,8 @@ std::pair<const Renderer*, PathAtlas*> Device::chooseRenderer(const Transform& l
         return {renderers->vertices(info.mode(), info.hasColors(), info.hasTexCoords()), nullptr};
     } else if (geometry.isEdgeAAQuad()) {
         SkASSERT(!requireMSAA && style.isFillStyle());
-        // handled by the same system as rects and round rects
-        return {renderers->analyticRRect(), nullptr};
+        // handled by specialized system, simplified from rects and round rects
+        return {renderers->perEdgeAAQuad(), nullptr};
     } else if (!geometry.isShape()) {
         // We must account for new Geometry types with specific Renderers
         return {nullptr, nullptr};
@@ -1218,34 +1178,51 @@ std::pair<const Renderer*, PathAtlas*> Device::chooseRenderer(const Transform& l
     const Shape& shape = geometry.shape();
     // We can't use this renderer if we require MSAA for an effect (i.e. clipping or stroke+fill).
     if (!requireMSAA && is_simple_shape(shape, type) &&
-        strategy == PathRendererStrategy::kDefault) {
+        (strategy == PathRendererStrategy::kDefault ||
+         strategy == PathRendererStrategy::kRasterAA)) {
         return {renderers->analyticRRect(), nullptr};
     }
 
     PathAtlas* pathAtlas = nullptr;
+    bool msaaSupported = fRecorder->priv().caps()->defaultMSAASamplesCount() > 1;
+
     // Prefer compute atlas draws if supported. This currently implicitly filters out clip draws as
     // they require MSAA. Eventually we may want to route clip shapes to the atlas as well but not
     // if hardware MSAA is required.
-    // TODO(b/285195175): There may be reasons to prefer tessellation, e.g. if the shape is large
-    // and hardware MSAA looks acceptable.
     AtlasProvider* atlasProvider = fRecorder->priv().atlasProvider();
     if (atlasProvider->isAvailable(AtlasProvider::PathAtlasFlags::kCompute) &&
         (strategy == PathRendererStrategy::kComputeAnalyticAA ||
          strategy == PathRendererStrategy::kDefault)) {
-        // TODO: vello can't do correct strokes yet. Maybe this shouldn't get selected for stroke
-        // renders until all stroke styles are supported?
         pathAtlas = fDC->getComputePathAtlas(fRecorder);
     // Only use CPU rendered paths when multisampling is disabled
     // TODO: enable other uses of the software path renderer
     } else if (atlasProvider->isAvailable(AtlasProvider::PathAtlasFlags::kRaster) &&
-               strategy == PathRendererStrategy::kRasterAA) {
-        // TODO: With the default strategy, enable this if
-        // fRecorder->priv().caps()->defaultMSAASamplesCount() <= 1
+               (strategy == PathRendererStrategy::kRasterAA ||
+                (strategy == PathRendererStrategy::kDefault && !msaaSupported))) {
         pathAtlas = atlasProvider->getRasterPathAtlas();
     }
-    // We currently always use a coverage mask renderer if a `PathAtlas` is selected.
+
+    // Use an atlas only if an MSAA technique isn't required.
     if (!requireMSAA && pathAtlas) {
-        return {renderers->coverageMask(), pathAtlas};
+        // Don't use a coverage mask renderer if the shape is too large for the atlas such that it
+        // cannot be efficiently rasterized. The only exception is if hardware MSAA is not supported
+        // as a fallback or one of the atlas strategies was explicitly requested.
+        //
+        // If the hardware doesn't support MSAA and anti-aliasing is required, then we always render
+        // paths with atlasing.
+        if (!msaaSupported || strategy == PathRendererStrategy::kComputeAnalyticAA ||
+            strategy == PathRendererStrategy::kRasterAA) {
+            return {renderers->coverageMask(), pathAtlas};
+        }
+
+        // Use the conservative clip bounds for a rough estimate of the mask size (this avoids
+        // having to evaluate the entire clip stack before choosing the renderer as it will have to
+        // get evaluated again if we fall back to a different renderer).
+        Rect drawBounds = localToDevice.mapRect(shape.bounds());
+        drawBounds.intersect(fClip.conservativeBounds());
+        if (pathAtlas->isSuitableForAtlasing(drawBounds)) {
+            return {renderers->coverageMask(), pathAtlas};
+        }
     }
 
     // If we got here, it requires tessellated path rendering or an MSAA technique applied to a
@@ -1303,16 +1280,15 @@ void Device::flushPendingWorkToRecorder() {
     // TODO: we may need to further split this function up since device->device drawList and
     // DrawPass stealing will need to share some of the same logic w/o becoming a Task.
 
-    // push any pending uploads from the atlasmanager
-    auto textAtlasManager = fRecorder->priv().atlasProvider()->textAtlasManager();
-    if (!fDC->recordTextUploads(textAtlasManager)) {
-        SKGPU_LOG_E("TextAtlasManager uploads have failed -- may see invalid results.");
-    }
+    // Push any pending uploads from the atlasProvider
+    fRecorder->priv().atlasProvider()->recordUploads(fDC.get(), fRecorder);
 
     auto uploadTask = fDC->snapUploadTask(fRecorder);
     if (uploadTask) {
         fRecorder->priv().add(std::move(uploadTask));
     }
+    // Issue next upload flush token
+    fRecorder->priv().tokenTracker()->issueFlushToken();
 
     fClip.recordDeferredClipDraws();
 
@@ -1355,24 +1331,20 @@ void Device::drawSpecial(SkSpecialImage* special,
     SkASSERT(!paint.getMaskFilter() && !paint.getImageFilter());
 
     sk_sp<SkImage> img = special->asImage();
-    if (!img) {
+    if (!img || !as_IB(img)->isGraphiteBacked()) {
         SKGPU_LOG_W("Couldn't get Graphite-backed special image as image");
         return;
     }
 
-    // TODO: remove this check once Graphite has image filter support.
-    if (!img->isTextureBacked()) {
-        return;
-    }
-
-    SkRect src = SkRect::Make(special->subset());
-    SkRect dst = SkRect::MakeWH(special->width(), special->height());
-    SkMatrix srcToDst = SkMatrix::RectToRect(src, dst);
-    SkASSERT(srcToDst.isTranslate());
-
     SkPaint paintWithShader(paint);
-    if (!create_img_shader_paint(std::move(img), src, SkCanvas::kStrict_SrcRectConstraint ,sampling,
-                                 &srcToDst, &paintWithShader)) {
+    SkRect dst = SkModifyPaintAndDstForDrawImageRect(
+            img.get(),
+            sampling,
+            /*src=*/SkRect::Make(special->subset()),
+            /*dst=*/SkRect::MakeIWH(special->width(), special->height()),
+            /*strictSrcSubset=*/true,
+            &paintWithShader);
+    if (dst.isEmpty()) {
         return;
     }
 

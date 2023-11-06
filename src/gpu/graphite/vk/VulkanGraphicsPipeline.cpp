@@ -19,6 +19,7 @@
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/RuntimeEffectDictionary.h"
+#include "src/gpu/graphite/vk/VulkanCaps.h"
 #include "src/gpu/graphite/vk/VulkanGraphicsPipeline.h"
 #include "src/gpu/graphite/vk/VulkanRenderPass.h"
 #include "src/gpu/graphite/vk/VulkanSharedContext.h"
@@ -446,7 +447,8 @@ static VkPipelineLayout setup_pipeline_layout(const VulkanSharedContext* sharedC
     skia_private::STArray<2, VkDescriptorSetLayout> setLayouts;
     skia_private::STArray<VulkanGraphicsPipeline::kNumUniformBuffers, DescriptorData>
             uniformDescriptors;
-    uniformDescriptors.push_back(VulkanGraphicsPipeline::kIntrinsicUniformDescriptor);
+
+    uniformDescriptors.push_back(VulkanGraphicsPipeline::kIntrinsicUniformBufferDescriptor);
     if (hasStepUniforms) {
         uniformDescriptors.push_back(VulkanGraphicsPipeline::kRenderStepUniformDescriptor);
     }
@@ -543,7 +545,7 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
         const RuntimeEffectDictionary* runtimeDict,
         const GraphicsPipelineDesc& pipelineDesc,
         const RenderPassDesc& renderPassDesc,
-        sk_sp<VulkanRenderPass> compatibleRenderPass,
+        const sk_sp<VulkanRenderPass>& compatibleRenderPass,
         VkPipelineCache pipelineCache) {
 
     SkSL::Program::Interface vsInterface, fsInterface;

@@ -61,6 +61,7 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions,
 
     fSemaphoreSupport = true;   // always available in Vulkan
     fFenceSyncSupport = true;   // always available in Vulkan
+    fBackendSemaphoreSupport = true;
     fCrossContextTextureSupport = true;
     fHalfFloatVertexAttributeSupport = true;
 
@@ -571,7 +572,11 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
     // On Qualcomm and Arm the gpu resolves an area larger than the render pass bounds when using
     // discardable msaa attachments. This causes the resolve to resolve uninitialized data from the
     // msaa image into the resolve image.
-    if (kQualcomm_VkVendor == properties.vendorID || kARM_VkVendor == properties.vendorID) {
+    // This also occurs on swiftshader: b/303705884
+    if (properties.vendorID == kQualcomm_VkVendor ||
+        properties.vendorID == kARM_VkVendor ||
+        (properties.vendorID == kGoogle_VkVendor &&
+         properties.deviceID == kSwiftshader_DeviceID)) {
         fMustLoadFullImageWithDiscardableMSAA = true;
     }
 
