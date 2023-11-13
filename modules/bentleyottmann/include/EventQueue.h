@@ -5,13 +5,10 @@
 #define EventQueue_DEFINED
 
 #include "include/core/SkSpan.h"
-#include "include/private/base/SkAssert.h"
 #include "modules/bentleyottmann/include/EventQueueInterface.h"
 #include "modules/bentleyottmann/include/Point.h"
 #include "modules/bentleyottmann/include/Segment.h"
 
-#include <algorithm>
-#include <cstdint>
 #include <optional>
 #include <set>
 #include <tuple>
@@ -19,21 +16,6 @@
 #include <vector>
 
 namespace bentleyottmann {
-
-struct BoundingBox {
-    Point topLeft = Point::Largest();
-    Point bottomRight = Point::Smallest();
-
-    void addPoint(Point p) {
-        topLeft.x = std::min(p.x, topLeft.x);
-        topLeft.y = std::min(p.y, topLeft.y);
-        bottomRight.x = std::max(p.x, bottomRight.x);
-        bottomRight.y = std::max(p.y, bottomRight.y);
-    }
-};
-
-class EventQueue;
-class SweepStatus;
 
 struct Lower {
     // All Lowers are equal.

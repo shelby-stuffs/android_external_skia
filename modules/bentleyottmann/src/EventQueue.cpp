@@ -3,6 +3,11 @@
 
 #include "modules/bentleyottmann/include/EventQueue.h"
 
+#include "include/private/base/SkAssert.h"
+#include <algorithm>
+#include <cstdint>
+#include <utility>
+
 namespace bentleyottmann {
 
 // -- EventQueue -----------------------------------------------------------------------------------
@@ -98,7 +103,7 @@ void EventQueue::handleNextEventPoint(SweepLineInterface* handler) {
     const auto queueEnd = fQueue.end();
     for (; cursor != queueEnd && cursor->where == eventPoint;
          ++cursor) {
-        const Event event = *cursor;
+        const Event& event = *cursor;
         std::visit(visitor, event.type);
     }
 
