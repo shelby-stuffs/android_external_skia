@@ -6,14 +6,15 @@
 
 #include "modules/bentleyottmann/include/Point.h"
 
+#include <cstdint>
 #include <optional>
 #include <tuple>
 
 namespace bentleyottmann {
 
 struct Segment {
-    const Point p0;
-    const Point p1;
+    Point p0;
+    Point p1;
 
     // Y is larger going down the y-axis.
     // Get the higher point. It will be left most for horizontal segment.
