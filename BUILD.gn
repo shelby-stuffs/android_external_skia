@@ -28,6 +28,8 @@ import("gn/ios.gni")
 config("skia_public") {
   include_dirs = [ "." ]
 
+  # TODO(kjlubick) Put this back after fixing Flutter.
+  # defines = [ "SK_DEFAULT_TYPEFACE_IS_EMPTY" ]
   defines = []
   cflags_objcc = []
   if (is_component_build) {
@@ -975,6 +977,10 @@ optional("gpu") {
   libs = []
   frameworks = []
 
+  if (is_android) {
+    sources += skia_gpu_android_private
+  }
+
   if (skia_use_gl) {
     public_defines += [ "SK_GL" ]
     if (is_android) {
@@ -982,6 +988,7 @@ optional("gpu") {
         "src/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.cpp",
         "src/gpu/ganesh/gl/egl/GrGLMakeNativeInterface_egl.cpp",
       ]
+      sources += skia_android_gl_sources
 
       # this lib is required to link against AHardwareBuffer
       if (defined(ndk_api) && ndk_api >= 26) {
@@ -1026,6 +1033,9 @@ optional("gpu") {
       } else {
         public_deps += [ "//src/graphics/lib/vulkan" ]
       }
+    }
+    if (is_android) {
+      sources += skia_gpu_vk_android_private
     }
   }
 
@@ -1736,10 +1746,6 @@ group("modules") {
   }
 }
 
-group("experimental") {
-  deps = [ "experimental/sktext" ]
-}
-
 config("our_vulkan_headers") {
   include_dirs = [ "include/third_party/vulkan" ]
 }
@@ -2319,7 +2325,6 @@ if (skia_enable_tools) {
       ":test",
       ":tool_utils",
       ":typeface_fontations_tests",
-      "experimental/sktext:tests",
       "modules/bentleyottmann:tests",
       "modules/skottie:tests",
       "modules/skparagraph:tests",
@@ -2636,6 +2641,7 @@ if (skia_enable_tools) {
       "tools/debugger/DebugLayerManager.cpp",
       "tools/debugger/DrawCommand.cpp",
       "tools/debugger/JsonWriteBuffer.cpp",
+      "tools/fonts/FontToolUtils.cpp",
     ]
     if (skia_enable_graphite && skia_enable_precompile) {
       sources += [ "fuzz/FuzzPrecompile.cpp" ]
@@ -2985,8 +2991,6 @@ if (skia_enable_tools) {
         ":tool_utils",
         ":trace",
         ":xml",
-        "experimental/sktext",
-        "experimental/sktext:slides",
         "modules/audioplayer",
         "modules/skottie",
         "modules/skottie:utils",
@@ -3040,16 +3044,6 @@ if (skia_enable_tools) {
       sources = [ "$ndk/$ndk_gdbserver" ]
       outputs = [ "$root_out_dir/gdbserver" ]
     }
-  }
-
-  test_app("editor") {
-    is_shared_library = is_android
-    deps = [ "modules/skplaintexteditor:editor_app" ]
-  }
-
-  test_app("text_editor") {
-    is_shared_library = is_android
-    deps = [ "experimental/sktext:text_editor" ]
   }
 
   skia_executable("image_diff_metric") {
