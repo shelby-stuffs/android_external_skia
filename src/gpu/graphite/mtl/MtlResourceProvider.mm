@@ -143,10 +143,11 @@ sk_sp<GraphicsPipeline> MtlResourceProvider::createGraphicsPipeline(
         return nullptr;
     }
 
-    std::string vsSkSL = BuildVertexSkSL(fSharedContext->caps()->resourceBindingRequirements(),
-                                         step,
-                                         useShadingSsboIndex,
-                                         localCoordsNeeded);
+    VertSkSLInfo vsSkSLInfo = BuildVertexSkSL(fSharedContext->caps()->resourceBindingRequirements(),
+                                              step,
+                                              useShadingSsboIndex,
+                                              localCoordsNeeded);
+    const std::string& vsSkSL = vsSkSLInfo.fSkSL;
     if (!SkSLToMSL(&skslCompiler,
                    vsSkSL,
                    SkSL::ProgramKind::kGraphiteVertex,
@@ -232,7 +233,7 @@ sk_sp<Texture> MtlResourceProvider::createTexture(SkISize dimensions,
 }
 
 sk_sp<Texture> MtlResourceProvider::createWrappedTexture(const BackendTexture& texture) {
-    MtlHandle mtlHandleTexture = texture.getMtlTexture();
+    CFTypeRef mtlHandleTexture = texture.getMtlTexture();
     if (!mtlHandleTexture) {
         return nullptr;
     }
@@ -343,12 +344,12 @@ BackendTexture MtlResourceProvider::onCreateBackendTexture(SkISize dimensions,
     if (!texture) {
         return {};
     }
-    return BackendTexture(dimensions, (Handle)texture.release());
+    return BackendTexture(dimensions, (CFTypeRef)texture.release());
 }
 
 void MtlResourceProvider::onDeleteBackendTexture(const BackendTexture& texture) {
     SkASSERT(texture.backend() == BackendApi::kMetal);
-    MtlHandle texHandle = texture.getMtlTexture();
+    CFTypeRef texHandle = texture.getMtlTexture();
     SkCFSafeRelease(texHandle);
 }
 

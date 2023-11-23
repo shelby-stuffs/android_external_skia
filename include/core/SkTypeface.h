@@ -105,7 +105,7 @@ public:
     SkTypefaceID uniqueID() const { return fUniqueID; }
 
     /** Returns true if the two typefaces reference the same underlying font,
-        handling either being null (treating null as the default font)
+        handling either being null (treating null as not equal to any font).
      */
     static bool Equal(const SkTypeface* facea, const SkTypeface* faceb);
 
@@ -113,6 +113,8 @@ public:
     /** Returns the default normal typeface, which is never nullptr. */
     static sk_sp<SkTypeface> MakeDefault();
 #endif
+    /** Returns a non-null typeface which contains no glyphs. */
+    static sk_sp<SkTypeface> MakeEmpty();
 
     /** Creates a new reference to the typeface that most closely matches the
         requested familyName and fontStyle. This method allows extended font
@@ -479,12 +481,10 @@ private:
     };
     static SkFontStyle FromOldStyle(Style oldStyle);
     static SkTypeface* GetDefaultTypeface(Style style = SkTypeface::kNormal);
-    static sk_sp<SkTypeface> MakeEmpty();
 
     friend class SkFontPriv;         // GetDefaultTypeface
     friend class SkPaintPriv;        // GetDefaultTypeface
     friend class SkFont;             // getGlyphToUnicodeMap
-    friend class SkPictureData;      // MakeEmpty
 
 private:
     SkTypefaceID        fUniqueID;

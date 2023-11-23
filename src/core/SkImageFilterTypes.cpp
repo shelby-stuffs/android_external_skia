@@ -8,7 +8,6 @@
 #include "src/core/SkImageFilterTypes.h"
 
 #include "include/core/SkAlphaType.h"
-#include "include/core/SkBitmap.h"
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkBlender.h"
 #include "include/core/SkCanvas.h"
@@ -228,7 +227,8 @@ bool decal_tiling_differs_from_aa(const LayerSpace<SkMatrix> transform,
     // transformed 'imageBounds', then the sampling would not access texels outside the image bounds
     if (SkRectPriv::QuadContainsRect(SkMatrix(transform),
                                      SkIRect(imageBounds),
-                                     SkIRect(bufferedSampleBounds.roundOut()))) {
+                                     SkIRect(bufferedSampleBounds.roundOut()),
+                                     kRoundEpsilon)) {
         return false;
     }
 
@@ -370,12 +370,7 @@ public:
                                                   this->colorType(),
                                                   kPremul_SkAlphaType,
                                                   std::move(colorSpace));
-        SkBitmap bitmap;
-        if (!bitmap.tryAllocPixels(imageInfo)) {
-            return nullptr;
-        }
-
-        return sk_make_sp<SkBitmapDevice>(bitmap, props ? *props : this->surfaceProps());
+        return SkBitmapDevice::Create(imageInfo, props ? *props : this->surfaceProps());
     }
 
     sk_sp<SkSpecialImage> makeImage(const SkIRect& subset, sk_sp<SkImage> image) const override {
@@ -681,7 +676,8 @@ SkEnumBitMask<FilterResult::BoundsAnalysis> FilterResult::analyzeBounds(
             // won't be visible; otherwise add the analysis flag.
             if (!SkRectPriv::QuadContainsRect(SkMatrix::Concat(xtraTransform, SkMatrix(fTransform)),
                                               SkIRect::MakeSize(fImage->dimensions()),
-                                              dstBounds)) {
+                                              dstBounds,
+                                              kRoundEpsilon)) {
                 // We add the effects-visible flag for any reason, but we only mark the effect as
                 // filling layer bounds if there's an effect that applies *before* the layer clip.
                 // If it's just a non-transparency-preserving blend, that applies after the layer
@@ -709,7 +705,8 @@ SkEnumBitMask<FilterResult::BoundsAnalysis> FilterResult::analyzeBounds(
         // NOTE: For the identity transform, this is equal to !fLayerBounds.contains(dstBounds)
         if (!SkRectPriv::QuadContainsRect(SkMatrix(xtraTransform),
                                           SkIRect(fLayerBounds),
-                                          dstBounds)) {
+                                          dstBounds,
+                                          kRoundEpsilon)) {
             analysis |= BoundsAnalysis::kLayerCropVisible;
         }
     }
@@ -1064,25 +1061,7 @@ void FilterResult::draw(const Context& ctx,
                         SkDevice* device,
                         bool preserveDeviceState,
                         const SkBlender* blender) const {
-    bool blendAffectsTransparentBlack = false;
-    if (blender) {
-        if (auto blendMode = as_BB(blender)->asBlendMode()) {
-            SkBlendModeCoeff src, dst;
-            if (SkBlendMode_AsCoeff(*blendMode, &src, &dst)) {
-                // If the source is (0,0,0,0), then dst is preserved as long as its coefficient
-                // evaluates to 1.0. This is true for kOne, kISA, and kISC. Anything else means the
-                // blend mode affects transparent black.
-                blendAffectsTransparentBlack =
-                        dst != SkBlendModeCoeff::kOne &&
-                        dst != SkBlendModeCoeff::kISA &&
-                        dst != SkBlendModeCoeff::kISC;
-            } // else an advanced blend mode, which do not affect transparent black
-        } else {
-            // Blenders that aren't blend modes are assumed to modify transparent black.
-            blendAffectsTransparentBlack = true;
-        }
-    } // else src-over default, which does not modify transparent black
-
+    const bool blendAffectsTransparentBlack = blender && as_BB(blender)->affectsTransparentBlack();
     if (!fImage) {
         // The image is transparent black, this is a no-op unless we need to apply the blend mode
         if (blendAffectsTransparentBlack) {

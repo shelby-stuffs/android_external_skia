@@ -40,6 +40,7 @@
 #include "include/private/chromium/Slug.h"
 #include "include/utils/SkNoDrawCanvas.h"
 #include "src/base/SkMSAN.h"
+#include "src/core/SkBlenderBase.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkImageFilterTypes.h"
@@ -53,6 +54,7 @@
 #include "src/core/SkSurfacePriv.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/core/SkVerticesPriv.h"
+#include "src/effects/colorfilters/SkColorFilterBase.h"
 #include "src/image/SkSurface_Base.h"
 #include "src/text/GlyphRun.h"
 #include "src/utils/SkPatchUtils.h"
@@ -67,7 +69,6 @@
 
 #if defined(SK_RESOLVE_FILTERS_BEFORE_RESTORE)
 #include "src/core/SkMatrixUtils.h"
-#include "src/effects/colorfilters/SkColorFilterBase.h"
 #endif
 
 #define RETURN_ON_NULL(ptr)     do { if (nullptr == (ptr)) return; } while (0)
@@ -775,28 +776,30 @@ void SkCanvas::internalDrawDeviceWithFilter(SkDevice* src,
         if (!srcToLayer.inverseMapRect(requiredInput, &srcSubset)) {
             return;
         }
-        if (!srcSubset.intersect(skif::LayerSpace<SkIRect>(SkIRect::MakeSize(src->size())))) {
+
+        auto availSrc = srcSubset;
+        if (!availSrc.intersect(skif::LayerSpace<SkIRect>(SkIRect::MakeSize(src->size())))) {
             // We apply clamp tiling for unavailable pixels for backdrop filters. For forward
             // filters, this should have been detected as an unnecessary layer or a filter that
             // could be invoked on an empty input and never reached internalDrawDeviceWithFilter.
             SkASSERT(compat == DeviceCompatibleWithFilter::kUnknown);
-            srcSubset = skif::LayerSpace<SkIRect>(SkRectPriv::ClosestDisjointEdge(
+            availSrc = skif::LayerSpace<SkIRect>(SkRectPriv::ClosestDisjointEdge(
                     SkIRect::MakeSize(src->size()),
-                    SkIRect(srcSubset)));
+                    SkIRect(availSrc)));
         }
 
         if (SkMatrix(srcToLayer).isScaleTranslate()) {
             // Apply the srcToLayer transformation directly while snapping an image from the src
             // device. Calculate the subset of requiredInput that corresponds to srcSubset that was
             // restricted to the actual src dimensions.
-            auto requiredSubset = srcToLayer.mapRect(srcSubset);
-            if (requiredSubset.width() == srcSubset.width() &&
-                requiredSubset.height() == srcSubset.height()) {
+            auto requiredSubset = srcToLayer.mapRect(availSrc);
+            if (requiredSubset.width() == availSrc.width() &&
+                requiredSubset.height() == availSrc.height()) {
                 // Unlike snapSpecialScaled(), snapSpecial() can avoid a copy when the underlying
                 // representation permits it.
-                source = {src->snapSpecial(SkIRect(srcSubset)), requiredSubset.topLeft()};
+                source = {src->snapSpecial(SkIRect(availSrc)), requiredSubset.topLeft()};
             } else {
-                source = {src->snapSpecialScaled(SkIRect(srcSubset),
+                source = {src->snapSpecialScaled(SkIRect(availSrc),
                                                  SkISize(requiredSubset.size())),
                           requiredSubset.topLeft()};
             }
@@ -809,9 +812,11 @@ void SkCanvas::internalDrawDeviceWithFilter(SkDevice* src,
         if (!requiredInput.isEmpty() && !source) {
             // Snap the source image at its original resolution and then apply srcToLayer to map to
             // the effective layer coordinate space.
-            source = {src->snapSpecial(SkIRect(srcSubset)), srcSubset.topLeft()};
+            source = {src->snapSpecial(SkIRect(availSrc)), availSrc.topLeft()};
             // We adjust the desired output of the applyCrop() because ctx was original set to
-            // fulfill 'requiredInput', which is valid *after* we apply srcToLayer.
+            // fulfill 'requiredInput', which is valid *after* we apply srcToLayer. Use the original
+            // 'srcSubset' for the desired output so that the kClamp applied to the available subset
+            // is not discarded as a no-op.
             source = source.applyCrop(ctx.withNewDesiredOutput(srcSubset),
                                       source.layerBounds(),
                                       SkTileMode::kClamp)
@@ -1144,18 +1149,28 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec,
             contentBounds,
             must_cover_prior_device(rec.fBackdrop, restorePaint));
 #else
-    const SkImageFilter* filter = rec.fPaint ? rec.fPaint->getImageFilter() : nullptr;
 
-    // When this is true, restoring the layer filled with unmodified prior contents should be
+    const SkImageFilter* filter = rec.fPaint ? rec.fPaint->getImageFilter() : nullptr;
+    const SkColorFilter* cf = restorePaint.getColorFilter();
+    const SkBlender* blender = restorePaint.getBlender();
+
+    // When this is false, restoring the layer filled with unmodified prior contents should be
     // identical to the prior contents, so we can restrict the layer even more than just the
     // clip bounds. A regular filter applied to a layer initialized with prior contents is somewhat
     // analogous to a backdrop filter so they are treated the same.
-    const bool trivialRestore = !rec.fBackdrop &&
-                                (!(rec.fSaveLayerFlags & kInitWithPrevious_SaveLayerFlag) ||
-                                 (!restorePaint.getColorFilter() &&
-                                  !restorePaint.getBlender() &&
-                                  restorePaint.getAlphaf() >= 1.f &&
-                                  !filter));
+    const bool filtersPriorDevice = rec.fBackdrop ||
+            ((rec.fSaveLayerFlags & kInitWithPrevious_SaveLayerFlag) &&
+             (filter || cf || blender || restorePaint.getAlphaf() < 1.f));
+    // If the restorePaint has a transparency-affecting colorfilter or blender, the output is
+    // unbounded during restore(). `internalDrawDeviceWithFilter` automatically applies these
+    // effects. When there's no image filter, SkDevice::drawDevice is used, which does
+    // not apply effects beyond the layer's image so we mark `trivialRestore` as false too.
+    // TODO: drawDevice() could be updated to apply transparency-affecting effects to a content-
+    // clipped image, but this is the simplest solution when considering document-based SkDevices.
+    const bool drawDeviceMustFillClip = !filter &&
+            ((cf && as_CFB(cf)->affectsTransparentBlack()) ||
+                (blender && as_BB(blender)->affectsTransparentBlack()));
+    const bool trivialRestore = !filtersPriorDevice && !drawDeviceMustFillClip;
 
     // Size the new layer relative to the prior device, which may already be aligned for filters.
     SkDevice* priorDevice = this->topDevice();

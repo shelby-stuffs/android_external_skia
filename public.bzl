@@ -544,6 +544,8 @@ BASE_SRCS_ALL = [
     "src/core/SkMipmapAccessor.h",
     "src/core/SkMipmapBuilder.cpp",
     "src/core/SkMipmapBuilder.h",
+    "src/core/SkMipmapDrawDownSampler.cpp",
+    "src/core/SkMipmapHQDownSampler.cpp",
     "src/core/SkNextID.h",
     "src/core/SkOSFile.h",
     "src/core/SkOpts.cpp",
