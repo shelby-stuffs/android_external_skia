@@ -2359,12 +2359,12 @@ DEF_TEST(SkRasterPipeline_Jump, r) {
     alignas(64) static constexpr float kColorGreen[4]   = {0.0f, 1.0f, 0.0f, 1.0f};
     const int offset = 2;
 
-    // Make a program which jumps over an append_constant_color op.
+    // Make a program which jumps over an appendConstantColor op.
     SkArenaAlloc alloc(/*firstHeapAllocation=*/256);
     SkRasterPipeline p(&alloc);
-    p.append_constant_color(&alloc, kColorGreen);      // assign green
+    p.appendConstantColor(&alloc, kColorGreen);        // assign green
     p.append(SkRasterPipelineOp::jump, &offset);       // jump over the dark-red color assignment
-    p.append_constant_color(&alloc, kColorDarkRed);    // (not executed)
+    p.appendConstantColor(&alloc, kColorDarkRed);      // (not executed)
     p.append(SkRasterPipelineOp::store_src, slots);    // store the result so we can check it
     p.run(0,0,1,1);
 
@@ -2838,80 +2838,6 @@ DEF_TEST(SkRasterPipeline_tail, r) {
     }
 
     {
-        float data[][2] = {
-            {00, 01},
-            {10, 11},
-            {20, 21},
-            {30, 31},
-        };
-
-        float buffer[4][4];
-
-        SkRasterPipeline_MemoryCtx src = { &data[0][0], 0 },
-                dst = { &buffer[0][0], 0 };
-
-        for (unsigned i = 1; i <= 4; i++) {
-            memset(buffer, 0xff, sizeof(buffer));
-            SkRasterPipeline_<256> p;
-            p.append(SkRasterPipelineOp::load_rgf32, &src);
-            p.append(SkRasterPipelineOp::store_f32, &dst);
-            p.run(0,0, i,1);
-            for (unsigned j = 0; j < i; j++) {
-                for (unsigned k = 0; k < 2; k++) {
-                    if (buffer[j][k] != data[j][k]) {
-                        ERRORF(r, "(%u, %u) - a: %g r: %g\n", j, k, data[j][k], buffer[j][k]);
-                    }
-                }
-                if (buffer[j][2] != 0) {
-                    ERRORF(r, "(%u, 2) - a: 0 r: %g\n", j, buffer[j][2]);
-                }
-                if (buffer[j][3] != 1) {
-                    ERRORF(r, "(%u, 3) - a: 1 r: %g\n", j, buffer[j][3]);
-                }
-            }
-            for (int j = i; j < 4; j++) {
-                for (auto f : buffer[j]) {
-                    REPORTER_ASSERT(r, SkScalarIsNaN(f));
-                }
-            }
-        }
-    }
-
-    {
-        float data[][4] = {
-            {00, 01, 02, 03},
-            {10, 11, 12, 13},
-            {20, 21, 22, 23},
-            {30, 31, 32, 33},
-        };
-
-        float buffer[4][2];
-
-        SkRasterPipeline_MemoryCtx src = { &data[0][0], 0 },
-                dst = { &buffer[0][0], 0 };
-
-        for (unsigned i = 1; i <= 4; i++) {
-            memset(buffer, 0xff, sizeof(buffer));
-            SkRasterPipeline_<256> p;
-            p.append(SkRasterPipelineOp::load_f32, &src);
-            p.append(SkRasterPipelineOp::store_rgf32, &dst);
-            p.run(0,0, i,1);
-            for (unsigned j = 0; j < i; j++) {
-                for (unsigned k = 0; k < 2; k++) {
-                    if (buffer[j][k] != data[j][k]) {
-                        ERRORF(r, "(%u, %u) - a: %g r: %g\n", j, k, data[j][k], buffer[j][k]);
-                    }
-                }
-            }
-            for (int j = i; j < 4; j++) {
-                for (auto f : buffer[j]) {
-                    REPORTER_ASSERT(r, SkScalarIsNaN(f));
-                }
-            }
-        }
-    }
-
-    {
         alignas(8) uint16_t data[][4] = {
             {h(00), h(01), h(02), h(03)},
             {h(10), h(11), h(12), h(13)},
@@ -3231,10 +3157,12 @@ DEF_TEST(SkRasterPipeline_swizzle, r) {
     }
     // This takes the highp code path
     {
-        float rg[64][2];
+        float rg[64][4];
         for (int i = 0; i < 64; i++) {
             rg[i][0] = i + 1;
             rg[i][1] = 2 * i + 1;
+            rg[i][2] = 0;
+            rg[i][3] = 1;
         }
 
         skgpu::Swizzle swizzle("0gra");
@@ -3243,7 +3171,7 @@ DEF_TEST(SkRasterPipeline_swizzle, r) {
         SkRasterPipeline_MemoryCtx src = { rg,     0 },
                                    dst = { buffer, 0};
         SkRasterPipeline_<256> p;
-        p.append(SkRasterPipelineOp::load_rgf32,  &src);
+        p.append(SkRasterPipelineOp::load_f32,  &src);
         swizzle.apply(&p);
         p.append(SkRasterPipelineOp::store_f16, &dst);
         p.run(0,0,64,1);
@@ -3369,11 +3297,11 @@ DEF_TEST(SkRasterPipeline_stack_rewind, r) {
         p.append(SkRasterPipelineOp::callback, stack.expectBaseline());
         p.append(SkRasterPipelineOp::load_8888,  &ptr);
         p.append(SkRasterPipelineOp::callback, stack.expectGrowth());
-        p.append_stack_rewind();
+        p.appendStackRewind();
         p.append(SkRasterPipelineOp::callback, stack.expectBaseline());
         p.append(SkRasterPipelineOp::swap_rb);
         p.append(SkRasterPipelineOp::callback, stack.expectGrowth());
-        p.append_stack_rewind();
+        p.appendStackRewind();
         p.append(SkRasterPipelineOp::callback, stack.expectBaseline());
         p.append(SkRasterPipelineOp::store_8888, &ptr);
         p.run(0,0,1,1);
