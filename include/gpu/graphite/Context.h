@@ -56,6 +56,9 @@ public:
     bool insertRecording(const InsertRecordingInfo&);
     bool submit(SyncToCpu = SyncToCpu::kNo);
 
+    /** Returns true if there is work that was submitted to the GPU that has not finished. */
+    bool hasUnfinishedGpuWork() const;
+
     void asyncRescaleAndReadPixels(const SkImage* image,
                                    const SkImageInfo& dstImageInfo,
                                    const SkIRect& srcRect,
@@ -189,6 +192,21 @@ private:
     friend class ContextPriv;
     friend class ContextCtorAccessor;
 
+    struct PixelTransferResult {
+        using ConversionFn = void(void* dst, const void* mappedBuffer);
+        // If null then the transfer could not be performed. Otherwise this buffer will contain
+        // the pixel data when the transfer is complete.
+        sk_sp<Buffer> fTransferBuffer;
+        // Size of the read.
+        SkISize fSize;
+        // RowBytes for transfer buffer data
+        size_t fRowBytes;
+        // If this is null then the transfer buffer will contain the data in the requested
+        // color type. Otherwise, when the transfer is done this must be called to convert
+        // from the transfer buffer's color type to the requested color type.
+        std::function<ConversionFn> fPixelConverter;
+    };
+
     SingleOwner* singleOwner() const { return &fSingleOwner; }
 
     // Must be called in Make() to handle one-time GPU setup operations that can possibly fail and
@@ -221,19 +239,11 @@ private:
                                SkImage::ReadPixelsCallback callback,
                                SkImage::ReadPixelsContext context);
 
+    void finalizeAsyncReadPixels(SkSpan<PixelTransferResult>,
+                                 SkImage::ReadPixelsCallback callback,
+                                 SkImage::ReadPixelsContext callbackContext);
+
     // Inserts a texture to buffer transfer task, used by asyncReadPixels methods
-    struct PixelTransferResult {
-        using ConversionFn = void(void* dst, const void* mappedBuffer);
-        // If null then the transfer could not be performed. Otherwise this buffer will contain
-        // the pixel data when the transfer is complete.
-        sk_sp<Buffer> fTransferBuffer;
-        // RowBytes for transfer buffer data
-        size_t fRowBytes;
-        // If this is null then the transfer buffer will contain the data in the requested
-        // color type. Otherwise, when the transfer is done this must be called to convert
-        // from the transfer buffer's color type to the requested color type.
-        std::function<ConversionFn> fPixelConverter;
-    };
     PixelTransferResult transferPixels(const TextureProxy*,
                                        const SkImageInfo& srcImageInfo,
                                        const SkColorInfo& dstColorInfo,
