@@ -147,6 +147,7 @@ static DEFINE_bool2(veryVerbose, V, false, "tell individual tests to be verbose.
 static DEFINE_bool(cpu, true, "Run CPU-bound work?");
 static DEFINE_bool(gpu, true, "Run GPU-bound work?");
 static DEFINE_bool(graphite, true, "Run Graphite work?");
+static DEFINE_bool(neverYieldToWebGPU, false, "Run Graphite with never-yield context option.");
 
 static DEFINE_bool(dryRun, false,
                    "just print the tests that would be run, without actually running them.");
@@ -297,14 +298,17 @@ static void register_codecs() {
 // We use a spinlock to make locking this in a signal handler _somewhat_ safe.
 static SkSpinlock*        gMutex = new SkSpinlock;
 static int                gPending;
+static int                gTotalCounts;
+static int                gDoneCounts = 1;
 static TArray<Running>*   gRunning = new TArray<Running>;
 
 static void done(const char* config, const char* src, const char* srcOptions, const char* name) {
     SkString id = SkStringPrintf("%s %s %s %s", config, src, srcOptions, name);
-    vlog("done  %s\n", id.c_str());
+    vlog("[%d/%d] done  %s\n", gDoneCounts, gTotalCounts, id.c_str());
     int pending;
     {
         SkAutoSpinlock lock(*gMutex);
+        gDoneCounts++;
         for (int i = 0; i < gRunning->size(); i++) {
             if (gRunning->at(i).id == id) {
                 gRunning->removeShuffle(i);
@@ -333,7 +337,7 @@ static void done(const char* config, const char* src, const char* srcOptions, co
 
 static void start(const char* config, const char* src, const char* srcOptions, const char* name) {
     SkString id = SkStringPrintf("%s %s %s %s", config, src, srcOptions, name);
-    vlog("start %s\n", id.c_str());
+    vlog("\tstart %s\n", id.c_str());
     SkAutoSpinlock lock(*gMutex);
     gRunning->push_back({id,SkGetThreadID()});
 }
@@ -976,7 +980,7 @@ static void push_sink(const SkCommandLineConfig& config, Sink* s) {
 
     // Try a simple Src as a canary.  If it fails, skip this sink.
     struct : public Src {
-        Result draw(SkCanvas* c) const override {
+        Result draw(SkCanvas* c, skiatest::graphite::GraphiteTestContext*) const override {
             c->drawRect(SkRect::MakeWH(1,1), SkPaint());
             return Result::Ok();
         }
@@ -1535,11 +1539,11 @@ static void run_ganesh_test(skiatest::Test test, const GrContextOptions& grCtxOp
     done("unit", "test", "", test.fName);
 }
 
-static void run_graphite_test(skiatest::Test test, skgpu::graphite::ContextOptions options) {
+static void run_graphite_test(skiatest::Test test, skiatest::graphite::TestOptions& options) {
     DMReporter reporter;
     if (!FLAGS_dryRun && !should_skip("_", "tests", "_", test.fName)) {
         AutoreleasePool pool;
-        test.modifyGraphiteContextOptions(&options);
+        test.modifyGraphiteContextOptions(&options.fContextOptions);
 
         skiatest::ReporterContext ctx(&reporter, SkString(test.fName));
         start("unit", "test", "", test.fName);
@@ -1592,8 +1596,10 @@ int main(int argc, char** argv) {
         gVLog = stderr;
     }
 
-    skgpu::graphite::ContextOptions graphiteCtxOptions;
-    // Currently no command line flags directly control the Graphite context options
+    skiatest::graphite::TestOptions graphiteOptions;
+    if (FLAGS_neverYieldToWebGPU) {
+        graphiteOptions.fNeverYieldToWebGPU = true;
+    }
 
     GrContextOptions grCtxOptions;
     CommonFlags::SetCtxOptions(&grCtxOptions);
@@ -1630,6 +1636,7 @@ int main(int argc, char** argv) {
     gather_tests();
     int testCount = gCPUTests->size() + gGaneshTests->size() + gGraphiteTests->size();
     gPending = gSrcs->size() * gSinks->size() + testCount;
+    gTotalCounts = gPending;
     info("%d srcs * %d sinks + %d tests == %d tasks\n",
          gSrcs->size(), gSinks->size(), testCount,
          gPending);
@@ -1663,7 +1670,7 @@ int main(int argc, char** argv) {
     // With the parallel work running, run serial tasks and tests here on main thread.
     for (Task& task : serial) { Task::Run(task); }
     for (skiatest::Test& test : *gGaneshTests) { run_ganesh_test(test, grCtxOptions); }
-    for (skiatest::Test& test : *gGraphiteTests) { run_graphite_test(test, graphiteCtxOptions); }
+    for (skiatest::Test& test : *gGraphiteTests) { run_graphite_test(test, graphiteOptions); }
 
     // Wait for any remaining parallel work to complete (including any spun off of serial tasks).
     parallel.wait();
