@@ -735,7 +735,7 @@ func (b *jobBuilder) deriveCompileTaskName() string {
 				"DDLTotal", "DDLRecord", "9x9", "BonusConfigs", "ColorSpaces", "GL",
 				"SkottieTracing", "SkottieWASM", "GpuTess", "DMSAAStats", "Mskp", "Docker", "PDF",
 				"Puppeteer", "SkottieFrames", "RenderSKP", "CanvasPerf", "AllPathsVolatile",
-				"WebGL2", "i5", "OldestSupportedSkpVersion", "NeverYield"}
+				"WebGL2", "i5", "OldestSupportedSkpVersion", "NeverYield", "Protected"}
 			keep := make([]string, 0, len(ec))
 			for _, part := range ec {
 				if !In(part, ignore) {
@@ -2197,6 +2197,7 @@ var shorthandToLabel = map[string]labelAndSavedOutputDir{
 	// Note: these paths are relative to the WORKSPACE in //example/external_client
 	"path_combiner":     {"//:path_combiner", ""},
 	"png_decoder":       {"//:png_decoder", ""},
+	"shape_text":        {"//:shape_text", ""},
 	"write_text_to_png": {"//:write_text_to_png", ""},
 
 	// Currently there is no way to tell Bazel "only test go_test targets", so we must group them

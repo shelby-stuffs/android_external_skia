@@ -163,13 +163,6 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		threadLimit = MAIN_THREAD_ONLY
 	}
 
-	if b.model("GalaxyS9", "GalaxyS20", "Pixel6", "Pixel7") {
-		// Only these four devices/gpus (MaliG72, MaliG77, MaliG78, MaliG720) seem
-		// to have functional EXT_protected_content implementations (please see
-		// skbug.com/14298#c6 for more details).
-		args = append(args, "--createProtected")
-	}
-
 	// Avoid issues with dynamically exceeding resource cache limits.
 	if b.matchExtraConfig("DISCARDABLE") {
 		threadLimit = MAIN_THREAD_ONLY
@@ -256,6 +249,17 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			}
 		}
 
+		if b.extraConfig("Protected") {
+			args = append(args, "--createProtected")
+			// The Protected jobs (for now) only run the unit tests
+			skip(ALL, "gm", ALL, ALL)
+			skip(ALL, "image", ALL, ALL)
+			skip(ALL, "lottie", ALL, ALL)
+			skip(ALL, "colorImage", ALL, ALL)
+			skip(ALL, "svg", ALL, ALL)
+			skip(ALL, "skp", ALL, ALL)
+		}
+
 		// The Tegra3 doesn't support MSAA
 		if b.gpu("Tegra3") ||
 			// We aren't interested in fixing msaa bugs on current iOS devices.
@@ -290,9 +294,6 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			}
 			if b.extraConfig("Dawn") {
 				configs = []string{"grdawn"}
-				// Could not readback from surface
-				// https://skbug.com/14105
-				skip(ALL, "gm", ALL, "tall_stretched_bitmaps")
 				// Shader doesn't compile
 				// https://skbug.com/14105
 				skip(ALL, "gm", ALL, "runtime_intrinsics_matrix")
@@ -533,10 +534,6 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		// Test reduced shader mode on iPhone 11 as representative iOS device
 		if b.model("iPhone11") && b.extraConfig("Metal") && !b.extraConfig("Graphite") {
 			configs = append(configs, "mtlreducedshaders")
-		}
-
-		if b.gpu("AppleM1") && !b.extraConfig("Metal") {
-			skip(ALL, "test", ALL, "TransferPixelsFromTextureTest") // skia:11814
 		}
 
 		if b.model(DONT_REDUCE_OPS_TASK_SPLITTING_MODELS...) {
