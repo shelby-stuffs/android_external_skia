@@ -181,7 +181,9 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 
 	sampleCount := 0
 	glPrefix := ""
-	if b.extraConfig("SwiftShader") {
+	if b.extraConfig("NeverYield") {
+		configs = append(configs, "grdawn_neveryield")
+	} else if b.extraConfig("SwiftShader") {
 		configs = append(configs, "vk", "vkdmsaa")
 		// skbug.com/12826
 		skip(ALL, "test", ALL, "GrThreadSafeCache16Verts")
@@ -277,17 +279,6 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		// Graphite task *only* runs the gr*** configs
 		if b.extraConfig("Graphite") {
 			args = append(args, "--nogpu") // disable non-Graphite tests
-
-			// Failed to make lazy image.
-			skip(ALL, "gm", ALL, "image_subset")
-
-			// Could not readback from surface.
-			skip(ALL, "gm", ALL, "hugebitmapshader")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_no_bleed")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_text_up")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_dog_down")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_dog_up")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_rose")
 
 			if b.extraConfig("Metal") {
 				configs = []string{"grmtl"}
@@ -1365,6 +1356,10 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 	}
 	if b.extraConfig("ReleaseAndAbandonGpuContext") {
 		args = append(args, "--releaseAndAbandonGpuContext")
+	}
+
+	if b.extraConfig("NeverYield") {
+		args = append(args, "--neverYieldToWebGPU")
 	}
 
 	if b.extraConfig("FailFlushTimeCallbacks") {

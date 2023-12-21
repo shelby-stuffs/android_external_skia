@@ -644,10 +644,17 @@ void Device::drawVertices(const SkVertices* vertices, sk_sp<SkBlender> blender,
 }
 
 void Device::drawOval(const SkRect& oval, const SkPaint& paint) {
-    // TODO: This has wasted effort from the SkCanvas level since it instead converts rrects that
-    // happen to be ovals into this, only for us to go right back to rrect.
-    this->drawGeometry(this->localToDeviceTransform(), Geometry(Shape(SkRRect::MakeOval(oval))),
-                       paint, SkStrokeRec(paint));
+    if (paint.getPathEffect()) {
+        // Dashing requires that the oval path starts on the right side and travels clockwise. This
+        // is the default for the SkPath::Oval constructor, as used by SkBitmapDevice.
+        this->drawGeometry(this->localToDeviceTransform(), Geometry(Shape(SkPath::Oval(oval))),
+                           paint, SkStrokeRec(paint));
+    } else {
+        // TODO: This has wasted effort from the SkCanvas level since it instead converts rrects
+        // that happen to be ovals into this, only for us to go right back to rrect.
+        this->drawGeometry(this->localToDeviceTransform(), Geometry(Shape(SkRRect::MakeOval(oval))),
+                           paint, SkStrokeRec(paint));
+    }
 }
 
 void Device::drawRRect(const SkRRect& rr, const SkPaint& paint) {
@@ -972,7 +979,13 @@ void Device::drawGeometry(const Transform& localToDevice,
     // atlas entries for the current draw will be flushed.
     const bool needsFlush = this->needsFlushBeforeDraw(numNewRenderSteps, dstReadReq);
     if (needsFlush) {
-        this->flushPendingWorkToRecorder();
+        if (pathAtlas != nullptr) {
+            // We need to flush work for all devices associated with the current Recorder.
+            // Otherwise we may end up with outstanding draws that depend on past atlas state.
+            fRecorder->priv().flushTrackedDevices();
+        } else {
+            this->flushPendingWorkToRecorder();
+        }
     }
 
     // If an atlas path renderer was chosen we need to insert the shape into the atlas and schedule
@@ -989,7 +1002,9 @@ void Device::drawGeometry(const Transform& localToDevice,
         // work to clear up space in the atlas. If we had already flushed once (which would have
         // cleared the atlas) then the atlas is too small for this shape.
         if (!atlasMask && !needsFlush) {
-            this->flushPendingWorkToRecorder();
+            // We need to flush work for all devices associated with the current Recorder.
+            // Otherwise we may end up with outstanding draws that depend on past atlas state.
+            fRecorder->priv().flushTrackedDevices();
 
             // Try inserting the shape again.
             atlasMask = pathAtlas->addShape(recorder(),
