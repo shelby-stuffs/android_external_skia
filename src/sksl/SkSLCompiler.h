@@ -45,13 +45,11 @@ constexpr int SK_LOCALINVOCATIONINDEX_BUILTIN =   29;
 namespace SkSL {
 
 class Inliner;
-class OutputStream;
 class ProgramUsage;
 class SymbolTable;
 enum class ProgramKind : int8_t;
 struct Program;
 struct ProgramSettings;
-struct ShaderCaps;
 
 struct Module {
     const Module*                                fParent = nullptr;
@@ -125,26 +123,6 @@ public:
                                             std::string text,
                                             ProgramSettings settings);
 
-    bool toSPIRV(Program& program, const ShaderCaps* caps, OutputStream& out);
-
-    bool toSPIRV(Program& program, const ShaderCaps* caps, std::string* out);
-
-    bool toGLSL(Program& program, const ShaderCaps* caps, OutputStream& out);
-
-    bool toGLSL(Program& program, const ShaderCaps* caps, std::string* out);
-
-    bool toHLSL(Program& program, const ShaderCaps* caps, OutputStream& out);
-
-    bool toHLSL(Program& program, const ShaderCaps* caps, std::string* out);
-
-    bool toMetal(Program& program, const ShaderCaps* caps, OutputStream& out);
-
-    bool toMetal(Program& program, const ShaderCaps* caps, std::string* out);
-
-    bool toWGSL(Program& program, const ShaderCaps* caps, OutputStream& out);
-
-    bool toWGSL(Program& program, const ShaderCaps* caps, std::string* out);
-
     void handleError(std::string_view msg, Position pos);
 
     std::string errorText(bool showCount = true);
@@ -200,10 +178,12 @@ private:
     static void FinalizeSettings(ProgramSettings* settings, ProgramKind kind);
 
     /**
-     * Returns all global elements (functions and global variables) as a self-contained Program. The
-     * optional source string is retained as the program's source.
+     * Returns all global elements (functions and global variables) as a self-contained Program.
+     * The optional source string is retained as the program's source.
      */
-    std::unique_ptr<SkSL::Program> releaseProgram(std::unique_ptr<std::string> source);
+    std::unique_ptr<SkSL::Program> releaseProgram(
+            std::unique_ptr<std::string> source,
+            std::vector<std::unique_ptr<SkSL::ProgramElement>> programElements);
 
     /** Optimize every function in the program. */
     bool optimize(Program& program);
