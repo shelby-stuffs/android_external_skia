@@ -78,17 +78,15 @@ public:
             const char* fLabel;
         };
         static const Config kConfigs[] = {
-            { CS::kDestination,         "Destination" },
-            { CS::kSRGB,                "sRGB" },
-            { CS::kSRGBLinear,          "Linear sRGB" },
-            { CS::kLab,                 "CIELAB" },
-            { CS::kOKLab,               "Oklab" },
-            { CS::kOKLabGamutMap,       "OklabGamutMap" },
-            { CS::kLCH,                 "LCH" },
-            { CS::kOKLCH,               "Oklch" },
-            { CS::kOKLCHGamutMap,       "OklchGamutMap" },
-            { CS::kHSL,                 "HSL" },
-            { CS::kHWB,                 "HWB" },
+            { CS::kDestination, "Destination" },
+            { CS::kSRGB,        "sRGB" },
+            { CS::kSRGBLinear,  "Linear sRGB" },
+            { CS::kLab,         "CIELAB" },
+            { CS::kOKLab,       "Oklab" },
+            { CS::kLCH,         "LCH" },
+            { CS::kOKLCH,       "Oklch" },
+            { CS::kHSL,         "HSL" },
+            { CS::kHWB,         "HWB" },
         };
         SkFont font = ToolUtils::DefaultFont();
 

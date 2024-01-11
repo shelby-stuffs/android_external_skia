@@ -8,14 +8,9 @@
 #ifndef skgpu_VulkanUtilsPriv_DEFINED
 #define skgpu_VulkanUtilsPriv_DEFINED
 
-#include <cstdint>
-#include <string>
-
 #include "include/gpu/vk/VulkanTypes.h"
 
 #include "include/core/SkColor.h"
-#include "src/gpu/PipelineUtils.h"
-#include "src/sksl/codegen/SkSLSPIRVCodeGenerator.h"
 
 #ifdef SK_BUILD_FOR_ANDROID
 #include <android/hardware_buffer.h>
@@ -23,29 +18,7 @@
 #include "src/gpu/vk/VulkanInterface.h"
 #endif
 
-namespace SkSL {
-
-enum class ProgramKind : int8_t;
-struct ProgramInterface;
-struct ProgramSettings;
-struct ShaderCaps;
-
-}  // namespace SkSL
-
 namespace skgpu {
-
-class ShaderErrorHandler;
-
-inline bool SkSLToSPIRV(const SkSL::ShaderCaps* caps,
-                        const std::string& sksl,
-                        SkSL::ProgramKind programKind,
-                        const SkSL::ProgramSettings& settings,
-                        std::string* spirv,
-                        SkSL::ProgramInterface* outInterface,
-                        ShaderErrorHandler* errorHandler) {
-    return SkSLToBackend(caps, &SkSL::ToSPIRV, /*backendLabel=*/nullptr,
-                         sksl, programKind, settings, spirv, outInterface, errorHandler);
-}
 
 static constexpr uint32_t VkFormatChannels(VkFormat vkFormat) {
     switch (vkFormat) {

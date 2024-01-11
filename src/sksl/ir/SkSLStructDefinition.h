@@ -49,6 +49,10 @@ public:
         return *fType;
     }
 
+    std::unique_ptr<ProgramElement> clone() const override {
+        return std::make_unique<StructDefinition>(fPosition, this->type());
+    }
+
     std::string description() const override;
 
 private:

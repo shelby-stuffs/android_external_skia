@@ -10,7 +10,6 @@
 #include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
-#include "src/sksl/codegen/SkSLSPIRVCodeGenerator.h"
 #include "src/sksl/ir/SkSLProgram.h"
 #include "tests/Test.h"
 
@@ -29,7 +28,7 @@ static void test(skiatest::Reporter* r,
         REPORTER_ASSERT(r, program);
     } else {
         std::string output;
-        REPORTER_ASSERT(r, SkSL::ToSPIRV(*program, SkSL::ShaderCapsFactory::Default(), &output));
+        REPORTER_ASSERT(r, compiler.toSPIRV(*program, SkSL::ShaderCapsFactory::Default(), &output));
     }
 }
 

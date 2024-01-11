@@ -30,6 +30,8 @@ public:
         return (Kind) fKind;
     }
 
+    virtual std::unique_ptr<ProgramElement> clone() const = 0;
+
 private:
     using INHERITED = IRNode;
 };

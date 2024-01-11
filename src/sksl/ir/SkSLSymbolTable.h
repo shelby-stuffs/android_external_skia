@@ -105,7 +105,7 @@ public:
      * Assigns a new name to the passed-in symbol. The old name will continue to exist in the symbol
      * table and point to the symbol.
      */
-    void renameSymbol(const Context& context, Symbol* symbol, std::string_view newName);
+    void renameSymbol(Symbol* symbol, std::string_view newName);
 
     /**
      * Returns true if the name refers to a type (user or built-in) in the current symbol table.
@@ -121,28 +121,16 @@ public:
      * Adds a symbol to this symbol table, without conferring ownership. The caller is responsible
      * for keeping the Symbol alive throughout the lifetime of the program/module.
      */
-    void addWithoutOwnershipOrDie(Symbol* symbol);
-    void addWithoutOwnership(const Context& context, Symbol* symbol);
+    void addWithoutOwnership(Symbol* symbol);
 
     /**
-     * Adds a symbol to this symbol table, conferring ownership. The symbol table will always be
-     * updated to reference the new symbol. If the symbol already exists, an error will be reported.
+     * Adds a symbol to this symbol table, conferring ownership; if the symbol already exists, an
+     * error will be reported. The symbol table will always be updated to reference the new symbol.
      */
     template <typename T>
-    T* add(const Context& context, std::unique_ptr<T> symbol) {
+    T* add(std::unique_ptr<T> symbol) {
         T* ptr = symbol.get();
-        this->addWithoutOwnership(context, this->takeOwnershipOfSymbol(std::move(symbol)));
-        return ptr;
-    }
-
-    /**
-     * Adds a symbol to this symbol table, conferring ownership. The symbol table will always be
-     * updated to reference the new symbol. If the symbol already exists, abort.
-     */
-    template <typename T>
-    T* addOrDie(std::unique_ptr<T> symbol) {
-        T* ptr = symbol.get();
-        this->addWithoutOwnershipOrDie(this->takeOwnershipOfSymbol(std::move(symbol)));
+        this->addWithoutOwnership(this->takeOwnershipOfSymbol(std::move(symbol)));
         return ptr;
     }
 
@@ -230,7 +218,6 @@ private:
     }
 
     Symbol* lookup(const SymbolKey& key) const;
-    bool addWithoutOwnership(Symbol* symbol);
 
     bool fBuiltin = false;
     bool fAtModuleBoundary = false;

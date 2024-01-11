@@ -10,32 +10,16 @@
 
 #import <Metal/Metal.h>
 
-#include "src/gpu/PipelineUtils.h"
-#include "src/sksl/codegen/SkSLMetalCodeGenerator.h"
+#include "src/sksl/ir/SkSLProgram.h"
 
 namespace SkSL {
-
-enum class ProgramKind : int8_t;
-struct ProgramInterface;
-struct ProgramSettings;
-struct ShaderCaps;
-
-}  // namespace SkSL
+    class Compiler;
+    enum class ProgramKind : int8_t;
+    struct ProgramSettings;
+}
 
 namespace skgpu {
-
 class ShaderErrorHandler;
-
-inline bool SkSLToMSL(const SkSL::ShaderCaps* caps,
-                      const std::string& sksl,
-                      SkSL::ProgramKind programKind,
-                      const SkSL::ProgramSettings& settings,
-                      std::string* msl,
-                      SkSL::ProgramInterface* outInterface,
-                      ShaderErrorHandler* errorHandler) {
-    return SkSLToBackend(caps, &SkSL::ToMetal, "MSL",
-                         sksl, programKind, settings, msl, outInterface, errorHandler);
-}
 
 bool MtlFormatIsDepthOrStencil(MTLPixelFormat);
 bool MtlFormatIsDepth(MTLPixelFormat);
@@ -53,7 +37,6 @@ const char* MtlFormatToString(MTLPixelFormat);
 #ifdef SK_BUILD_FOR_IOS
 bool MtlIsAppInBackground();
 #endif
-
-}  // namespace skgpu
+} // namespace skgpu
 
 #endif // skgpu_MtlUtilsPriv_DEFINED

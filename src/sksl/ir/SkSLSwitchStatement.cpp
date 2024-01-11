@@ -20,6 +20,7 @@
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLNop.h"
 #include "src/sksl/ir/SkSLSwitchCase.h"
+#include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/transform/SkSLTransform.h"
 
@@ -30,6 +31,18 @@
 using namespace skia_private;
 
 namespace SkSL {
+
+std::unique_ptr<Statement> SwitchStatement::clone() const {
+    StatementArray cases;
+    cases.reserve_exact(this->cases().size());
+    for (const std::unique_ptr<Statement>& stmt : this->cases()) {
+        cases.push_back(stmt->clone());
+    }
+    return std::make_unique<SwitchStatement>(fPosition,
+                                             this->value()->clone(),
+                                             std::move(cases),
+                                             SymbolTable::WrapIfBuiltin(this->symbols()));
+}
 
 std::string SwitchStatement::description() const {
     std::string result;

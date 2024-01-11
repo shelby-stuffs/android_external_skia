@@ -34,6 +34,8 @@ public:
     // Creates a discard-statement; reports errors via SkASSERT.
     static std::unique_ptr<Statement> Make(const Context& context, Position pos);
 
+    std::unique_ptr<Statement> clone() const override;
+
     std::string description() const override {
         return "discard;";
     }

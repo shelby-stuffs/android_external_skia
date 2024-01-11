@@ -128,7 +128,7 @@ void Transform::RenamePrivateSymbols(Context& context,
 
             // Update the symbol's name.
             const std::string* ownedName = symbols->takeOwnershipOfString(std::move(shortName));
-            symbols->renameSymbol(fContext, mutableSym, *ownedName);
+            symbols->renameSymbol(mutableSym, *ownedName);
         }
 
         void minifyFunctionName(const FunctionDeclaration* funcDecl) {
@@ -144,7 +144,7 @@ void Transform::RenamePrivateSymbols(Context& context,
                 // of them at once.)
                 Symbol* mutableSym = symbols->findMutable(funcDecl->name());
                 const std::string* ownedName = symbols->takeOwnershipOfString(std::move(shortName));
-                symbols->renameSymbol(fContext, mutableSym, *ownedName);
+                symbols->renameSymbol(mutableSym, *ownedName);
             }
         }
 

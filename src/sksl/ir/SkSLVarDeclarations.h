@@ -113,6 +113,8 @@ public:
         return fValue;
     }
 
+    std::unique_ptr<Statement> clone() const override;
+
     std::string description() const override;
 
 private:
@@ -160,6 +162,10 @@ public:
 
     const VarDeclaration& varDeclaration() const {
         return fDeclaration->as<VarDeclaration>();
+    }
+
+    std::unique_ptr<ProgramElement> clone() const override {
+        return std::make_unique<GlobalVarDeclaration>(this->declaration()->clone());
     }
 
     std::string description() const override {

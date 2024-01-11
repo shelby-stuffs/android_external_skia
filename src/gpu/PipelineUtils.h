@@ -8,34 +8,56 @@
 #ifndef skgpu_PipelineUtils_DEFINED
 #define skgpu_PipelineUtils_DEFINED
 
-#include <cstdint>
-#include <string>
+#include "include/gpu/ShaderErrorHandler.h"
+#include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/ir/SkSLProgram.h"
+#include "src/utils/SkShaderUtils.h"
 
-namespace SkSL {
 
-enum class ProgramKind : int8_t;
-struct Program;
-struct ProgramInterface;
-struct ProgramSettings;
-struct ShaderCaps;
-
-}  // namespace SkSL
-
+// This file houses utilities to be shared across pipelines of different backend types.
 namespace skgpu {
 
-class ShaderErrorHandler;
+bool SkSLToGLSL(const SkSL::ShaderCaps* caps,
+                const std::string& sksl,
+                SkSL::ProgramKind programKind,
+                const SkSL::ProgramSettings& settings,
+                std::string* glsl,
+                SkSL::Program::Interface*,
+                ShaderErrorHandler* errorHandler);
 
-/** Wrapper for the SkSL compiler with useful logging and error handling. */
-bool SkSLToBackend(const SkSL::ShaderCaps* caps,
-                   bool (*toBackend)(SkSL::Program&, const SkSL::ShaderCaps*, std::string*),
-                   const char* backendLabel,
-                   const std::string& sksl,
-                   SkSL::ProgramKind programKind,
-                   const SkSL::ProgramSettings& settings,
-                   std::string* output,
-                   SkSL::ProgramInterface* outInterface,
-                   ShaderErrorHandler* errorHandler);
+bool SkSLToSPIRV(const SkSL::ShaderCaps* caps,
+                 const std::string& sksl,
+                 SkSL::ProgramKind,
+                 const SkSL::ProgramSettings&,
+                 std::string* spirv,
+                 SkSL::Program::Interface*,
+                 ShaderErrorHandler*);
 
-}  // namespace skgpu
+bool SkSLToWGSL(const SkSL::ShaderCaps* caps,
+                const std::string& sksl,
+                SkSL::ProgramKind,
+                const SkSL::ProgramSettings&,
+                std::string* wgsl,
+                SkSL::Program::Interface*,
+                ShaderErrorHandler*);
+
+bool SkSLToMSL(const SkSL::ShaderCaps* caps,
+               const std::string& sksl,
+               SkSL::ProgramKind kind,
+               const SkSL::ProgramSettings& settings,
+               std::string* msl,
+               SkSL::Program::Interface* outInterface,
+               ShaderErrorHandler* errorHandler);
+
+bool SkSLToHLSL(const SkSL::ShaderCaps* caps,
+                const std::string& sksl,
+                SkSL::ProgramKind kind,
+                const SkSL::ProgramSettings& settings,
+                std::string* hlsl,
+                SkSL::Program::Interface* outInterface,
+                ShaderErrorHandler* errorHandler);
+
+} // namespace skgpu
 
 #endif // skgpu_PipelineUtils_DEFINED

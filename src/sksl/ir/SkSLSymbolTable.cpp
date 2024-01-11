@@ -10,9 +10,17 @@
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLFieldAccess.h"
+#include "src/sksl/ir/SkSLFieldSymbol.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
+#include "src/sksl/ir/SkSLFunctionReference.h"
+#include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLType.h"
+#include "src/sksl/ir/SkSLTypeReference.h"
+#include "src/sksl/ir/SkSLVariable.h"
+#include "src/sksl/ir/SkSLVariableReference.h"
 
 namespace SkSL {
 
@@ -68,7 +76,7 @@ Symbol* SymbolTable::lookup(const SymbolKey& key) const {
     return fParent ? fParent->lookup(key) : nullptr;
 }
 
-void SymbolTable::renameSymbol(const Context& context, Symbol* symbol, std::string_view newName) {
+void SymbolTable::renameSymbol(Symbol* symbol, std::string_view newName) {
     if (symbol->is<FunctionDeclaration>()) {
         // This is a function declaration, so we need to rename the entire overload set.
         for (FunctionDeclaration* fn = &symbol->as<FunctionDeclaration>(); fn != nullptr;
@@ -80,7 +88,7 @@ void SymbolTable::renameSymbol(const Context& context, Symbol* symbol, std::stri
         symbol->setName(newName);
     }
 
-    this->addWithoutOwnership(context, symbol);
+    this->addWithoutOwnership(symbol);
 }
 
 const std::string* SymbolTable::takeOwnershipOfString(std::string str) {
@@ -89,25 +97,11 @@ const std::string* SymbolTable::takeOwnershipOfString(std::string str) {
     return &fOwnedStrings.front();
 }
 
-void SymbolTable::addWithoutOwnership(const Context& context, Symbol* symbol) {
-    if (!this->addWithoutOwnership(symbol)) {
-        context.fErrors->error(symbol->position(),
-                               "symbol '" + std::string(symbol->name()) + "' was already defined");
-    }
-}
-
-void SymbolTable::addWithoutOwnershipOrDie(Symbol* symbol) {
-    if (!this->addWithoutOwnership(symbol)) {
-        SK_ABORT("symbol '%.*s' was already defined",
-                 (int)symbol->name().size(), symbol->name().data());
-    }
-}
-
-bool SymbolTable::addWithoutOwnership(Symbol* symbol) {
+void SymbolTable::addWithoutOwnership(Symbol* symbol) {
     if (symbol->name().empty()) {
         // We have legitimate use cases of nameless symbols, such as anonymous function parameters.
         // If we find one here, we don't need to add its name to the symbol table.
-        return true;
+        return;
     }
     auto key = MakeSymbolKey(symbol->name());
 
@@ -120,18 +114,24 @@ bool SymbolTable::addWithoutOwnership(Symbol* symbol) {
             FunctionDeclaration* existingDecl = &existingSymbol->as<FunctionDeclaration>();
             symbol->as<FunctionDeclaration>().setNextOverload(existingDecl);
             fSymbols[key] = symbol;
-            return true;
+            return;
         }
     }
 
+    Position pos = symbol->fPosition;
     if (fAtModuleBoundary && fParent && fParent->lookup(key)) {
         // We are attempting to declare a symbol at global scope that already exists in a parent
         // module. This is a duplicate symbol and should be rejected.
-        return false;
+    } else {
+        std::swap(symbol, fSymbols[key]);
+        if (symbol == nullptr) {
+            return;
+        }
+        // There was previously a symbol in the symbol table with this name; report an error.
     }
 
-    std::swap(symbol, fSymbols[key]);
-    return symbol == nullptr;
+    ThreadContext::ReportError("symbol '" + std::string(symbol->name()) + "' was already defined",
+                               pos);
 }
 
 void SymbolTable::injectWithoutOwnership(Symbol* symbol) {
@@ -155,17 +155,42 @@ const Type* SymbolTable::addArrayDimension(const Type* type, int arraySize) {
     }
     // Add a new array type to the symbol table.
     const std::string* arrayNamePtr = this->takeOwnershipOfString(std::move(arrayName));
-    return this->addOrDie(Type::MakeArrayType(*arrayNamePtr, *type, arraySize));
+    return this->add(Type::MakeArrayType(*arrayNamePtr, *type, arraySize));
 }
 
 std::unique_ptr<Expression> SymbolTable::instantiateSymbolRef(const Context& context,
                                                               std::string_view name,
                                                               Position pos) {
-    if (const Symbol* symbol = this->find(name)) {
-        return symbol->instantiate(context, pos);
+    const Symbol* result = this->find(name);
+    if (!result) {
+        context.fErrors->error(pos, "unknown identifier '" + std::string(name) + "'");
+        return nullptr;
     }
-    context.fErrors->error(pos, "unknown identifier '" + std::string(name) + "'");
-    return nullptr;
+
+    switch (result->kind()) {
+        case Symbol::Kind::kFunctionDeclaration:
+            return std::make_unique<FunctionReference>(context, pos,
+                                                       &result->as<FunctionDeclaration>());
+
+        case Symbol::Kind::kVariable: {
+            const Variable* var = &result->as<Variable>();
+            // default to kRead_RefKind; this will be corrected later if the variable is written to
+            return VariableReference::Make(pos, var, VariableReference::RefKind::kRead);
+        }
+        case Symbol::Kind::kField: {
+            const FieldSymbol* field = &result->as<FieldSymbol>();
+            auto base = VariableReference::Make(pos, &field->owner(),
+                                                VariableReference::RefKind::kRead);
+            return FieldAccess::Make(context, pos, std::move(base), field->fieldIndex(),
+                                     FieldAccess::OwnerKind::kAnonymousInterfaceBlock);
+        }
+        case Symbol::Kind::kType:
+            return TypeReference::Convert(context, pos, &result->as<Type>());
+
+        default:
+            SkDEBUGFAILF("unsupported symbol type %d\n", (int)result->kind());
+            return nullptr;
+    }
 }
 
 }  // namespace SkSL
