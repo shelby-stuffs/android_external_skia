@@ -26,4 +26,8 @@ std::unique_ptr<Statement> DiscardStatement::Make(const Context& context, Positi
     return std::make_unique<DiscardStatement>(pos);
 }
 
+std::unique_ptr<Statement> DiscardStatement::clone() const {
+    return std::make_unique<DiscardStatement>(fPosition);
+}
+
 }  // namespace SkSL

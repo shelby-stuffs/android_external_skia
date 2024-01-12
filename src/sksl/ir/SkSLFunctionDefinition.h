@@ -82,6 +82,8 @@ public:
 
     const SymbolTable* parameterSymbolTable() const;
 
+    std::unique_ptr<ProgramElement> clone() const override;
+
     std::string description() const override {
         return this->declaration().description() + " " + this->body()->description();
     }

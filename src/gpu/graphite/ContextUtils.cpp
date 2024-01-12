@@ -140,7 +140,7 @@ std::string get_uniforms(Layout layout,
         }
 
         SkSL::String::appendf(&result,
-                              "    layout(offset=%d) %s %s",
+                              "    layout(offset=%zu) %s %s",
                               offsetter.advanceOffset(u.type(), u.count()),
                               SkSLTypeString(u.type()),
                               uniformName.c_str());

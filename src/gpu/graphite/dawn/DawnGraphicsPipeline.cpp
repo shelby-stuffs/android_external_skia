@@ -21,7 +21,6 @@
 #include "src/gpu/graphite/dawn/DawnGraphiteUtilsPriv.h"
 #include "src/gpu/graphite/dawn/DawnResourceProvider.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
-#include "src/gpu/graphite/dawn/DawnUtilsPriv.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/ir/SkSLProgram.h"
@@ -283,13 +282,13 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
 
     bool hasFragmentSkSL = !fsSkSL.empty();
     if (hasFragmentSkSL) {
-        if (!skgpu::SkSLToWGSL(caps.shaderCaps(),
-                               fsSkSL,
-                               SkSL::ProgramKind::kGraphiteFragment,
-                               settings,
-                               &fsCode,
-                               &fsInterface,
-                               errorHandler)) {
+        if (!SkSLToWGSL(caps.shaderCaps(),
+                        fsSkSL,
+                        SkSL::ProgramKind::kGraphiteFragment,
+                        settings,
+                        &fsCode,
+                        &fsInterface,
+                        errorHandler)) {
             return {};
         }
         if (!DawnCompileWGSLShaderModule(sharedContext, fsCode, &fsModule, errorHandler)) {
@@ -302,13 +301,13 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
                                               useStorageBuffers,
                                               localCoordsNeeded);
     const std::string& vsSkSL = vsSkSLInfo.fSkSL;
-    if (!skgpu::SkSLToWGSL(caps.shaderCaps(),
-                           vsSkSL,
-                           SkSL::ProgramKind::kGraphiteVertex,
-                           settings,
-                           &vsCode,
-                           &vsInterface,
-                           errorHandler)) {
+    if (!SkSLToWGSL(caps.shaderCaps(),
+                    vsSkSL,
+                    SkSL::ProgramKind::kGraphiteVertex,
+                    settings,
+                    &vsCode,
+                    &vsInterface,
+                    errorHandler)) {
         return {};
     }
     if (!DawnCompileWGSLShaderModule(sharedContext, vsCode, &vsModule, errorHandler)) {

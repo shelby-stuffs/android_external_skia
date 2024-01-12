@@ -35,6 +35,10 @@ public:
         return ";";
     }
 
+    std::unique_ptr<Statement> clone() const override {
+        return std::make_unique<Nop>();
+    }
+
 private:
     using INHERITED = Statement;
 };

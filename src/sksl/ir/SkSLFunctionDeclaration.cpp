@@ -497,7 +497,6 @@ FunctionDeclaration* FunctionDeclaration::Convert(const Context& context,
         return decl;
     }
     return context.fSymbolTable->add(
-            context,
             std::make_unique<FunctionDeclaration>(context,
                                                   pos,
                                                   modifierFlags,
@@ -509,7 +508,7 @@ FunctionDeclaration* FunctionDeclaration::Convert(const Context& context,
 
 void FunctionDeclaration::addParametersToSymbolTable(const Context& context) {
     for (Variable* param : fParameters) {
-        context.fSymbolTable->addWithoutOwnership(context, param);
+        context.fSymbolTable->addWithoutOwnership(param);
     }
 }
 

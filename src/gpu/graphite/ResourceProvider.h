@@ -16,7 +16,6 @@
 #include "src/gpu/graphite/ResourceCache.h"
 #include "src/gpu/graphite/ResourceTypes.h"
 
-struct AHardwareBuffer;
 struct SkSamplingOptions;
 class SkTraceMemoryDump;
 

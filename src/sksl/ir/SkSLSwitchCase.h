@@ -51,6 +51,8 @@ public:
         return fStatement;
     }
 
+    std::unique_ptr<Statement> clone() const override;
+
     std::string description() const override;
 
 private:

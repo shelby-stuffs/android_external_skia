@@ -8,21 +8,15 @@
 #ifndef SKSL_SYMBOL
 #define SKSL_SYMBOL
 
-#include "include/private/base/SkAssert.h"
-#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLIRNode.h"
-
-#include <memory>
-#include <string_view>
+#include "src/sksl/ir/SkSLProgramElement.h"
 
 namespace SkSL {
 
-class Context;
-class Expression;
 class Type;
 
 /**
- * Represents a symbol table entry.
+ * Represents a symboltable entry.
  */
 class Symbol : public IRNode {
 public:
@@ -36,8 +30,6 @@ public:
     }
 
     ~Symbol() override {}
-
-    std::unique_ptr<Expression> instantiate(const Context& context, Position pos) const;
 
     const Type& type() const {
         SkASSERT(fType);

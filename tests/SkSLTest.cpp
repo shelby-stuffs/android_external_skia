@@ -39,7 +39,6 @@
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/SkSLUtil.h"
-#include "src/sksl/analysis/SkSLProgramVisitor.h"
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
 #include "src/sksl/codegen/SkSLRasterPipelineCodeGenerator.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
@@ -725,6 +724,7 @@ static void test_clone(skiatest::Reporter* r, const char* testFile, SkSLTestFlag
         return;
     }
     SkSL::ProgramSettings settings;
+    settings.fAllowVarDeclarationCloneForTesting = true;
     // TODO(skia:11209): Can we just put the correct #version in the source files that need this?
     settings.fMaxVersionAllowed = is_strict_es2(flags) ? SkSL::Version::k100 : SkSL::Version::k300;
     SkSL::Compiler compiler;
@@ -734,29 +734,16 @@ static void test_clone(skiatest::Reporter* r, const char* testFile, SkSLTestFlag
         ERRORF(r, "%s", compiler.errorText().c_str());
         return;
     }
-
-    // Clone every expression in the program, and ensure that its clone generates the same
-    // description as the original.
-    class CloneVisitor : public SkSL::ProgramVisitor {
-    public:
-        CloneVisitor(skiatest::Reporter* r) : fReporter(r) {}
-
-        bool visitExpression(const SkSL::Expression& expr) override {
-            std::string original = expr.description();
-            std::string cloned = expr.clone()->description();
-            REPORTER_ASSERT(fReporter, original == cloned,
-                            "Mismatch after clone!\nOriginal: %s\nCloned: %s\n",
-                            original.c_str(), cloned.c_str());
-
-            return INHERITED::visitExpression(expr);
-        }
-
-        skiatest::Reporter* fReporter;
-
-        using INHERITED = ProgramVisitor;
-    };
-
-    CloneVisitor{r}.visit(*program);
+    // We can't clone elements without a valid ThreadContext.
+    SkSL::ThreadContext::Start(&compiler, SkSL::ProgramKind::kFragment, settings);
+    for (const std::unique_ptr<SkSL::ProgramElement>& element : program->fOwnedElements) {
+        std::string original = element->description();
+        std::string cloned = element->clone()->description();
+        REPORTER_ASSERT(r, original == cloned,
+                "Mismatch after clone!\nOriginal: %s\nCloned: %s\n", original.c_str(),
+                cloned.c_str());
+    }
+    SkSL::ThreadContext::End();
 }
 
 static void report_rp_pass(skiatest::Reporter* r, const char* testFile, SkSLTestFlags flags) {

@@ -17,12 +17,10 @@
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/codegen/SkSLGLSLCodeGenerator.h"
-#include "src/sksl/codegen/SkSLHLSLCodeGenerator.h"
 #include "src/sksl/codegen/SkSLMetalCodeGenerator.h"
 #include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
 #include "src/sksl/codegen/SkSLRasterPipelineCodeGenerator.h"
-#include "src/sksl/codegen/SkSLSPIRVCodeGenerator.h"
 #include "src/sksl/codegen/SkSLWGSLCodeGenerator.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLProgram.h"
@@ -634,7 +632,7 @@ static ResultCode process_command(SkSpan<std::string> args) {
                                  const SkSL::ShaderCaps* shaderCaps,
                                  SkSL::Program& program,
                                  SkSL::OutputStream& out) {
-            return SkSL::ToSPIRV(program, shaderCaps, out);
+            return compiler.toSPIRV(program, shaderCaps, out);
         });
     } else if (skstd::ends_with(outputPath, ".asm.frag") ||
                skstd::ends_with(outputPath, ".asm.vert") ||
@@ -646,7 +644,7 @@ static ResultCode process_command(SkSpan<std::string> args) {
                    SkSL::OutputStream& out) {
                     // Compile program to SPIR-V assembly in a string-stream.
                     SkSL::StringStream assembly;
-                    if (!SkSL::ToSPIRV(program, shaderCaps, assembly)) {
+                    if (!compiler.toSPIRV(program, shaderCaps, assembly)) {
                         return false;
                     }
                     // Convert the string-stream to a SPIR-V disassembly.
@@ -682,7 +680,7 @@ static ResultCode process_command(SkSpan<std::string> args) {
                 [](SkSL::Compiler& compiler,
                    const SkSL::ShaderCaps* shaderCaps,
                    SkSL::Program& program,
-                   SkSL::OutputStream& out) { return SkSL::ToHLSL(program, shaderCaps, out); });
+                   SkSL::OutputStream& out) { return compiler.toHLSL(program, shaderCaps, out); });
     } else if (skstd::ends_with(outputPath, ".wgsl")) {
         return compileProgram(
                 [](SkSL::Compiler& compiler,

@@ -120,10 +120,9 @@ struct GradientShaderBlocks {
         int                    fNumStops;
 
         // For gradients w/ <= kNumInternalStorageStops stops we use fColors and fOffsets.
-        // The offsets are packed into a single float4 to save space when the layout is std140.
         // Otherwise we use fColorsAndOffsetsProxy.
         SkPMColor4f            fColors[kNumInternalStorageStops];
-        SkV4                   fOffsets[kNumInternalStorageStops / 4];
+        float                  fOffsets[kNumInternalStorageStops];
         sk_sp<TextureProxy>    fColorsAndOffsetsProxy;
 
         SkGradientShader::Interpolation fInterpolation;
@@ -191,7 +190,7 @@ struct YUVImageShaderBlock {
         SkTileMode fTileModes[2];
         SkISize fImgSize;
         SkRect fSubset;
-        SkV4 fChannelSelect[4];
+        SkColor4f fChannelSelect[4];
         SkMatrix fYUVtoRGBMatrix;
         SkPoint3 fYUVtoRGBTranslate;
 

@@ -181,12 +181,14 @@ void add_gradient_preamble(const GradientShaderBlocks::GradientData& gradData,
     if (gradData.fNumStops <= kInternalStopLimit) {
         if (gradData.fNumStops <= 4) {
             // Round up to 4 stops.
-            gatherer->writeArray(SkSpan{gradData.fColors, 4});
-            gatherer->write(gradData.fOffsets[0]);
+            gatherer->writeArray({gradData.fColors, 4});
+            // The offsets are packed into a single float4 to save space.
+            gatherer->write(SkSLType::kFloat4, &gradData.fOffsets);
         } else if (gradData.fNumStops <= 8) {
             // Round up to 8 stops.
-            gatherer->writeArray(SkSpan{gradData.fColors, 8});
-            gatherer->writeArray(SkSpan{gradData.fOffsets, 2});
+            gatherer->writeArray({gradData.fColors, 8});
+            // The offsets are packed into a float4 array to save space.
+            gatherer->writeArray(SkSLType::kFloat4, &gradData.fOffsets, 2);
         } else {
             // Did kNumInternalStorageStops change?
             SkUNREACHABLE;
@@ -205,14 +207,12 @@ void add_gradient_postamble(const GradientShaderBlocks::GradientData& gradData,
 
     constexpr int kInternalStopLimit = GradientShaderBlocks::GradientData::kNumInternalStorageStops;
 
-    static_assert(static_cast<int>(ColorSpace::kLab)           == 2);
-    static_assert(static_cast<int>(ColorSpace::kOKLab)         == 3);
-    static_assert(static_cast<int>(ColorSpace::kOKLabGamutMap) == 4);
-    static_assert(static_cast<int>(ColorSpace::kLCH)           == 5);
-    static_assert(static_cast<int>(ColorSpace::kOKLCH)         == 6);
-    static_assert(static_cast<int>(ColorSpace::kOKLCHGamutMap) == 7);
-    static_assert(static_cast<int>(ColorSpace::kHSL)           == 9);
-    static_assert(static_cast<int>(ColorSpace::kHWB)           == 10);
+    static_assert(static_cast<int>(ColorSpace::kLab)   == 2);
+    static_assert(static_cast<int>(ColorSpace::kOKLab) == 3);
+    static_assert(static_cast<int>(ColorSpace::kLCH)   == 4);
+    static_assert(static_cast<int>(ColorSpace::kOKLCH) == 5);
+    static_assert(static_cast<int>(ColorSpace::kHSL)   == 7);
+    static_assert(static_cast<int>(ColorSpace::kHWB)   == 8);
 
     bool inputPremul = static_cast<bool>(gradData.fInterpolation.fInPremul);
 
@@ -315,20 +315,19 @@ GradientShaderBlocks::GradientData::GradientData(SkShaderBase::GradientType type
 
     if (fNumStops <= kNumInternalStorageStops) {
         memcpy(fColors, colors, fNumStops * sizeof(SkColor4f));
-        float* rawOffsets = fOffsets[0].ptr();
         if (offsets) {
-            memcpy(rawOffsets, offsets, fNumStops * sizeof(float));
+            memcpy(fOffsets, offsets, fNumStops * sizeof(float));
         } else {
             for (int i = 0; i < fNumStops; ++i) {
-                rawOffsets[i] = SkIntToFloat(i) / (fNumStops-1);
+                fOffsets[i] = SkIntToFloat(i) / (fNumStops-1);
             }
         }
 
-        // Extend the colors and offset, if necessary, to fill out the arrays.
-        // The unrolled binary search implementation assumes excess stops match the last real value.
-        for (int i = fNumStops; i < kNumInternalStorageStops; ++i) {
+        // Extend the colors and offset, if necessary, to fill out the arrays
+        // TODO: this should be done later when the actual code snippet has been selected!!
+        for (int i = fNumStops ; i < kNumInternalStorageStops; ++i) {
             fColors[i] = fColors[fNumStops-1];
-            rawOffsets[i] = rawOffsets[fNumStops-1];
+            fOffsets[i] = fOffsets[fNumStops-1];
         }
     } else {
         fColorsAndOffsetsProxy = std::move(colorsAndOffsetsProxy);
@@ -803,7 +802,7 @@ void CoeffBlenderBlock::AddBlock(const KeyContext& keyContext,
                                  SkSpan<const float> coeffs) {
     VALIDATE_UNIFORMS(gatherer, keyContext.dict(), BuiltInCodeSnippetID::kCoeffBlender)
     SkASSERT(coeffs.size() == 4);
-    gatherer->writeHalf(SkV4{coeffs[0], coeffs[1], coeffs[2], coeffs[3]});
+    gatherer->write(SkSLType::kHalf4, coeffs.data());
 
     builder->addBlock(BuiltInCodeSnippetID::kCoeffBlender);
 }
@@ -1371,7 +1370,7 @@ static void add_yuv_image_to_key(const KeyContext& keyContext,
                                            imageToDraw->dimensions(),
                                            origShader->subset());
     for (int i = 0; i < SkYUVAInfo::kYUVAChannelCount; ++i) {
-        memset(&imgData.fChannelSelect[i], 0, sizeof(SkV4));
+        memset(&imgData.fChannelSelect[i], 0, sizeof(SkColor4f));
     }
     int textureCount = 0;
     SkYUVAInfo::YUVALocations yuvaLocations = yuvaProxies.yuvaLocations();
@@ -1802,10 +1801,8 @@ static void make_interpolated_to_dst(const KeyContext& keyContext,
     switch (interp.fColorSpace) {
         case ColorSpace::kLab:
         case ColorSpace::kOKLab:
-        case ColorSpace::kOKLabGamutMap:
         case ColorSpace::kLCH:
         case ColorSpace::kOKLCH:
-        case ColorSpace::kOKLCHGamutMap:
         case ColorSpace::kHSL:
         case ColorSpace::kHWB:
             inputPremul = false;

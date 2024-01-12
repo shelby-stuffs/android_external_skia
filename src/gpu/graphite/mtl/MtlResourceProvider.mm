@@ -33,7 +33,6 @@
 #include "src/gpu/mtl/MtlUtilsPriv.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLProgramSettings.h"
-#include "src/sksl/ir/SkSLProgram.h"
 
 #import <Metal/Metal.h>
 

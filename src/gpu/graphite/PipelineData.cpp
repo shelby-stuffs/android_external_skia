@@ -22,7 +22,7 @@ void PipelineDataGatherer::resetWithNewLayout(Layout layout) {
 #ifdef SK_DEBUG
 void PipelineDataGatherer::checkReset() {
     SkASSERT(fTextureDataBlock.empty());
-    SkASSERT(fUniformManager.isReset());
+    SkDEBUGCODE(fUniformManager.checkReset());
 }
 
 void PipelineDataGatherer::setExpectedUniforms(SkSpan<const Uniform> expectedUniforms) {

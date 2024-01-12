@@ -20,7 +20,6 @@
 #include "src/sksl/SkSLPosition.h"
 #include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
-#include "src/sksl/ir/SkSLBreakStatement.h"
 #include "src/sksl/ir/SkSLChildCall.h"
 #include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLConstructorArray.h"
@@ -32,8 +31,6 @@
 #include "src/sksl/ir/SkSLConstructorScalarCast.h"
 #include "src/sksl/ir/SkSLConstructorSplat.h"
 #include "src/sksl/ir/SkSLConstructorStruct.h"
-#include "src/sksl/ir/SkSLContinueStatement.h"
-#include "src/sksl/ir/SkSLDiscardStatement.h"
 #include "src/sksl/ir/SkSLDoStatement.h"
 #include "src/sksl/ir/SkSLEmptyExpression.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
@@ -359,13 +356,9 @@ std::unique_ptr<Statement> Inliner::inlineStatement(Position pos,
         }
 
         case Statement::Kind::kBreak:
-            return BreakStatement::Make(pos);
-
         case Statement::Kind::kContinue:
-            return ContinueStatement::Make(pos);
-
         case Statement::Kind::kDiscard:
-            return DiscardStatement::Make(*fContext, pos);
+            return statement.clone();
 
         case Statement::Kind::kDo: {
             const DoStatement& d = statement.as<DoStatement>();
@@ -400,7 +393,7 @@ std::unique_ptr<Statement> Inliner::inlineStatement(Position pos,
                                      stmt(i.ifTrue()), stmt(i.ifFalse()));
         }
         case Statement::Kind::kNop:
-            return Nop::Make();
+            return statement.clone();
 
         case Statement::Kind::kReturn: {
             const ReturnStatement& r = statement.as<ReturnStatement>();

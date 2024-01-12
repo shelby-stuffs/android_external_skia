@@ -18,8 +18,6 @@ GPU_SRCS = [
     "SkSLCodeGenerator.h",
     "SkSLGLSLCodeGenerator.cpp",
     "SkSLGLSLCodeGenerator.h",
-    "SkSLHLSLCodeGenerator.cpp",
-    "SkSLHLSLCodeGenerator.h",
     "SkSLMetalCodeGenerator.cpp",
     "SkSLMetalCodeGenerator.h",
     "SkSLPipelineStageCodeGenerator.cpp",

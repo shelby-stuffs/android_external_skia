@@ -41,34 +41,37 @@ struct UniformInfo {
     int fUniformSlotCount = 0;
 };
 
-/** A program's inputs and outputs. */
-struct ProgramInterface {
-    enum RTFlip : uint8_t {
-        kRTFlip_None       = 0b0000'0000,
-        kRTFlip_FragCoord  = 0b0000'0001,
-        kRTFlip_Clockwise  = 0b0000'0010,
-        kRTFlip_Derivative = 0b0000'0100,
-    };
-    uint8_t fRTFlipUniform = kRTFlip_None;
-    bool fUseLastFragColor = false;
-    bool fOutputSecondaryColor = false;
-
-    bool operator==(const ProgramInterface& that) const {
-        return fRTFlipUniform == that.fRTFlipUniform &&
-               fUseLastFragColor == that.fUseLastFragColor &&
-               fOutputSecondaryColor == that.fOutputSecondaryColor;
-    }
-    bool operator!=(const ProgramInterface& that) const { return !(*this == that); }
-};
-
-/** Represents a fully-digested program, ready for code generation. */
+/**
+ * Represents a fully-digested program, ready for code generation.
+ */
 struct Program {
+    // A program's inputs and outputs.
+    struct Interface {
+        enum RTFlip : uint8_t {
+            kRTFlip_None       = 0b0000'0000,
+            kRTFlip_FragCoord  = 0b0000'0001,
+            kRTFlip_Clockwise  = 0b0000'0010,
+            kRTFlip_Derivative = 0b0000'0100,
+        };
+        uint8_t fRTFlipUniform = kRTFlip_None;
+        bool fUseLastFragColor = false;
+        bool fOutputSecondaryColor = false;
+        bool operator==(const Interface& that) const {
+            return fRTFlipUniform == that.fRTFlipUniform &&
+                   fUseLastFragColor == that.fUseLastFragColor &&
+                   fOutputSecondaryColor == that.fOutputSecondaryColor;
+        }
+        bool operator!=(const Interface& that) const { return !(*this == that); }
+    };
+
     Program(std::unique_ptr<std::string> source,
             std::unique_ptr<ProgramConfig> config,
             std::shared_ptr<Context> context,
             std::vector<std::unique_ptr<ProgramElement>> elements,
+            std::vector<const ProgramElement*> sharedElements,
             std::shared_ptr<SymbolTable> symbols,
-            std::unique_ptr<Pool> pool);
+            std::unique_ptr<Pool> pool,
+            Interface);
 
     ~Program();
 
@@ -162,9 +165,7 @@ struct Program {
     // Contains *only* elements owned by a built-in module that are included in this program.
     // Use elements() to iterate over the combined set of owned + shared elements.
     std::vector<const ProgramElement*> fSharedElements;
-    ProgramInterface fInterface;
-
-    using Interface = ProgramInterface;
+    Interface fInterface;
 };
 
 }  // namespace SkSL
