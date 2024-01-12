@@ -13,19 +13,15 @@
 #include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLProgramSettings.h"
-#include "src/sksl/ir/SkSLProgram.h"
 
 #include <cstdint>
 #include <memory>
 #include <string_view>
-#include <vector>
 
 namespace SkSL {
 
 class Compiler;
 class Pool;
-class ProgramElement;
-class Variable;
 enum class ProgramKind : int8_t;
 struct Module;
 
@@ -65,36 +61,6 @@ public:
     }
 
     /**
-     * Returns the collection to which SkSL program elements in this thread should be appended.
-     */
-    static std::vector<std::unique_ptr<SkSL::ProgramElement>>& ProgramElements() {
-        return Instance().fProgramElements;
-    }
-
-    static std::vector<const ProgramElement*>& SharedElements() {
-        return Instance().fSharedElements;
-    }
-
-    /**
-     * Returns the current ProgramConfig.
-     */
-    static bool IsModule() { return Instance().fConfig->fIsBuiltinCode; }
-
-    struct RTAdjustData {
-        // Points to a standalone sk_RTAdjust variable, if one exists.
-        const Variable* fVar = nullptr;
-        // Points to the interface block containing an sk_RTAdjust field, if one exists.
-        const Variable* fInterfaceBlock = nullptr;
-        // If fInterfaceBlock is non-null, contains the index of the sk_RTAdjust field within it.
-        int fFieldIndex = -1;
-    };
-
-    /**
-     * Returns a struct containing information about the RTAdjust variable.
-     */
-    static RTAdjustData& RTAdjustState();
-
-    /**
      * Returns the ErrorReporter associated with the current thread. This object will be notified
      * when any compilation errors occur.
      */
@@ -131,13 +97,9 @@ private:
     SkSL::Context& fContext;
     std::unique_ptr<Pool> fPool;
     SkSL::ProgramConfig* fOldConfig;
-    std::vector<std::unique_ptr<SkSL::ProgramElement>> fProgramElements;
-    std::vector<const SkSL::ProgramElement*> fSharedElements;
     DefaultErrorReporter fDefaultErrorReporter;
     ErrorReporter& fOldErrorReporter;
     ProgramSettings fSettings;
-    RTAdjustData fRTAdjust;
-    Program::Interface fInterface;
 
     friend class SkSL::Compiler;
 };
