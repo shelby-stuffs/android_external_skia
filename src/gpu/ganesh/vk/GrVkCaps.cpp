@@ -290,27 +290,6 @@ bool GrVkCaps::onCanCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRec
 
 }
 
-template<typename T> T* get_extension_feature_struct(const VkPhysicalDeviceFeatures2& features,
-                                                     VkStructureType type) {
-    // All Vulkan structs that could be part of the features chain will start with the
-    // structure type followed by the pNext pointer. We cast to the CommonVulkanHeader
-    // so we can get access to the pNext for the next struct.
-    struct CommonVulkanHeader {
-        VkStructureType sType;
-        void*           pNext;
-    };
-
-    void* pNext = features.pNext;
-    while (pNext) {
-        CommonVulkanHeader* header = static_cast<CommonVulkanHeader*>(pNext);
-        if (header->sType == type) {
-            return static_cast<T*>(pNext);
-        }
-        pNext = header->pNext;
-    }
-    return nullptr;
-}
-
 void GrVkCaps::init(const GrContextOptions& contextOptions,
                     const skgpu::VulkanInterface* vkInterface,
                     VkPhysicalDevice physDev,
@@ -391,9 +370,10 @@ void GrVkCaps::init(const GrContextOptions& contextOptions,
     }
 #endif
 
-    auto ycbcrFeatures =
-            get_extension_feature_struct<VkPhysicalDeviceSamplerYcbcrConversionFeatures>(
-                    features, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES);
+    auto ycbcrFeatures = skgpu::GetExtensionFeatureStruct<
+            VkPhysicalDeviceSamplerYcbcrConversionFeatures>(
+                    features,
+                    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES);
     if (ycbcrFeatures && ycbcrFeatures->samplerYcbcrConversion &&
         (physicalDeviceVersion >= VK_MAKE_VERSION(1, 1, 0) ||
          (extensions.hasExtension(VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME, 1) &&
@@ -422,8 +402,8 @@ void GrVkCaps::init(const GrContextOptions& contextOptions,
     fMaxSamplerAnisotropy = properties.limits.maxSamplerAnisotropy;
 
     // On desktop GPUs we have found that this does not provide much benefit. The perf results show
-    // a mix of regressions, some improvements, and lots of no changes. Thus it is no worth enabling
-    // this (especially with the rendering artifacts) on desktop.
+    // a mix of regressions, some improvements, and lots of no changes. Thus it is not worth
+    // enabling this (especially with the rendering artifacts) on desktop.
     //
     // On Adreno devices we were expecting to see perf gains. But instead there were actually a lot
     // of perf regressions and only a few perf wins. This needs some follow up with qualcomm since
@@ -431,8 +411,13 @@ void GrVkCaps::init(const GrContextOptions& contextOptions,
     //
     // On ARM devices we are seeing an average perf win of around 50%-60% across the board.
     if (kARM_VkVendor == properties.vendorID) {
-        fPreferDiscardableMSAAAttachment = true;
-        fSupportsMemorylessAttachments = true;
+        // We currently don't see any Vulkan devices that expose a memory type that supports
+        // both lazy allocated and protected memory. So for simplicity we just disable the
+        // use of memoryless attachments when using protected memory. In the future, if we ever
+        // do see devices that support both, we can look through the device's memory types here
+        // and see if any support both flags.
+        fPreferDiscardableMSAAAttachment = !fSupportsProtectedContent;
+        fSupportsMemorylessAttachments = !fSupportsProtectedContent;
     }
 
     this->initGrCaps(vkInterface, physDev, properties, memoryProperties, features, extensions);
@@ -463,11 +448,6 @@ void GrVkCaps::init(const GrContextOptions& contextOptions,
         // On Qualcomm it looks like using vkCmdUpdateBuffer is slower than using a transfer buffer
         // even for small sizes.
         fAvoidUpdateBuffers = true;
-    }
-
-    if (kQualcomm_VkVendor == properties.vendorID) {
-        // Adreno devices don't support push constants well
-        fMaxPushConstantsSize = 0;
     }
 
     fNativeDrawIndirectSupport = features.features.drawIndirectFirstInstance;
@@ -578,6 +558,15 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
         (properties.vendorID == kGoogle_VkVendor &&
          properties.deviceID == kSwiftshader_DeviceID)) {
         fMustLoadFullImageWithDiscardableMSAA = true;
+    }
+
+    // There seems to be bug in swiftshader when we reuse scratch buffers for uploads. We end up
+    // with very slight pixel diffs. For example:
+    // (https://ci.chromium.org/ui/p/chromium/builders/try/linux-rel/1585128/overview).
+    // Since swiftshader is only really used for testing, to try and make things more stable we
+    // disable the reuse of buffers.
+    if (properties.vendorID == kGoogle_VkVendor && properties.deviceID == kSwiftshader_DeviceID) {
+        fReuseScratchBuffers = false;
     }
 
 #ifdef SK_BUILD_FOR_UNIX
@@ -713,10 +702,11 @@ void GrVkCaps::initGrCaps(const skgpu::VulkanInterface* vkInterface,
         if (blendProps.advancedBlendAllOperations == VK_TRUE) {
             fShaderCaps->fAdvBlendEqInteraction = GrShaderCaps::kAutomatic_AdvBlendEqInteraction;
 
-            auto blendFeatures =
-                get_extension_feature_struct<VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT>(
-                    features,
-                    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_FEATURES_EXT);
+            auto blendFeatures = skgpu::GetExtensionFeatureStruct<
+                    VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT>(
+                            features,
+                            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_FEATURES_EXT
+                    );
             if (blendFeatures && blendFeatures->advancedBlendCoherentOperations == VK_TRUE) {
                 fBlendEquationSupport = kAdvancedCoherent_BlendEquationSupport;
             } else {
@@ -963,7 +953,7 @@ void GrVkCaps::initFormatTable(const GrContextOptions& contextOptions,
         auto& info = this->getFormatInfo(format);
         info.init(contextOptions, interface, physDev, properties, format);
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
-            info.fColorTypeInfoCount = 1;
+            info.fColorTypeInfoCount = 2;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_B8G8R8A8_UNORM, Surface: kBGRA_8888
@@ -973,6 +963,16 @@ void GrVkCaps::initFormatTable(const GrContextOptions& contextOptions,
                 ctInfo.fColorType = ct;
                 ctInfo.fTransferColorType = ct;
                 ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
+            }
+            // Format: VK_FORMAT_B8G8R8A8_UNORM, Surface: kRGB_888x
+            // TODO: add and use kBGR_888X instead
+            {
+                constexpr GrColorType ct = GrColorType::kRGB_888x;
+                auto& ctInfo = info.fColorTypeInfos[ctIdx++];
+                ctInfo.fColorType = ct;
+                ctInfo.fTransferColorType = GrColorType::kBGRA_8888;
+                ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag;
+                ctInfo.fReadSwizzle = skgpu::Swizzle::RGB1();
             }
         }
     }
@@ -1124,8 +1124,8 @@ void GrVkCaps::initFormatTable(const GrContextOptions& contextOptions,
     bool supportsRGBA10x6 = false;
     if (extensions.hasExtension(VK_EXT_RGBA10X6_FORMATS_EXTENSION_NAME, 1)) {
         auto rgba10x6Feature =
-            get_extension_feature_struct<VkPhysicalDeviceRGBA10X6FormatsFeaturesEXT>(
-                features, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RGBA10X6_FORMATS_FEATURES_EXT);
+                skgpu::GetExtensionFeatureStruct<VkPhysicalDeviceRGBA10X6FormatsFeaturesEXT>(
+                        features, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RGBA10X6_FORMATS_FEATURES_EXT);
         // Technically without this extension and exabled feature we could still use this format to
         // sample with a ycbcr sampler. But for simplicity until we have clients requesting that, we
         // limit the use of this format to cases where we have the extension supported.
@@ -1371,7 +1371,8 @@ void GrVkCaps::initFormatTable(const GrContextOptions& contextOptions,
     this->setColorType(GrColorType::kRGBA_8888,        { VK_FORMAT_R8G8B8A8_UNORM });
     this->setColorType(GrColorType::kRGBA_8888_SRGB,   { VK_FORMAT_R8G8B8A8_SRGB });
     this->setColorType(GrColorType::kRGB_888x,         { VK_FORMAT_R8G8B8_UNORM,
-                                                         VK_FORMAT_R8G8B8A8_UNORM });
+                                                         VK_FORMAT_R8G8B8A8_UNORM,
+                                                         VK_FORMAT_B8G8R8A8_UNORM, });
     this->setColorType(GrColorType::kRG_88,            { VK_FORMAT_R8G8_UNORM });
     this->setColorType(GrColorType::kBGRA_8888,        { VK_FORMAT_B8G8R8A8_UNORM });
     this->setColorType(GrColorType::kRGBA_1010102,     { VK_FORMAT_A2B10G10R10_UNORM_PACK32 });
@@ -2067,6 +2068,7 @@ std::vector<GrTest::TestFormatColorTypeCombination> GrVkCaps::getTestingCombinat
         { GrColorType::kRGBA_8888,        GrBackendFormats::MakeVk(VK_FORMAT_R8G8B8A8_UNORM)      },
         { GrColorType::kRGBA_8888_SRGB,   GrBackendFormats::MakeVk(VK_FORMAT_R8G8B8A8_SRGB)       },
         { GrColorType::kRGB_888x,         GrBackendFormats::MakeVk(VK_FORMAT_R8G8B8A8_UNORM)      },
+        { GrColorType::kRGB_888x,         GrBackendFormats::MakeVk(VK_FORMAT_B8G8R8A8_UNORM)      },
         { GrColorType::kRGB_888x,         GrBackendFormats::MakeVk(VK_FORMAT_R8G8B8_UNORM)        },
         { GrColorType::kRG_88,            GrBackendFormats::MakeVk(VK_FORMAT_R8G8_UNORM)          },
         { GrColorType::kBGRA_8888,        GrBackendFormats::MakeVk(VK_FORMAT_B8G8R8A8_UNORM)      },

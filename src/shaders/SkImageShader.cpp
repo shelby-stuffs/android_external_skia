@@ -342,8 +342,6 @@ sk_sp<SkShader> SkImageShader::MakeSubset(sk_sp<SkImage> image,
     if (!SkRect::Make(image->bounds()).contains(subset)) {
         return nullptr;
     }
-    // TODO(skbug.com/12784): GPU-only for now since it's only supported in onAsFragmentProcessor()
-    SkASSERT(!needs_subset(image.get(), subset) || image->isTextureBacked());
     return SkLocalMatrixShader::MakeWrapped<SkImageShader>(localMatrix,
                                                            std::move(image),
                                                            subset,
@@ -661,7 +659,7 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
 
             case kSRGBA_8888_SkColorType:
                 p->append(SkRasterPipelineOp::gather_8888, ctx);
-                p->append_transfer_function(*skcms_sRGB_TransferFunction());
+                p->appendTransferFunction(*skcms_sRGB_TransferFunction());
                 break;
 
             case kUnknown_SkColorType: SkASSERT(false);
@@ -679,7 +677,7 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
         // If we were sampled by a runtime effect, the paint color was replaced with transparent
         // black, so this tinting is effectively suppressed. See also: RuntimeEffectRPCallbacks
         if (SkColorTypeIsAlphaOnly(upper.pm.colorType()) && !fRaw) {
-            p->append_set_rgb(alloc, rec.fPaintColor);
+            p->appendSetRGB(alloc, rec.fPaintColor);
 
             cs = rec.fDstCS;
             at = kUnpremul_SkAlphaType;

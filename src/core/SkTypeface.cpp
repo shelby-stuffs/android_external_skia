@@ -103,6 +103,8 @@ protected:
     void getPostScriptGlyphNames(SkString*) const override {}
     void getGlyphToUnicodeMap(SkUnichar*) const override {}
     int onGetUPEM() const override { return 0; }
+    bool onComputeBounds(SkRect* bounds) const override { return false; }
+
     class EmptyLocalizedStrings : public SkTypeface::LocalizedStrings {
     public:
         bool next(SkTypeface::LocalizedString*) override { return false; }
@@ -146,7 +148,7 @@ SkFontStyle SkTypeface::FromOldStyle(Style oldStyle) {
 }
 
 SkTypeface* SkTypeface::GetDefaultTypeface(Style style) {
-#if !defined(SK_DEFAULT_TYPEFACE_IS_EMPTY)
+#if !defined(SK_DEFAULT_TYPEFACE_IS_EMPTY) && !defined(SK_DISABLE_LEGACY_FONTMGR_REFDEFAULT)
     static SkOnce once[4];
     static sk_sp<SkTypeface> defaults[4];
 
@@ -177,11 +179,8 @@ bool SkTypeface::Equal(const SkTypeface* facea, const SkTypeface* faceb) {
     if (facea == faceb) {
         return true;
     }
-    if (!facea) {
-        facea = GetDefaultTypeface();
-    }
-    if (!faceb) {
-        faceb = GetDefaultTypeface();
+    if (!facea || !faceb) {
+        return false;
     }
     return facea->uniqueID() == faceb->uniqueID();
 }

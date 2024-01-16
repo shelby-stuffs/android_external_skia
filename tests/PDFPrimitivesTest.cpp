@@ -108,7 +108,8 @@ static void test_issue1083() {
     SkCanvas* canvas = doc->beginPage(100.0f, 100.0f);
 
     uint16_t glyphID = 65000;
-    canvas->drawSimpleText(&glyphID, 2, SkTextEncoding::kGlyphID, 0, 0, SkFont(), SkPaint());
+    SkFont font = ToolUtils::DefaultFont();
+    canvas->drawSimpleText(&glyphID, 2, SkTextEncoding::kGlyphID, 0, 0, font, SkPaint());
 
     doc->close();
 }
@@ -337,12 +338,12 @@ DEF_TEST(SkPDF_FontCanEmbedTypeface, reporter) {
     SkPDFDocument doc(&nullWStream, SkPDF::Metadata());
 
     const char resource[] = "fonts/Roboto2-Regular_NoEmbed.ttf";
-    sk_sp<SkTypeface> noEmbedTypeface(MakeResourceAsTypeface(resource));
+    sk_sp<SkTypeface> noEmbedTypeface(ToolUtils::CreateTypefaceFromResource(resource));
     if (noEmbedTypeface) {
         REPORTER_ASSERT(reporter,
                         !SkPDFFont::CanEmbedTypeface(noEmbedTypeface.get(), &doc));
     }
-    sk_sp<SkTypeface> portableTypeface(ToolUtils::DefaultPortableTypeface());
+    sk_sp<SkTypeface> portableTypeface(ToolUtils::DefaultTypeface());
     REPORTER_ASSERT(reporter,
                     SkPDFFont::CanEmbedTypeface(portableTypeface.get(), &doc));
 }
@@ -421,7 +422,7 @@ static sktext::GlyphRun make_run(size_t len, const SkGlyphID* glyphs, SkPoint* p
 }
 
 DEF_TEST(SkPDF_Clusterator, reporter) {
-    SkFont font;
+    SkFont font = ToolUtils::DefaultFont();
     {
         constexpr unsigned len = 11;
         const uint32_t clusters[len] = { 3, 2, 2, 1, 0, 4, 4, 7, 6, 6, 5 };

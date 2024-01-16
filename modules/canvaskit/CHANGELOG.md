@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+ - `Typeface.MakeFreeTypeFaceFromData` is now `Typeface.MakeTypefaceFromData` to be consistent
+   with the rest of the Skia library in the capitalization of the f in Typeface.
+   (CK still uses Freetype under the hood).
+ - Passing a `null` `Typeface` to the `Font` constructor no longer uses the default typeface. See
+   `CanvasKit.Typeface.GetDefault()` as a way to get the compiled-in typeface to replace this
+   behavior.
+ - `MakeManagedAnimation` no longer falls back to the built-in typeface if the provided
+   FreeType data is not in the assets map.
+
+### Added
+ - `CanvasKit.Typeface.GetDefault()` as a way to explicitly get the compiled-in typeface (if any).
+
 ## [0.39.1] - 2023-10-12
 
 ### Fixed

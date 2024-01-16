@@ -188,6 +188,9 @@ public:
     // Supports BackendSemaphores
     bool semaphoreSupport() const { return fSemaphoreSupport; }
 
+    // If false then calling Context::submit with SyncToCpu::kYes is an error.
+    bool allowCpuSync() const { return fAllowCpuSync; }
+
     // Returns whether storage buffers are supported.
     bool storageBufferSupport() const { return fStorageBufferSupport; }
 
@@ -198,11 +201,22 @@ public:
     // Returns whether a draw buffer can be mapped.
     bool drawBufferCanBeMapped() const { return fDrawBufferCanBeMapped; }
 
+    // Returns whether using Buffer::asyncMap() must be used to map buffers. map() may only be
+    // called after asyncMap() is called and will fail if the asynchronous map is not complete. This
+    // excludes premapped buffers for which map() can be called freely until the first unmap() call.
+    bool bufferMapsAreAsync() const { return fBufferMapsAreAsync; }
+
     // Returns whether multisampled render to single sampled is supported.
     bool msaaRenderToSingleSampledSupport() const { return fMSAARenderToSingleSampledSupport; }
 
     // Returns whether compute shaders are supported.
     bool computeSupport() const { return fComputeSupport; }
+
+    /**
+     * Returns true if the given backend supports importing AHardwareBuffers. This will only
+     * ever be supported on Android devices with API level >= 26.
+     */
+    bool supportsAHardwareBufferImages() const { return fSupportsAHardwareBufferImages; }
 
     // Returns the skgpu::Swizzle to use when sampling or reading back from a texture with the
     // passed in SkColorType and TextureInfo.
@@ -292,12 +306,15 @@ protected:
     bool fClampToBorderSupport = true;
     bool fProtectedSupport = false;
     bool fSemaphoreSupport = false;
+    bool fAllowCpuSync = true;
     bool fStorageBufferSupport = false;
     bool fStorageBufferPreferred = false;
     bool fDrawBufferCanBeMapped = true;
+    bool fBufferMapsAreAsync = false;
     bool fMSAARenderToSingleSampledSupport = false;
 
     bool fComputeSupport = false;
+    bool fSupportsAHardwareBufferImages = false;
 
     ResourceBindingRequirements fResourceBindingReqs;
 

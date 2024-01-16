@@ -88,9 +88,8 @@ static sk_sp<SkImage> make_text_image(const char* text, SkColor color) {
     paint.setAntiAlias(true);
     paint.setColor(color);
 
-    SkFont font;
+    SkFont font = ToolUtils::DefaultPortableFont();
     font.setEdging(SkFont::Edging::kAntiAlias);
-    font.setTypeface(ToolUtils::DefaultPortableTypeface());
     font.setSize(32);
 
     SkRect bounds;
@@ -253,7 +252,7 @@ private:
         SkASSERT(kNumLabels == fLabels.size());
     }
 
-    DrawResult onGpuSetup(SkCanvas* canvas, SkString* errorMsg) override {
+    DrawResult onGpuSetup(SkCanvas* canvas, SkString* errorMsg, GraphiteTestContext*) override {
         this->makeLabels();
         fReferenceImages[0] = make_reference_image(canvas, fLabels, false);
         fReferenceImages[1] = make_reference_image(canvas, fLabels, true);

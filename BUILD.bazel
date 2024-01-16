@@ -93,9 +93,45 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+###
+
+alias(
+    name = "jpeg_encode_codec",
+    actual = "//src/encode:jpeg_encode",
+    visibility = ["//visibility:public"],
+)
+
 alias(
     name = "png_decode_codec",
     actual = "//src/codec:png_decode",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "png_encode_codec",
+    actual = "//src/encode:png_encode",
+    visibility = ["//visibility:public"],
+)
+
+###
+
+alias(
+    name = "fontmgr_fontconfig_freetype",
+    actual = "//src/ports:fontmgr_fontconfig_freetype",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "fontmgr_empty_freetype",
+    actual = "//src/ports:fontmgr_empty_freetype",
+    visibility = ["//visibility:public"],
+)
+
+###
+
+alias(
+    name = "skparagraph_harfbuzz_icu",
+    actual = "//modules/skparagraph:skparagraph_harfbuzz_icu",
     visibility = ["//visibility:public"],
 )
 
@@ -115,6 +151,7 @@ test_suite(
     name = "all_go_tests",
     tests = [
         # Go tests in this list will be tested in CI. Please add any new Go tests to this suite.
+        "//bazel/device_specific_configs:device_specific_configs_test",
         "//bazel/exporter:exporter_test",
         "//infra/bots/task_drivers/bazel_test_benchmark:bazel_test_benchmark_test",
         "//infra/bots/task_drivers/bazel_test_gm:bazel_test_gm_test",
@@ -155,4 +192,47 @@ test_suite(
 # https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd.
 gen_compile_flags_txt_linux_amd64(
     name = "gen_compile_flags_txt_linux_amd64",
+)
+
+######
+# go #
+######
+
+# Sample usage: "bazel run //:go -- generate ./...".
+alias(
+    name = "go",
+    actual = "@go_sdk//:bin/go",
+    visibility = ["//visibility:public"],
+)
+
+#########
+# gofmt #
+#########
+
+# Sample usage: "bazel run //:gofmt -- -s -w .".
+alias(
+    name = "gofmt",
+    actual = "@go_sdk//:bin/gofmt",
+    visibility = ["//visibility:public"],
+)
+
+############
+# Errcheck #
+############
+
+# Sample usage: "bazel run //:errcheck -- go.skia.org/skia/...".
+alias(
+    name = "errcheck",
+    actual = "//infra:errcheck",
+    visibility = ["//visibility:public"],
+)
+
+##############
+# buildifier #
+##############
+
+# Sample usage: "bazel run //:buildifier".
+alias(
+    name = "buildifier",
+    actual = "//bazel:buildifier",
 )

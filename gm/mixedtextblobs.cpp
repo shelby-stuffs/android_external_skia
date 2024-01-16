@@ -51,7 +51,10 @@ protected:
     void onOnceBeforeDraw() override {
         fEmojiTypeface      = ToolUtils::PlanetTypeface();
         fEmojiText = "♁♃";
-        fReallyBigATypeface = MakeResourceAsTypeface("fonts/ReallyBigA.ttf");
+        fReallyBigATypeface = ToolUtils::CreateTypefaceFromResource("fonts/ReallyBigA.ttf");
+        if (!fReallyBigATypeface) {
+            fReallyBigATypeface = ToolUtils::DefaultPortableTypeface();
+        }
 
         SkTextBlobBuilder builder;
 

@@ -28,7 +28,14 @@ import("gn/ios.gni")
 config("skia_public") {
   include_dirs = [ "." ]
 
-  defines = []
+  defines = [
+    "SK_DEFAULT_TYPEFACE_IS_EMPTY",
+    "SK_DISABLE_LEGACY_DEFAULT_TYPEFACE",
+
+    # TODO(305780908) re-enable after fixing Android and G3
+    #"SK_DISABLE_LEGACY_FONTMGR_FACTORY",
+    #"SK_DISABLE_LEGACY_FONTMGR_REFDEFAULT",
+  ]
   cflags_objcc = []
   if (is_component_build) {
     defines += [ "SKIA_DLL" ]
@@ -306,6 +313,7 @@ optional("fontmgr_android") {
     ":typeface_freetype",
     "//third_party/expat",
   ]
+  public_defines = [ "SK_FONTMGR_ANDROID_AVAILABLE" ]
   public = [ "include/ports/SkFontMgr_android.h" ]
   sources = [
     "src/ports/SkFontMgr_android.cpp",
@@ -332,7 +340,7 @@ optional("fontmgr_custom") {
 
 optional("fontmgr_custom_directory") {
   enabled = skia_enable_fontmgr_custom_directory
-
+  public_defines = [ "SK_FONTMGR_FREETYPE_DIRECTORY_AVAILABLE" ]
   deps = [
     ":fontmgr_custom",
     ":typeface_freetype",
@@ -348,7 +356,7 @@ optional("fontmgr_custom_directory_factory") {
 
 optional("fontmgr_custom_embedded") {
   enabled = skia_enable_fontmgr_custom_embedded
-
+  public_defines = [ "SK_FONTMGR_FREETYPE_EMBEDDED_AVAILABLE" ]
   deps = [
     ":fontmgr_custom",
     ":typeface_freetype",
@@ -363,7 +371,7 @@ optional("fontmgr_custom_embedded_factory") {
 
 optional("fontmgr_custom_empty") {
   enabled = skia_enable_fontmgr_custom_empty
-
+  public_defines = [ "SK_FONTMGR_FREETYPE_EMPTY_AVAILABLE" ]
   deps = [
     ":fontmgr_custom",
     ":typeface_freetype",
@@ -379,6 +387,7 @@ optional("fontmgr_custom_empty_factory") {
 
 optional("fontmgr_fontconfig") {
   enabled = skia_enable_fontmgr_fontconfig
+  public_defines = [ "SK_FONTMGR_FONTCONFIG_AVAILABLE" ]
 
   # The public header includes fontconfig.h and uses FcConfig*
   public_deps = [ "//third_party:fontconfig" ]
@@ -421,7 +430,7 @@ optional("fontmgr_FontConfigInterface_factory") {
 
 optional("fontmgr_fuchsia") {
   enabled = skia_enable_fontmgr_fuchsia
-
+  public_defines = [ "SK_FONTMGR_FUCHSIA_AVAILABLE" ]
   deps = []
 
   if (is_fuchsia && using_fuchsia_sdk) {
@@ -436,7 +445,10 @@ optional("fontmgr_fuchsia") {
 optional("fontmgr_mac_ct") {
   enabled = skia_use_fonthost_mac
 
-  public_defines = [ "SK_TYPEFACE_FACTORY_CORETEXT" ]
+  public_defines = [
+    "SK_TYPEFACE_FACTORY_CORETEXT",
+    "SK_FONTMGR_CORETEXT_AVAILABLE",
+  ]
   public = [
     "include/ports/SkFontMgr_mac_ct.h",
     "include/ports/SkTypeface_mac.h",
@@ -478,7 +490,10 @@ optional("fontmgr_mac_ct_factory") {
 optional("fontmgr_win") {
   enabled = skia_enable_fontmgr_win
 
-  public_defines = [ "SK_TYPEFACE_FACTORY_DIRECTWRITE" ]
+  public_defines = [
+    "SK_TYPEFACE_FACTORY_DIRECTWRITE",
+    "SK_FONTMGR_DIRECTWRITE_AVAILABLE",
+  ]
   public = [ "include/ports/SkTypeface_win.h" ]
   sources = [
     "include/ports/SkFontMgr_indirect.h",
@@ -515,7 +530,7 @@ optional("fontmgr_win_factory") {
 
 optional("fontmgr_win_gdi") {
   enabled = skia_enable_fontmgr_win_gdi
-
+  public_defines = [ "SK_FONTMGR_GDI_AVAILABLE" ]
   public = [ "include/ports/SkTypeface_win.h" ]
   sources = [ "src/ports/SkFontHost_win.cpp" ]
   libs = [ "Gdi32.lib" ]
@@ -899,7 +914,6 @@ optional("gpu_shared") {
 
   if (skia_use_dawn) {
     public_defines += [ "SK_DAWN" ]
-    sources += skia_shared_dawn_sources
 
     # When building for WASM, the WebGPU headers are provided by Emscripten. For native builds we
     # have to depend on Dawn directly.
@@ -948,6 +962,10 @@ optional("gpu_shared") {
     public_defines += [ "SK_METAL" ]
     sources += skia_shared_mtl_sources
   }
+
+  if (is_android) {
+    sources += skia_shared_android_sources
+  }
 }
 
 optional("gpu") {
@@ -975,6 +993,10 @@ optional("gpu") {
   libs = []
   frameworks = []
 
+  if (is_android) {
+    sources += skia_gpu_android_private
+  }
+
   if (skia_use_gl) {
     public_defines += [ "SK_GL" ]
     if (is_android) {
@@ -982,6 +1004,7 @@ optional("gpu") {
         "src/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.cpp",
         "src/gpu/ganesh/gl/egl/GrGLMakeNativeInterface_egl.cpp",
       ]
+      sources += skia_android_gl_sources
 
       # this lib is required to link against AHardwareBuffer
       if (defined(ndk_api) && ndk_api >= 26) {
@@ -1026,6 +1049,9 @@ optional("gpu") {
       } else {
         public_deps += [ "//src/graphics/lib/vulkan" ]
       }
+    }
+    if (is_android) {
+      sources += skia_gpu_vk_android_private
     }
   }
 
@@ -1211,7 +1237,8 @@ optional("graphite") {
 }
 
 optional("pdf") {
-  enabled = skia_use_zlib && skia_enable_pdf
+  enabled = skia_use_zlib && skia_enable_pdf && skia_use_libjpeg_turbo_decode &&
+            skia_use_libjpeg_turbo_encode
   public_defines = [ "SK_SUPPORT_PDF" ]
 
   deps = [ "//third_party/zlib" ]
@@ -1226,21 +1253,10 @@ optional("pdf") {
     defines = [ "SK_PDF_USE_SFNTLY" ]
   }
 
-  if (skia_use_libjpeg_turbo_decode) {
-    deps += [
-      ":jpeg_decode",
-
-      # This is not a public_dep so we need to directly depend on it
-      # to use jpeg headers
-      "//third_party/libjpeg-turbo:libjpeg",
-    ]
-    sources += [ "src/pdf/SkJpegInfo_libjpegturbo.cpp" ]
-  } else {
-    sources += [ "src/pdf/SkJpegInfo_none.cpp" ]
-  }
-  if (skia_use_libjpeg_turbo_encode) {
-    deps += [ ":jpeg_encode" ]
-  }
+  deps += [
+    ":jpeg_decode",
+    ":jpeg_encode",
+  ]
 }
 
 optional("xps") {
@@ -1736,10 +1752,6 @@ group("modules") {
   }
 }
 
-group("experimental") {
-  deps = [ "experimental/sktext" ]
-}
-
 config("our_vulkan_headers") {
   include_dirs = [ "include/third_party/vulkan" ]
 }
@@ -1788,7 +1800,7 @@ if (skia_enable_tools) {
     outputs = [ skia_h ]
   }
 
-  if (target_cpu == "x64") {
+  if (is_linux && target_cpu == "x64") {
     skia_executable("fiddle") {
       check_includes = false
       libs = []
@@ -2008,7 +2020,11 @@ if (skia_enable_tools) {
           "X11",
         ]
       } else if (is_win) {
-        sources += [ "tools/gpu/gl/win/CreatePlatformGLTestContext_win.cpp" ]
+        sources += [
+          "tools/gpu/gl/win/CreatePlatformGLTestContext_win.cpp",
+          "tools/gpu/gl/win/SkWGL.h",
+          "tools/gpu/gl/win/SkWGL_win.cpp",
+        ]
         libs += [ "Gdi32.lib" ]
         if (target_cpu != "arm64") {
           libs += [ "OpenGL32.lib" ]
@@ -2049,6 +2065,7 @@ if (skia_enable_tools) {
       sources += [ "tools/graphite/ContextFactory.cpp" ]
       sources += [ "tools/graphite/GraphiteTestContext.h" ]
       sources += [ "tools/graphite/GraphiteTestContext.cpp" ]
+      sources += [ "tools/graphite/ProtectedUtils_Graphite.cpp" ]
       if (skia_use_dawn) {
         sources += [ "tools/graphite/dawn/GraphiteDawnTestContext.cpp" ]
         sources += [ "tools/graphite/dawn/GraphiteDawnTestContext.h" ]
@@ -2092,10 +2109,6 @@ if (skia_enable_tools) {
   }
   test_lib("common_flags_images") {
     sources = [ "tools/flags/CommonFlagsImages.cpp" ]
-    deps = [ ":flags" ]
-  }
-  test_lib("common_flags_fontmgr") {
-    sources = [ "tools/flags/CommonFlagsFontMgr.cpp" ]
     deps = [ ":flags" ]
   }
   test_lib("common_flags_aa") {
@@ -2319,7 +2332,6 @@ if (skia_enable_tools) {
       ":test",
       ":tool_utils",
       ":typeface_fontations_tests",
-      "experimental/sktext:tests",
       "modules/bentleyottmann:tests",
       "modules/skottie:tests",
       "modules/skparagraph:tests",
@@ -2409,7 +2421,6 @@ if (skia_enable_tools) {
       deps = [
         ":common_flags_aa",
         ":common_flags_config",
-        ":common_flags_fontmgr",
         ":common_flags_gpu",
         ":common_flags_images",
         ":flags",
@@ -2515,21 +2526,25 @@ if (skia_enable_tools) {
     ]
   }
 
-  test_app("sktexttopdf") {
-    sources = [ "tools/using_skia_and_harfbuzz.cpp" ]
-    deps = [
-      ":skia",
-      "modules/skshaper",
-    ]
+  if (is_linux) {
+    test_app("sktexttopdf") {
+      sources = [ "tools/using_skia_and_harfbuzz.cpp" ]
+      deps = [
+        ":skia",
+        "modules/skshaper",
+      ]
+    }
   }
 
-  test_app("create_test_font") {
-    sources = [ "tools/fonts/create_test_font.cpp" ]
-    deps = [ ":skia" ]
-    assert_no_deps = [
-      # tool_utils requires the output of this app.
-      ":tool_utils",
-    ]
+  if (is_linux || is_mac) {
+    test_app("create_test_font") {
+      sources = [ "tools/fonts/create_test_font.cpp" ]
+      deps = [ ":skia" ]
+      assert_no_deps = [
+        # tool_utils requires the output of this app.
+        ":tool_utils",
+      ]
+    }
   }
 
   if (skia_use_expat) {
@@ -2636,6 +2651,7 @@ if (skia_enable_tools) {
       "tools/debugger/DebugLayerManager.cpp",
       "tools/debugger/DrawCommand.cpp",
       "tools/debugger/JsonWriteBuffer.cpp",
+      "tools/fonts/FontToolUtils.cpp",
     ]
     if (skia_enable_graphite && skia_enable_precompile) {
       sources += [ "fuzz/FuzzPrecompile.cpp" ]
@@ -2665,10 +2681,7 @@ if (skia_enable_tools) {
       "tools/skdiff/skdiff_main.cpp",
       "tools/skdiff/skdiff_utils.cpp",
     ]
-    deps = [
-      ":skia",
-      ":tool_utils",
-    ]
+    deps = [ ":skia" ]
   }
 
   test_app("skp_parser") {
@@ -2975,7 +2988,6 @@ if (skia_enable_tools) {
       libs = []
 
       deps = [
-        ":common_flags_fontmgr",
         ":common_flags_gpu",
         ":flags",
         ":gm",
@@ -2985,8 +2997,6 @@ if (skia_enable_tools) {
         ":tool_utils",
         ":trace",
         ":xml",
-        "experimental/sktext",
-        "experimental/sktext:slides",
         "modules/audioplayer",
         "modules/skottie",
         "modules/skottie:utils",
@@ -3042,14 +3052,11 @@ if (skia_enable_tools) {
     }
   }
 
-  test_app("editor") {
-    is_shared_library = is_android
-    deps = [ "modules/skplaintexteditor:editor_app" ]
-  }
-
-  test_app("text_editor") {
-    is_shared_library = is_android
-    deps = [ "experimental/sktext:text_editor" ]
+  if (is_linux || is_win || is_mac) {
+    test_app("editor") {
+      is_shared_library = is_android
+      deps = [ "modules/skplaintexteditor:editor_app" ]
+    }
   }
 
   skia_executable("image_diff_metric") {

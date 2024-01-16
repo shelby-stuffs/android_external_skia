@@ -13,6 +13,7 @@
 #include "src/base/SkUTF.h"
 #include "src/core/SkFontPriv.h"
 #include "src/utils/SkCharToGlyphCache.h"
+#include "tools/fonts/FontToolUtils.h"
 
 enum {
     NGLYPHS = 100
@@ -43,7 +44,7 @@ static void charsToGlyphs_proc(const Rec& r) {
     uint16_t glyphs[NGLYPHS];
     SkASSERT(r.fCount <= NGLYPHS);
 
-    SkTypeface* face = SkFontPriv::GetTypefaceOrDefault(r.fFont);
+    SkTypeface* face = r.fFont.getTypeface();
     for (int i = 0; i < r.fLoops; ++i) {
         face->unicharsToGlyphs(r.fText, r.fCount, glyphs);
     }
@@ -87,7 +88,7 @@ public:
             fText[i] = rand.nextU() & 0xFFFF;
             fCache.addCharAndGlyph(fText[i], i);
         }
-        fFont.setTypeface(SkTypeface::MakeDefault());
+        fFont.setTypeface(ToolUtils::DefaultPortableTypeface());
     }
 
     bool isSuitableFor(Backend backend) override {

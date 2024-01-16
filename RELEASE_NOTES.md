@@ -2,6 +2,73 @@ Skia Graphics Release Notes
 
 This file includes a list of high level updates for each milestone release.
 
+Milestone 121
+-------------
+  * `SkFontConfigInterface::makeTypeface` now has a required `sk_sp<SkFontMgr>` parameter to be used for
+    parsing the font data from the stream.
+  * `skgpu::graphite::ContextOptions` has a new field, `fNeverYieldToWebGPU`. This new option
+    is only valid with the Dawn backend. It indicates that `skgpu::graphite::Context` should never yield
+    to Dawn. In native this means `wgpu::Device::Tick()` is never called. In Emscripten it
+    means `Context` never yields to the main thread event loop.
+
+    When the option is enabled, `skgpu::SyncToCpu::kYes` is ignored when passed to
+    `Context::submit()`. Moreover, it is a fatal error to have submitted but unfinished
+    GPU work before deleting `Context`. A new method, `hasUnfinishedGpuWork()` is added
+    to `Context` that can be used to test this condition.
+
+    The intent of this option is to be able to use Graphite in WASM without requiring Asyncify.
+  * Deprecated `GrMipmapped` and `GrMipMapped` alias have been removed in favor of `skgpu::Mipmapped`.
+  * Harfbuzz-backed SkShaper instances will no longer treat a null SkFontMgr as meaning "use the
+    default SkFontMgr for fallback" and instead will *not* do fallback for glyphs missing from a font.
+  * `GrBackendSemaphore::initVk` and `GrBackendSemaphore::vkSemaphore` have been replaced with
+    `GrBackendSemaphores::MakeVk` and `GrBackendSemaphores::GetVkSemaphore`, defined in
+    `include/gpu/ganesh/vk/GrVkBackendSemaphore.h`
+  * The Vulkan-specific methods and constructor of `MutableTextureState` have been deprecated in favor
+    of those found in `include/gpu/vk/VulkanMutableTextureState.h`.
+
+* * *
+
+Milestone 120
+-------------
+  * `SkBase64.h` has been removed from the public API.
+  * `SkFont::refTypefaceOrDefault` and `SkFont::getTypefaceOrDefault()` have been removed from the
+    public API.
+  * `GrBackendSemaphore::initGL` and `GrBackendSemaphore::glSync` have been removed
+    from the public API.
+  * For Graphite, `SkImages::AdoptTextureFrom` has been renamed to `SkImages::WrapTexture` to
+    better reflect what is happening to the passed in texture.
+  * `GrSurfaceInfo.h` has been removed from the public API.
+  * SkMesh now allows shaders, color filters, and blenders to be used in the mesh-fragment program.
+    Pass in effects using the `children` parameter of `SkMesh::Make` or `SkMesh::MakeIndexed`.
+    For a working example, see `gm/mesh.cpp`.
+  * The behavior for SkPicture deserialization (via SkReadBuffer) to fallback to
+    `SkImages::DeferredFromEncodedData` when `SkDeserialImageProc` is not set or returns null is
+    deprecated and will be removed shortly.
+
+    `SkDeserialImageFromDataProc` has been added to SkDeserialProcs to allow clients to *safely*
+    avoid a copy when decoding image data in SkPictures.
+
+    `SkDeserialImageProc` now takes in an optional AlphaType which can be used to override the
+    AlphaType that an image was serialized with, if desired.
+  * skgpu::graphite::RecorderOptions::kDefaultRecorderBudget is now a static data member.
+  * `SkTypeface::MakeFromName`, `SkTypeface::MakeFromFile`, `SkTypeface::MakeFromStream`, and
+    `SkTypeface::MakeFromData` are deprecated and will be removed eventually. These should be replaced
+    with calls directly to the SkFontMgr that can provide the appropriate typefaces.
+
+    `SkTypeface::MakeDefault()` has been deprecated. Soon it will return an empty typeface and
+    eventually be removed.
+
+    `SkTypeface::UniqueID()` has been removed - clients should use the method instead of this static
+    function.
+  * `GrDirectContext::MakeVulkan...` has been moved to `GrDirectContexts::MakeVulkan...` which are defined
+    in `include/gpu/ganesh/vk/GrVkDirectContext.h`
+  * The various GPU wait calls on GrDirectContext, SkSurface, and GrVkSecondaryCBContext which take
+    a client supplied semaphore, now only guarantee to block the gpu transfer and fragment stages
+    instead of all gpu commands. This shouldn't affect any client since client provided gpu resources
+    (e.g. textures) are only ever used by Skia in the fragment stages.
+
+* * *
+
 Milestone 119
 -------------
   * Added new `SkImageFilters::Crop(SkRect, SkTileMode, sk_sp<SkImageFilter>)` image filter effect that crops the output from the wrapped SkImageFilter and optionally applies the SkTileMode when sampling outside of the crop rect.

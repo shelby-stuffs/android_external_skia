@@ -19,6 +19,7 @@
 #include "src/text/gpu/SDFTControl.h"
 #include "src/text/gpu/SubRunContainer.h"
 
+enum class SkBackingFit;
 class SkStrokeRec;
 
 namespace skgpu::graphite {
@@ -46,6 +47,7 @@ public:
                               const SkImageInfo&,
                               skgpu::Budgeted,
                               Mipmapped,
+                              SkBackingFit,
                               const SkSurfaceProps&,
                               bool addInitialClear);
     static sk_sp<Device> Make(Recorder*,
@@ -71,7 +73,7 @@ public:
     // from the DrawContext as a RenderPassTask and records it in the Device's recorder.
     void flushPendingWorkToRecorder();
 
-    TextureProxyView createCopy(const SkIRect* subset, Mipmapped);
+    TextureProxyView createCopy(const SkIRect* subset, Mipmapped, SkBackingFit);
 
     const Transform& localToDeviceTransform();
 
@@ -79,6 +81,12 @@ public:
 
     TextureProxy* target();
     TextureProxyView readSurfaceView() const;
+
+    // SkCanvas only uses drawCoverageMask w/o this staging flag, so only enable
+    // mask filters in clients that have finished migrating.
+#if !defined(SK_RESOLVE_FILTERS_BEFORE_RESTORE)
+    bool useDrawCoverageMaskForMaskFilters() const override { return true; }
+#endif
 
     // Clipping
     void pushClipStack() override { fClip.save(); }
@@ -152,6 +160,8 @@ public:
 
     void drawSpecial(SkSpecialImage*, const SkMatrix& localToDevice,
                      const SkSamplingOptions&, const SkPaint&) override;
+    void drawCoverageMask(const SkSpecialImage*, const SkMatrix& localToDevice,
+                          const SkSamplingOptions&, const SkPaint&) override;
 
 private:
     class IntersectionTreeSet;
@@ -258,8 +268,6 @@ private:
     PaintersDepth fCurrentDepth;
 
     const sktext::gpu::SDFTControl fSDFTControl;
-
-    bool fDrawsOverlap;
 
     friend class ClipStack; // for recordDraw
 };
