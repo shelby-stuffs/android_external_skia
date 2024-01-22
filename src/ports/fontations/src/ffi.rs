@@ -15,7 +15,7 @@ use skrifa::{
 use std::pin::Pin;
 
 use crate::ffi::{
-    AxisWrapper, BridgeScalerMetrics, ColorPainterWrapper, PaletteOverride, PathWrapper,
+    AxisWrapper, BridgeScalerMetrics, ColorPainterWrapper, ColorStop, PaletteOverride, PathWrapper,
 };
 
 fn lookup_glyph_or_zero(font_ref: &BridgeFontRef, codepoint: u32) -> u16 {
@@ -115,19 +115,20 @@ impl<'a> ColorPainter for ColorPainterImpl<'a> {
                 p1,
                 color_stops,
                 extend,
-            } => unsafe {
-                // SAFETY: The cast from the Skria::ColorStop struct to ffi::ColorStop
-                // is safe because they have the same layout.
+            } => {
+                let mut bridge_color_stops = BridgeColorStops {
+                    stops_iterator: Box::new(color_stops.iter()),
+                    num_stops: color_stops.len(),
+                };
                 color_painter.fill_linear(
                     p0.x,
                     p0.y,
                     p1.x,
                     p1.y,
-                    color_stops.as_ptr() as *const ffi::ColorStop,
-                    color_stops.len(),
+                    &mut bridge_color_stops,
                     extend as u8,
                 );
-            },
+            }
             Brush::RadialGradient {
                 c0,
                 r0,
@@ -136,21 +137,20 @@ impl<'a> ColorPainter for ColorPainterImpl<'a> {
                 color_stops,
                 extend,
             } => {
-                unsafe {
-                    // SAFETY: The cast from the Skria::ColorStop struct to ffi::ColorStop
-                    // is safe because they have the same layout.
-                    color_painter.fill_radial(
-                        c0.x,
-                        c0.y,
-                        r0,
-                        c1.x,
-                        c1.y,
-                        r1,
-                        color_stops.as_ptr() as *const ffi::ColorStop,
-                        color_stops.len(),
-                        extend as u8,
-                    );
-                }
+                let mut bridge_color_stops = BridgeColorStops {
+                    stops_iterator: Box::new(color_stops.iter()),
+                    num_stops: color_stops.len(),
+                };
+                color_painter.fill_radial(
+                    c0.x,
+                    c0.y,
+                    r0,
+                    c1.x,
+                    c1.y,
+                    r1,
+                    &mut bridge_color_stops,
+                    extend as u8,
+                );
             }
             Brush::SweepGradient {
                 c0,
@@ -158,19 +158,20 @@ impl<'a> ColorPainter for ColorPainterImpl<'a> {
                 end_angle,
                 color_stops,
                 extend,
-            } => unsafe {
-                // SAFETY: The cast from the Skria::ColorStop struct to ffi::ColorStop
-                // is safe because they have the same layout.
+            } => {
+                let mut bridge_color_stops = BridgeColorStops {
+                    stops_iterator: Box::new(color_stops.iter()),
+                    num_stops: color_stops.len(),
+                };
                 color_painter.fill_sweep(
                     c0.x,
                     c0.y,
                     start_angle,
                     end_angle,
-                    color_stops.as_ptr() as *const ffi::ColorStop,
-                    color_stops.len(),
+                    &mut bridge_color_stops,
                     extend as u8,
                 );
-            },
+            }
         }
     }
 
@@ -561,6 +562,21 @@ fn draw_colr_glyph(
         .is_some()
 }
 
+fn next_color_stop(color_stops: &mut BridgeColorStops, out_stop: &mut ColorStop) -> bool {
+    if let Some(color_stop) = color_stops.stops_iterator.next() {
+        out_stop.alpha = color_stop.alpha;
+        out_stop.stop = color_stop.offset;
+        out_stop.palette_index = color_stop.palette_index;
+        return true;
+    } else {
+        return false;
+    }
+}
+
+fn num_color_stops(color_stops: &BridgeColorStops) -> usize {
+    return color_stops.num_stops;
+}
+
 struct BridgeFontRef<'a>(Option<FontRef<'a>>);
 
 impl<'a> BridgeFontRef<'a> {
@@ -578,6 +594,11 @@ struct BridgeNormalizedCoords {
 struct BridgeLocalizedStrings<'a> {
     #[allow(dead_code)]
     localized_strings: LocalizedStrings<'a>,
+}
+
+struct BridgeColorStops<'a> {
+    pub stops_iterator: Box<dyn Iterator<Item = &'a skrifa::color::ColorStop> + 'a>,
+    pub num_stops: usize,
 }
 
 #[cxx::bridge(namespace = "fontations_ffi")]
@@ -630,7 +651,6 @@ mod ffi {
     }
 
     extern "Rust" {
-
         type BridgeFontRef<'a>;
         unsafe fn make_font_ref<'a>(font_data: &'a [u8], index: u32) -> Box<BridgeFontRef<'a>>;
         // Returns whether BridgeFontRef is a valid font containing at
@@ -718,6 +738,10 @@ mod ffi {
             color_painter: Pin<&mut ColorPainterWrapper>,
         ) -> bool;
 
+        type BridgeColorStops<'a>;
+        fn next_color_stop(color_stops: &mut BridgeColorStops, stop: &mut ColorStop) -> bool;
+        fn num_color_stops(color_stops: &BridgeColorStops) -> usize;
+
     }
 
     unsafe extern "C++" {
@@ -781,7 +805,7 @@ mod ffi {
         fn pop_clip(self: Pin<&mut ColorPainterWrapper>);
 
         fn fill_solid(self: Pin<&mut ColorPainterWrapper>, palette_index: u16, alpha: f32);
-        unsafe fn fill_radial(
+        fn fill_radial(
             self: Pin<&mut ColorPainterWrapper>,
             x0: f32,
             y0: f32,
@@ -789,28 +813,25 @@ mod ffi {
             x1: f32,
             y1: f32,
             r1: f32,
-            color_stops: *const ColorStop,
-            num_color_stops: usize,
+            color_stops: &mut BridgeColorStops,
             extend_mode: u8,
         );
-        unsafe fn fill_linear(
+        fn fill_linear(
             self: Pin<&mut ColorPainterWrapper>,
             x0: f32,
             y0: f32,
             x1: f32,
             y1: f32,
-            color_stops: *const ColorStop,
-            num_color_stops: usize,
+            color_stops: &mut BridgeColorStops,
             extend_mode: u8,
         );
-        unsafe fn fill_sweep(
+        fn fill_sweep(
             self: Pin<&mut ColorPainterWrapper>,
             x0: f32,
             y0: f32,
             start_angle: f32,
             end_angle: f32,
-            color_stops: *const ColorStop,
-            num_color_stops: usize,
+            color_stops: &mut BridgeColorStops,
             extend_mode: u8,
         );
 

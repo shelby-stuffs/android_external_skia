@@ -87,22 +87,19 @@ public:
                              float x1,
                              float y1,
                              float r1,
-                             const fontations_ffi::ColorStop* color_stops,
-                             size_t num_color_stops,
+                             fontations_ffi::BridgeColorStops&,
                              uint8_t extend_mode) override;
     virtual void fill_linear(float x0,
                              float y0,
                              float x1,
                              float y1,
-                             const fontations_ffi::ColorStop* color_stops,
-                             size_t num_color_stops,
+                             fontations_ffi::BridgeColorStops&,
                              uint8_t extend_mode) override;
     virtual void fill_sweep(float x0,
                             float y0,
                             float startAngle,
                             float endAngle,
-                            const fontations_ffi::ColorStop* color_stops,
-                            size_t num_color_stops,
+                            fontations_ffi::BridgeColorStops&,
                             uint8_t extend_mode) override;
 
     // compositeMode arg matches composite mode values from the OpenType COLR table spec.
@@ -143,22 +140,16 @@ public:
                              float,
                              float,
                              float,
-                             const fontations_ffi::ColorStop*,
-                             size_t,
+                             fontations_ffi::BridgeColorStops& stops,
                              uint8_t) override {}
-    virtual void fill_linear(float,
-                             float,
-                             float,
-                             float,
-                             const fontations_ffi::ColorStop*,
-                             size_t,
-                             uint8_t) override {}
+    virtual void fill_linear(
+            float, float, float, float, fontations_ffi::BridgeColorStops& stops, uint8_t) override {
+    }
     virtual void fill_sweep(float x0,
                             float y0,
                             float startAngle,
                             float endAngle,
-                            const fontations_ffi::ColorStop* color_stops,
-                            size_t num_color_stops,
+                            fontations_ffi::BridgeColorStops& stops,
                             uint8_t extend_mode) override {}
 
     virtual void push_layer(uint8_t) override {}

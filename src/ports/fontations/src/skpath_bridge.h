@@ -35,6 +35,7 @@ public:
 };
 
 struct ColorStop;
+struct BridgeColorStops;
 
 /** C++ pure virtual interface, exposed to Rust side for receiving COLRv0/COLRv1 drawing callback
  * matching Skrifa's ColorPainter trait. */
@@ -53,8 +54,7 @@ public:
                              float y0,
                              float x1,
                              float y1,
-                             const ColorStop* color_stops,
-                             size_t num_color_stops,
+                             BridgeColorStops& stops,
                              uint8_t extend_mode) = 0;
     virtual void fill_radial(float x0,
                              float y0,
@@ -62,15 +62,13 @@ public:
                              float x1,
                              float y1,
                              float r1,
-                             const ColorStop* color_stops,
-                             size_t num_color_stops,
+                             BridgeColorStops& stops,
                              uint8_t extend_mode) = 0;
     virtual void fill_sweep(float x0,
                             float y0,
                             float startAngle,
                             float endAngle,
-                            const ColorStop* color_stops,
-                            size_t num_color_stops,
+                            BridgeColorStops& stops,
                             uint8_t extend_mode) = 0;
 
     virtual void push_layer(uint8_t colrV1CompositeMode) = 0;

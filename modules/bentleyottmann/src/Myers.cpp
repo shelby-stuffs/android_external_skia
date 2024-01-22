@@ -3,12 +3,18 @@
 
 #include "modules/bentleyottmann/include/Myers.h"
 
+#include "include/core/SkSpan.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkTo.h"
 #include "modules/bentleyottmann/include/Int96.h"
 
 #include <algorithm>
+#include <climits>
+#include <cstdint>
+#include <iterator>
 #include <tuple>
+#include <utility>
+#include <vector>
 
 namespace myers {
 
@@ -203,5 +209,468 @@ bool s0_less_than_s1_at_y(const Segment& s0, const Segment& s1, int32_t y) {
     const Int96 rhs = bo::multiply(d0.y, u1.x * SkToS64(d1.y) + (y - u1.y) * SkToS64(d1.x));
 
     return lhs < rhs || ((lhs == rhs) && slope_s0_less_than_slope_s1(s0, s1));
+}
+
+// -- Event ----------------------------------------------------------------------------------------
+// Events are horizontal lines at a given y where segments are added, or they contain one or
+// more horizontal lines, or segments end.
+struct Event {
+    const int32_t y;
+
+    // The set of segments that begin at y.
+    SkSpan<const Segment> begin;
+
+    // The set of segments that are horizontal on y.
+    SkSpan<const Segment> horizontal;
+
+    // The set of segments that end on y.
+    SkSpan<const Segment> end;
+};
+
+// -- EventQueue -----------------------------------------------------------------------------------
+// The EventQueue produces Events. Events are never added to the queue after initial creation.
+class EventQueue {
+    class Iterator {
+    public:
+        using value_type = Event;
+        using difference_type = ptrdiff_t;
+        using pointer = value_type*;
+        using reference = value_type;
+        using iterator_category = std::input_iterator_tag;
+        Iterator(const EventQueue& eventQueue, size_t index)
+            : fEventQueue{eventQueue}
+            , fIndex{index} { }
+        Iterator(const Iterator& that) : Iterator{ that.fEventQueue, that.fIndex } { }
+        Iterator& operator++() { ++fIndex; return *this; }
+        Iterator operator++(int) { Iterator tmp(*this); operator++(); return tmp; }
+        bool operator==(const Iterator& rhs) const { return fIndex == rhs.fIndex; }
+        bool operator!=(const Iterator& rhs) const { return fIndex != rhs.fIndex; }
+        value_type operator*() { return fEventQueue[fIndex]; }
+        friend difference_type operator-(Iterator lhs, Iterator rhs) {
+            return lhs.fIndex - rhs.fIndex;
+        }
+
+    private:
+        const EventQueue& fEventQueue;
+        size_t fIndex = 0;
+    };
+
+    // Events are stored using CompactEvent, Events are only passed back from nextEvent. start,
+    // endOfBegin, etc. are all indexes into fSegmentStorage. The beginning segments for the event
+    // are from start to endOfBegin, the horizontal segments are from endOfBegin to endOfStart, and
+    // the end segments are from endOfHorizontal to endOfEnd.
+    class CompactEvent {
+    public:
+        const int32_t y;
+        const int32_t start;
+        const int32_t endOfBegin;
+        const int32_t endOfHorizontal;
+        const int32_t endOfEnd;
+    };
+
+public:
+    // Given a list of segments make an EventQueue, and populate its queue with events.
+    static EventQueue Make(SkSpan<const Segment> segments) {
+        SkASSERT(!segments.empty());
+        SkASSERT(segments.size() < INT32_MAX);
+
+        enum EventType {
+            kBegin = 0,
+            kHorizontal = 1,
+            kEnd = 2
+        };
+
+        // A vector of SetupTuple when ordered will produce the events, and all the different
+        // sets of segments (beginning, etc.).
+        struct SetupTuple {
+            // The main ordering of events.
+            int32_t yOrdering;
+
+            // Group together like event types together.
+            EventType type;
+
+            // Break ties if yOrdering is the same.
+            int32_t xTieBreaker;
+
+            // We want to sort the segments, but they are not part of the key.
+            Segment originalSegment;
+
+            bool operator==(const SetupTuple& r) const {
+                return
+                    std::tie(this->yOrdering, this->type, this->xTieBreaker, this->originalSegment)
+                        == std::tie(r.yOrdering, r.type, r.xTieBreaker, r.originalSegment);
+            }
+        };
+
+        std::vector<SetupTuple> eventOrdering;
+        for (const auto& s : segments) {
+
+            // Exclude zero length segments.
+            if (s.upper() == s.lower()) {
+                continue;
+            }
+
+            if (s.isHorizontal()) {
+                // Tag for the horizontal set.
+                eventOrdering.push_back(SetupTuple{s.upper().y, kHorizontal, -s.upper().x, s});
+            } else {
+                // Tag for the beginning and ending sets.
+                eventOrdering.push_back(SetupTuple{s.upper().y, kBegin, -s.upper().x, s});
+                eventOrdering.push_back(SetupTuple{s.lower().y, kEnd, -s.lower().x, s});
+            }
+        }
+
+        // Order the tuples by y, then by set type, then by x value.
+        auto eventLess = [](const SetupTuple& l, const SetupTuple& r) {
+            return std::tie(l.yOrdering, l.type, l.xTieBreaker) <
+                   std::tie(r.yOrdering, r.type, r.xTieBreaker);
+        };
+
+        // Sort the events.
+        std::sort(eventOrdering.begin(), eventOrdering.end(), eventLess);
+
+        // Remove duplicate segments.
+        auto eraseFrom = std::unique(eventOrdering.begin(), eventOrdering.end());
+        eventOrdering.erase(eraseFrom, eventOrdering.end());
+
+        std::vector<CompactEvent> events;
+        std::vector<Segment> segmentStorage;
+        segmentStorage.reserve(eventOrdering.size());
+
+        int32_t currentY = eventOrdering.front().yOrdering;
+        int32_t start = 0,
+                endOfBegin = 0,
+                endOfHorizontal = 0,
+                endOfEnd = 0;
+        for (const auto& [y, type, _, s] : eventOrdering) {
+            // If this is a new y then create the compact event.
+            if (currentY != y) {
+                events.push_back(CompactEvent{currentY,
+                                              start,
+                                              endOfBegin,
+                                              endOfHorizontal,
+                                              endOfEnd});
+                start = endOfBegin = endOfHorizontal = endOfEnd = segmentStorage.size();
+                currentY = y;
+            }
+
+            segmentStorage.push_back(s);
+
+            // Increment the various set indices.
+            const size_t segmentCount = segmentStorage.size();
+            switch (type) {
+                case kBegin: endOfBegin = segmentCount;
+                    [[fallthrough]];
+                case kHorizontal: endOfHorizontal = segmentCount;
+                    [[fallthrough]];
+                case kEnd: endOfEnd = segmentCount;
+            }
+        }
+
+        // Store the last event.
+        events.push_back(CompactEvent{currentY,
+                                      start,
+                                      endOfBegin,
+                                      endOfHorizontal,
+                                      endOfEnd});
+
+        return EventQueue{std::move(events), std::move(segmentStorage)};
+    }
+
+    Event operator[](size_t i) const {
+        SkASSERT(i < fEvents.size());
+        auto& [y, start, endOfBegin, endOfHorizontal, endOfEnd] = fEvents[i];
+        SkSpan<const Segment> begin{&fSegmentStorage[start], endOfBegin - start};
+        SkSpan<const Segment>
+            horizontal{&fSegmentStorage[endOfBegin], endOfHorizontal - endOfBegin};
+        SkSpan<const Segment> end{&fSegmentStorage[endOfHorizontal], endOfEnd - endOfHorizontal};
+        return Event{y, begin, horizontal, end};
+    }
+
+    Iterator begin() const {
+        return Iterator{*this, 0};
+    }
+
+    Iterator end() const {
+        return Iterator{*this, fEvents.size()};
+    }
+
+    size_t size() const {
+        return fEvents.size();
+    }
+
+    bool empty() const {
+        return fEvents.empty();
+    }
+
+private:
+    EventQueue(std::vector<CompactEvent>&& events, std::vector<Segment>&& segmentStorage)
+            : fEvents{std::move(events)}
+            , fSegmentStorage{std::move(segmentStorage)} {}
+
+    const std::vector<CompactEvent> fEvents;
+    const std::vector<Segment> fSegmentStorage;
+};
+
+// -- CrossingAccumulator --------------------------------------------------------------------------
+// Collect all the crossings, and reject endpoint-to-endpoint crossings as those intersections
+// are already represented in the data.
+class CrossingAccumulator {
+public:
+    void recordCrossing(const Segment& s0, const Segment& s1) {
+        // Endpoints with no possible interior overlap.
+        if (s0.upper() == s1.lower() || s0.lower() == s1.upper()) {
+            return;
+        }
+
+        // Segments don't overlap if they are not collinear.
+        if ((s0.upper() == s1.upper() || s0.lower() == s1.lower()) && compare_slopes(s0, s1) != 0) {
+            return;
+        }
+
+        fCrossings.emplace_back(s0, s1);
+    }
+
+    std::vector<Crossing> finishAndReleaseCrossings() {
+        return std::move(fCrossings);
+    }
+
+private:
+    std::vector<Crossing> fCrossings;
+};
+
+class SweepLine {
+    static constexpr Segment kLeftStatusSentinel{{INT32_MIN, INT32_MIN}, {INT32_MIN, INT32_MAX}};
+    static constexpr Segment kRightStatusSentinel{{INT32_MAX, INT32_MIN}, {INT32_MAX, INT32_MAX}};
+
+public:
+    SweepLine() {
+        fStatus.push_back(kLeftStatusSentinel);
+        fStatus.push_back(kRightStatusSentinel);
+    }
+
+    void handleEvent(Event e) {
+        auto& [y, beginnings, horizontals, endings] = e;
+
+        // Things could be out of order from last event.
+        this->sortAndRecord(y);
+
+        this->handleBeginnings(y, beginnings);
+        this->handleHorizontals(y, horizontals);
+        this->handleEndings(y, endings);
+    }
+
+    std::vector<Crossing> finishAndReleaseCrossings() {
+        // Only the sentinels should be left.
+        SkASSERT(this->statusEmpty());
+        return fCrossings.finishAndReleaseCrossings();
+    }
+
+private:
+    using StatusLine = std::vector<Segment>;
+
+    bool statusEmpty() const {
+        return fStatus.size() == 2;
+    }
+
+    // Sort the status line, if items are swapped, then there is a crossing to record.
+    void sortAndRecord(int32_t y) {
+        // If there are only the sentinels or just 1 segment, then nothing to sort.
+        if (fStatus.size() <= 3) {
+            return;
+        }
+
+        // Skip the first and last sentinels.
+        for (size_t i = 2; i < fStatus.size() - 1; ++i) {
+            const Segment t = fStatus[i];
+            size_t j = i;
+            for (; j > 1 && s0_less_than_s1_at_y(t, fStatus[j - 1], y); --j) {
+                // While t < the thing before it move it down.
+                fCrossings.recordCrossing(t, fStatus[j-1]);
+                fStatus[j] = fStatus[j-1];
+            }
+            fStatus[j] = t;
+        }
+    }
+
+    // When inserting a starting point (either a beginning or a horizontal) check the segments to
+    // the left and the right checking nearby segments for crossings.
+    template <typename CrossingCheck>
+    void checkCrossingsLeftAndRight(
+            const Segment& segment, StatusLine::iterator insertionPoint, CrossingCheck check) {
+
+        // Match to the left using the left sentinel to break the loop.
+        for (auto cursor = std::make_reverse_iterator(insertionPoint); check(*cursor); cursor++) {
+            fCrossings.recordCrossing(segment, *cursor);
+        }
+
+        // Match to the right using the right sentinel to break the loop.
+        for (auto cursor = insertionPoint; check(*cursor); cursor++) {
+            fCrossings.recordCrossing(segment, *cursor);
+        }
+    }
+
+    // Add segments that start on y excluding horizontals.
+    void handleBeginnings(int32_t y, SkSpan<const Segment> inserting) {
+        for (const Segment& s : inserting) {
+            auto insertionPoint =
+                    std::lower_bound(fStatus.begin(), fStatus.end(), s,
+                                     segment_less_than_upper_to_insert);
+
+            // Checking intersections left and right checks if the point s.upper() lies on
+            // the nearby segment.
+            auto checkIntersect = [&](const Segment& toCheck) {
+                return compare_point_to_segment(s.upper(), toCheck) == 0;
+            };
+            this->checkCrossingsLeftAndRight(s, insertionPoint, checkIntersect);
+
+            fStatus.insert(insertionPoint, s);
+        }
+    }
+
+    // Horizontals on y are handled by checking for crossings by adding them, and the immediately
+    // removing them.
+    void handleHorizontals(int32_t y, SkSpan<const Segment> horizontals) {
+        for (const Segment& s : horizontals) {
+            auto insertionPoint =
+                    std::lower_bound(fStatus.begin(), fStatus.end(), s,
+                                     segment_less_than_upper_to_insert);
+
+            // Check if the nearby segment crosses the horizontal line.
+            auto checkIntersection = [&](const Segment& toCheck) {
+                return compare_point_to_segment(s.upper(), toCheck) <= 0 &&
+                       compare_point_to_segment(s.lower(), toCheck) >= 0;
+            };
+            this->checkCrossingsLeftAndRight(s, insertionPoint, checkIntersection);
+
+            fStatus.insert(insertionPoint, s);
+        }
+
+        for (const Segment& s : horizontals) {
+            auto removedPoint = std::remove(fStatus.begin(), fStatus.end(), s);
+            SkASSERT(removedPoint != fStatus.end());
+            fStatus.erase(removedPoint, fStatus.end());
+        }
+    }
+
+    // Remove all the segments ending on y.
+    void handleEndings(int32_t y, SkSpan<const Segment> removing) {
+        for (const Segment& s : removing) {
+            auto removedPoint = std::remove(fStatus.begin(), fStatus.end(), s);
+            SkASSERT(removedPoint != fStatus.end());
+            fStatus.erase(removedPoint, fStatus.end());
+        }
+    }
+
+    StatusLine fStatus;
+    CrossingAccumulator fCrossings;
+};
+
+SkSpan<Segment> remove_zero_segments_and_duplicates(SkSpan<Segment> segments) {
+    auto isZeroSegment = [](const Segment& segment) {
+        return segment.upper() == segment.lower();
+    };
+    const auto zeroSegments = std::remove_if(segments.begin(), segments.end(), isZeroSegment);
+
+    std::sort(segments.begin(), zeroSegments);
+
+    const auto duplicateSegments = std::unique(segments.begin(), zeroSegments);
+
+    return SkSpan{segments.data(), std::distance(segments.begin(), duplicateSegments)};
+}
+
+std::vector<Crossing> myers_find_crossings(SkSpan<Segment> segments) {
+
+    // This is strictly not needed, but is added to compare performance with brute-force.
+    // TODO: remove this after done with performance comparisons.
+    SkSpan<const Segment> cleanSegments = remove_zero_segments_and_duplicates(segments);
+
+    const EventQueue eventQueue = EventQueue::Make(cleanSegments);
+    SweepLine sweepLine;
+
+    for (const Event event : eventQueue) {
+        sweepLine.handleEvent(event);
+    }
+
+    return sweepLine.finishAndReleaseCrossings();
+}
+
+// This intersection algorithm is from "Robust Plane Sweep for Intersecting Segments" page 10.
+bool s0_intersects_s1(const Segment& s0, const Segment& s1) {
+    // Make sure that s0 upper is above s1 upper.
+    if (s1.upper().y < s0.upper().y
+        || ((s1.upper().y == s0.upper().y) && (s1.lower().y > s0.lower().y))) {
+
+        // Swap to put in the right orientation.
+        return s0_intersects_s1(s1, s0);
+    }
+
+    SkASSERT(s0.upper().y <= s1.upper().y);
+
+    {  // If extents don't overlap then there is no intersection.
+        auto [left0, top0, right0, bottom0] = s0.bounds();
+        auto [left1, top1, right1, bottom1] = s1.bounds();
+        if (right1 < left0 || right0 < left1 || bottom1 < top0 || bottom0 < top1) {
+            return false;
+        }
+    }
+
+    auto [u0, l0] = s0;
+    auto [u1, l1] = s1;
+
+    const Point D0 = l0 - u0,
+                D1 = l1 - u1;
+
+    // If the vector from u0 to l0 (named D0) and the vector from u0 to u1 have an angle of 0
+    // between them, then u1 is on the segment u0 to l0 (named s0).
+    const Point U0toU1 = (u1 - u0);
+    const int64_t D0xU0toU1 = cross(D0, U0toU1);
+    if (D0xU0toU1 == 0) {
+        // u1 is on s0.
+        return true;
+    }
+
+    if (l1.y <= l0.y) {
+        // S1 is between the upper and lower points of S0.
+        const Point U0toL1 = (l1 - u0);
+        const int64_t D0xU0toL1 = cross(D0, U0toL1);
+        if (D0xU0toL1 == 0) {
+            // l1 is on s0.
+            return true;
+        }
+
+        // If U1 and L1 are on opposite sides of D0 then the segments cross.
+        return (D0xU0toU1 ^ D0xU0toL1) < 0;
+    } else {
+        // S1 extends past S0. It could be that S1 crosses the line of S0 (not the bound segment)
+        // beyond the endpoints of S0. Make sure that it crosses on the segment and not beyond.
+        const Point U1toL0 = (l0 - u1);
+        const int64_t D1xU1toL0 = cross(D1, U1toL0);
+        if (D1xU1toL0 == 0) {
+            return true;
+        }
+
+        // For D1 to cross D0, then D1 must be on the same side of U1toL0 as D0. D0xU0toU1
+        // describes the orientation of U0 compared to D0. The angle from D1 to U1toL0 must
+        // have the same direction as the angle from U0toU1 to D0.
+        return (D0xU0toU1 ^ D1xU1toL0) >= 0;
+    }
+}
+
+std::vector<Crossing> brute_force_crossings(SkSpan<Segment> segments) {
+
+    SkSpan<const Segment> cleanSegments = remove_zero_segments_and_duplicates(segments);
+
+    CrossingAccumulator crossings;
+    if (cleanSegments.size() >= 2) {
+        for (auto i = cleanSegments.begin(); i != std::prev(cleanSegments.end()); ++i) {
+            for (auto j = std::next(i); j != cleanSegments.end(); ++j) {
+                if (s0_intersects_s1(*i, *j)) {
+                    crossings.recordCrossing(*i, *j);
+                }
+            }
+        }
+    }
+    return crossings.finishAndReleaseCrossings();
 }
 }  // namespace myers

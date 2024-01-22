@@ -20,7 +20,6 @@
 #include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLString.h"
-#include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLBreakStatement.h"
@@ -142,12 +141,13 @@ private:
 class Parser::Checkpoint {
 public:
     Checkpoint(Parser* p) : fParser(p) {
+        Context& context = fParser->fCompiler.context();
         fPushbackCheckpoint = fParser->fPushback;
         fLexerCheckpoint = fParser->fLexer.getCheckpoint();
-        fOldErrorReporter = &ThreadContext::GetErrorReporter();
+        fOldErrorReporter = context.fErrors;
         fOldEncounteredFatalError = fParser->fEncounteredFatalError;
         SkASSERT(fOldErrorReporter);
-        ThreadContext::SetErrorReporter(&fErrorReporter);
+        context.setErrorReporter(&fErrorReporter);
     }
 
     ~Checkpoint() {
@@ -159,7 +159,7 @@ public:
         // Parser errors should have been fatal, but we can encounter other errors like type
         // mismatches despite accepting the parse. Forward those messages to the actual error
         // handler now.
-        fErrorReporter.forwardErrors();
+        fErrorReporter.forwardErrors(fParser);
     }
 
     void rewind() {
@@ -176,9 +176,9 @@ private:
             fErrors.push_back({std::string(msg), pos});
         }
 
-        void forwardErrors() {
-            for (Error& error : fErrors) {
-                ThreadContext::ReportError(error.fMsg, error.fPos);
+        void forwardErrors(Parser* parser) {
+            for (const Error& error : fErrors) {
+                parser->error(error.fPos, error.fMsg);
             }
         }
 
@@ -193,7 +193,7 @@ private:
 
     void restoreErrorReporter() {
         SkASSERT(fOldErrorReporter);
-        ThreadContext::SetErrorReporter(fOldErrorReporter);
+        fParser->fCompiler.context().setErrorReporter(fOldErrorReporter);
         fOldErrorReporter = nullptr;
     }
 
@@ -208,11 +208,11 @@ private:
 Parser::Parser(Compiler* compiler,
                const ProgramSettings& settings,
                ProgramKind kind,
-               std::string text)
+               std::unique_ptr<std::string> text)
         : fCompiler(*compiler)
         , fSettings(settings)
         , fKind(kind)
-        , fText(std::make_unique<std::string>(std::move(text)))
+        , fText(std::move(text))
         , fPushback(Token::Kind::TK_NONE, /*offset=*/-1, /*length=*/-1) {
     fLexer.start(*fText);
 }
@@ -380,7 +380,7 @@ void Parser::error(Token token, std::string_view msg) {
 }
 
 void Parser::error(Position position, std::string_view msg) {
-    ThreadContext::ReportError(msg, position);
+    fCompiler.context().fErrors->error(position, msg);
 }
 
 Position Parser::rangeFrom(Position start) {
@@ -394,36 +394,24 @@ Position Parser::rangeFrom(Token start) {
 }
 
 /* declaration* END_OF_FILE */
-std::unique_ptr<Program> Parser::program() {
-    ErrorReporter* errorReporter = &fCompiler.errorReporter();
-    ThreadContext::Start(&fCompiler, fKind, fSettings);
-    ThreadContext::SetErrorReporter(errorReporter);
-    errorReporter->setSource(*fText);
+std::unique_ptr<Program> Parser::programInheritingFrom(const SkSL::Module* module) {
     this->declarations();
     std::unique_ptr<Program> result;
-    if (!errorReporter->errorCount()) {
+    if (fCompiler.errorReporter().errorCount() == 0) {
         result = fCompiler.releaseProgram(std::move(fText), std::move(fProgramElements));
     } else {
         fProgramElements.clear();
     }
-    errorReporter->setSource(std::string_view());
-    ThreadContext::End();
     return result;
 }
 
-std::unique_ptr<SkSL::Module> Parser::moduleInheritingFrom(const SkSL::Module* parent) {
-    ErrorReporter* errorReporter = &fCompiler.errorReporter();
-    ThreadContext::StartModule(&fCompiler, fKind, fSettings, parent);
-    ThreadContext::SetErrorReporter(errorReporter);
-    errorReporter->setSource(*fText);
+std::unique_ptr<SkSL::Module> Parser::moduleInheritingFrom(const SkSL::Module* parentModule) {
     this->declarations();
     this->symbolTable()->takeOwnershipOfString(std::move(*fText));
     auto result = std::make_unique<SkSL::Module>();
-    result->fParent = parent;
+    result->fParent = parentModule;
     result->fSymbols = this->symbolTable();
     result->fElements = std::move(fProgramElements);
-    errorReporter->setSource(std::string_view());
-    ThreadContext::End();
     return result;
 }
 
@@ -643,14 +631,14 @@ bool Parser::prototypeFunction(SkSL::FunctionDeclaration* decl) {
 bool Parser::defineFunction(SkSL::FunctionDeclaration* decl) {
     // Create a symbol table for the function parameters.
     const Context& context = fCompiler.context();
-    AutoSymbolTable symbols(this);
-    if (decl) {
-        decl->addParametersToSymbolTable(context);
-    }
 
     // Parse the function body.
     Token bodyStart = this->peek();
-    std::unique_ptr<Statement> body = this->block();
+    SkSpan<Variable* const> parametersForTopLevel;
+    if (decl) {
+        parametersForTopLevel = decl->parameters();
+    }
+    std::unique_ptr<Statement> body = this->block(parametersForTopLevel);
 
     // If there was a problem with the declarations or body, don't actually create a definition.
     if (!decl || !body) {
@@ -1536,26 +1524,38 @@ std::unique_ptr<Statement> Parser::switchStatement() {
 
     ExpressionArray values;
     StatementArray caseBlocks;
-    while (this->peek().fKind == Token::Kind::TK_CASE) {
-        if (!this->switchCase(&values, &caseBlocks)) {
+    std::shared_ptr<SymbolTable> symbolTable;
+    {
+        // Keeping a tight scope around AutoSymbolTable is important here. SwitchStatement::Convert
+        // may end up creating a new symbol table if the HoistSwitchVarDeclarationsAtTopLevel
+        // transform is used. We want ~AutoSymbolTable to happen first, so it can restore the
+        // context's active symbol table to the enclosing block instead of the switch's inner block.
+        AutoSymbolTable symbols(this);
+        symbolTable = this->symbolTable();
+
+        while (this->peek().fKind == Token::Kind::TK_CASE) {
+            if (!this->switchCase(&values, &caseBlocks)) {
+                return nullptr;
+            }
+        }
+        // Requiring `default:` to be last (in defiance of C and GLSL) was a deliberate decision.
+        // Other parts of the compiler are allowed to rely upon this assumption.
+        if (this->checkNext(Token::Kind::TK_DEFAULT)) {
+            if (!this->switchCaseBody(&values, &caseBlocks, /*value=*/nullptr)) {
+                return nullptr;
+            }
+        }
+        if (!this->expect(Token::Kind::TK_RBRACE, "'}'")) {
             return nullptr;
         }
     }
-    // Requiring `default:` to be last (in defiance of C and GLSL) was a deliberate decision. Other
-    // parts of the compiler are allowed to rely upon this assumption.
-    if (this->checkNext(Token::Kind::TK_DEFAULT)) {
-        if (!this->switchCaseBody(&values, &caseBlocks, /*value=*/nullptr)) {
-            return nullptr;
-        }
-    }
-    if (!this->expect(Token::Kind::TK_RBRACE, "'}'")) {
-        return nullptr;
-    }
+
     Position pos = this->rangeFrom(start);
     return this->statementOrNop(pos, SwitchStatement::Convert(fCompiler.context(), pos,
                                                               std::move(value),
                                                               std::move(values),
-                                                              std::move(caseBlocks)));
+                                                              std::move(caseBlocks),
+                                                              std::move(symbolTable)));
 }
 
 static Position range_of_at_least_one_char(int start, int end) {
@@ -1686,7 +1686,7 @@ std::unique_ptr<Statement> Parser::discardStatement() {
 }
 
 /* LBRACE statement* RBRACE */
-std::unique_ptr<Statement> Parser::block() {
+std::unique_ptr<Statement> Parser::block(SkSpan<Variable* const> parametersForTopLevel) {
     AutoDepth depth(this);
     Token start;
     if (!this->expect(Token::Kind::TK_LBRACE, "'{'", &start)) {
@@ -1696,6 +1696,9 @@ std::unique_ptr<Statement> Parser::block() {
         return nullptr;
     }
     AutoSymbolTable symbols(this);
+    for (Variable* param : parametersForTopLevel) {
+        this->symbolTable()->addWithoutOwnership(fCompiler.context(), param);
+    }
     StatementArray statements;
     for (;;) {
         switch (this->peek().fKind) {
