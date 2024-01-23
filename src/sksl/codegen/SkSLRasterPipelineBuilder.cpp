@@ -1011,6 +1011,20 @@ void Builder::pop_return_mask() {
     this->appendInstruction(BuilderOp::pop_return_mask, {});
 }
 
+void Builder::push_condition_mask() {
+    SkASSERT(this->executionMaskWritesAreEnabled());
+
+    // If the previous instruction is popping the condition mask, we can restore it onto the stack
+    // "for free" instead of copying it.
+    if (Instruction* lastInstruction = this->lastInstruction()) {
+        if (lastInstruction->fOp == BuilderOp::pop_condition_mask) {
+            this->pad_stack(1);
+            return;
+        }
+    }
+    this->appendInstruction(BuilderOp::push_condition_mask, {});
+}
+
 void Builder::merge_condition_mask() {
     SkASSERT(this->executionMaskWritesAreEnabled());
 
@@ -2097,21 +2111,21 @@ void Program::makeStages(TArray<Stage>* pipeline,
                 ctx->slots = inst.fImmA;
                 if (inst.fOp == BuilderOp::push_slots_indirect) {
                     op = ProgramOp::copy_from_indirect_unmasked;
-                    ctx->src = SlotA();
-                    ctx->dst = tempStackPtr;
+                    ctx->src = reinterpret_cast<const int32_t*>(SlotA());
+                    ctx->dst = reinterpret_cast<int32_t*>(tempStackPtr);
                 } else if (inst.fOp == BuilderOp::push_immutable_indirect) {
                     // We reuse the indirect-uniform op for indirect copies of immutable data.
                     op = ProgramOp::copy_from_indirect_uniform_unmasked;
-                    ctx->src = ImmutableA();
-                    ctx->dst = tempStackPtr;
+                    ctx->src = reinterpret_cast<const int32_t*>(ImmutableA());
+                    ctx->dst = reinterpret_cast<int32_t*>(tempStackPtr);
                 } else if (inst.fOp == BuilderOp::push_uniform_indirect) {
                     op = ProgramOp::copy_from_indirect_uniform_unmasked;
-                    ctx->src = UniformA();
-                    ctx->dst = tempStackPtr;
+                    ctx->src = reinterpret_cast<const int32_t*>(UniformA());
+                    ctx->dst = reinterpret_cast<int32_t*>(tempStackPtr);
                 } else {
                     op = ProgramOp::copy_to_indirect_masked;
-                    ctx->src = tempStackPtr - (ctx->slots * N);
-                    ctx->dst = SlotA();
+                    ctx->src = reinterpret_cast<const int32_t*>(tempStackPtr) - (ctx->slots * N);
+                    ctx->dst = reinterpret_cast<int32_t*>(SlotA());
                 }
                 pipeline->push_back({op, ctx});
                 break;
@@ -2272,8 +2286,8 @@ void Program::makeStages(TArray<Stage>* pipeline,
                 float* sourceStackPtr = tempStackMap[inst.fImmB];
 
                 auto* ctx = alloc->make<SkRasterPipeline_CopyIndirectCtx>();
-                ctx->dst = tempStackPtr;
-                ctx->src = sourceStackPtr - (inst.fImmC * N);
+                ctx->dst = reinterpret_cast<int32_t*>(tempStackPtr);
+                ctx->src = reinterpret_cast<const int32_t*>(sourceStackPtr) - (inst.fImmC * N);
                 ctx->indirectOffset =
                         reinterpret_cast<const uint32_t*>(tempStackMap[inst.fImmD]) - (1 * N);
                 ctx->indirectLimit = inst.fImmC - inst.fImmA;
@@ -2289,8 +2303,8 @@ void Program::makeStages(TArray<Stage>* pipeline,
                 // immC: offset from stack top
                 // immD: dynamic stack ID
                 auto* ctx = alloc->make<SkRasterPipeline_SwizzleCopyIndirectCtx>();
-                ctx->src = tempStackPtr - (inst.fImmC * N);
-                ctx->dst = SlotA();
+                ctx->src = reinterpret_cast<const int32_t*>(tempStackPtr) - (inst.fImmC * N);
+                ctx->dst = reinterpret_cast<int32_t*>(SlotA());
                 ctx->indirectOffset =
                         reinterpret_cast<const uint32_t*>(tempStackMap[inst.fImmD]) - (1 * N);
                 ctx->indirectLimit =

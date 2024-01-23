@@ -571,17 +571,24 @@ void populateStopsAndColors(std::vector<SkScalar>& dest_stops,
                             std::vector<SkColor4f>& dest_colors,
                             const SkSpan<SkColor>& palette,
                             SkColor foregroundColor,
-                            const fontations_ffi::ColorStop* color_stops,
-                            size_t num_color_stops) {
-    for (size_t i = 0; i < num_color_stops; ++i) {
-        SkASSERT(dest_stops.size() == num_color_stops && dest_colors.size() == num_color_stops);
-        dest_stops[i] = SkFloatToScalar(color_stops[i].stop);
-        if (color_stops[i].palette_index == kForegroundColorPaletteIndex) {
-            dest_colors[i] = SkColor4f::FromColor(foregroundColor);
+                            fontations_ffi::BridgeColorStops& color_stops) {
+    SkASSERT(dest_stops.size() == 0);
+    SkASSERT(dest_colors.size() == 0);
+    size_t num_color_stops = fontations_ffi::num_color_stops(color_stops);
+    dest_stops.reserve(num_color_stops);
+    dest_colors.reserve(num_color_stops);
+
+    fontations_ffi::ColorStop color_stop;
+    while (fontations_ffi::next_color_stop(color_stops, color_stop)) {
+        dest_stops.push_back(color_stop.stop);
+        SkColor4f dest_color;
+        if (color_stop.palette_index == kForegroundColorPaletteIndex) {
+            dest_color = SkColor4f::FromColor(foregroundColor);
         } else {
-            dest_colors[i] = SkColor4f::FromColor(palette[color_stops[i].palette_index]);
+            dest_color = SkColor4f::FromColor(palette[color_stop.palette_index]);
         }
-        dest_colors[i].fA *= color_stops[i].alpha;
+        dest_color.fA *= color_stop.alpha;
+        dest_colors.push_back(dest_color);
     }
 }
 
@@ -766,18 +773,14 @@ void ColorPainter::fill_linear(float x0,
                                float y0,
                                float x1,
                                float y1,
-                               const fontations_ffi::ColorStop* color_stops,
-                               size_t num_color_stops,
+                               fontations_ffi::BridgeColorStops& bridge_stops,
                                uint8_t extend_mode) {
     SkPaint paint;
 
     std::vector<SkScalar> stops;
     std::vector<SkColor4f> colors;
 
-    stops.resize(num_color_stops);
-    colors.resize(num_color_stops);
-
-    populateStopsAndColors(stops, colors, fPalette, fForegroundColor, color_stops, num_color_stops);
+    populateStopsAndColors(stops, colors, fPalette, fForegroundColor, bridge_stops);
 
     if (stops.size() == 1) {
         paint.setColor(colors[0]);
@@ -813,8 +816,7 @@ void ColorPainter::fill_radial(float x0,
                                float x1,
                                float y1,
                                float endRadius,
-                               const fontations_ffi::ColorStop* color_stops,
-                               size_t num_color_stops,
+                               fontations_ffi::BridgeColorStops& bridge_stops,
                                uint8_t extend_mode) {
     SkPaint paint;
 
@@ -824,10 +826,7 @@ void ColorPainter::fill_radial(float x0,
     std::vector<SkScalar> stops;
     std::vector<SkColor4f> colors;
 
-    stops.resize(num_color_stops);
-    colors.resize(num_color_stops);
-
-    populateStopsAndColors(stops, colors, fPalette, fForegroundColor, color_stops, num_color_stops);
+    populateStopsAndColors(stops, colors, fPalette, fForegroundColor, bridge_stops);
 
     // Draw single color if there's only one stop.
     if (stops.size() == 1) {
@@ -949,8 +948,7 @@ void ColorPainter::fill_sweep(float x0,
                               float y0,
                               float startAngle,
                               float endAngle,
-                              const fontations_ffi::ColorStop* color_stops,
-                              size_t num_color_stops,
+                              fontations_ffi::BridgeColorStops& bridge_stops,
                               uint8_t extend_mode) {
     SkPaint paint;
 
@@ -959,10 +957,7 @@ void ColorPainter::fill_sweep(float x0,
     std::vector<SkScalar> stops;
     std::vector<SkColor4f> colors;
 
-    stops.resize(num_color_stops);
-    colors.resize(num_color_stops);
-
-    populateStopsAndColors(stops, colors, fPalette, fForegroundColor, color_stops, num_color_stops);
+    populateStopsAndColors(stops, colors, fPalette, fForegroundColor, bridge_stops);
 
     if (stops.size() == 1) {
         paint.setColor(colors[0]);
