@@ -16,9 +16,9 @@
 
 namespace SkSL {
 
-std::shared_ptr<SymbolTable> SymbolTable::insertNewParent() {
-    auto newTable = std::make_shared<SymbolTable>(fParent, fBuiltin);
-    fParent = newTable;
+std::unique_ptr<SymbolTable> SymbolTable::insertNewParent() {
+    auto newTable = std::make_unique<SymbolTable>(fParent, fBuiltin);
+    fParent = newTable.get();
     return newTable;
 }
 
@@ -91,18 +91,26 @@ void SymbolTable::renameSymbol(const Context& context, Symbol* symbol, std::stri
 
 std::unique_ptr<Symbol> SymbolTable::removeSymbol(const Symbol* symbol) {
     // Remove the symbol from our symbol lookup table.
-    fSymbols.remove(MakeSymbolKey(symbol->name()));
-
-    // Transfer ownership of the symbol if we own it. (This will leave a nullptr behind in the
-    // `fOwnedSymbols` list, which should be harmless.)
-    for (std::unique_ptr<Symbol>& owned : fOwnedSymbols) {
-        if (symbol == owned.get()) {
-            return std::move(owned);
+    if (fSymbols.removeIfExists(MakeSymbolKey(symbol->name()))) {
+        // Transfer ownership of the symbol if we own it. (This will leave a nullptr behind in the
+        // `fOwnedSymbols` list, which should be harmless.)
+        for (std::unique_ptr<Symbol>& owned : fOwnedSymbols) {
+            if (symbol == owned.get()) {
+                return std::move(owned);
+            }
         }
     }
 
     // We don't own the symbol after all.
     return nullptr;
+}
+
+void SymbolTable::moveSymbolTo(SymbolTable* otherTable, Symbol* sym, const Context& context) {
+    if (std::unique_ptr<Symbol> ownedSymbol = this->removeSymbol(sym)) {
+        otherTable->add(context, std::move(ownedSymbol));
+    } else {
+        otherTable->addWithoutOwnership(context, sym);
+    }
 }
 
 const std::string* SymbolTable::takeOwnershipOfString(std::string str) {

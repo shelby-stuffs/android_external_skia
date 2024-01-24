@@ -270,7 +270,7 @@ class EventQueue {
 
 public:
     // Given a list of segments make an EventQueue, and populate its queue with events.
-    static EventQueue Make(SkSpan<const Segment> segments) {
+    static EventQueue Make(const SkSpan<const Segment> segments) {
         SkASSERT(!segments.empty());
         SkASSERT(segments.size() < INT32_MAX);
 
@@ -457,7 +457,7 @@ public:
 
         this->handleBeginnings(y, beginnings);
         this->handleHorizontals(y, horizontals);
-        this->handleEndings(y, endings);
+        this->handleEndings(endings);
     }
 
     std::vector<Crossing> finishAndReleaseCrossings() {
@@ -500,12 +500,12 @@ private:
             const Segment& segment, StatusLine::iterator insertionPoint, CrossingCheck check) {
 
         // Match to the left using the left sentinel to break the loop.
-        for (auto cursor = std::make_reverse_iterator(insertionPoint); check(*cursor); cursor++) {
+        for (auto cursor = std::make_reverse_iterator(insertionPoint); check(*cursor); ++cursor) {
             fCrossings.recordCrossing(segment, *cursor);
         }
 
         // Match to the right using the right sentinel to break the loop.
-        for (auto cursor = insertionPoint; check(*cursor); cursor++) {
+        for (auto cursor = insertionPoint; check(*cursor); ++cursor) {
             fCrossings.recordCrossing(segment, *cursor);
         }
     }
@@ -528,7 +528,7 @@ private:
         }
     }
 
-    // Horizontals on y are handled by checking for crossings by adding them, and the immediately
+    // Horizontals on y are handled by checking for crossings by adding them, and then immediately
     // removing them.
     void handleHorizontals(int32_t y, SkSpan<const Segment> horizontals) {
         for (const Segment& s : horizontals) {
@@ -546,15 +546,11 @@ private:
             fStatus.insert(insertionPoint, s);
         }
 
-        for (const Segment& s : horizontals) {
-            auto removedPoint = std::remove(fStatus.begin(), fStatus.end(), s);
-            SkASSERT(removedPoint != fStatus.end());
-            fStatus.erase(removedPoint, fStatus.end());
-        }
+        this->handleEndings(horizontals);
     }
 
     // Remove all the segments ending on y.
-    void handleEndings(int32_t y, SkSpan<const Segment> removing) {
+    void handleEndings(SkSpan<const Segment> removing) {
         for (const Segment& s : removing) {
             auto removedPoint = std::remove(fStatus.begin(), fStatus.end(), s);
             SkASSERT(removedPoint != fStatus.end());
@@ -566,29 +562,11 @@ private:
     CrossingAccumulator fCrossings;
 };
 
-SkSpan<Segment> remove_zero_segments_and_duplicates(SkSpan<Segment> segments) {
-    auto isZeroSegment = [](const Segment& segment) {
-        return segment.upper() == segment.lower();
-    };
-    const auto zeroSegments = std::remove_if(segments.begin(), segments.end(), isZeroSegment);
-
-    std::sort(segments.begin(), zeroSegments);
-
-    const auto duplicateSegments = std::unique(segments.begin(), zeroSegments);
-
-    return SkSpan{segments.data(), std::distance(segments.begin(), duplicateSegments)};
-}
-
-std::vector<Crossing> myers_find_crossings(SkSpan<Segment> segments) {
-
-    // This is strictly not needed, but is added to compare performance with brute-force.
-    // TODO: remove this after done with performance comparisons.
-    SkSpan<const Segment> cleanSegments = remove_zero_segments_and_duplicates(segments);
-
-    const EventQueue eventQueue = EventQueue::Make(cleanSegments);
+std::vector<Crossing> myers_find_crossings(const SkSpan<const Segment> segments) {
+    const EventQueue eventQueue = EventQueue::Make(segments);
     SweepLine sweepLine;
 
-    for (const Event event : eventQueue) {
+    for (const Event& event : eventQueue) {
         sweepLine.handleEvent(event);
     }
 
@@ -659,7 +637,17 @@ bool s0_intersects_s1(const Segment& s0, const Segment& s1) {
 
 std::vector<Crossing> brute_force_crossings(SkSpan<Segment> segments) {
 
-    SkSpan<const Segment> cleanSegments = remove_zero_segments_and_duplicates(segments);
+    auto isNonZeroSegment = [](const Segment& segment) {
+        return segment.upper() != segment.lower();
+    };
+    const auto zeroSegments = std::partition(segments.begin(), segments.end(), isNonZeroSegment);
+
+    std::sort(segments.begin(), zeroSegments);
+
+    const auto duplicateSegments = std::unique(segments.begin(), zeroSegments);
+
+    SkSpan<const Segment> cleanSegments =
+            SkSpan{segments.data(), std::distance(segments.begin(), duplicateSegments)};
 
     CrossingAccumulator crossings;
     if (cleanSegments.size() >= 2) {
