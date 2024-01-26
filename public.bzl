@@ -481,8 +481,8 @@ BASE_SRCS_ALL = [
     "src/core/SkFontMetricsPriv.cpp",
     "src/core/SkFontMetricsPriv.h",
     "src/core/SkFontMgr.cpp",
-    "src/core/SkFontMgrPriv.h",
     "src/core/SkFontPriv.h",
+    "src/core/SkFontScanner.h",
     "src/core/SkFontStream.cpp",
     "src/core/SkFontStream.h",
     "src/core/SkFont_serial.cpp",
@@ -529,6 +529,8 @@ BASE_SRCS_ALL = [
     "src/core/SkMaskFilterBase.h",
     "src/core/SkMaskGamma.cpp",
     "src/core/SkMaskGamma.h",
+    "src/core/SkMasks.cpp",
+    "src/core/SkMasks.h",
     "src/core/SkMatrix.cpp",
     "src/core/SkMatrixInvert.cpp",
     "src/core/SkMatrixInvert.h",
@@ -1835,8 +1837,6 @@ CODEC_SRCS_LIMITED = [
     "src/codec/SkJpegSourceMgr.h",
     "src/codec/SkJpegUtility.cpp",
     "src/codec/SkJpegUtility.h",
-    "src/codec/SkMasks.cpp",
-    "src/codec/SkMasks.h",
     "src/codec/SkMaskSwizzler.cpp",
     "src/codec/SkMaskSwizzler.h",
     "src/codec/SkParseEncodedOrigin.cpp",
@@ -1967,7 +1967,6 @@ PORTS_SRCS_UNIX = [
     "src/ports/SkFontMgr_custom_embedded.cpp",
     "src/ports/SkFontMgr_custom_empty.cpp",
     "src/ports/SkFontMgr_custom.h",
-    "src/ports/SkFontMgr_fontconfig_factory.cpp",
     "src/ports/SkFontMgr_fontconfig.cpp",
     "src/ports/SkGlobalInitialization_default.cpp",
     "src/ports/SkMemory_malloc.cpp",
@@ -1975,6 +1974,7 @@ PORTS_SRCS_UNIX = [
     "src/ports/SkOSFile_stdio.cpp",
     "src/ports/SkOSLibrary.h",
     "src/ports/SkOSLibrary_posix.cpp",
+    "src/ports/SkTypeface_FreeType.h",
 ]
 
 GL_SRCS_ANDROID = base_gl_srcs + [
@@ -1987,7 +1987,6 @@ PORTS_SRCS_ANDROID = [
     "src/ports/SkFontHost_FreeType_common.h",
     "src/ports/SkFontHost_FreeType.cpp",
     "src/ports/SkFontMgr_android.cpp",
-    "src/ports/SkFontMgr_android_factory.cpp",
     "src/ports/SkFontMgr_android_parser.cpp",
     "src/ports/SkFontMgr_android_parser.h",
     "src/ports/SkFontMgr_custom.cpp",
@@ -2001,11 +2000,11 @@ PORTS_SRCS_ANDROID = [
     "src/ports/SkOSFile_stdio.cpp",
     "src/ports/SkOSLibrary.h",
     "src/ports/SkOSLibrary_posix.cpp",
+    "src/ports/SkTypeface_FreeType.h",
 ]
 
 PORTS_SRCS_ANDROID_NO_FONT = [
     "src/ports/SkDebug_android.cpp",
-    "src/ports/SkFontMgr_empty_factory.cpp",
     "src/ports/SkGlobalInitialization_default.cpp",
     "src/ports/SkMemory_malloc.cpp",
     "src/ports/SkOSFile_posix.cpp",
@@ -2022,7 +2021,6 @@ PORTS_SRCS_IOS = [
     "src/ports/SkDebug_stdio.cpp",
     "src/ports/SkFontMgr_custom.h",
     "src/ports/SkFontMgr_mac_ct.cpp",
-    "src/ports/SkFontMgr_mac_ct_factory.cpp",
     "src/ports/SkGlobalInitialization_default.cpp",
     "src/ports/SkImageGeneratorCG.cpp",
     "src/ports/SkMemory_malloc.cpp",
@@ -2050,7 +2048,6 @@ PORTS_SRCS_FUCHSIA = [
     "src/ports/SkFontHost_FreeType.cpp",
     "src/ports/SkFontMgr_custom.cpp",
     "src/ports/SkFontMgr_custom.h",
-    "src/ports/SkFontMgr_empty_factory.cpp",
     "src/ports/SkFontMgr_fuchsia.cpp",
     "src/ports/SkGlobalInitialization_default.cpp",
     "src/ports/SkMemory_malloc.cpp",
@@ -2058,6 +2055,7 @@ PORTS_SRCS_FUCHSIA = [
     "src/ports/SkOSFile_stdio.cpp",
     "src/ports/SkOSLibrary.h",
     "src/ports/SkOSLibrary_posix.cpp",
+    "src/ports/SkTypeface_FreeType.h",
 ]
 
 GL_SRCS_MACOS = base_gl_srcs + [
@@ -2075,13 +2073,13 @@ PORTS_SRCS_WASM = [
     "src/ports/SkFontMgr_custom.h",
     "src/ports/SkFontMgr_custom_embedded.cpp",
     "src/ports/SkFontMgr_custom_empty.cpp",
-    "src/ports/SkFontMgr_empty_factory.cpp",
     "src/ports/SkGlobalInitialization_default.cpp",
     "src/ports/SkMemory_malloc.cpp",
     "src/ports/SkOSFile_posix.cpp",
     "src/ports/SkOSFile_stdio.cpp",
     "src/ports/SkOSLibrary.h",
     "src/ports/SkOSLibrary_posix.cpp",
+    "src/ports/SkTypeface_FreeType.h",
 ]
 GL_SRCS_WASM = GL_SRCS_UNIX_EGL
 

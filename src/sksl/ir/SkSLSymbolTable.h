@@ -19,7 +19,6 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -38,32 +37,16 @@ public:
     explicit SymbolTable(bool builtin)
             : fBuiltin(builtin) {}
 
-    explicit SymbolTable(std::shared_ptr<SymbolTable> parent, bool builtin)
-            : fParent(std::move(parent))
+    explicit SymbolTable(SymbolTable* parent, bool builtin)
+            : fParent(parent)
             , fBuiltin(builtin) {}
-
-    /** Replaces the passed-in SymbolTable with a newly-created child symbol table. */
-    static void Push(std::shared_ptr<SymbolTable>* table) {
-        Push(table, (*table)->isBuiltin());
-    }
-    static void Push(std::shared_ptr<SymbolTable>* table, bool isBuiltin) {
-        *table = std::make_shared<SymbolTable>(*table, isBuiltin);
-    }
-
-    /**
-     * Replaces the passed-in SymbolTable with its parent. If the child symbol table is otherwise
-     * unreferenced, it will be deleted.
-     */
-    static void Pop(std::shared_ptr<SymbolTable>* table) {
-        *table = (*table)->fParent;
-    }
 
     /**
      * Creates a new, empty SymbolTable between this SymbolTable and its current parent.
      * The new symbol table is returned, and is also accessible as `this->fParent`.
      * The original parent is accessible as `this->fParent->fParent`.
      */
-    std::shared_ptr<SymbolTable> insertNewParent();
+    std::unique_ptr<SymbolTable> insertNewParent();
 
     /**
      * Looks up the requested symbol and returns a const pointer.
@@ -105,6 +88,13 @@ public:
      * In either event, the name will no longer correspond to the symbol.
      */
     std::unique_ptr<Symbol> removeSymbol(const Symbol* symbol);
+
+    /**
+     * Moves a symbol from this symbol table to another one. If this symbol table had ownership of
+     * the symbol, the ownership will be transferred as well. (If the symbol does not actually exist
+     * in this table at all, it will still be added to the other table.)
+     */
+    void moveSymbolTo(SymbolTable* otherTable, Symbol* sym, const Context& context);
 
     /**
      * Returns true if the name refers to a type (user or built-in) in the current symbol table.
@@ -208,7 +198,7 @@ public:
         fAtModuleBoundary = true;
     }
 
-    std::shared_ptr<SymbolTable> fParent;
+    SymbolTable* fParent = nullptr;
 
     std::vector<std::unique_ptr<Symbol>> fOwnedSymbols;
 
