@@ -730,7 +730,7 @@ func (b *jobBuilder) deriveCompileTaskName() string {
 			ec = strings.Split(val, "_")
 			ignore := []string{
 				"Skpbench", "AbandonGpuContext", "PreAbandonGpuContext", "Valgrind",
-				"FailFlushTimeCallbacks", "ReleaseAndAbandonGpuContext", "FSAA", "FAAA", "FDAA",
+				"FailFlushTimeCallbacks", "ReleaseAndAbandonGpuContext",
 				"NativeFonts", "GDI", "NoGPUThreads", "DDL1", "DDL3",
 				"DDLTotal", "DDLRecord", "9x9", "BonusConfigs", "ColorSpaces", "GL",
 				"SkottieTracing", "SkottieWASM", "GpuTess", "DMSAAStats", "Mskp", "Docker", "PDF",
@@ -2198,6 +2198,7 @@ var shorthandToLabel = map[string]labelAndSavedOutputDir{
 	"path_combiner":     {"//:path_combiner", ""},
 	"png_decoder":       {"//:png_decoder", ""},
 	"shape_text":        {"//:shape_text", ""},
+	"use_ganesh_gl":     {"//:use_ganesh_gl", ""},
 	"write_text_to_png": {"//:write_text_to_png", ""},
 
 	// Currently there is no way to tell Bazel "only test go_test targets", so we must group them
