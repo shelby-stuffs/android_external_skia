@@ -209,6 +209,21 @@ static DEFINE_string2(match, m, nullptr,
                "If a name does not match any list entry,\n"
                "it is skipped unless some list entry starts with ~");
 
+#if defined(GRAPHITE_TEST_UTILS)
+#ifdef SK_ENABLE_VELLO_SHADERS
+#define COMPUTE_ANALYTIC_PATHSTRATEGY_STR ", \"compute-analytic\""
+#else
+#define COMPUTE_ANALYTIC_PATHSTRATEGY_STR
+#endif
+#define PATHSTRATEGY_STR_EVALUATOR(default, raster, compute_analytic, tess) \
+    default raster compute_analytic tess
+#define PATHSTRATEGY_STR PATHSTRATEGY_STR_EVALUATOR( \
+    "\"default\"", "\"raster\"", COMPUTE_ANALYTIC_PATHSTRATEGY_STR, "\"tessellation\"")
+
+static DEFINE_string(pathstrategy, "default",
+                     "Path renderer strategy to use. Allowed values are " PATHSTRATEGY_STR ".");
+#endif
+
 #if defined(SK_BUILD_FOR_ANDROID)
 #   define PATH_PREFIX "/data/local/tmp/"
 #else
@@ -262,7 +277,8 @@ static bool is_graphite_backend_type(sk_app::Window::BackendType type) {
 }
 
 #if defined(GRAPHITE_TEST_UTILS)
-static const char* get_path_renderer_strategy(skgpu::graphite::PathRendererStrategy strategy) {
+static const char*
+        get_path_renderer_strategy_string(skgpu::graphite::PathRendererStrategy strategy) {
     using Strategy = skgpu::graphite::PathRendererStrategy;
     switch (strategy) {
         case Strategy::kDefault:
@@ -275,6 +291,24 @@ static const char* get_path_renderer_strategy(skgpu::graphite::PathRendererStrat
             return "Tessellation";
     }
     return "unknown";
+}
+
+static skgpu::graphite::PathRendererStrategy get_path_renderer_strategy_type(const char* str) {
+    using Strategy = skgpu::graphite::PathRendererStrategy;
+    if (0 == strcmp(str, "default")) {
+        return Strategy::kDefault;
+    } else if (0 == strcmp(str, "raster")) {
+        return Strategy::kRasterAA;
+#ifdef SK_ENABLE_VELLO_SHADERS
+    } else if (0 == strcmp(str, "compute-analytic")) {
+        return Strategy::kComputeAnalyticAA;
+#endif
+    } else if (0 == strcmp(str, "tessellation")) {
+        return Strategy::kTessellation;
+    } else {
+        SkDebugf("Unknown path renderer strategy type, %s, defaulting to default.", str);
+        return Strategy::kDefault;
+    }
 }
 #endif
 
@@ -495,7 +529,10 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
                 displayParams.fSurfaceProps.pixelGeometry());
     }
     displayParams.fCreateProtectedNativeBackend = FLAGS_createProtected;
-
+#if defined(GRAPHITE_TEST_UTILS)
+    displayParams.fGraphiteContextOptions.fPriv.fPathRendererStrategy =
+            get_path_renderer_strategy_type(FLAGS_pathstrategy[0]);
+#endif
     fWindow->setRequestedDisplayParams(displayParams);
     fDisplay = fWindow->getRequestedDisplayParams();
     fRefresh = FLAGS_redraw;
@@ -689,39 +726,6 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
                 case SkFontHinting::kFull:
                     fFont.setHinting(SkFontHinting::kNone);
                     fFontOverrides.fHinting = false;
-                    break;
-            }
-        }
-        this->updateTitle();
-        fWindow->inval();
-    });
-    fCommands.addCommand('A', "Paint", "Antialias Mode", [this]() {
-        if (!fPaintOverrides.fAntiAlias) {
-            fPaintOverrides.fAntiAliasState = SkPaintFields::AntiAliasState::Alias;
-            fPaintOverrides.fAntiAlias = true;
-            fPaint.setAntiAlias(false);
-            gSkUseAnalyticAA = gSkForceAnalyticAA = false;
-        } else {
-            fPaint.setAntiAlias(true);
-            switch (fPaintOverrides.fAntiAliasState) {
-                case SkPaintFields::AntiAliasState::Alias:
-                    fPaintOverrides.fAntiAliasState = SkPaintFields::AntiAliasState::Normal;
-                    gSkUseAnalyticAA = gSkForceAnalyticAA = false;
-                    break;
-                case SkPaintFields::AntiAliasState::Normal:
-                    fPaintOverrides.fAntiAliasState = SkPaintFields::AntiAliasState::AnalyticAAEnabled;
-                    gSkUseAnalyticAA = true;
-                    gSkForceAnalyticAA = false;
-                    break;
-                case SkPaintFields::AntiAliasState::AnalyticAAEnabled:
-                    fPaintOverrides.fAntiAliasState = SkPaintFields::AntiAliasState::AnalyticAAForced;
-                    gSkUseAnalyticAA = gSkForceAnalyticAA = true;
-                    break;
-                case SkPaintFields::AntiAliasState::AnalyticAAForced:
-                    fPaintOverrides.fAntiAliasState = SkPaintFields::AntiAliasState::Alias;
-                    fPaintOverrides.fAntiAlias = false;
-                    gSkUseAnalyticAA = fPaintOverrides.fOriginalSkUseAnalyticAA;
-                    gSkForceAnalyticAA = fPaintOverrides.fOriginalSkForceAnalyticAA;
                     break;
             }
         }
@@ -1107,13 +1111,6 @@ void Viewer::updateTitle() {
     SkString title("Viewer: ");
     title.append(fSlides[fCurrentSlide]->getName());
 
-    if (gSkUseAnalyticAA) {
-        if (gSkForceAnalyticAA) {
-            title.append(" <FAAA>");
-        } else {
-            title.append(" <AAA>");
-        }
-    }
     if (fDrawViaSerialize) {
         title.append(" <serialize>");
     }
@@ -1248,7 +1245,8 @@ void Viewer::updateTitle() {
                 fWindow->getRequestedDisplayParams()
                         .fGraphiteContextOptions.fPriv.fPathRendererStrategy;
         if (skgpu::graphite::PathRendererStrategy::kDefault != strategy) {
-            title.appendf(" [Path renderer strategy: %s]", get_path_renderer_strategy(strategy));
+            title.appendf(" [Path renderer strategy: %s]",
+                          get_path_renderer_strategy_string(strategy));
         }
 #endif
     } else {
@@ -2198,7 +2196,8 @@ void Viewer::drawImGui() {
                                 &params.fGraphiteContextOptions.fPriv;
                         auto prevPrs = opts->fPathRendererStrategy;
                         auto prsButton = [&](skgpu::graphite::PathRendererStrategy s) {
-                            if (ImGui::RadioButton(get_path_renderer_strategy(s), prevPrs == s)) {
+                            if (ImGui::RadioButton(get_path_renderer_strategy_string(s),
+                                                   prevPrs == s)) {
                                 if (s != opts->fPathRendererStrategy) {
                                     opts->fPathRendererStrategy = s;
                                     displayParamsChanged = true;
@@ -2306,39 +2305,6 @@ void Viewer::drawImGui() {
             }
 
             if (ImGui::CollapsingHeader("Paint")) {
-                int aliasIdx = 0;
-                if (fPaintOverrides.fAntiAlias) {
-                    aliasIdx = SkTo<int>(fPaintOverrides.fAntiAliasState) + 1;
-                }
-                if (ImGui::Combo("Anti-Alias", &aliasIdx,
-                                 "Default\0Alias\0Normal\0AnalyticAAEnabled\0AnalyticAAForced\0\0"))
-                {
-                    gSkUseAnalyticAA = fPaintOverrides.fOriginalSkUseAnalyticAA;
-                    gSkForceAnalyticAA = fPaintOverrides.fOriginalSkForceAnalyticAA;
-                    if (aliasIdx == 0) {
-                        fPaintOverrides.fAntiAliasState = SkPaintFields::AntiAliasState::Alias;
-                        fPaintOverrides.fAntiAlias = false;
-                    } else {
-                        fPaintOverrides.fAntiAlias = true;
-                        fPaintOverrides.fAntiAliasState = SkTo<SkPaintFields::AntiAliasState>(aliasIdx-1);
-                        fPaint.setAntiAlias(aliasIdx > 1);
-                        switch (fPaintOverrides.fAntiAliasState) {
-                            case SkPaintFields::AntiAliasState::Alias:
-                                break;
-                            case SkPaintFields::AntiAliasState::Normal:
-                                break;
-                            case SkPaintFields::AntiAliasState::AnalyticAAEnabled:
-                                gSkUseAnalyticAA = true;
-                                gSkForceAnalyticAA = false;
-                                break;
-                            case SkPaintFields::AntiAliasState::AnalyticAAForced:
-                                gSkUseAnalyticAA = gSkForceAnalyticAA = true;
-                                break;
-                        }
-                    }
-                    uiParamsChanged = true;
-                }
-
                 auto paintFlag = [this, &uiParamsChanged](const char* label, const char* items,
                                                           bool SkPaintFields::* flag,
                                                           bool (SkPaint::* isFlag)() const,
@@ -2358,6 +2324,11 @@ void Viewer::drawImGui() {
                         uiParamsChanged = true;
                     }
                 };
+
+                paintFlag("Antialias",
+                          "Default\0No AA\0AA\0\0",
+                          &SkPaintFields::fAntiAlias,
+                          &SkPaint::isAntiAlias, &SkPaint::setAntiAlias);
 
                 paintFlag("Dither",
                           "Default\0No Dither\0Dither\0\0",
