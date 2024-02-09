@@ -93,7 +93,7 @@ GrMtlGpu::GrMtlGpu(GrDirectContext* direct, const GrContextOptions& options,
         , fUniformsRingBuffer(this, 128 * 1024, 256, GrGpuBufferType::kUniform)
         , fDisconnected(false) {
     fMtlCaps.reset(new GrMtlCaps(options, fDevice));
-    this->initCapsAndCompiler(fMtlCaps);
+    this->initCaps(fMtlCaps);
 #if GR_METAL_CAPTURE_COMMANDBUFFER
     this->testingOnly_startCapture();
 #endif
@@ -1596,6 +1596,10 @@ bool GrMtlGpu::readOrTransferPixels(GrSurface* surface,
     return true;
 }
 
+struct FenceWrapper {
+    dispatch_semaphore_t fSemaphore;
+};
+
 [[nodiscard]] GrFence GrMtlGpu::insertFence() {
     GrMtlCommandBuffer* cmdBuffer = this->commandBuffer();
     // We create a semaphore and signal it within the current
@@ -1605,23 +1609,21 @@ bool GrMtlGpu::readOrTransferPixels(GrSurface* surface,
         dispatch_semaphore_signal(semaphore);
     });
 
-    const void* cfFence = (__bridge_retained const void*) semaphore;
-    return (GrFence) cfFence;
+    FenceWrapper* fw = new FenceWrapper{semaphore};
+    return sk_bit_cast<GrFence>(fw);
 }
 
 bool GrMtlGpu::waitFence(GrFence fence) {
-    const void* cfFence = (const void*) fence;
-    dispatch_semaphore_t semaphore = (__bridge dispatch_semaphore_t)cfFence;
+    FenceWrapper* fw = sk_bit_cast<FenceWrapper*>(fence);
 
-    long result = dispatch_semaphore_wait(semaphore, 0);
+    long result = dispatch_semaphore_wait(fw->fSemaphore, 0);
 
     return !result;
 }
 
 void GrMtlGpu::deleteFence(GrFence fence) {
-    const void* cfFence = (const void*) fence;
-    // In this case it's easier to release in CoreFoundation than depend on ARC
-    CFRelease(cfFence);
+    FenceWrapper* fw = sk_bit_cast<FenceWrapper*>(fence);
+    delete fw;
 }
 
 [[nodiscard]] std::unique_ptr<GrSemaphore> GrMtlGpu::makeSemaphore(bool /*isOwned*/) {

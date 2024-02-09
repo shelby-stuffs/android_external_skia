@@ -197,13 +197,13 @@ struct SkRasterPipeline_InitLaneMasksCtx {
 };
 
 struct SkRasterPipeline_ConstantCtx {
-    float value;
+    int32_t value;
     SkRPOffset dst;
 };
 
 struct SkRasterPipeline_UniformCtx {
-    float* dst;
-    const float* src;
+    int32_t* dst;
+    const int32_t* src;
 };
 
 struct SkRasterPipeline_BinaryOpCtx {
@@ -231,20 +231,20 @@ struct SkRasterPipeline_SwizzleCtx {
 };
 
 struct SkRasterPipeline_ShuffleCtx {
-    float* ptr;
+    int32_t* ptr;
     int count;
     uint16_t offsets[16];  // values must be byte offsets (4 * highp-stride * component-index)
 };
 
 struct SkRasterPipeline_SwizzleCopyCtx {
-    float* dst;
-    float* src;           // src values must _not_ overlap dst values
+    int32_t* dst;
+    const int32_t* src;   // src values must _not_ overlap dst values
     uint16_t offsets[4];  // values must be byte offsets (4 * highp-stride * component-index)
 };
 
 struct SkRasterPipeline_CopyIndirectCtx {
-    float* dst;
-    const float* src;
+    int32_t* dst;
+    const int32_t* src;
     const uint32_t *indirectOffset;  // this applies to `src` or `dst` based on the op
     uint32_t indirectLimit;          // the indirect offset is clamped to this upper bound
     uint32_t slots;                  // the number of slots to copy

@@ -27,6 +27,7 @@
 #include "src/base/SkNoDestructor.h"
 #include "src/base/SkSpinlock.h"
 #include "src/base/SkTime.h"
+#include "src/base/SkVx.h"
 #include "src/core/SkChecksum.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkMD5.h"
@@ -1109,6 +1110,12 @@ static Sink* create_via(const SkString& tag, Sink* wrapped) {
 }
 
 static bool gather_sinks(const GrContextOptions& grCtxOptions, bool defaultConfigs) {
+    if (FLAGS_src.size() == 1 && FLAGS_src.contains("tests")) {
+        // If we're just running tests skip trying to accumulate sinks. The 'justOneRect' test
+        // can fail for protected contexts.
+        return true;
+    }
+
     SkCommandLineConfigArray configs;
     ParseConfigs(FLAGS_config, &configs);
     AutoreleasePool pool;
@@ -1307,7 +1314,7 @@ struct Task {
                     bool unclamped = false;
                     for (int y = 0; y < pm.height() && !unclamped; ++y)
                     for (int x = 0; x < pm.width() && !unclamped; ++x) {
-                        skvx::float4 rgba = SkHalfToFloat_finite_ftz(*pm.addr64(x, y));
+                        skvx::float4 rgba = from_half(skvx::half4::Load(pm.addr64(x, y)));
                         float a = rgba[3];
                         if (a > 1.0f || any(rgba < 0.0f) || any(rgba > a)) {
                             SkDebugf("[%s] F16Norm pixel [%d, %d] unclamped: (%g, %g, %g, %g)\n",
@@ -1588,9 +1595,6 @@ int main(int argc, char** argv) {
     setbuf(stdout, nullptr);
     setup_crash_handler();
 
-#if !defined(SK_DISABLE_LEGACY_FONTMGR_FACTORY)
-    ToolUtils::SetDefaultFontMgr();
-#endif
     CommonFlags::SetAnalyticAA();
     skiatest::SetFontTestDataDirectory();
 

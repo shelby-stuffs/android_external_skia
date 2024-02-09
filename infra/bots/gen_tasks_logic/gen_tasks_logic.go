@@ -735,7 +735,7 @@ func (b *jobBuilder) deriveCompileTaskName() string {
 				"DDLTotal", "DDLRecord", "9x9", "BonusConfigs", "ColorSpaces", "GL",
 				"SkottieTracing", "SkottieWASM", "GpuTess", "DMSAAStats", "Mskp", "Docker", "PDF",
 				"Puppeteer", "SkottieFrames", "RenderSKP", "CanvasPerf", "AllPathsVolatile",
-				"WebGL2", "i5", "OldestSupportedSkpVersion", "NeverYield", "Protected"}
+				"WebGL2", "i5", "OldestSupportedSkpVersion", "FakeWGPU", "Protected"}
 			keep := make([]string, 0, len(ec))
 			for _, part := range ec {
 				if !In(part, ignore) {
@@ -1638,7 +1638,7 @@ func (b *jobBuilder) codesize() {
 		if strings.Contains(compileTaskName, "Android") {
 			b.asset("android_ndk_linux")
 			cmd = append(cmd, "--strip_binary",
-				"android_ndk_linux/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64/bin/arm-linux-androideabi-strip")
+				"android_ndk_linux/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip")
 		} else {
 			b.asset("binutils_linux_x64")
 			cmd = append(cmd, "--strip_binary", "binutils_linux_x64/strip")
