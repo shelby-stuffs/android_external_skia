@@ -653,7 +653,6 @@ BASE_SRCS_ALL = [
     "src/core/SkScan_Antihair.cpp",
     "src/core/SkScan_Hairline.cpp",
     "src/core/SkScan_Path.cpp",
-    "src/core/SkScan_SAAPath.cpp",
     "src/core/SkSpecialImage.cpp",
     "src/core/SkSpecialImage.h",
     "src/core/SkSpriteBlitter.h",
@@ -1680,6 +1679,7 @@ BASE_SRCS_ALL = [
     "src/sksl/transform/SkSLEliminateEmptyStatements.cpp",
     "src/sksl/transform/SkSLEliminateUnreachableCode.cpp",
     "src/sksl/transform/SkSLFindAndDeclareBuiltinFunctions.cpp",
+    "src/sksl/transform/SkSLFindAndDeclareBuiltinStructs.cpp",
     "src/sksl/transform/SkSLFindAndDeclareBuiltinVariables.cpp",
     "src/sksl/transform/SkSLHoistSwitchVarDeclarationsAtTopLevel.cpp",
     "src/sksl/transform/SkSLProgramWriter.h",
@@ -2236,8 +2236,6 @@ BASE_DEFINES = [
     "GR_TEST_UTILS",
     # Should remove after we update golden images
     "SK_WEBP_ENCODER_USE_DEFAULT_METHOD",
-    # Experiment to diagnose image diffs in Google3
-    "SK_DISABLE_LOWP_RASTER_PIPELINE",
 
     # JPEG is in codec_limited and is included in all
     # builds except the no_codec android build
@@ -2282,7 +2280,6 @@ WASM_DEFINES = [
     "SK_DISABLE_LEGACY_SHADERCONTEXT",
     "SK_DISABLE_TRACING",
     "SK_GL",
-    "SK_FORCE_AAA",
     "SK_DISABLE_EFFECT_DESERIALIZATION",
     "SK_FORCE_8_BYTE_ALIGNMENT",
     "SKNX_NO_SIMD",
