@@ -175,7 +175,7 @@ public:
     }
 
     bool isOrContainsAtomic() const override {
-        return this->componentType().isOrContainsAtomic();
+        return fComponentType.isOrContainsAtomic();
     }
 
     bool isUnsizedArray() const override {
@@ -183,7 +183,7 @@ public:
     }
 
     bool isOrContainsUnsizedArray() const override {
-        return this->isUnsizedArray() || this->componentType().isOrContainsUnsizedArray();
+        return this->isUnsizedArray() || fComponentType.isOrContainsUnsizedArray();
     }
 
     const Type& componentType() const override {
@@ -195,11 +195,15 @@ public:
     }
 
     int bitWidth() const override {
-        return this->componentType().bitWidth();
+        return fComponentType.bitWidth();
     }
 
     bool isAllowedInES2() const override {
         return fComponentType.isAllowedInES2();
+    }
+
+    bool isAllowedInUniform(Position* errorPosition) const override {
+        return fComponentType.isAllowedInUniform(errorPosition);
     }
 
     size_t slotCount() const override {
@@ -354,6 +358,10 @@ public:
         return fNumberKind != NumberKind::kUnsigned;
     }
 
+    bool isAllowedInUniform(Position*) const override {
+        return fNumberKind != NumberKind::kBoolean;
+    }
+
     size_t slotCount() const override {
         return 1;
     }
@@ -417,6 +425,8 @@ public:
     AtomicType(std::string_view name, const char* abbrev) : INHERITED(name, abbrev, kTypeKind) {}
 
     bool isAllowedInES2() const override { return false; }
+
+    bool isAllowedInUniform(Position*) const override { return false; }
 
     bool isOrContainsAtomic() const override { return true; }
 
@@ -595,6 +605,14 @@ public:
             fContainsArray        = fContainsArray        || f.fType->isOrContainsArray();
             fContainsUnsizedArray = fContainsUnsizedArray || f.fType->isOrContainsUnsizedArray();
             fContainsAtomic       = fContainsAtomic       || f.fType->isOrContainsAtomic();
+            fIsAllowedInES2       = fIsAllowedInES2       && f.fType->isAllowedInES2();
+        }
+        for (const Field& f : fFields) {
+            Position errorPosition = f.fPosition;
+            if (!f.fType->isAllowedInUniform(&errorPosition)) {
+                fUniformErrorPosition = errorPosition;
+                break;
+            }
         }
         if (!fContainsUnsizedArray) {
             for (const Field& f : fFields) {
@@ -620,9 +638,14 @@ public:
     }
 
     bool isAllowedInES2() const override {
-        return std::all_of(fFields.begin(), fFields.end(), [](const Field& f) {
-            return f.fType->isAllowedInES2();
-        });
+        return fIsAllowedInES2;
+    }
+
+    bool isAllowedInUniform(Position* errorPosition) const override {
+        if (errorPosition != nullptr) {
+            *errorPosition = fUniformErrorPosition;
+        }
+        return !fUniformErrorPosition.valid();
     }
 
     bool isOrContainsArray() const override {
@@ -665,11 +688,13 @@ private:
     TArray<Field> fFields;
     size_t fSlotCount = 0;
     int fNestingDepth = 0;
+    Position fUniformErrorPosition = {};
     bool fInterfaceBlock = false;
     bool fContainsArray = false;
     bool fContainsUnsizedArray = false;
     bool fContainsAtomic = false;
     bool fIsBuiltin = false;
+    bool fIsAllowedInES2 = true;
 };
 
 class VectorType final : public Type {
@@ -706,6 +731,10 @@ public:
 
     bool isAllowedInES2() const override {
         return fComponentType.isAllowedInES2();
+    }
+
+    bool isAllowedInUniform(Position* errorPosition) const override {
+        return fComponentType.isAllowedInUniform(errorPosition);
     }
 
     size_t slotCount() const override {

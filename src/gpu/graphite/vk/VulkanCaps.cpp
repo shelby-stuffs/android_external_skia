@@ -152,6 +152,10 @@ void VulkanCaps::init(const ContextOptions& contextOptions,
         }
     }
 
+    if (extensions->hasExtension(VK_EXT_DEVICE_FAULT_EXTENSION_NAME, 1)) {
+        fSupportsDeviceFaultInfo = true;
+    }
+
     this->finishInitialization(contextOptions);
 }
 
@@ -1326,6 +1330,7 @@ UniqueKey VulkanCaps::makeGraphicsPipelineKey(const GraphicsPipelineDesc& pipeli
                                    kGraphicsPipelineDomain,
                                    kUint32sNeededForPipelineInfo + rpMetaData.fUint32DataCnt,
                                    "GraphicsPipeline");
+
         int idx = 0;
         // Add GraphicsPipelineDesc information
         builder[idx++] = pipelineDesc.renderStepID();
