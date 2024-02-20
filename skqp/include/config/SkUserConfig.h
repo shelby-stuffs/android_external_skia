@@ -4,7 +4,11 @@
 #include "SkUserConfigManual.h"
 
 #ifndef GRAPHITE_TEST_UTILS
-#define GRAPHITE_TEST_UTILS
+#define GRAPHITE_TEST_UTILS 1
+#endif
+
+#ifndef GR_TEST_UTILS
+#define GR_TEST_UTILS 1
 #endif
 
 #ifndef SKCMS_DISABLE_HSW
@@ -27,12 +31,28 @@
 #define SK_BUILD_FOR_SKQP
 #endif
 
+#ifndef SK_CODEC_DECODES_BMP
+#define SK_CODEC_DECODES_BMP
+#endif
+
+#ifndef SK_CODEC_DECODES_GIF
+#define SK_CODEC_DECODES_GIF
+#endif
+
+#ifndef SK_CODEC_DECODES_ICO
+#define SK_CODEC_DECODES_ICO
+#endif
+
 #ifndef SK_CODEC_DECODES_JPEG
 #define SK_CODEC_DECODES_JPEG
 #endif
 
 #ifndef SK_CODEC_DECODES_PNG
 #define SK_CODEC_DECODES_PNG
+#endif
+
+#ifndef SK_CODEC_DECODES_WBMP
+#define SK_CODEC_DECODES_WBMP
 #endif
 
 #ifndef SK_CODEC_DECODES_WEBP
