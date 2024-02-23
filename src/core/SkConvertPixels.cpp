@@ -51,9 +51,9 @@ static bool swizzle_or_premul(const SkImageInfo& dstInfo,       void* dstPixels,
         !is_8888(srcInfo.colorType()) ||
         steps.flags.linearize         ||
         steps.flags.gamut_transform   ||
-        #if !defined(SK_USE_FAST_UNPREMUL_324099025)
-        steps.flags.unpremul  ||
-        #endif
+#if !defined(SK_ARM_HAS_NEON)
+        steps.flags.unpremul          ||
+#endif
         steps.flags.encode) {
         return false;
     }

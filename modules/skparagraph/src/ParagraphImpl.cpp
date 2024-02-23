@@ -698,25 +698,27 @@ void ParagraphImpl::resolveStrut() {
     SkFont font(typefaces.front(), strutStyle.getFontSize());
     SkFontMetrics metrics;
     font.getMetrics(&metrics);
+    const SkScalar strutLeading = strutStyle.getLeading() < 0 ? 0 : strutStyle.getLeading() * strutStyle.getFontSize();
 
     if (strutStyle.getHeightOverride()) {
-        auto strutIntrinsicHeight = metrics.fDescent - metrics.fAscent;
-        auto strutHeight = strutStyle.getHeight() * strutStyle.getFontSize();
-
         SkScalar strutAscent = 0.0f;
         SkScalar strutDescent = 0.0f;
-        SkScalar strutLeading = 0.0f;
         // The half leading flag doesn't take effect unless there's height override.
         if (strutStyle.getHalfLeading()) {
-            strutAscent = metrics.fAscent;
-            strutDescent = metrics.fDescent;
-            strutLeading = metrics.fLeading + strutHeight - strutIntrinsicHeight;
+            const auto occupiedHeight = metrics.fDescent - metrics.fAscent;
+            auto flexibleHeight = strutStyle.getHeight() * strutStyle.getFontSize() - occupiedHeight;
+            // Distribute the flexible height evenly over and under.
+            flexibleHeight /= 2;
+            strutAscent = metrics.fAscent - flexibleHeight;
+            strutDescent = metrics.fDescent + flexibleHeight;
         } else {
-            strutAscent = metrics.fAscent * strutHeight / strutIntrinsicHeight;
-            strutDescent = metrics.fDescent * strutHeight / strutIntrinsicHeight;
-            strutLeading = strutStyle.getLeading() < 0 ? 0 : strutStyle.getLeading() * strutStyle.getFontSize();
+            const SkScalar strutMetricsHeight = metrics.fDescent - metrics.fAscent + metrics.fLeading;
+            const auto strutHeightMultiplier = strutMetricsHeight == 0
+              ? strutStyle.getHeight()
+              : strutStyle.getHeight() * strutStyle.getFontSize() / strutMetricsHeight;
+            strutAscent = metrics.fAscent * strutHeightMultiplier;
+            strutDescent = metrics.fDescent * strutHeightMultiplier;
         }
-
         fStrutMetrics = InternalLineMetrics(
             strutAscent,
             strutDescent,
@@ -726,7 +728,7 @@ void ParagraphImpl::resolveStrut() {
         fStrutMetrics = InternalLineMetrics(
                 metrics.fAscent,
                 metrics.fDescent,
-                strutStyle.getLeading() < 0 ? 0 : strutStyle.getLeading() * strutStyle.getFontSize());
+                strutLeading);
     }
     fStrutMetrics.setForceStrut(this->paragraphStyle().getStrutStyle().getForceStrutHeight());
 }
@@ -1222,7 +1224,7 @@ int ParagraphImpl::getLineNumberAt(TextIndex codeUnitIndex) const {
     if (codeUnitIndex >= fText.size()) {
         return -1;
     }
-    SkAssertResult(fLines.size() > 0);
+    SkASSERT(!fLines.empty());
     size_t startLine = 0;
     size_t endLine = fLines.size() - 1;
     if (fLines[endLine].textWithNewlines().end <= codeUnitIndex) {
@@ -1241,7 +1243,7 @@ int ParagraphImpl::getLineNumberAt(TextIndex codeUnitIndex) const {
             return midLine;
         }
     }
-    SkAssertResult(startLine == endLine);
+    SkASSERT(startLine == endLine);
     return startLine;
 }
 
@@ -1287,7 +1289,7 @@ bool ParagraphImpl::getGlyphClusterAt(TextIndex codeUnitIndex, GlyphClusterInfo*
                                     RectHeightStyle::kTight,
                                     RectWidthStyle::kTight,
                                     boxes);
-            if (boxes.size() > 0) {
+            if (!boxes.empty()) {
                 if (glyphInfo) {
                     *glyphInfo = {boxes[0].rect, cluster.textRange(), boxes[0].direction};
                 }
@@ -1302,10 +1304,10 @@ bool ParagraphImpl::getClosestGlyphClusterAt(SkScalar dx,
                                              SkScalar dy,
                                              GlyphClusterInfo* glyphInfo) {
     const PositionWithAffinity res = this->getGlyphPositionAtCoordinate(dx, dy);
-    SkAssertResult(res.position != 0 || res.affinity != Affinity::kUpstream);
+    SkASSERT(res.position != 0 || res.affinity != Affinity::kUpstream);
     const size_t utf16Offset = res.position + (res.affinity == Affinity::kDownstream ? 0 : -1);
     this->ensureUTF16Mapping();
-    SkAssertResult(utf16Offset < SkToSizeT(fUTF8IndexForUTF16Index.size()));
+    SkASSERT(utf16Offset < SkToSizeT(fUTF8IndexForUTF16Index.size()));
     return this->getGlyphClusterAt(fUTF8IndexForUTF16Index[utf16Offset], glyphInfo);
 }
 
@@ -1331,8 +1333,8 @@ bool ParagraphImpl::getGlyphInfoAtUTF16Offset(size_t codeUnitIndex, GlyphInfo* g
     // `startIndex` and `endIndex` must be on the same line.
     std::vector<TextBox> boxes;
     line.getRectsForRange({startIndex, endIndex}, RectHeightStyle::kTight, RectWidthStyle::kTight, boxes);
-    SkAssertResult(boxes.size() > 0);
-    if (glyphInfo && boxes.size() > 0) {
+    SkASSERT(!boxes.empty());
+    if (glyphInfo && !boxes.empty()) {
         *glyphInfo = {
             boxes[0].rect,
             { fUTF16IndexForUTF8Index[startIndex], fUTF16IndexForUTF8Index[endIndex] },
@@ -1345,7 +1347,7 @@ bool ParagraphImpl::getGlyphInfoAtUTF16Offset(size_t codeUnitIndex, GlyphInfo* g
 
 bool ParagraphImpl::getClosestUTF16GlyphInfoAt(SkScalar dx, SkScalar dy, GlyphInfo* glyphInfo) {
     const PositionWithAffinity res = this->getGlyphPositionAtCoordinate(dx, dy);
-    SkAssertResult(res.position != 0 || res.affinity != Affinity::kUpstream);
+    SkASSERT(res.position != 0 || res.affinity != Affinity::kUpstream);
     const size_t utf16Offset = res.position + (res.affinity == Affinity::kDownstream ? 0 : -1);
     return getGlyphInfoAtUTF16Offset(utf16Offset, glyphInfo);
 }
