@@ -20,13 +20,14 @@
 namespace skgpu::graphite {
 
 RasterPathAtlas::RasterPathAtlas(Recorder* recorder)
-    : PathAtlas(recorder, kDefaultAtlasDim, kDefaultAtlasDim) {
+        : PathAtlas(recorder, kDefaultAtlasDim, kDefaultAtlasDim) {
 
     // set up LRU list
-    Page* currPage = &fPageArray[0];
+    fPageArray = std::make_unique<std::unique_ptr<Page>[]>(kMaxPages);
+    std::unique_ptr<Page>* currPage = &fPageArray[0];
     for (int i = 0; i < kMaxPages; ++i) {
-        fPageList.addToHead(currPage);
-        currPage->fIdentifier = i;
+        *currPage = std::make_unique<Page>(this->width(), this->height(), i);
+        fPageList.addToHead(currPage->get());
         ++currPage;
     }
 }
@@ -38,10 +39,18 @@ void RasterPathAtlas::recordUploads(DrawContext* dc) {
     while (Page* currPage = pageIter.get()) {
         // build an upload for the dirty rect and record it
         if (!currPage->fDirtyRect.isEmpty()) {
+            // Clamp to 4-byte aligned boundaries
+            size_t bpp = currPage->fPixels.info().bytesPerPixel();
+            unsigned int clearBits = 0x3 / bpp;
+            currPage->fDirtyRect.fLeft &= ~clearBits;
+            currPage->fDirtyRect.fRight += clearBits;
+            currPage->fDirtyRect.fRight &= ~clearBits;
+            SkASSERT(currPage->fDirtyRect.fRight <= (int)this->width());
+            // Set up dataPtr
             size_t rowBytes = currPage->fPixels.rowBytes();
             const uint8_t* dataPtr = (const uint8_t*) currPage->fPixels.addr();
             dataPtr += rowBytes * currPage->fDirtyRect.fTop;
-            dataPtr += currPage->fPixels.info().bytesPerPixel() * currPage->fDirtyRect.fLeft;
+            dataPtr += bpp * currPage->fDirtyRect.fLeft;
 
             std::vector<MipLevel> levels;
             levels.push_back({dataPtr, rowBytes});
@@ -181,7 +190,7 @@ const TextureProxy* RasterPathAtlas::onAddShape(const Shape& shape,
     // rectanizer. If we didn't include this then our uploads would not include writes to the
     // padded border, so the GPU texture might not then contain transparency even though the CPU
     // data was cleared properly.
-    mru->fDirtyRect.join(iAtlasBounds.makeOutset(kEntryPadding,kEntryPadding));
+    mru->fDirtyRect.join(iAtlasBounds.makeOutset(kEntryPadding, kEntryPadding));
 
     // Add to cache
     if (hasKey) {
