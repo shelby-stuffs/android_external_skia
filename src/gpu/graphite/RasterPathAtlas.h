@@ -22,25 +22,23 @@ namespace skgpu::graphite {
  * When a new shape gets added, its path is rasterized in preparation for upload. These
  * uploads are recorded by `recordUploads()` and subsequently added to an UploadTask.
  *
- * After a successful call to `recordUploads()`, the client is free to call `reset()` and start
- * adding new shapes for a future atlas render.
- * TODO: We should cache Shapes for future frames to avoid the cost of raster pipeline rendering.
+ * Shapes are cached for future frames to avoid the cost of raster pipeline rendering. Multiple
+ * textures (or Pages) are used to cache masks, so if the atlas is full we can reset a Page and
+ * start adding new shapes for a future atlas render.
  */
 class RasterPathAtlas : public PathAtlas {
 public:
-    RasterPathAtlas();
+    explicit RasterPathAtlas(Recorder* recorder);
     ~RasterPathAtlas() override {}
-    void recordUploads(DrawContext*, Recorder*);
+    void recordUploads(DrawContext*);
 
 protected:
-    const TextureProxy* onAddShape(Recorder* recorder,
-                                   const Shape&,
+    const TextureProxy* onAddShape(const Shape&,
                                    const Transform& transform,
                                    const SkStrokeRec&,
                                    skvx::half2 maskSize,
                                    skvx::half2* outPos) override;
-    const TextureProxy* addRect(Recorder* recorder,
-                                skvx::half2 maskSize,
+    const TextureProxy* addRect(skvx::half2 maskSize,
                                 SkIPoint16* outPos);
 
 private:
@@ -48,6 +46,9 @@ private:
     static constexpr int kDefaultAtlasDim = 4096;
 
     struct Page {
+        Page(int width, int height, uint16_t identifier)
+                : fRectanizer(width, height)
+                , fIdentifier(identifier) {}
         bool initializeTextureIfNeeded(Recorder* recorder, uint16_t identifier);
 
         // A Page lazily requests a texture from the AtlasProvider when the first shape gets added
@@ -56,7 +57,7 @@ private:
         // render pass.
         sk_sp<TextureProxy> fTexture;
         // Tracks placement of paths in a Page
-        skgpu::RectanizerSkyline fRectanizer = {kDefaultAtlasDim, kDefaultAtlasDim};
+        skgpu::RectanizerSkyline fRectanizer;
         // Rendered data that gets uploaded
         SkAutoPixmapStorage fPixels;
         // Area that's needed to be uploaded
@@ -74,7 +75,7 @@ private:
         SK_DECLARE_INTERNAL_LLIST_INTERFACE(Page);
     };
 
-    void makeMRU(Page*, Recorder*);
+    void makeMRU(Page*);
     // Free up atlas allocations, if necessary. After this call the atlas can be considered
     // available for new shape insertions. However this method does not have any bearing on the
     // contents of any atlas textures themselves, which may be in use by GPU commands that are
@@ -89,7 +90,7 @@ private:
     // LRU list of Pages (MRU at head - LRU at tail)
     PageList fPageList;
     // Allocated array of pages (backing data for list)
-    Page fPageArray[kMaxPages];
+    std::unique_ptr<std::unique_ptr<Page>[]> fPageArray;
 };
 
 }  // namespace skgpu::graphite

@@ -801,11 +801,13 @@ void SkCanvas::internalDrawDeviceWithFilter(SkDevice* src,
     // Start out with an empty source image, to be replaced with the snapped 'src' device.
     auto backend = dst->createImageFilteringBackend(src ? src->surfaceProps() : dst->surfaceProps(),
                                                     filterColorType);
+    skif::Stats stats;
     skif::Context ctx{std::move(backend),
                       mapping,
                       requiredInput,
                       skif::FilterResult{},
-                      filterColorSpace.get()};
+                      filterColorSpace.get(),
+                      &stats};
 
     skif::FilterResult source;
     if (src && !requiredInput.isEmpty()) {
@@ -813,6 +815,9 @@ void SkCanvas::internalDrawDeviceWithFilter(SkDevice* src,
         if (!srcToLayer.inverseMapRect(requiredInput, &srcSubset)) {
             return;
         }
+
+        // Include the layer in the offscreen count
+        ctx.markNewSurface();
 
         auto availSrc = skif::LayerSpace<SkIRect>(src->size()).relevantSubset(
                 srcSubset, SkTileMode::kClamp);
@@ -831,6 +836,7 @@ void SkCanvas::internalDrawDeviceWithFilter(SkDevice* src,
                 source = {src->snapSpecialScaled(SkIRect(availSrc),
                                                  SkISize(requiredSubset.size())),
                           requiredSubset.topLeft()};
+                ctx.markNewSurface();
             }
 
             // If snapSpecialScaled() fails, this will fall through and automatically apply any
@@ -881,6 +887,8 @@ void SkCanvas::internalDrawDeviceWithFilter(SkDevice* src,
             result.draw(ctx, dst, paint.getBlender());
         }
     }
+
+    stats.reportStats();
 }
 
 #else
@@ -2483,9 +2491,11 @@ void SkCanvas::onDrawImage2(const SkImage* image, SkScalar x, SkScalar y,
         } // else fall through to regular drawing path
     }
 
-    if (this->topDevice()->drawAsTiledImageRect(this, image, nullptr, dst, sampling,
-                                                realPaint, kFast_SrcRectConstraint)) {
-        return;
+    if (this->topDevice()->shouldDrawAsTiledImageRect()) {
+        if (this->topDevice()->drawAsTiledImageRect(
+                    this, image, nullptr, dst, sampling, realPaint, kFast_SrcRectConstraint)) {
+            return;
+        }
     }
 
     auto layer = this->aboutToDraw(realPaint, &dst);
@@ -2523,11 +2533,12 @@ void SkCanvas::onDrawImageRect2(const SkImage* image, const SkRect& src, const S
         return;
     }
 
-    if (this->topDevice()->drawAsTiledImageRect(this, image, &src, dst, realSampling,
-                                                realPaint, constraint)) {
-        return;
+    if (this->topDevice()->shouldDrawAsTiledImageRect()) {
+        if (this->topDevice()->drawAsTiledImageRect(
+                    this, image, &src, dst, realSampling, realPaint, constraint)) {
+            return;
+        }
     }
-
 #if !defined(SK_RESOLVE_FILTERS_BEFORE_RESTORE)
     // drawImageRect()'s behavior is modified by the presence of an image filter, a mask filter, a
     // color filter, the paint's alpha, the paint's blender, and--when it's an alpha-only image--
@@ -2565,11 +2576,13 @@ void SkCanvas::onDrawImageRect2(const SkImage* image, const SkRect& src, const S
                 device->surfaceProps(),
                 image_filter_color_type(device->imageInfo()));
         auto [mapping, srcBounds] = *mappingAndBounds;
+        skif::Stats stats;
         skif::Context ctx{std::move(backend),
                           mapping,
                           srcBounds,
                           skif::FilterResult{},
-                          device->imageInfo().colorSpace()};
+                          device->imageInfo().colorSpace(),
+                          &stats};
 
         auto source = skif::FilterResult::MakeFromImage(
                 ctx, sk_ref_sp(image), src, imageBounds, sampling);
@@ -2583,6 +2596,7 @@ void SkCanvas::onDrawImageRect2(const SkImage* image, const SkRect& src, const S
                  .withNewSource(source);
         auto result = as_IFB(realPaint.getImageFilter())->filterImage(ctx);
         result.draw(ctx, device, realPaint.getBlender());
+        stats.reportStats();
         return;
     }
 

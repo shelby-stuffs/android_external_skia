@@ -168,10 +168,11 @@ skia_filegroup(
 
 skia_filegroup(
     name = "load_dynamic_library",
-    srcs = select({
+    srcs = ["SkOSLibrary.h"] + select({
         "@platforms//os:windows": ["SkOSLibrary_win.cpp"],
         "//conditions:default": ["SkOSLibrary_posix.cpp"],
     }),
+    visibility = ["//tools/gpu:__pkg__"],
 )
 
 skia_filegroup(
@@ -328,6 +329,7 @@ skia_cc_library(
     hdrs = [
         "//include/ports:fontconfig_fontmgr_hdrs",
     ],
+    defines = ["SK_FONTMGR_FONTCONFIG_AVAILABLE"],
     visibility = ["//:__pkg__"],
     deps = [
         ":freetype_support",
@@ -355,6 +357,7 @@ skia_cc_library(
     hdrs = [
         "//include/ports:empty_fontmgr_hdrs",
     ],
+    defines = ["SK_FONTMGR_FREETYPE_EMPTY_AVAILABLE"],
     features = ["layering_check"],
     visibility = ["//:__pkg__"],
     deps = [

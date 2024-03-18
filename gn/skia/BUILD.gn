@@ -315,6 +315,11 @@ config("default") {
     ldflags += [ "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot" ]
   }
 
+  # sanitize only applies to the default toolchain (usually the target).
+  if (current_toolchain != default_toolchain) {
+    sanitize = ""
+  }
+
   if (is_win && !is_clang && sanitize == "ASAN") {
     sanitizers = "address"
     cflags += [ "/fsanitize=$sanitizers" ]
@@ -448,6 +453,7 @@ config("warnings") {
       "-Wno-deprecated-declarations",
       "-Wno-maybe-uninitialized",
       "-Wno-psabi",
+      "-Wno-switch-default",  # Warns even when all enum values are covered
       "-Wno-unused-parameter",  # Re-enabled for header sources
     ]
     cflags_cc += [
@@ -607,6 +613,11 @@ config("warnings") {
       "-Wno-unreachable-code",  # Causes false positives in old GCC; removed
                                 # from modern GCC entirely
     ]
+    cflags_cc += [
+      "-Wno-dangling-reference",  # Attempt at borrow checker in C++.
+                                  # Warns on temporary views, like Span.
+                                  # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532
+    ]
   }
 
   cflags_objcc += cflags_cc
@@ -623,11 +634,14 @@ config("warnings_for_public_headers") {
 }
 
 config("extra_flags") {
-  asmflags = extra_asmflags
-  cflags = extra_cflags
-  cflags_c = extra_cflags_c
-  cflags_cc = extra_cflags_cc
-  ldflags = extra_ldflags
+  # extra_flags only applies to the default toolchain (usually the target).
+  if (current_toolchain == default_toolchain) {
+    asmflags = extra_asmflags
+    cflags = extra_cflags
+    cflags_c = extra_cflags_c
+    cflags_cc = extra_cflags_cc
+    ldflags = extra_ldflags
+  }
 }
 
 config("debug_symbols") {

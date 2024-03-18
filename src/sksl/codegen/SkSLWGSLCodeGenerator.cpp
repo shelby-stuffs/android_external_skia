@@ -1594,9 +1594,9 @@ void WGSLCodeGenerator::writeUserDefinedIODecl(const Layout& layout,
                                                Delimiter delimiter) {
     this->write("@location(" + std::to_string(layout.fLocation) + ") ");
 
-    // Indices are only allowed when doing dual-source blending, and only on color attachment 0.
+    // @blend_src is only allowed when doing dual-source blending, and only on color attachment 0.
     if (layout.fLocation == 0 && layout.fIndex >= 0 && fProgram.fInterface.fOutputSecondaryColor) {
-        this->write("@index(" + std::to_string(layout.fIndex) + ") ");
+        this->write("@blend_src(" + std::to_string(layout.fIndex) + ") ");
     }
 
     // "User-defined IO of scalar or vector integer type must always be specified as
@@ -4157,6 +4157,8 @@ void WGSLCodeGenerator::writeFields(SkSpan<const Field> fields, const MemoryLayo
 
 void WGSLCodeGenerator::writeEnables() {
     this->writeLine("diagnostic(off, derivative_uniformity);");
+    this->writeLine("diagnostic(off, chromium.unreachable_code);");
+
     if (fRequirements.fPixelLocalExtension) {
         this->writeLine("enable chromium_experimental_pixel_local;");
     }
@@ -4460,11 +4462,11 @@ static bool validate_wgsl(ErrorReporter& reporter, const std::string& wgsl, std:
     tint::Source::File srcFile("", wgsl);
     tint::Program program(tint::wgsl::reader::Parse(&srcFile, options));
 
-    if (program.Diagnostics().contains_errors()) {
+    if (program.Diagnostics().ContainsErrors()) {
         // The program isn't valid WGSL. In debug, report the error via SkDEBUGFAIL. We also append
         // the generated program for ease of debugging.
         tint::diag::Formatter diagFormatter;
-        std::string diagOutput = diagFormatter.format(program.Diagnostics());
+        std::string diagOutput = diagFormatter.Format(program.Diagnostics());
         diagOutput += "\n";
         diagOutput += wgsl;
 #if defined(SKSL_STANDALONE)
@@ -4478,7 +4480,7 @@ static bool validate_wgsl(ErrorReporter& reporter, const std::string& wgsl, std:
     if (!program.Diagnostics().empty()) {
         // The program contains warnings. Report them as-is.
         tint::diag::Formatter diagFormatter;
-        *warnings = diagFormatter.format(program.Diagnostics());
+        *warnings = diagFormatter.Format(program.Diagnostics());
     }
     return true;
 }

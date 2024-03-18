@@ -8,7 +8,6 @@
 #ifndef SkUserConfigManual_DEFINED
 #define SkUserConfigManual_DEFINED
   #include <android/log.h>
-  #define GR_TEST_UTILS 1
   #define SK_BUILD_FOR_ANDROID_FRAMEWORK
   #define SK_DEFAULT_FONT_CACHE_LIMIT   (768 * 1024)
   #define SK_DEFAULT_GLOBAL_DISCARDABLE_MEMORY_POOL_SIZE (512 * 1024)
@@ -29,7 +28,7 @@
   // Needed until we fix https://bug.skia.org/2440
   #define SK_SUPPORT_LEGACY_CLIPTOLAYERFLAG
   #define SK_SUPPORT_LEGACY_EMBOSSMASKFILTER
-  #define SK_SUPPORT_LEGACY_AAA_CHOICE
+  #define SK_FORCE_AAA
 
   #define SK_ABORT(fmt, ...) __android_log_assert(nullptr, "skia", "[skia] \"" fmt "\" in {%s}",  \
                                                   ##__VA_ARGS__, __PRETTY_FUNCTION__)

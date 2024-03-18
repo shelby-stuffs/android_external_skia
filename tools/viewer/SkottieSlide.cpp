@@ -127,6 +127,7 @@ public:
                                                   const char resource_name[],
                                                   const char /*resource_id*/[]) const override {
         auto data = this->load(resource_path, resource_name);
+        // Viewer should have already registered the codecs necessary for MultiFrameImageAsset
         return skresources::MultiFrameImageAsset::Make(data);
     }
 
@@ -516,6 +517,7 @@ void SkottieSlide::init() {
     }
     skottie::Animation::Builder builder(flags);
 
+    // Viewer should have already registered the codecs necessary for DataURIResourceProviderProxy
     auto predecode = skresources::ImageDecodeStrategy::kPreDecode;
     auto resource_provider =
             sk_make_sp<AudioProviderProxy>(skresources::DataURIResourceProviderProxy::Make(

@@ -356,6 +356,9 @@ bool Compiler::optimize(Program& program) {
         }
         // Make sure that program usage is still correct after the optimization pass is complete.
         SkASSERT(*program.usage() == *Analysis::GetUsage(program));
+
+        // Make sure that variables are still declared in the correct symbol tables.
+        SkDEBUGCODE(Analysis::CheckSymbolTableCorrectness(program));
     }
 
     return this->errorCount() == 0;
@@ -393,8 +396,11 @@ bool Compiler::finalize(Program& program) {
     // Copy all referenced built-in functions into the Program.
     Transform::FindAndDeclareBuiltinFunctions(program);
 
-    // Variables defined in the pre-includes need their declaring elements added to the program.
+    // Variables defined in modules need their declaring elements added to the program.
     Transform::FindAndDeclareBuiltinVariables(program);
+
+    // Structs from module code need to be added to the program's shared elements.
+    Transform::FindAndDeclareBuiltinStructs(program);
 
     // Do one last correctness-check pass. This looks for dangling FunctionReference/TypeReference
     // expressions, and reports them as errors.
@@ -410,6 +416,9 @@ bool Compiler::finalize(Program& program) {
     if (this->errorCount() == 0) {
         bool enforceSizeLimit = ProgramConfig::IsRuntimeEffect(program.fConfig->fKind);
         Analysis::CheckProgramStructure(program, enforceSizeLimit);
+
+        // Make sure that variables are declared in the symbol tables that immediately enclose them.
+        SkDEBUGCODE(Analysis::CheckSymbolTableCorrectness(program));
     }
 
     // Make sure that program usage is still correct after finalization is complete.

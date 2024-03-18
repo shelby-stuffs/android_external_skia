@@ -270,8 +270,7 @@ def compile_fn(api, checkout_root, out_dir):
   elif configuration != 'OptimizeForSize':
     args.update({
       'skia_use_client_icu': 'true',
-      # Enable after fixing MSVC host and xSAN host toolchains.
-      #'skia_use_libgrapheme': 'true',
+      'skia_use_libgrapheme': 'true',
     })
 
   if 'Fontations' in extra_tokens:
@@ -344,9 +343,8 @@ def compile_fn(api, checkout_root, out_dir):
   gn = skia_dir.join('bin', 'gn')
 
   with api.context(cwd=skia_dir):
-    api.run(api.python,
-            'fetch-gn',
-            script=skia_dir.join('bin', 'fetch-gn'),
+    api.run(api.step, 'fetch-gn',
+            cmd=['python3', skia_dir.join('bin', 'fetch-gn')],
             infra_step=True)
 
     with api.env(env):

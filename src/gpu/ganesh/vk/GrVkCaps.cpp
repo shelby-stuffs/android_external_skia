@@ -60,8 +60,8 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions,
     fDrawInstancedSupport = true;
 
     fSemaphoreSupport = true;   // always available in Vulkan
-    fFenceSyncSupport = true;   // always available in Vulkan
     fBackendSemaphoreSupport = true;
+    fFinishedProcAsyncCallbackSupport = true;
     fCrossContextTextureSupport = true;
     fHalfFloatVertexAttributeSupport = true;
 
@@ -396,6 +396,10 @@ void GrVkCaps::init(const GrContextOptions& contextOptions,
 
     if (extensions.hasExtension(VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME, 1)) {
         fSupportsDRMFormatModifiers = true;
+    }
+
+    if (extensions.hasExtension(VK_EXT_DEVICE_FAULT_EXTENSION_NAME, 1)) {
+        fSupportsDeviceFaultInfo = true;
     }
 
     fMaxInputAttachmentDescriptors = properties.limits.maxDescriptorSetInputAttachments;

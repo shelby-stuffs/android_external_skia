@@ -19,6 +19,7 @@
 #include "src/core/SkCompressedDataUtils.h"
 #include "src/core/SkMipmap.h"
 #include "src/core/SkRasterPipeline.h"
+#include "src/core/SkRasterPipelineOpList.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -288,7 +289,7 @@ void GrTwoColorBC1Compress(const SkPixmap& pixmap, SkColor otherColor, char* dst
 
 size_t GrComputeTightCombinedBufferSize(size_t bytesPerPixel, SkISize baseDimensions,
                                         TArray<size_t>* individualMipOffsets, int mipLevelCount) {
-    SkASSERT(individualMipOffsets && !individualMipOffsets->size());
+    SkASSERT(individualMipOffsets && individualMipOffsets->empty());
     SkASSERT(mipLevelCount >= 1);
 
     individualMipOffsets->push_back(0);

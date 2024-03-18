@@ -28,7 +28,11 @@ import("gn/ios.gni")
 config("skia_public") {
   include_dirs = [ "." ]
 
-  defines = []
+  defines = [
+    "SK_CODEC_DECODES_BMP",
+    "SK_CODEC_DECODES_WBMP",
+    "SK_DISABLE_LEGACY_VULKAN_MUTABLE_TEXTURE_STATE",
+  ]
   cflags_objcc = []
   if (is_component_build) {
     defines += [ "SKIA_DLL" ]
@@ -40,10 +44,7 @@ config("skia_public") {
     defines += flutter_defines
   }
   if (skia_enable_optimize_size) {
-    defines += [
-      "SK_ENABLE_OPTIMIZE_SIZE",
-      "SK_FORCE_AAA",
-    ]
+    defines += [ "SK_ENABLE_OPTIMIZE_SIZE" ]
   }
   if (skia_enable_precompile) {
     defines += [ "SK_ENABLE_PRECOMPILE" ]
@@ -72,6 +73,9 @@ config("skia_public") {
   }
   if (skia_enable_graphite) {
     defines += [ "SK_GRAPHITE" ]
+  }
+  if (skia_disable_tracing) {
+    defines += [ "SK_DISABLE_TRACING" ]
   }
   if (skia_use_perfetto) {
     defines += [ "SK_USE_PERFETTO" ]
@@ -129,6 +133,9 @@ config("skia_private") {
   if (skia_print_native_shaders) {
     defines += [ "SK_PRINT_NATIVE_SHADERS" ]
   }
+
+  # Temporary staging flag:
+  defines += [ "SK_ENABLE_AVX512_OPTS" ]
 }
 
 # Any code that's linked into Skia-the-library should use this config via += skia_library_configs.
@@ -179,6 +186,16 @@ opts("hsw") {
     cflags = [ "/arch:AVX2" ]
   } else {
     cflags = [ "-march=haswell" ]
+  }
+}
+
+opts("skx") {
+  enabled = is_x86
+  sources = skia_opts.skx_sources
+  if (is_win) {
+    cflags = [ "/arch:AVX512" ]
+  } else {
+    cflags = [ "-march=skylake-avx512" ]
   }
 }
 
@@ -1219,7 +1236,10 @@ optional("xps") {
 
 optional("png_decode") {
   enabled = skia_use_libpng_decode
-  public_defines = [ "SK_CODEC_DECODES_PNG" ]
+  public_defines = [
+    "SK_CODEC_DECODES_ICO",
+    "SK_CODEC_DECODES_PNG",
+  ]
 
   deps = [ "//third_party/libpng" ]
   sources = [
@@ -1371,7 +1391,10 @@ optional("webp_encode") {
 
 optional("wuffs") {
   enabled = skia_use_wuffs
-  public_defines = [ "SK_HAS_WUFFS_LIBRARY" ]
+  public_defines = [
+    "SK_HAS_WUFFS_LIBRARY",
+    "SK_CODEC_DECODES_GIF",
+  ]
 
   deps = [ "//third_party/wuffs" ]
   sources = [ "src/codec/SkWuffsCodec.cpp" ]
@@ -1448,6 +1471,7 @@ skia_component("skia") {
     ":ndk_images",
     ":png_decode",
     ":raw",
+    ":skx",
     ":typeface_fontations",
     ":vello",
     ":webp_decode",
@@ -1705,6 +1729,10 @@ config("our_vulkan_headers") {
   include_dirs = [ "include/third_party/vulkan" ]
 }
 
+config("vulkan_memory_allocator") {
+  include_dirs = [ "$skia_vulkan_memory_allocator_dir/include" ]
+}
+
 # Targets guarded by skia_enable_tools may use //third_party freely.
 if (skia_enable_tools) {
   skia_public_includes = [
@@ -1937,6 +1965,7 @@ if (skia_enable_tools) {
       "tools/gpu/YUVUtils.cpp",
       "tools/gpu/YUVUtils.h",
       "tools/gpu/mock/MockTestContext.cpp",
+      "tools/text/gpu/TextBlobTools.cpp",
     ]
     sources += skia_utils_gpu
 
@@ -1986,10 +2015,13 @@ if (skia_enable_tools) {
       sources += [ "tools/gpu/vk/VkTestContext.cpp" ]
       sources += [ "tools/gpu/vk/VkTestHelper.h" ]
       sources += [ "tools/gpu/vk/VkTestHelper.cpp" ]
+      sources += [ "tools/gpu/vk/VkTestMemoryAllocator.h" ]
+      sources += [ "tools/gpu/vk/VkTestMemoryAllocator.cpp" ]
       sources += [ "tools/gpu/vk/VkTestUtils.h" ]
       sources += [ "tools/gpu/vk/VkTestUtils.cpp" ]
       sources += [ "tools/gpu/vk/VkYcbcrSamplerHelper.h" ]
       sources += [ "tools/gpu/vk/VkYcbcrSamplerHelper.cpp" ]
+      all_dependent_configs += [ ":vulkan_memory_allocator" ]
     }
     if (skia_use_metal) {
       sources += [ "tools/gpu/mtl/MtlTestContext.mm" ]
@@ -2008,6 +2040,13 @@ if (skia_enable_tools) {
       sources -= [ "tools/gpu/GrTest.cpp" ]
       sources -= [ "tools/gpu/TestOps.cpp" ]
       sources -= [ "tools/gpu/TestOps.h" ]
+    } else {
+      sources += [
+        "tools/gpu/ganesh/AtlasTextOpTools.cpp",
+        "tools/gpu/ganesh/AtlasTextOpTools.h",
+        "tools/gpu/ganesh/GrAtlasTools.cpp",
+        "tools/gpu/ganesh/GrAtlasTools.h",
+      ]
     }
     if (skia_enable_graphite) {
       sources += [ "tools/graphite/ContextFactory.h" ]
@@ -2058,10 +2097,6 @@ if (skia_enable_tools) {
   }
   test_lib("common_flags_images") {
     sources = [ "tools/flags/CommonFlagsImages.cpp" ]
-    deps = [ ":flags" ]
-  }
-  test_lib("common_flags_aa") {
-    sources = [ "tools/flags/CommonFlagsAA.cpp" ]
     deps = [ ":flags" ]
   }
 
@@ -2201,6 +2236,7 @@ if (skia_enable_tools) {
       "modules/skottie:gm",
       "modules/skparagraph",
       "modules/skparagraph:gm",
+      "modules/skresources",
       "modules/skshaper",
     ]
     if (is_skia_dev_build) {
@@ -2368,7 +2404,6 @@ if (skia_enable_tools) {
         "dm/DMSrcSink.h",
       ]
       deps = [
-        ":common_flags_aa",
         ":common_flags_config",
         ":common_flags_gpu",
         ":common_flags_images",
@@ -2421,7 +2456,6 @@ if (skia_enable_tools) {
     ]
     deps = [
       ":bench",
-      ":common_flags_aa",
       ":common_flags_config",
       ":common_flags_gpu",
       ":common_flags_images",
@@ -2886,6 +2920,7 @@ if (skia_enable_tools) {
         "tools/viewer/MegaStrokeSlide.cpp",
         "tools/viewer/MeshSlide.cpp",
         "tools/viewer/MixerSlide.cpp",
+        "tools/viewer/MotionMarkSlide.cpp",
         "tools/viewer/PatchSlide.cpp",
         "tools/viewer/PathClipSlide.cpp",
         "tools/viewer/PathEffectsSlide.cpp",
@@ -2985,9 +3020,14 @@ if (skia_enable_tools) {
     test_app("VulkanBasic") {
       # Bots and even devs may not have Vulkan headers, so put
       # include/third_party/vulkan on our path so they're always available.
-      all_dependent_configs = [ ":our_vulkan_headers" ]
+      all_dependent_configs = [
+        ":our_vulkan_headers",
+        ":vulkan_memory_allocator",
+      ]
 
       sources = [ "example/VulkanBasic.cpp" ]
+      sources += [ "tools/gpu/vk/VkTestMemoryAllocator.h" ]
+      sources += [ "tools/gpu/vk/VkTestMemoryAllocator.cpp" ]
       sources += [ "tools/gpu/vk/VkTestUtils.h" ]
       sources += [ "tools/gpu/vk/VkTestUtils.cpp" ]
       deps = [ ":skia" ]

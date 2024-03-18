@@ -150,6 +150,7 @@ SKIA_PUBLIC_HDRS = [
     "include/gpu/ganesh/gl/GrGLBackendSurface.h",
     "include/gpu/ganesh/gl/GrGLDirectContext.h",
     "include/gpu/ganesh/mtl/SkSurfaceMetal.h",
+    "include/gpu/ganesh/vk/GrBackendDrawableInfo.h",
     "include/gpu/ganesh/vk/GrVkBackendSemaphore.h",
     "include/gpu/ganesh/vk/GrVkBackendSurface.h",
     "include/gpu/ganesh/vk/GrVkDirectContext.h",
@@ -160,7 +161,6 @@ SKIA_PUBLIC_HDRS = [
     "include/gpu/gl/GrGLConfig.h",
     "include/gpu/gl/GrGLConfig_chrome.h",
     "include/gpu/GpuTypes.h",
-    "include/gpu/GrBackendDrawableInfo.h",
     "include/gpu/GrBackendSemaphore.h",
     "include/gpu/GrBackendSurface.h",
     "include/gpu/GrContextOptions.h",
@@ -208,7 +208,6 @@ SKIA_PUBLIC_HDRS = [
     # We do not want clients to directly include our private headers, so we exclude include/private
     "include/sksl/SkSLDebugTrace.h",
     "include/sksl/SkSLVersion.h",
-    "include/utils/SkAnimCodecPlayer.h",
     "include/utils/SkCanvasStateUtils.h",
     "include/utils/SkCustomTypeface.h",
     "include/utils/SkEventTracer.h",
@@ -384,7 +383,6 @@ BASE_SRCS_ALL = [
     "src/core/SkBitmapDevice.h",
     "src/core/SkBitmapProcState.h",  # needed for src/opts/SkBitmapProcState_opts.h
     "src/core/SkBitmapProcState_opts.cpp",
-    "src/core/SkBitmapProcState_opts_hsw.cpp",
     "src/core/SkBitmapProcState_opts_ssse3.cpp",
     "src/core/SkBlendMode.cpp",
     "src/core/SkBlendModeBlender.cpp",
@@ -653,7 +651,6 @@ BASE_SRCS_ALL = [
     "src/core/SkScan_Antihair.cpp",
     "src/core/SkScan_Hairline.cpp",
     "src/core/SkScan_Path.cpp",
-    "src/core/SkScan_SAAPath.cpp",
     "src/core/SkSpecialImage.cpp",
     "src/core/SkSpecialImage.h",
     "src/core/SkSpriteBlitter.h",
@@ -806,6 +803,7 @@ BASE_SRCS_ALL = [
     "src/gpu/SkRenderEngineAbortf.h",
     "src/gpu/Swizzle.cpp",
     "src/gpu/Swizzle.h",
+    "src/gpu/SwizzlePriv.h",
     "src/gpu/TiledTextureUtils.cpp",
     "src/gpu/TiledTextureUtils.h",
     # We include the ganesh files, but leave out any specific backend (e.g. GL, Vulkan)
@@ -887,8 +885,6 @@ BASE_SRCS_ALL = [
     "src/gpu/ganesh/GrEagerVertexAllocator.cpp",
     "src/gpu/ganesh/GrEagerVertexAllocator.h",
     "src/gpu/ganesh/GrFPArgs.h",
-    "src/gpu/ganesh/GrFinishCallbacks.cpp",
-    "src/gpu/ganesh/GrFinishCallbacks.h",
     "src/gpu/ganesh/GrFixedClip.cpp",
     "src/gpu/ganesh/GrFixedClip.h",
     "src/gpu/ganesh/GrFragmentProcessor.cpp",
@@ -1524,6 +1520,7 @@ BASE_SRCS_ALL = [
     "src/sksl/SkSLUtil.h",
     "src/sksl/analysis/SkSLCanExitWithoutReturningValue.cpp",
     "src/sksl/analysis/SkSLCheckProgramStructure.cpp",
+    "src/sksl/analysis/SkSLCheckSymbolTableCorrectness.cpp",
     "src/sksl/analysis/SkSLFinalizationChecks.cpp",
     "src/sksl/analysis/SkSLGetLoopControlFlowInfo.cpp",
     "src/sksl/analysis/SkSLGetLoopUnrollInfo.cpp",
@@ -1681,6 +1678,7 @@ BASE_SRCS_ALL = [
     "src/sksl/transform/SkSLEliminateEmptyStatements.cpp",
     "src/sksl/transform/SkSLEliminateUnreachableCode.cpp",
     "src/sksl/transform/SkSLFindAndDeclareBuiltinFunctions.cpp",
+    "src/sksl/transform/SkSLFindAndDeclareBuiltinStructs.cpp",
     "src/sksl/transform/SkSLFindAndDeclareBuiltinVariables.cpp",
     "src/sksl/transform/SkSLHoistSwitchVarDeclarationsAtTopLevel.cpp",
     "src/sksl/transform/SkSLProgramWriter.h",
@@ -1718,7 +1716,6 @@ BASE_SRCS_ALL = [
     "src/text/SlugFromBuffer.cpp",
     "src/text/StrikeForGPU.cpp",
     "src/text/StrikeForGPU.h",
-    "src/utils/SkAnimCodecPlayer.cpp",
     "src/utils/SkBitSet.h",
     "src/utils/SkCallableTraits.h",
     "src/utils/SkCanvasStack.cpp",
@@ -1854,7 +1851,6 @@ CODEC_SRCS_LIMITED = [
     "src/codec/SkWbmpCodec.cpp",
     "src/codec/SkWbmpCodec.h",
     "src/codec/SkWuffsCodec.cpp",
-    "src/codec/SkWuffsCodec.h",
 ]
 
 CODEC_SRCS_ALL = CODEC_SRCS_LIMITED + [
@@ -1913,6 +1909,8 @@ base_gl_srcs = [
     "src/gpu/ganesh/gl/GrGLDefines.h",
     "src/gpu/ganesh/gl/GrGLDirectContext.cpp",
     "src/gpu/ganesh/gl/GrGLExtensions.cpp",
+    "src/gpu/ganesh/gl/GrGLFinishCallbacks.cpp",
+    "src/gpu/ganesh/gl/GrGLFinishCallbacks.h",
     "src/gpu/ganesh/gl/GrGLGLSL.cpp",
     "src/gpu/ganesh/gl/GrGLGLSL.h",
     "src/gpu/ganesh/gl/GrGLGpu.cpp",
@@ -2231,15 +2229,13 @@ BASE_DEFINES = [
     "SK_USE_FREETYPE_EMBOLDEN",
     # Turn on a few Google3-specific build fixes.
     "SK_BUILD_FOR_GOOGLE3",
-    # Required for building dm.
-    "GR_TEST_UTILS",
     # Should remove after we update golden images
     "SK_WEBP_ENCODER_USE_DEFAULT_METHOD",
-    # Experiment to diagnose image diffs in Google3
-    "SK_DISABLE_LOWP_RASTER_PIPELINE",
-
     # JPEG is in codec_limited and is included in all
     # builds except the no_codec android build
+    # BMP and WBMP are on by default in this build.
+    "SK_CODEC_DECODES_BMP",
+    "SK_CODEC_DECODES_WBMP",
 ]
 UNIX_DEFINES = [
     "PNG_SKIP_SETJMP_CHECK",
@@ -2281,7 +2277,6 @@ WASM_DEFINES = [
     "SK_DISABLE_LEGACY_SHADERCONTEXT",
     "SK_DISABLE_TRACING",
     "SK_GL",
-    "SK_FORCE_AAA",
     "SK_DISABLE_EFFECT_DESERIALIZATION",
     "SK_FORCE_8_BYTE_ALIGNMENT",
     "SKNX_NO_SIMD",
@@ -2414,7 +2409,11 @@ SKPARAGRAPH_LIB_SRCS = [
 
 SKRESOURCES_LIB_HDRS = ["modules/skresources/include/SkResources.h"]
 
-SKRESOURCES_LIB_SRCS = ["modules/skresources/src/SkResources.cpp"]
+SKRESOURCES_LIB_SRCS = [
+    "modules/skresources/src/SkResources.cpp",
+    "modules/skresources/src/SkAnimCodecPlayer.cpp",
+    "modules/skresources/src/SkAnimCodecPlayer.h",
+]
 
 ################################################################################
 ## skottie_lib
@@ -2512,7 +2511,6 @@ SKOTTIE_LIB_SRCS = [
     "modules/skottie/src/text/Font.h",
     "modules/skottie/src/text/RangeSelector.cpp",
     "modules/skottie/src/text/RangeSelector.h",
-    "modules/skottie/src/text/SkottieShaper.h",
     "modules/skottie/src/text/TextAdapter.cpp",
     "modules/skottie/src/text/TextAdapter.h",
     "modules/skottie/src/text/TextAnimator.cpp",
@@ -2542,8 +2540,6 @@ SKOTTIE_UTILS_SRCS = [
 
 SKOTTIE_SHAPER_HDRS = [
     "modules/skottie/include/TextShaper.h",
-    # transitional
-    "modules/skottie/src/text/SkottieShaper.h",
 ]
 
 SKOTTIE_SHAPER_SRCS = [
