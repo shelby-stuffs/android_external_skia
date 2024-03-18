@@ -1363,6 +1363,8 @@ optional("typeface_fontations") {
     "$root_out_dir/libbridge_rust_side.a",
   ]
   sources = [
+    "src/ports/SkFontScanner_fontations.cpp",
+    "src/ports/SkFontScanner_fontations.h",
     "src/ports/SkTypeface_fontations.cpp",
     "src/ports/SkTypeface_fontations_priv.h",
   ]
@@ -2173,6 +2175,8 @@ if (skia_enable_tools) {
       "tools/fonts/TestSVGTypeface.h",
       "tools/fonts/TestTypeface.cpp",
       "tools/fonts/TestTypeface.h",
+      "tools/text/SkTextBlobTrace.cpp",
+      "tools/text/SkTextBlobTrace.h",
       "tools/timer/TimeUtils.h",
       "tools/timer/Timer.cpp",
       "tools/timer/Timer.h",
@@ -2445,7 +2449,10 @@ if (skia_enable_tools) {
   if (!is_win) {
     test_app("blob_cache_sim") {
       sources = [ "tools/blob_cache_sim.cpp" ]
-      deps = [ ":skia" ]
+      deps = [
+        ":skia",
+        ":tool_utils",
+      ]
     }
   }
 
