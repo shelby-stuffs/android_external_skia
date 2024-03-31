@@ -10,6 +10,7 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkTextureCompressionType.h"
 #include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/mtl/GrMtlBackendSemaphore.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkMathPriv.h"
 #include "src/base/SkRectMemcpy.h"
@@ -18,6 +19,8 @@
 #include "src/gpu/ganesh/GrBackendUtils.h"
 #include "src/gpu/ganesh/GrDataUtils.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrImageInfo.h"
+#include "src/gpu/ganesh/GrPixmap.h"
 #include "src/gpu/ganesh/GrRenderTarget.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
 #include "src/gpu/ganesh/GrTexture.h"
@@ -72,8 +75,7 @@ std::unique_ptr<GrGpu> GrMtlGpu::Make(const GrMtlBackendContext& context,
     return std::unique_ptr<GrGpu>(new GrMtlGpu(direct,
                                                options,
                                                device,
-                                               queue,
-                                               context.fBinaryArchive.get()));
+                                               queue));
 }
 
 // This constant determines how many OutstandingCommandBuffers are allocated together as a block in
@@ -83,7 +85,7 @@ std::unique_ptr<GrGpu> GrMtlGpu::Make(const GrMtlBackendContext& context,
 static const int kDefaultOutstandingAllocCnt = 8;
 
 GrMtlGpu::GrMtlGpu(GrDirectContext* direct, const GrContextOptions& options,
-                   id<MTLDevice> device, id<MTLCommandQueue> queue, GrMTLHandle binaryArchive)
+                   id<MTLDevice> device, id<MTLCommandQueue> queue)
         : INHERITED(direct)
         , fDevice(device)
         , fQueue(queue)
@@ -98,11 +100,6 @@ GrMtlGpu::GrMtlGpu(GrDirectContext* direct, const GrContextOptions& options,
     this->testingOnly_startCapture();
 #endif
     fCurrentCmdBuffer = GrMtlCommandBuffer::Make(fQueue);
-#if GR_METAL_SDK_VERSION >= 230
-    if (@available(macOS 11.0, iOS 14.0, tvOS 14.0, *)) {
-        fBinaryArchive = (__bridge id<MTLBinaryArchive>)(binaryArchive);
-    }
-#endif
 }
 
 GrMtlGpu::~GrMtlGpu() {
@@ -1605,7 +1602,8 @@ std::unique_ptr<GrSemaphore> GrMtlGpu::wrapBackendSemaphore(const GrBackendSemap
                                                             GrSemaphoreWrapType /* wrapType */,
                                                             GrWrapOwnership /*ownership*/) {
     SkASSERT(this->caps()->backendSemaphoreSupport());
-    return GrMtlSemaphore::MakeWrapped(semaphore.mtlSemaphore(), semaphore.mtlValue());
+    return GrMtlSemaphore::MakeWrapped(GrBackendSemaphores::GetMtlHandle(semaphore),
+                                       GrBackendSemaphores::GetMtlValue(semaphore));
 }
 
 void GrMtlGpu::insertSemaphore(GrSemaphore* semaphore) {

@@ -3,7 +3,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("gn/flutter_defines.gni")
 import("gn/fuchsia_defines.gni")
 import("gn/shared_sources.gni")
 import("gn/skia.gni")
@@ -39,17 +38,11 @@ config("skia_public") {
   if (is_fuchsia || is_linux) {
     defines += [ "SK_R32_SHIFT=16" ]
   }
-  if (skia_enable_flutter_defines) {
-    defines += flutter_defines
-  }
   if (skia_enable_optimize_size) {
     defines += [ "SK_ENABLE_OPTIMIZE_SIZE" ]
   }
   if (skia_enable_precompile) {
     defines += [ "SK_ENABLE_PRECOMPILE" ]
-  }
-  if (skia_enable_sksl_tracing) {
-    defines += [ "SKSL_ENABLE_TRACING" ]
   }
   if (is_fuchsia) {
     defines += fuchsia_defines
@@ -711,7 +704,6 @@ if (skia_compile_sksl_tests) {
   # Build skslc.
   skia_executable("skslc") {
     defines = [
-      "SKSL_ENABLE_TRACING",
       "SKSL_STANDALONE",
       "SK_DISABLE_TRACING",
       "SK_ENABLE_SPIRV_CROSS",
@@ -990,11 +982,16 @@ optional("gpu") {
         libs += [ "android" ]
       }
     } else if (skia_use_egl) {
-      sources += [
-        "src/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.cpp",
-        "src/gpu/ganesh/gl/egl/GrGLMakeNativeInterface_egl.cpp",
-      ]
-      libs += [ "EGL" ]
+      if (skia_use_epoxy_egl) {
+        sources += [ "src/gpu/ganesh/gl/epoxy/GrGLMakeEpoxyEGLInterface.cpp" ]
+        libs += [ "epoxy" ]
+      } else {
+        sources += [
+          "src/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.cpp",
+          "src/gpu/ganesh/gl/egl/GrGLMakeNativeInterface_egl.cpp",
+        ]
+        libs += [ "EGL" ]
+      }
     } else if (skia_use_webgl) {
       sources += [ "src/gpu/ganesh/gl/webgl/GrGLMakeNativeInterface_webgl.cpp" ]
     } else if (is_linux && skia_use_x11) {
@@ -1221,14 +1218,10 @@ optional("pdf") {
   public = skia_pdf_public
   sources = skia_pdf_sources
   sources_when_disabled = [ "src/pdf/SkDocument_PDF_None.cpp" ]
-  if (skia_use_harfbuzz && skia_pdf_subset_harfbuzz) {
+  if (skia_pdf_subset_harfbuzz) {
     deps += [ "//third_party/harfbuzz" ]
     defines = [ "SK_PDF_USE_HARFBUZZ_SUBSET" ]
-  } else if (skia_use_icu && skia_use_sfntly) {
-    deps += [ "//third_party/sfntly" ]
-    defines = [ "SK_PDF_USE_SFNTLY" ]
   }
-
   deps += [
     ":jpeg_decode",
     ":jpeg_encode",
@@ -1508,6 +1501,7 @@ skia_component("skia") {
   sources += skia_codec_decode_bmp
   sources += skia_encode_srcs
   sources += skia_sksl_sources
+  sources += skia_sksl_tracing_sources
   sources += [
     "src/android/SkAndroidFrameworkUtils.cpp",
     "src/android/SkAnimatedImage.cpp",
@@ -1527,9 +1521,6 @@ skia_component("skia") {
   defines = []
   libs = []
 
-  if (skia_enable_sksl_tracing) {
-    sources += skia_sksl_tracing_sources
-  }
   if (skia_build_for_debugger) {
     defines += [ "SK_BUILD_FOR_DEBUGGER" ]
   }
@@ -2065,6 +2056,8 @@ if (skia_enable_tools) {
       sources += [ "tools/graphite/GraphiteTestContext.h" ]
       sources += [ "tools/graphite/GraphiteTestContext.cpp" ]
       sources += [ "tools/graphite/ProtectedUtils_Graphite.cpp" ]
+      sources += [ "tools/graphite/UniqueKeyUtils.cpp" ]
+      sources += [ "tools/graphite/UniqueKeyUtils.h" ]
       if (skia_use_dawn) {
         sources += [ "tools/graphite/dawn/GraphiteDawnTestContext.cpp" ]
         sources += [ "tools/graphite/dawn/GraphiteDawnTestContext.h" ]
@@ -2525,7 +2518,7 @@ if (skia_enable_tools) {
     ]
   }
 
-  if (is_linux) {
+  if (is_linux && skia_use_icu) {
     test_app("sktexttopdf") {
       sources = [ "tools/using_skia_and_harfbuzz.cpp" ]
       deps = [
@@ -3419,14 +3412,13 @@ if (skia_enable_tools) {
   }
 }
 
-if (is_ios && skia_use_metal && skia_enable_ganesh &&
-    !skia_enable_flutter_defines) {
+if (is_ios && skia_use_metal && skia_enable_ganesh) {
   group("minimal_ios_mtl_skia_app") {
     deps = [ "experimental/minimal_ios_mtl_skia_app" ]
   }
 }
 
-if (is_ios && skia_enable_skottie && !skia_enable_flutter_defines) {
+if (is_ios && skia_enable_skottie) {
   group("skottie_ios") {
     deps = [ "tools/skottie_ios_app" ]
   }

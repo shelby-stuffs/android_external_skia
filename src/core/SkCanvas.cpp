@@ -1311,11 +1311,15 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec,
         return;
     } else {
 #if !defined(SK_RESOLVE_FILTERS_BEFORE_RESTORE) && !defined(SK_DONT_PAD_LAYER_IMAGES)
-        // Add a buffer of padding so that image filtering can avoid accessing unitialized data and
-        // switch from shader-decal'ing to clamping. We could skip padding the layer when there's
-        // no image filter and no device-filling effects, but always padding simplifies the rest of
-        // the layer prep logic and the restore logic.
-        layerBounds.outset(skif::LayerSpace<SkISize>({1, 1}));
+        // TODO(b/329700315): Once dithers can be anchored more flexibly, we can return to
+        // universally adding padding even for layers w/o filters. This change would simplify layer
+        // prep and restore logic and allow us to flexibly switch the sampling to linear if NN has
+        // issues on certain hardware.
+        if (!filters.empty()) {
+            // Add a buffer of padding so that image filtering can avoid accessing unitialized data
+            // and switch from shader-decal'ing to clamping.
+            layerBounds.outset(skif::LayerSpace<SkISize>({1, 1}));
+        }
 #endif
     }
 
@@ -1358,8 +1362,10 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec,
 #if !defined(SK_RESOLVE_FILTERS_BEFORE_RESTORE) && !defined(SK_DONT_PAD_LAYER_IMAGES)
     // Clip while the device coordinate space is the identity so it's easy to define the rect that
     // excludes the added padding pixels. This ensures they remain cleared to transparent black.
-    newDevice->clipRect(SkRect::Make(newDevice->devClipBounds().makeInset(1, 1)),
-                        SkClipOp::kIntersect, /*aa=*/false);
+    if (!filters.empty()) {
+        newDevice->clipRect(SkRect::Make(newDevice->devClipBounds().makeInset(1, 1)),
+                            SkClipOp::kIntersect, /*aa=*/false);
+    }
 #endif
 
     // Configure device to match determined mapping for any image filters.
@@ -2719,7 +2725,7 @@ void SkCanvas::onDrawGlyphRunList(const sktext::GlyphRunList& glyphRunList, cons
     // filter layer.
     auto layer = this->aboutToDraw(paint, &bounds, PredrawFlags::kSkipMaskFilterAutoLayer);
     if (layer) {
-        this->topDevice()->drawGlyphRunList(this, glyphRunList, paint, layer->paint());
+        this->topDevice()->drawGlyphRunList(this, glyphRunList, layer->paint());
     }
 }
 
@@ -2730,9 +2736,8 @@ sk_sp<Slug> SkCanvas::convertBlobToSlug(
     return this->onConvertGlyphRunListToSlug(glyphRunList, paint);
 }
 
-sk_sp<Slug>
-SkCanvas::onConvertGlyphRunListToSlug(
-        const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
+sk_sp<Slug> SkCanvas::onConvertGlyphRunListToSlug(const sktext::GlyphRunList& glyphRunList,
+                                                  const SkPaint& paint) {
     SkRect bounds = glyphRunList.sourceBoundsWithOrigin();
     if (bounds.isEmpty() || !bounds.isFinite() || paint.nothingToDraw()) {
         return nullptr;
@@ -2740,26 +2745,25 @@ SkCanvas::onConvertGlyphRunListToSlug(
     // See comment in onDrawGlyphRunList()
     auto layer = this->aboutToDraw(paint, &bounds, PredrawFlags::kSkipMaskFilterAutoLayer);
     if (layer) {
-        return this->topDevice()->convertGlyphRunListToSlug(glyphRunList, paint, layer->paint());
+        return this->topDevice()->convertGlyphRunListToSlug(glyphRunList, layer->paint());
     }
     return nullptr;
 }
 
-void SkCanvas::drawSlug(const Slug* slug) {
+void SkCanvas::drawSlug(const Slug* slug, const SkPaint& paint) {
     TRACE_EVENT0("skia", TRACE_FUNC);
     if (slug) {
-        this->onDrawSlug(slug);
+        this->onDrawSlug(slug, paint);
     }
 }
 
-void SkCanvas::onDrawSlug(const Slug* slug) {
+void SkCanvas::onDrawSlug(const Slug* slug, const SkPaint& paint) {
     SkRect bounds = slug->sourceBoundsWithOrigin();
-    if (this->internalQuickReject(bounds, slug->initialPaint())) {
+    if (this->internalQuickReject(bounds, paint)) {
         return;
     }
     // See comment in onDrawGlyphRunList()
-    auto layer = this->aboutToDraw(slug->initialPaint(), &bounds,
-                                   PredrawFlags::kSkipMaskFilterAutoLayer);
+    auto layer = this->aboutToDraw(paint, &bounds, PredrawFlags::kSkipMaskFilterAutoLayer);
     if (layer) {
         this->topDevice()->drawSlug(this, slug, layer->paint());
     }

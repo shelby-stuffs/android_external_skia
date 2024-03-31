@@ -21,6 +21,44 @@
 
 namespace skgpu::graphite {
 
+namespace {
+
+#ifdef SK_DEBUG
+
+bool precompilebase_is_valid_as_child(const PrecompileBase *child) {
+    if (!child) {
+        return true;
+    }
+
+    switch (child->type()) {
+        case PrecompileBase::Type::kShader:
+        case PrecompileBase::Type::kColorFilter:
+        case PrecompileBase::Type::kBlender:
+            return true;
+        default:
+            return false;
+    }
+}
+
+#endif // SK_DEBUG
+
+// If all the options are null the span is considered empty
+bool is_empty(SkSpan<const sk_sp<PrecompileColorFilter>> options) {
+    if (options.empty()) {
+        return true;
+    }
+
+    for (const auto& o : options) {
+        if (o) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+} // anonymous namespace
+
 //--------------------------------------------------------------------------------------------------
 class PrecompileBlendModeBlender : public PrecompileBlender {
 public:
@@ -47,6 +85,58 @@ sk_sp<PrecompileBlender> PrecompileBlender::Mode(SkBlendMode blendMode) {
 }
 
 //--------------------------------------------------------------------------------------------------
+class PrecompileEmptyShader : public PrecompileShader {
+public:
+    PrecompileEmptyShader() {}
+
+private:
+    void addToKey(const KeyContext& keyContext,
+                  PaintParamsKeyBuilder* builder,
+                  PipelineDataGatherer* gatherer,
+                  int desiredCombination) const override {
+
+        SkASSERT(desiredCombination == 0); // The empty shader only ever has one combination
+
+        builder->addBlock(BuiltInCodeSnippetID::kPriorOutput);
+    }
+
+};
+
+sk_sp<PrecompileShader> PrecompileShaders::Empty() {
+    return sk_make_sp<PrecompileEmptyShader>();
+}
+
+//--------------------------------------------------------------------------------------------------
+class PrecompilePerlinNoiseShader : public PrecompileShader {
+public:
+    PrecompilePerlinNoiseShader() {}
+
+private:
+    void addToKey(const KeyContext& keyContext,
+                  PaintParamsKeyBuilder* builder,
+                  PipelineDataGatherer* gatherer,
+                  int desiredCombination) const override {
+
+        SkASSERT(desiredCombination == 0); // The Perlin noise shader only ever has one combination
+
+        // TODO: update PerlinNoiseShaderBlock so the NoiseData is optional
+        static const PerlinNoiseShaderBlock::PerlinNoiseData kIgnoredNoiseData(
+                PerlinNoiseShaderBlock::Type::kFractalNoise, { 0.0f, 0.0f }, 2, {1, 1});
+
+        PerlinNoiseShaderBlock::AddBlock(keyContext, builder, gatherer, kIgnoredNoiseData);
+    }
+
+};
+
+sk_sp<PrecompileShader> PrecompileShaders::MakeFractalNoise() {
+    return sk_make_sp<PrecompilePerlinNoiseShader>();
+}
+
+sk_sp<PrecompileShader> PrecompileShaders::MakeTurbulence() {
+    return sk_make_sp<PrecompilePerlinNoiseShader>();
+}
+
+//--------------------------------------------------------------------------------------------------
 class PrecompileColorShader : public PrecompileShader {
 public:
     PrecompileColorShader() {}
@@ -64,10 +154,15 @@ private:
         // The white PMColor is just a placeholder for the actual paint params color
         SolidColorShaderBlock::AddBlock(keyContext, builder, gatherer, SK_PMColor4fWHITE);
     }
-
 };
 
 sk_sp<PrecompileShader> PrecompileShaders::Color() {
+    return sk_make_sp<PrecompileColorShader>();
+}
+
+// The colorSpace is safe to ignore - it is just applied to the color and doesn't modify the
+// generated program.
+sk_sp<PrecompileShader> PrecompileShaders::Color(sk_sp<SkColorSpace>) {
     return sk_make_sp<PrecompileColorShader>();
 }
 
@@ -256,21 +351,77 @@ sk_sp<PrecompileShader> PrecompileShaders::Blend(
 }
 
 //--------------------------------------------------------------------------------------------------
-class PrecompileImageShader : public PrecompileShader {
+class PrecompileCoordClampShader : public PrecompileShader {
 public:
-    PrecompileImageShader() {}
+    PrecompileCoordClampShader(SkSpan<const sk_sp<PrecompileShader>> shaders)
+            : fShaders(shaders.begin(), shaders.end()) {
+        fNumShaderCombos = 0;
+        for (const auto& s : fShaders) {
+            fNumShaderCombos += s->numCombinations();
+        }
+    }
 
 private:
-    // hardware-tiled, shader-tiled and cubic sampling
-    inline static constexpr int kNumIntrinsicCombinations = 3;
-
-    int numIntrinsicCombinations() const override { return kNumIntrinsicCombinations; }
+    int numChildCombinations() const override {
+        return fNumShaderCombos;
+    }
 
     void addToKey(const KeyContext& keyContext,
                   PaintParamsKeyBuilder* builder,
                   PipelineDataGatherer* gatherer,
                   int desiredCombination) const override {
+        SkASSERT(desiredCombination < fNumShaderCombos);
+
+        constexpr SkRect kIgnored { 0, 0, 256, 256 }; // ignored bc we're precompiling
+
+        // TODO: update CoordClampShaderBlock so this is optional
+        CoordClampShaderBlock::CoordClampData data(kIgnored);
+
+        CoordClampShaderBlock::BeginBlock(keyContext, builder, gatherer, data);
+            AddToKey<PrecompileShader>(keyContext, builder, gatherer, fShaders, desiredCombination);
+        builder->endBlock();
+    }
+
+    std::vector<sk_sp<PrecompileShader>> fShaders;
+    int fNumShaderCombos;
+};
+
+sk_sp<PrecompileShader> PrecompileShaders::CoordClamp(SkSpan<const sk_sp<PrecompileShader>> input) {
+    return sk_make_sp<PrecompileCoordClampShader>(input);
+}
+
+//--------------------------------------------------------------------------------------------------
+// TODO: Investigate the Alpha-only use case
+class PrecompileImageShader : public PrecompileShader {
+public:
+    PrecompileImageShader() {}
+
+private:
+    friend class PrecompilePictureShader;
+
+    // The normal Skia API always wraps an ImageShader in a LocalMatrixShader and then changes the
+    // program structure depending on the LM being the identity.
+    inline static constexpr int kNumLocalMatrixCombinations = 2;
+
+    // The ImageShader has 3 variants: hardware-tiled, shader-tiled and cubic sampling
+    inline static constexpr int kNumSamplingCombinations = 3;
+
+    inline static constexpr int kNumIntrinsicCombinations = kNumLocalMatrixCombinations *
+                                                            kNumSamplingCombinations;
+
+    int numIntrinsicCombinations() const override { return kNumIntrinsicCombinations; }
+
+    static void AddToKey(const KeyContext& keyContext,
+                         PaintParamsKeyBuilder* builder,
+                         PipelineDataGatherer* gatherer,
+                         int desiredCombination) {
         SkASSERT(desiredCombination < kNumIntrinsicCombinations);
+
+        const int desiredLMCombination = desiredCombination % kNumLocalMatrixCombinations;
+        int remainingCombinations = desiredCombination / kNumLocalMatrixCombinations;
+
+        int desiredImageCombination = remainingCombinations;
+        SkASSERT(desiredImageCombination < PrecompileImageShader::kNumSamplingCombinations);
 
         static constexpr SkSamplingOptions kDefaultCubicSampling(SkCubicResampler::Mitchell());
         static constexpr SkSamplingOptions kDefaultSampling;
@@ -282,18 +433,41 @@ private:
         static constexpr SkISize kHwTileableSize = SkISize::Make(1, 1);
         static constexpr SkISize kNonHwTileableSize = SkISize::Make(2, 2);
 
-        ImageShaderBlock::ImageData imgData(desiredCombination == 2 ? kDefaultCubicSampling
-                                                                    : kDefaultSampling,
-                                            SkTileMode::kClamp, SkTileMode::kClamp,
-                                            desiredCombination == 1 ? kHwTileableSize
-                                                                    : kNonHwTileableSize,
-                                            kSubset, ReadSwizzle::kRGBA);
+        if (desiredLMCombination) {
+            static const LocalMatrixShaderBlock::LMShaderData kIgnoredLMShaderData(SkMatrix::I());
 
-        ImageShaderBlock::AddBlock(keyContext, builder, gatherer, imgData);
+            LocalMatrixShaderBlock::BeginBlock(keyContext, builder, gatherer, kIgnoredLMShaderData);
+        }
+
+            ImageShaderBlock::ImageData imgData(desiredImageCombination == 2 ? kDefaultCubicSampling
+                                                                             : kDefaultSampling,
+                                                SkTileMode::kClamp, SkTileMode::kClamp,
+                                                desiredImageCombination == 1 ? kHwTileableSize
+                                                                             : kNonHwTileableSize,
+                                                kSubset, ReadSwizzle::kRGBA);
+
+            ImageShaderBlock::AddBlock(keyContext, builder, gatherer, imgData);
+
+        if (desiredLMCombination) {
+            builder->endBlock();
+        }
+    }
+
+    void addToKey(const KeyContext& keyContext,
+                  PaintParamsKeyBuilder* builder,
+                  PipelineDataGatherer* gatherer,
+                  int desiredCombination) const override {
+        AddToKey(keyContext, builder, gatherer, desiredCombination);
     }
 };
 
 sk_sp<PrecompileShader> PrecompileShaders::Image() {
+    return sk_make_sp<PrecompileImageShader>();
+}
+
+sk_sp<PrecompileShader> PrecompileShaders::RawImage() {
+    // Raw images do not perform color space conversion, but in Graphite, this is represented as
+    // an identity color space xform, not as a distinct shader
     return sk_make_sp<PrecompileImageShader>();
 }
 
@@ -328,6 +502,54 @@ private:
 
 sk_sp<PrecompileShader> PrecompileShaders::YUVImage() {
     return sk_make_sp<PrecompileYUVImageShader>();
+}
+
+//--------------------------------------------------------------------------------------------------
+// The PictureShader ultimately turns into an SkImageShader optionally wrapped in a
+// LocalMatrixShader. This means each precompile PictureShader will add 12 combinations:
+//    2 (pictureshader LM) x 2 (imageShader LM) x 3 (imageShader sample methods)
+class PrecompilePictureShader : public PrecompileShader {
+public:
+    PrecompilePictureShader() {}
+
+private:
+    // The normal compilation path changes the structure depending on the LM being the identity.
+    inline static constexpr int kNumLocalMatrixCombinations = 2;
+
+    int numIntrinsicCombinations() const override {
+        return kNumLocalMatrixCombinations * PrecompileImageShader::kNumIntrinsicCombinations;
+    }
+
+    void addToKey(const KeyContext& keyContext,
+                  PaintParamsKeyBuilder* builder,
+                  PipelineDataGatherer* gatherer,
+                  int desiredCombination) const override {
+        SkASSERT(desiredCombination < this->numIntrinsicCombinations());
+
+        const int desiredLMCombination = desiredCombination % kNumLocalMatrixCombinations;
+        int remainingCombinations = desiredCombination / kNumLocalMatrixCombinations;
+
+        int desiredImageCombination = remainingCombinations;
+        SkASSERT(desiredImageCombination < PrecompileImageShader::kNumIntrinsicCombinations);
+
+        if (desiredLMCombination) {
+            static const LocalMatrixShaderBlock::LMShaderData kIgnoredLMShaderData(SkMatrix::I());
+
+            LocalMatrixShaderBlock::BeginBlock(keyContext, builder, gatherer, kIgnoredLMShaderData);
+        }
+
+        // Note: We don't need to consider the PrecompileYUVImageShader since the image
+        // being drawn was created internally by Skia (as non-YUV).
+        PrecompileImageShader::AddToKey(keyContext, builder, gatherer, desiredImageCombination);
+
+        if (desiredLMCombination) {
+            builder->endBlock();
+        }
+    }
+};
+
+sk_sp<PrecompileShader> PrecompileShaders::Picture() {
+    return sk_make_sp<PrecompilePictureShader>();
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -391,6 +613,8 @@ sk_sp<PrecompileShader> PrecompileShaders::TwoPointConicalGradient() {
 }
 
 //--------------------------------------------------------------------------------------------------
+// TODO: Would adding a self-eliding precompile option here reduce the complexity of dealing w/
+// the LMShader combinations?
 class PrecompileLocalMatrixShader : public PrecompileShader {
 public:
     PrecompileLocalMatrixShader(sk_sp<PrecompileShader> wrapped) : fWrapped(std::move(wrapped)) {}
@@ -618,7 +842,7 @@ private:
 sk_sp<PrecompileColorFilter> PrecompileColorFilters::Compose(
         SkSpan<const sk_sp<PrecompileColorFilter>> outerOptions,
         SkSpan<const sk_sp<PrecompileColorFilter>> innerOptions) {
-    if (outerOptions.empty() && innerOptions.empty()) {
+    if (is_empty(outerOptions) && is_empty(innerOptions)) {
         return nullptr;
     }
 
@@ -766,29 +990,6 @@ PrecompileChildPtr::PrecompileChildPtr(sk_sp<PrecompileColorFilter> cf)
         : fChild(std::move(cf)) {
 }
 PrecompileChildPtr::PrecompileChildPtr(sk_sp<PrecompileBlender> b) : fChild(std::move(b)) {}
-
-namespace {
-
-#ifdef SK_DEBUG
-
-bool precompilebase_is_valid_as_child(const PrecompileBase *child) {
-    if (!child) {
-        return true;
-    }
-
-    switch (child->type()) {
-        case PrecompileBase::Type::kShader:
-        case PrecompileBase::Type::kColorFilter:
-        case PrecompileBase::Type::kBlender:
-            return true;
-        default:
-            return false;
-    }
-}
-
-#endif // SK_DEBUG
-
-} // anonymous namespace
 
 PrecompileChildPtr::PrecompileChildPtr(sk_sp<PrecompileBase> child)
         : fChild(std::move(child)) {

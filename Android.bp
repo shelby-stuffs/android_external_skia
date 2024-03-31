@@ -1643,6 +1643,7 @@ cc_library_static {
         "src/xml/SkDOM.cpp",
         "src/xml/SkXMLParser.cpp",
         "src/xml/SkXMLWriter.cpp",
+        "tools/SkSharingProc.cpp",
     ],
 
     target: {
@@ -1977,7 +1978,6 @@ cc_library_static {
           "src/text/gpu/TextBlob.cpp",
           "src/text/gpu/TextBlobRedrawCoordinator.cpp",
           "src/text/gpu/VertexFiller.cpp",
-          "tools/SkSharingProc.cpp",
         ],
         local_include_dirs: [
           "android",
@@ -2083,12 +2083,15 @@ cc_defaults {
         "libpiex",
         "libexpat",
         "libft2",
+        "libharfbuzz_subset",
     ],
     static_libs: [
         "libwebp-decode",
         "libwebp-encode",
-        "libsfntly",
         "libwuffs_mirror_release_c",
+    ],
+    cflags: [
+        "-DSK_PDF_USE_HARFBUZZ_SUBSET",
     ],
     target: {
       android: {
@@ -2486,6 +2489,7 @@ cc_defaults {
         "gm/readpixels.cpp",
         "gm/recordopts.cpp",
         "gm/rectangletexture.cpp",
+        "gm/rendertomipmappedyuvimageplanes.cpp",
         "gm/repeated_bitmap.cpp",
         "gm/resizeimagefilter.cpp",
         "gm/rippleshadergm.cpp",
@@ -2944,6 +2948,7 @@ cc_defaults {
         "tests/FontMgrFlags.cpp",
         "tests/FontMgrTest.cpp",
         "tests/FontNamesTest.cpp",
+        "tests/FontScanner.cpp",
         "tests/FontTest.cpp",
         "tests/FrontBufferedStreamTest.cpp",
         "tests/GLBackendSurfaceTest.cpp",
@@ -3654,6 +3659,7 @@ cc_library_shared {
         "gm/readpixels.cpp",
         "gm/recordopts.cpp",
         "gm/rectangletexture.cpp",
+        "gm/rendertomipmappedyuvimageplanes.cpp",
         "gm/repeated_bitmap.cpp",
         "gm/resizeimagefilter.cpp",
         "gm/rippleshadergm.cpp",
@@ -4830,6 +4836,7 @@ cc_library_shared {
         "tests/FontMgrFlags.cpp",
         "tests/FontMgrTest.cpp",
         "tests/FontNamesTest.cpp",
+        "tests/FontScanner.cpp",
         "tests/FontTest.cpp",
         "tests/FrontBufferedStreamTest.cpp",
         "tests/GLBackendSurfaceTest.cpp",
@@ -5146,6 +5153,7 @@ cc_library_shared {
         "tests/graphite/BackendTextureTest.cpp",
         "tests/graphite/BoundsManagerTest.cpp",
         "tests/graphite/BufferManagerTest.cpp",
+        "tests/graphite/CacheBudgetTest.cpp",
         "tests/graphite/CacheKeyTest.cpp",
         "tests/graphite/CombinationBuilderTest.cpp",
         "tests/graphite/ComputeTest.cpp",
@@ -5157,6 +5165,7 @@ cc_library_shared {
         "tests/graphite/ImageOriginTest.cpp",
         "tests/graphite/ImageProviderTest.cpp",
         "tests/graphite/ImageShaderTest.cpp",
+        "tests/graphite/ImageWrapTextureMipmapsTest.cpp",
         "tests/graphite/IntersectionTreeTest.cpp",
         "tests/graphite/KeyTest.cpp",
         "tests/graphite/MultisampleTest.cpp",
@@ -5232,6 +5241,7 @@ cc_library_shared {
         "tools/graphite/ContextFactory.cpp",
         "tools/graphite/GraphiteTestContext.cpp",
         "tools/graphite/ProtectedUtils_Graphite.cpp",
+        "tools/graphite/UniqueKeyUtils.cpp",
         "tools/graphite/vk/GraphiteVulkanTestContext.cpp",
         "tools/skqp/src/jni_skqp.cpp",
         "tools/skqp/src/skqp.cpp",
