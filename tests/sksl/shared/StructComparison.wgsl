@@ -1,6 +1,6 @@
 ### Compilation failed:
 
-error: :9:14 error: uniform storage requires that array elements are aligned to 16 bytes, but array element of type 'f32' has a stride of 4 bytes. Consider using a vector or struct as the element type instead.
+error: :9:14 error: 'uniform' storage requires that array elements are aligned to 16 bytes, but array element of type 'f32' has a stride of 4 bytes. Consider using a vector or struct as the element type instead.
   testArray: array<f32, 5>,
              ^^^^^^^^^^^^^
 
@@ -12,11 +12,19 @@ error: :9:14 error: uniform storage requires that array elements are aligned to 
 /* offset(52) align( 1) size(12) */   // -- implicit struct size padding --;
 /*                               */ };
 struct _GlobalUniforms {
-^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^
+  colorGreen: vec4<f32>,
+^^^^^^^^^^^^^^^^^^^^^^^^
+  colorRed: vec4<f32>,
+^^^^^^^^^^^^^^^^^^^^^^
+  testArray: array<f32, 5>,
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+};
+^
 
-:11:36 note: '_GlobalUniforms' used in address space 'uniform' here
+:11:23 note: '_GlobalUniforms' used in address space 'uniform' here
 @binding(0) @group(0) var<uniform> _globalUniforms: _GlobalUniforms;
-                                   ^^^^^^^^^^^^^^^
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
 diagnostic(off, derivative_uniformity);

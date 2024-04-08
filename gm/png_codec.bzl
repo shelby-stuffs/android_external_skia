@@ -103,6 +103,7 @@ def png_codec_tests(name):
                 "//tools/flags:common_flags",
                 "//tools/testrunners/gm:BazelGMTestRunner.cpp",
             ],
+            target_compatible_with = ["@platforms//os:linux"],
             args = [
                 "--surfaceConfig",
                 surface_config,
@@ -120,7 +121,7 @@ def png_codec_tests(name):
                 "//:core",
                 "//:png_decode_codec",
                 "//gm",
-                "//src/utils:json",
+                "//src/core:core_priv",
                 "//tools:codec_utils",
                 "//tools:hash_and_encode",
                 "//tools:tool_utils",

@@ -332,7 +332,20 @@ void SkDevice::drawDevice(SkDevice* device,
                           const SkPaint& paint) {
     sk_sp<SkSpecialImage> deviceImage = device->snapSpecial();
     if (deviceImage) {
+#if defined(SK_DONT_PAD_LAYER_IMAGES) || defined(SK_RESOLVE_FILTERS_BEFORE_RESTORE)
         this->drawSpecial(deviceImage.get(), device->getRelativeTransform(*this), sampling, paint);
+#else
+        // SkCanvas only calls drawDevice() when there are no filters (so the transform is pixel
+        // aligned). As such it can be drawn without clamping.
+        SkMatrix relativeTransform = device->getRelativeTransform(*this);
+        const bool strict = sampling != SkFilterMode::kNearest ||
+                            !relativeTransform.isTranslate() ||
+                            !SkScalarIsInt(relativeTransform.getTranslateX()) ||
+                            !SkScalarIsInt(relativeTransform.getTranslateY());
+        this->drawSpecial(deviceImage.get(), relativeTransform, sampling, paint,
+                          strict ? SkCanvas::kStrict_SrcRectConstraint
+                                 : SkCanvas::kFast_SrcRectConstraint);
+#endif
     }
 }
 
@@ -417,28 +430,25 @@ static sk_sp<SkShader> make_post_inverse_lm(const SkShader* shader, const SkMatr
 
 void SkDevice::drawGlyphRunList(SkCanvas* canvas,
                                 const sktext::GlyphRunList& glyphRunList,
-                                const SkPaint& initialPaint,
-                                const SkPaint& drawingPaint) {
+                                const SkPaint& paint) {
     if (!this->localToDevice().isFinite()) {
         return;
     }
 
     if (!glyphRunList.hasRSXForm()) {
-        this->onDrawGlyphRunList(canvas, glyphRunList, initialPaint, drawingPaint);
+        this->onDrawGlyphRunList(canvas, glyphRunList, paint);
     } else {
-        this->simplifyGlyphRunRSXFormAndRedraw(canvas, glyphRunList, initialPaint, drawingPaint);
+        this->simplifyGlyphRunRSXFormAndRedraw(canvas, glyphRunList, paint);
     }
 }
 
 void SkDevice::simplifyGlyphRunRSXFormAndRedraw(SkCanvas* canvas,
                                                 const sktext::GlyphRunList& glyphRunList,
-                                                const SkPaint& initialPaint,
-                                                const SkPaint& drawingPaint) {
+                                                const SkPaint& paint) {
     for (const sktext::GlyphRun& run : glyphRunList) {
         if (run.scaledRotations().empty()) {
-            auto subList = glyphRunList.builder()->makeGlyphRunList(
-                    run, drawingPaint, {0, 0});
-            this->drawGlyphRunList(canvas, subList, initialPaint, drawingPaint);
+            auto subList = glyphRunList.builder()->makeGlyphRunList(run, paint, {0, 0});
+            this->drawGlyphRunList(canvas, subList, paint);
         } else {
             SkPoint origin = glyphRunList.origin();
             SkPoint sharedPos{0, 0};    // we're at the origin
@@ -463,23 +473,20 @@ void SkDevice::simplifyGlyphRunRSXFormAndRedraw(SkCanvas* canvas,
                 // (i.e. the shader that cares about the ctm) so we have to undo our little ctm
                 // trick with a localmatrixshader so that the shader draws as if there was no
                 // change to the ctm.
-                SkPaint invertingPaint{drawingPaint};
-                invertingPaint.setShader(
-                        make_post_inverse_lm(drawingPaint.getShader(), glyphToLocal));
+                SkPaint invertingPaint{paint};
+                invertingPaint.setShader(make_post_inverse_lm(paint.getShader(), glyphToLocal));
                 SkAutoCanvasRestore acr(canvas, true);
                 canvas->concat(SkM44(glyphToLocal));
-                sktext::GlyphRunList subList = glyphRunList.builder()->makeGlyphRunList(
-                        glyphRun, drawingPaint, {0, 0});
-                this->drawGlyphRunList(canvas, subList, initialPaint, invertingPaint);
+                sktext::GlyphRunList subList =
+                        glyphRunList.builder()->makeGlyphRunList(glyphRun, paint, {0, 0});
+                this->drawGlyphRunList(canvas, subList, invertingPaint);
             }
         }
     }
 }
 
 sk_sp<sktext::gpu::Slug> SkDevice::convertGlyphRunListToSlug(
-        const sktext::GlyphRunList& glyphRunList,
-        const SkPaint& initialPaint,
-        const SkPaint& drawingPaint) {
+        const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
     return nullptr;
 }
 

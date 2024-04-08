@@ -90,6 +90,7 @@
 #include "include/gpu/GrTypes.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"
+#include "include/gpu/ganesh/gl/GrGLMakeWebGLInterface.h"
 #include "include/gpu/gl/GrGLInterface.h"
 #include "include/gpu/gl/GrGLTypes.h"
 #include "src/gpu/RefCntedCallback.h"
@@ -121,7 +122,7 @@
 #include "include/pathops/SkPathOps.h"
 #endif
 
-#if defined(CK_INCLUDE_RUNTIME_EFFECT) && defined(SKSL_ENABLE_TRACING)
+#if defined(CK_INCLUDE_RUNTIME_EFFECT)
 #include "include/sksl/SkSLDebugTrace.h"
 #endif
 
@@ -266,12 +267,11 @@ struct ColorSettings {
     GrGLenum pixFormat;
 };
 
-sk_sp<GrDirectContext> MakeGrContext()
-{
+sk_sp<GrDirectContext> MakeGrContext() {
     // We assume that any calls we make to GL for the remainder of this function will go to the
     // desired WebGL Context.
     // setup interface.
-    auto interface = GrGLMakeNativeInterface();
+    auto interface = GrGLInterfaces::MakeWebGL();
     // setup context
     return GrDirectContexts::MakeGL(interface);
 }
@@ -1119,6 +1119,31 @@ EMSCRIPTEN_BINDINGS(Skia) {
                                                   size_t bytes)->sk_sp<SkPicture> {
         uint8_t* d = reinterpret_cast<uint8_t*>(dPtr);
         sk_sp<SkData> data = SkData::MakeFromMalloc(d, bytes);
+
+#ifndef CK_NO_FONTS
+        // Be sure we can process the data stored when serializing the SkPicture.
+        static SkOnce once;
+        once([] {
+            SkTypeface::Register(SkTypeface_FreeType::FactoryId,
+                                 SkTypeface_FreeType::MakeFromStream );
+        });
+#endif
+
+        SkDeserialProcs dp;
+        dp.fImageDataProc = [](sk_sp<SkData> bytes, std::optional<SkAlphaType> at, void* ctx) -> sk_sp<SkImage> {
+            auto codec = DecodeImageData(bytes);
+            if (codec == nullptr) {
+                return nullptr;
+            }
+            SkImageInfo info = codec->getInfo();
+            if (at.has_value()) {
+                info = info.makeAlphaType(*at);
+            } else if (kUnpremul_SkAlphaType == info.alphaType()) {
+                // Otherwise, prefer premul over unpremul (this produces better filtering in general)
+                info = info.makeAlphaType(kPremul_SkAlphaType);
+            }
+            return std::get<0>(codec->getImage(info));
+        };
 
         return SkPicture::MakeFromData(data.get(), nullptr);
     }), allow_raw_pointers());
@@ -2032,6 +2057,9 @@ EMSCRIPTEN_BINDINGS(Skia) {
             // serialize the underlying data. This makes the SKPs a bit bigger, but easier to use.
             SkSerialProcs sp;
             sp.fTypefaceProc = &alwaysSaveTypefaceBytes;
+            sp.fImageProc = [](SkImage* img, void*) -> sk_sp<SkData> {
+                return SkPngEncoder::Encode(nullptr, img, SkPngEncoder::Options{});
+            };
 
             sk_sp<SkData> data = self.serialize(&sp);
             if (!data) {
@@ -2173,7 +2201,6 @@ EMSCRIPTEN_BINDINGS(Skia) {
         }), allow_raw_pointers());
 
 #ifdef CK_INCLUDE_RUNTIME_EFFECT
-#ifdef SKSL_ENABLE_TRACING
     class_<SkSL::DebugTrace>("DebugTrace")
         .smart_ptr<sk_sp<SkSL::DebugTrace>>("sk_sp<DebugTrace>")
         .function("writeTrace", optional_override([](SkSL::DebugTrace& self) -> std::string {
@@ -2186,7 +2213,6 @@ EMSCRIPTEN_BINDINGS(Skia) {
     value_object<SkRuntimeEffect::TracedShader>("TracedShader")
         .field("shader",     &SkRuntimeEffect::TracedShader::shader)
         .field("debugTrace", &SkRuntimeEffect::TracedShader::debugTrace);
-#endif
 
     class_<SkRuntimeEffect>("RuntimeEffect")
         .smart_ptr<sk_sp<SkRuntimeEffect>>("sk_sp<RuntimeEffect>")
@@ -2212,14 +2238,12 @@ EMSCRIPTEN_BINDINGS(Skia) {
             }
             return effect;
         }))
-#ifdef SKSL_ENABLE_TRACING
         .class_function("MakeTraced", optional_override([](
                 sk_sp<SkShader> shader,
                 int traceCoordX,
                 int traceCoordY) -> SkRuntimeEffect::TracedShader {
             return SkRuntimeEffect::MakeTraced(shader, SkIPoint::Make(traceCoordX, traceCoordY));
         }))
-#endif
         .function("_makeShader", optional_override([](SkRuntimeEffect& self,
                                                       WASMPointerF32 fPtr,
                                                       size_t fLen,

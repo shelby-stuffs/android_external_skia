@@ -18,8 +18,8 @@
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/RecordingPriv.h"
 #include "src/gpu/graphite/Surface_Graphite.h"
-#include "src/gpu/graphite/Task.h"
 #include "src/gpu/graphite/UploadBufferManager.h"
+#include "src/gpu/graphite/task/Task.h"
 
 namespace skgpu::graphite {
 
@@ -84,6 +84,9 @@ bool QueueManager::addRecording(const InsertRecordingInfo& info, Context* contex
         uint32_t* recordingID = fLastAddedRecordingIDs.find(info.fRecording->priv().recorderID());
         if (recordingID &&
             info.fRecording->priv().uniqueID() != *recordingID+1) {
+            if (callback) {
+                callback->setFailureResult();
+            }
             SKGPU_LOG_E("Recordings are expected to be replayed in order");
             return false;
         }
