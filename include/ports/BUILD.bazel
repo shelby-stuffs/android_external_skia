@@ -7,6 +7,7 @@ exports_files_legacy()
 skia_filegroup(
     name = "android_fontmgr_hdrs",
     srcs = ["SkFontMgr_android.h"],
+    visibility = ["//src/ports:__pkg__"],
 )
 
 skia_filegroup(
@@ -97,4 +98,13 @@ skia_filegroup(
     name = "core_hdrs",
     srcs = ["SkImageGeneratorCG.h"],
     visibility = ["//src/core:__pkg__"],
+)
+
+skia_filegroup(
+    name = "apple_hdrs",
+    srcs = [
+        "SkCFObject.h",
+        "SkImageGeneratorCG.h",
+    ],
+    visibility = ["//src/gpu/ganesh/mtl:__pkg__"],
 )

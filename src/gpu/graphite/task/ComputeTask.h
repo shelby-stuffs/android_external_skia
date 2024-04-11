@@ -24,7 +24,7 @@ class DispatchGroup;
  */
 class ComputeTask final : public Task {
 public:
-    using DispatchGroupList = skia_private::TArray<std::unique_ptr<DispatchGroup>>;
+    using DispatchGroupList = skia_private::STArray<1, std::unique_ptr<DispatchGroup>>;
 
     static sk_sp<ComputeTask> Make(DispatchGroupList dispatchGroups);
 
@@ -37,6 +37,11 @@ private:
     explicit ComputeTask(DispatchGroupList dispatchGroups);
 
     DispatchGroupList fDispatchGroups;
+
+    // Every element of this list is a task that must execute before the DispatchGroup stored at the
+    // same array index. Child tasks are allowed to be a nullptr to represent NOP (i.e. the
+    // corresponding DispatchGroup doesn't have any pre-tasks).
+    skia_private::TArray<sk_sp<Task>> fChildTasks;
 };
 
 }  // namespace skgpu::graphite
