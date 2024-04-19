@@ -12,8 +12,10 @@
 #include "include/gpu/graphite/Surface.h"
 #include "include/private/gpu/graphite/ContextOptionsPriv.h"
 #include "src/gpu/AtlasTypes.h"
+#include "src/gpu/BlurUtils.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/graphite/AtlasProvider.h"
+#include "src/gpu/graphite/AttachmentTypes.h"
 #include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/CommandBuffer.h"
@@ -39,7 +41,6 @@
 #include "src/gpu/graphite/geom/IntersectionTree.h"
 #include "src/gpu/graphite/geom/Shape.h"
 #include "src/gpu/graphite/geom/Transform_graphite.h"
-#include "src/gpu/graphite/task/CopyTask.h"
 #include "src/gpu/graphite/text/TextAtlasManager.h"
 
 #include "include/core/SkColorSpace.h"
@@ -48,6 +49,7 @@
 #include "include/core/SkStrokeRec.h"
 
 #include "src/core/SkBlenderBase.h"
+#include "src/core/SkBlurMaskFilterImpl.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkConvertPixels.h"
 #include "src/core/SkImageFilterTypes.h"
@@ -88,6 +90,8 @@ std::atomic<int> gNumTilesDrawnGraphite{0};
 #endif
 
 namespace skgpu::graphite {
+
+#define ASSERT_SINGLE_OWNER SkASSERT(fRecorder); SKGPU_ASSERT_SINGLE_OWNER(fRecorder->singleOwner())
 
 namespace {
 
@@ -236,7 +240,7 @@ sk_sp<Device> Device::Make(Recorder* recorder,
                            Mipmapped mipmapped,
                            SkBackingFit backingFit,
                            const SkSurfaceProps& props,
-                           bool addInitialClear,
+                           LoadOp initialLoadOp,
                            bool registerWithRecorder) {
     SkASSERT(!(mipmapped == Mipmapped::kYes && backingFit == SkBackingFit::kApprox));
     if (!recorder) {
@@ -257,7 +261,7 @@ sk_sp<Device> Device::Make(Recorder* recorder,
                 ii.dimensions(),
                 ii.colorInfo(),
                 props,
-                addInitialClear,
+                initialLoadOp,
                 registerWithRecorder);
 }
 
@@ -266,7 +270,7 @@ sk_sp<Device> Device::Make(Recorder* recorder,
                            SkISize deviceSize,
                            const SkColorInfo& colorInfo,
                            const SkSurfaceProps& props,
-                           bool addInitialClear,
+                           LoadOp initialLoadOp,
                            bool registerWithRecorder) {
     if (!recorder) {
         return nullptr;
@@ -276,11 +280,14 @@ sk_sp<Device> Device::Make(Recorder* recorder,
                                               std::move(target),
                                               deviceSize,
                                               colorInfo,
-                                              props,
-                                              addInitialClear);
+                                              props);
     if (!dc) {
         return nullptr;
-    }
+    } else if (initialLoadOp == LoadOp::kClear) {
+        dc->clear(SkColors::kTransparent);
+    } else if (initialLoadOp == LoadOp::kDiscard) {
+        dc->discard();
+    } // else kLoad is the default initial op for a DrawContext
 
     sk_sp<Device> device{new Device(recorder, std::move(dc))};
     if (registerWithRecorder) {
@@ -309,7 +316,9 @@ static constexpr int kMaxGridSize = 32;
 
 Device::Device(Recorder* recorder, sk_sp<DrawContext> dc)
         : SkDevice(dc->imageInfo(), dc->surfaceProps())
+        SkDEBUGCODE(, fPreRecorderSentinel(reinterpret_cast<intptr_t>(recorder) - 1))
         , fRecorder(recorder)
+        SkDEBUGCODE(, fPostRecorderSentinel(reinterpret_cast<intptr_t>(recorder) + 1))
         , fDC(std::move(dc))
         , fClip(this)
         , fColorDepthBoundsManager(std::make_unique<HybridBoundsManager>(
@@ -347,10 +356,6 @@ Device::~Device() {
 #endif
 }
 
-void Device::abandonRecorder() {
-    fRecorder = nullptr;
-}
-
 void Device::setImmutable() {
     if (fRecorder) {
         // Push any pending work to the Recorder now. setImmutable() is only called by the
@@ -384,7 +389,7 @@ sk_sp<SkDevice> Device::createDevice(const CreateInfo& info, const SkPaint*) {
         this->surfaceProps().cloneWithPixelGeometry(info.fPixelGeometry);
 
     // Skia's convention is to only clear a device if it is non-opaque.
-    bool addInitialClear = !info.fInfo.isOpaque();
+    LoadOp initialLoadOp = info.fInfo.isOpaque() ? LoadOp::kDiscard : LoadOp::kClear;
 
     return Make(fRecorder,
                 info.fInfo,
@@ -396,7 +401,7 @@ sk_sp<SkDevice> Device::createDevice(const CreateInfo& info, const SkPaint*) {
                 SkBackingFit::kExact,
 #endif
                 props,
-                addInitialClear);
+                initialLoadOp);
 }
 
 sk_sp<SkSurface> Device::makeSurface(const SkImageInfo& ii, const SkSurfaceProps& props) {
@@ -407,7 +412,7 @@ sk_sp<Image> Device::makeImageCopy(const SkIRect& subset,
                                    Budgeted budgeted,
                                    Mipmapped mipmapped,
                                    SkBackingFit backingFit) {
-    SkASSERT(fRecorder);
+    ASSERT_SINGLE_OWNER
     this->flushPendingWorkToRecorder();
 
     const SkColorInfo& colorInfo = this->imageInfo().colorInfo();
@@ -419,80 +424,14 @@ sk_sp<Image> Device::makeImageCopy(const SkIRect& subset,
                 colorInfo.colorType(), this->target()->textureInfo());
         srcView = {sk_ref_sp(this->target()), readSwizzle};
     }
-    TextureProxyView copiedView = TextureProxyView::Copy(fRecorder,
-                                                         colorInfo,
-                                                         srcView,
-                                                         subset,
-                                                         budgeted,
-                                                         mipmapped,
-                                                         backingFit);
-    if (!copiedView) {
-        // The surface didn't support read pixels, so copy-as-draw using the image view
-        sk_sp<Image> sampleableSurface = Image::MakeView(sk_ref_sp(this));
-        if (sampleableSurface) {
-            return sampleableSurface->copyImage(fRecorder, subset, budgeted, mipmapped, backingFit);
-        }
-        // Cannot be copied by blit nor by a draw, so cannot be done.
-        return nullptr;
-    }
-
-    return sk_make_sp<Image>(kNeedNewImageUniqueID, std::move(copiedView), colorInfo);
-}
-
-TextureProxyView TextureProxyView::Copy(Recorder* recorder,
-                                        const SkColorInfo& srcColorInfo,
-                                        const TextureProxyView& srcView,
-                                        SkIRect srcRect,
-                                        Budgeted budgeted,
-                                        Mipmapped mipmapped,
-                                        SkBackingFit backingFit) {
-    SkASSERT(!(mipmapped == Mipmapped::kYes && backingFit == SkBackingFit::kApprox));
-
-    SkASSERT(srcView.proxy()->isFullyLazy() ||
-             SkIRect::MakeSize(srcView.proxy()->dimensions()).contains(srcRect));
-
-    if (!recorder->priv().caps()->supportsReadPixels(srcView.proxy()->textureInfo())) {
-        // Caller is responsible for copy-as-draw fallbacks
-        return {};
-    }
-
-    skgpu::graphite::TextureInfo textureInfo =
-            recorder->priv().caps()->getTextureInfoForSampledCopy(srcView.proxy()->textureInfo(),
-                                                                  mipmapped);
-
-    sk_sp<TextureProxy> dest = TextureProxy::Make(
-            recorder->priv().caps(),
-            backingFit == SkBackingFit::kApprox ? GetApproxSize(srcRect.size()) : srcRect.size(),
-            textureInfo,
-            budgeted);
-    if (!dest) {
-        return {};
-    }
-
-    sk_sp<CopyTextureToTextureTask> copyTask = CopyTextureToTextureTask::Make(srcView.refProxy(),
-                                                                              srcRect,
-                                                                              dest,
-                                                                              {0, 0});
-    if (!copyTask) {
-        return {};
-    }
-
-    recorder->priv().add(std::move(copyTask));
-
-    if (mipmapped == Mipmapped::kYes) {
-        if (!GenerateMipmaps(recorder, dest, srcColorInfo)) {
-            SKGPU_LOG_W("TextureProxyView::Copy: Failed to generate mipmaps");
-        }
-    }
-
-    return { std::move(dest), srcView.swizzle() };
+    return Image::Copy(fRecorder, srcView, colorInfo, subset, budgeted, mipmapped, backingFit);
 }
 
 bool Device::onReadPixels(const SkPixmap& pm, int srcX, int srcY) {
 #if defined(GRAPHITE_TEST_UTILS)
     // This testing-only function should only be called before the Device has detached from its
     // Recorder, since it's accessed via the test-held Surface.
-    SkASSERT(fRecorder);
+    ASSERT_SINGLE_OWNER
     if (Context* context = fRecorder->priv().context()) {
         // Add all previous commands generated to the command buffer.
         // If the client snaps later they'll only get post-read commands in their Recording,
@@ -514,7 +453,7 @@ bool Device::onReadPixels(const SkPixmap& pm, int srcX, int srcY) {
 }
 
 bool Device::onWritePixels(const SkPixmap& src, int x, int y) {
-    SkASSERT(fRecorder);
+    ASSERT_SINGLE_OWNER
     // TODO: we may need to share this in a more central place to handle uploads
     // to backend textures
 
@@ -679,7 +618,7 @@ void Device::replaceClip(const SkIRect& rect) {
 ///////////////////////////////////////////////////////////////////////////////
 
 void Device::drawPaint(const SkPaint& paint) {
-    SkASSERT(fRecorder);
+    ASSERT_SINGLE_OWNER
     // We never want to do a fullscreen clear on a fully-lazy render target, because the device size
     // may be smaller than the final surface we draw to, in which case we don't want to fill the
     // entire final surface.
@@ -689,11 +628,11 @@ void Device::drawPaint(const SkPaint& paint) {
                 // do fullscreen clear
                 fDC->clear(*color);
                 return;
+            } else {
+                // This paint does not depend on the destination and covers the entire surface, so
+                // discard everything previously recorded and proceed with the draw.
+                fDC->discard();
             }
-            // TODO(michaelludwig): this paint doesn't depend on the destination, so we can reset
-            // the DrawContext to use a discard load op. The drawPaint will cover anything else
-            // entirely. We still need shader evaluation to get per-pixel colors (since the paint
-            // couldn't be reduced to a solid color).
         }
     }
 
@@ -929,7 +868,7 @@ sktext::gpu::AtlasDrawDelegate Device::atlasDelegate() {
 void Device::onDrawGlyphRunList(SkCanvas* canvas,
                                 const sktext::GlyphRunList& glyphRunList,
                                 const SkPaint& paint) {
-    SkASSERT(fRecorder);
+    ASSERT_SINGLE_OWNER
     fRecorder->priv().textBlobCache()->drawGlyphRunList(canvas,
                                                         this->localToDevice(),
                                                         glyphRunList,
@@ -943,7 +882,7 @@ void Device::drawAtlasSubRun(const sktext::gpu::AtlasSubRun* subRun,
                              const SkPaint& paint,
                              sk_sp<SkRefCnt> subRunStorage,
                              sktext::gpu::RendererData rendererData) {
-    SkASSERT(fRecorder);
+    ASSERT_SINGLE_OWNER
 
     const int subRunEnd = subRun->glyphCount();
     auto regenerateDelegate = [&](sktext::gpu::GlyphVector* glyphs,
@@ -1003,7 +942,7 @@ void Device::drawGeometry(const Transform& localToDevice,
                           SkEnumBitMask<DrawFlags> flags,
                           sk_sp<SkBlender> primitiveBlender,
                           bool skipColorXform) {
-    SkASSERT(fRecorder);
+    ASSERT_SINGLE_OWNER
 
     if (!localToDevice.valid()) {
         // If the transform is not invertible or not finite then drawing isn't well defined.
@@ -1358,6 +1297,8 @@ std::pair<const Renderer*, PathAtlas*> Device::chooseRenderer(const Transform& l
         SkASSERT(!requireMSAA && style.isFillStyle());
         // handled by specialized system, simplified from rects and round rects
         return {renderers->perEdgeAAQuad(), nullptr};
+    } else if (geometry.isRectBlur()) {
+        return {renderers->rectBlur(), nullptr};
     } else if (!geometry.isShape()) {
         // We must account for new Geometry types with specific Renderers
         return {nullptr, nullptr};
@@ -1473,12 +1414,29 @@ std::pair<const Renderer*, PathAtlas*> Device::chooseRenderer(const Transform& l
     }
 }
 
-void Device::flushPendingWorkToRecorder() {
+void Device::flushPendingWorkToRecorder(Recorder* recorder) {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
-    SkASSERT(fRecorder);
+
+    // Confirm sentinels match the original values set from fRecorder
+    SkDEBUGCODE(intptr_t expected = reinterpret_cast<intptr_t>(recorder ? recorder : fRecorder);)
+    SkASSERT(fPreRecorderSentinel == expected - 1);
+    SkASSERT(fPostRecorderSentinel == expected + 1);
+
+    SkASSERT(recorder == nullptr || recorder == fRecorder);
+    if (recorder && recorder != fRecorder) {
+        // TODO(b/333073673): This should not happen but if the Device were corrupted exit now
+        // to avoid further access of Device's state.
+        return;
+    }
 
     // If this is a scratch device being flushed, it should only be flushing into the expected
     // next recording from when the Device was first created.
+    SkASSERT(fRecorder);
+    // TODO(b/333073673):
+    // The only time flushPendingWorkToRecorder() is called with a non-null Recorder is from
+    // flushTrackedDevices(), so the scoped recording ID of the device should be 0 or it means a
+    // non-tracked device got added to the recorder or something has stomped the heap.
+    SkASSERT(!recorder || fScopedRecordingID == 0);
     SkASSERT(fScopedRecordingID == 0 || fScopedRecordingID == fRecorder->priv().nextRecordingID());
 
     this->internalFlush();
@@ -1499,7 +1457,7 @@ void Device::flushPendingWorkToRecorder() {
 
 void Device::internalFlush() {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
-    SkASSERT(fRecorder);
+    ASSERT_SINGLE_OWNER
 
     // Push any pending uploads from the atlas provider that pending draws reference.
     fRecorder->priv().atlasProvider()->recordUploads(fDC.get());
@@ -1630,7 +1588,7 @@ sk_sp<SkSpecialImage> Device::snapSpecial(const SkIRect& subset, bool forceCopy)
         if (fRecorder) {
             this->flushPendingWorkToRecorder();
         }
-        deviceImage = Image::MakeView(sk_ref_sp(this));
+        deviceImage = Image::WrapDevice(sk_ref_sp(this));
         finalSubset = subset;
     }
 
@@ -1653,6 +1611,19 @@ TextureProxy* Device::target() { return fDC->target(); }
 
 TextureProxyView Device::readSurfaceView() const { return fDC->readSurfaceView(); }
 
+bool Device::isScratchDevice() const {
+    // Scratch device status is inferred from whether or not the Device's target is instantiated.
+    // By default devices start out un-instantiated unless they are wrapping an existing backend
+    // texture (definitely not a scratch scenario), or Surface explicitly instantiates the target
+    // before returning to the client (not a scratch scenario).
+    //
+    // Scratch device targets are instantiated during the prepareResources() phase of
+    // Recorder::snap(). Truly scratch devices that have gone out of scope as intended will have
+    // already been destroyed at this point. Scratch devices that become longer-lived (linked to
+    // a client-owned object) automatically transition to non-scratch usage.
+    return SkToBool(fDC->target());
+}
+
 sk_sp<sktext::gpu::Slug> Device::convertGlyphRunListToSlug(const sktext::GlyphRunList& glyphRunList,
                                                            const SkPaint& paint) {
     return sktext::gpu::SlugImpl::Make(this->localToDevice(),
@@ -1665,6 +1636,26 @@ sk_sp<sktext::gpu::Slug> Device::convertGlyphRunListToSlug(const sktext::GlyphRu
 void Device::drawSlug(SkCanvas* canvas, const sktext::gpu::Slug* slug, const SkPaint& paint) {
     auto slugImpl = static_cast<const sktext::gpu::SlugImpl*>(slug);
     slugImpl->subRuns()->draw(canvas, slugImpl->origin(), paint, slugImpl, this->atlasDelegate());
+}
+
+bool Device::drawBlurredRRect(const SkRRect& rrect, const SkPaint& paint, float deviceSigma) {
+    SkStrokeRec style(paint);
+    if (skgpu::BlurIsEffectivelyIdentity(deviceSigma)) {
+        this->drawGeometry(this->localToDeviceTransform(),
+                           Geometry(rrect.isRect() ? Shape(rrect.rect()) : Shape(rrect)),
+                           paint,
+                           style);
+        return true;
+    }
+
+    std::optional<RectBlurData> rectBlurData = RectBlurData::Make(
+            this->recorder(), this->localToDeviceTransform(), deviceSigma, rrect);
+    if (!rectBlurData) {
+        return false;
+    }
+
+    this->drawGeometry(this->localToDeviceTransform(), Geometry(*rectBlurData), paint, style);
+    return true;
 }
 
 } // namespace skgpu::graphite
