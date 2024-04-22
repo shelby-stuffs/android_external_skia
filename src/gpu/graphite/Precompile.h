@@ -28,6 +28,15 @@ class PipelineDataGatherer;
 class PrecompileBasePriv;
 class UniquePaintParamsID;
 
+// Create the Pipelines specified by 'options' by combining the shading portion w/ the specified
+// 'drawTypes' and a stock set of RenderPass descriptors (e.g., kDepth+msaa, kDepthStencil+msaa)
+void PrecompileCombinations(Context* context,
+                            const PaintOptions& options,
+                            const KeyContext& keyContext,
+                            DrawTypeFlags drawTypes,
+                            bool withPrimitiveBlender,
+                            Coverage coverage);
+
 class PrecompileBase : public SkRefCnt {
 public:
     enum class Type {
@@ -140,11 +149,6 @@ public:
     sk_sp<PrecompileColorFilter> makeComposed(sk_sp<PrecompileColorFilter> inner) const;
 };
 
-class PrecompileImageFilter : public PrecompileBase {
-public:
-    PrecompileImageFilter() : PrecompileBase(Type::kImageFilter) {}
-};
-
 class PrecompileBlender : public PrecompileBase {
 public:
     PrecompileBlender() : PrecompileBase(Type::kBlender) {}
@@ -153,6 +157,12 @@ public:
 
     static sk_sp<PrecompileBlender> Mode(SkBlendMode);
 };
+
+enum class PrecompileImageFilters : uint32_t {
+    kNone = 0x0,
+    kBlur = 0x1,
+};
+SK_MAKE_BITMASK_OPS(PrecompileImageFilters)
 
 //--------------------------------------------------------------------------------------------------
 class PaintOptionsPriv;
@@ -171,8 +181,8 @@ public:
         fColorFilterOptions.assign(colorFilters.begin(), colorFilters.end());
     }
 
-    void setImageFilters(SkSpan<const sk_sp<PrecompileImageFilter>> imageFilters) {
-        fImageFilterOptions.assign(imageFilters.begin(), imageFilters.end());
+    void setImageFilters(SkEnumBitMask<PrecompileImageFilters> options) {
+        fImageFilterOptions = options;
     }
 
     void setBlendModes(SkSpan<SkBlendMode> blendModes) {
@@ -191,6 +201,11 @@ public:
     void setClipShaders(SkSpan<const sk_sp<PrecompileShader>> clipShaders);
 
     void setDither(bool dither) { fDither = dither; }
+
+    typedef std::function<void(UniquePaintParamsID id,
+                               DrawTypeFlags,
+                               bool withPrimitiveBlender,
+                               Coverage)> ProcessCombination;
 
     // Provides access to functions that aren't part of the public API.
     PaintOptionsPriv priv();
@@ -214,17 +229,19 @@ private:
                    int desiredCombination,
                    bool addPrimitiveBlender,
                    Coverage coverage) const;
+
     void buildCombinations(
         const KeyContext&,
         PipelineDataGatherer*,
+        DrawTypeFlags drawTypes,
         bool addPrimitiveBlender,
         Coverage coverage,
-        const std::function<void(UniquePaintParamsID)>& processCombination) const;
+        const ProcessCombination& processCombination) const;
 
     std::vector<sk_sp<PrecompileShader>> fShaderOptions;
     std::vector<sk_sp<PrecompileMaskFilter>> fMaskFilterOptions;
     std::vector<sk_sp<PrecompileColorFilter>> fColorFilterOptions;
-    std::vector<sk_sp<PrecompileImageFilter>> fImageFilterOptions;
+    SkEnumBitMask<PrecompileImageFilters> fImageFilterOptions = PrecompileImageFilters::kNone;
     SkTDArray<SkBlendMode> fBlendModeOptions;
     skia_private::TArray<sk_sp<PrecompileBlender>> fBlenderOptions;
     std::vector<sk_sp<PrecompileShader>> fClipShaderOptions;
