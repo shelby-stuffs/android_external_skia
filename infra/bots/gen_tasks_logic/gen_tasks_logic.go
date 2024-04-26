@@ -609,7 +609,6 @@ func GenTasks(cfg *Config) {
 			"skia/bin/fetch-sk",
 			"skia/infra/bots/assets/skp",
 			"skia/infra/bots/utils.py",
-			"skia/infra/config/recipes.cfg",
 			"skia/tools/skp",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
@@ -860,9 +859,6 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 			"Debian10":   DEFAULT_OS_LINUX_GCE,
 			"Debian11":   DEBIAN_11_OS,
 			"Mac":        DEFAULT_OS_MAC,
-			"Mac10.12":   "Mac-10.12",
-			"Mac10.13":   "Mac-10.13.6",
-			"Mac10.14":   "Mac-10.14",
 			"Mac10.15.1": "Mac-10.15.1",
 			"Mac10.15.7": "Mac-10.15.7", // Same as 'Mac', but explicit.
 			"Mac11":      "Mac-11.4",

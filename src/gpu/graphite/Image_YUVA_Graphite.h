@@ -10,12 +10,7 @@
 
 #include "src/gpu/graphite/Image_Base_Graphite.h"
 
-#include "include/gpu/graphite/Image.h"
 #include "src/gpu/graphite/YUVATextureProxies.h"
-
-namespace skgpu {
-    class RefCntedCallback;
-}
 
 namespace skgpu::graphite {
 
@@ -48,25 +43,7 @@ public:
         return fYUVAProxies;
     }
 
-    static sk_sp<TextureProxy> MakePromiseImageLazyProxy(
-            const Caps*,
-            SkISize dimensions,
-            TextureInfo,
-            Volatile,
-            SkImages::GraphitePromiseImageYUVAFulfillProc,
-            sk_sp<RefCntedCallback>,
-            SkImages::GraphitePromiseTextureContext,
-            SkImages::GraphitePromiseTextureReleaseProc);
-
 private:
-    sk_sp<SkImage> makeTextureImage(Recorder*, RequiredProperties) const override;
-    using Image_Base::onMakeSubset;
-    sk_sp<SkImage> onMakeSubset(Recorder*, const SkIRect&, RequiredProperties) const override;
-    using Image_Base::onMakeColorTypeAndColorSpace;
-    sk_sp<SkImage> makeColorTypeAndColorSpace(Recorder*,
-                                              SkColorType targetCT,
-                                              sk_sp<SkColorSpace> targetCS,
-                                              RequiredProperties) const override;
 
     YUVATextureProxies fYUVAProxies;
 };
