@@ -11,11 +11,9 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkSurface.h"
-#include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/Image.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Surface.h"
-#include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/Device.h"
@@ -77,7 +75,8 @@ sk_sp<Image> Image::Copy(Recorder* recorder,
         }
         // Copy-as-draw
         sk_sp<Image> srcImage(new Image(srcView, srcColorInfo));
-        return CopyAsDraw(recorder, srcImage.get(), subset, budgeted, mipmapped, backingFit);
+        return CopyAsDraw(recorder, srcImage.get(), subset, srcColorInfo,
+                          budgeted, mipmapped, backingFit);
     }
 
 
@@ -123,40 +122,6 @@ size_t Image::textureSize() const {
     return fTextureProxyView.proxy()->texture()->gpuMemorySize();
 }
 
-sk_sp<SkImage> Image::onMakeSubset(Recorder* recorder,
-                                   const SkIRect& subset,
-                                   RequiredProperties requiredProps) const {
-    const SkIRect bounds = SkIRect::MakeWH(this->width(), this->height());
-
-    // optimization : return self if the subset == our bounds and requirements met
-    if (bounds == subset && (!requiredProps.fMipmapped || this->hasMipmaps())) {
-        return sk_ref_sp(this);
-    }
-
-    // The copied image is not considered budgeted because this is a client-invoked API and they
-    // will own the image.
-    return this->copyImage(recorder,
-                           subset,
-                           Budgeted::kNo,
-                           requiredProps.fMipmapped ? Mipmapped::kYes : Mipmapped::kNo,
-                           SkBackingFit::kExact);
-}
-
-sk_sp<SkImage> Image::makeTextureImage(Recorder* recorder, RequiredProperties requiredProps) const {
-    if (!requiredProps.fMipmapped || this->hasMipmaps()) {
-        return sk_ref_sp(this);
-    }
-
-    // The copied image is not considered budgeted because this is a client-invoked API and they
-    // will own the image.
-    const SkIRect bounds = SkIRect::MakeWH(this->width(), this->height());
-    return this->copyImage(recorder,
-                           bounds,
-                           Budgeted::kNo,
-                           requiredProps.fMipmapped ? Mipmapped::kYes : Mipmapped::kNo,
-                           SkBackingFit::kExact);
-}
-
 sk_sp<Image> Image::copyImage(Recorder* recorder,
                               const SkIRect& subset,
                               Budgeted budgeted,
@@ -174,107 +139,6 @@ sk_sp<SkImage> Image::onReinterpretColorSpace(sk_sp<SkColorSpace> newCS) const {
     // The new Image object shares the same texture proxy, so it should also share linked Devices
     view->linkDevices(this);
     return view;
-}
-
-sk_sp<SkImage> Image::makeColorTypeAndColorSpace(Recorder* recorder,
-                                                 SkColorType targetCT,
-                                                 sk_sp<SkColorSpace> targetCS,
-                                                 RequiredProperties requiredProps) const {
-    SkAlphaType at = (this->alphaType() == kOpaque_SkAlphaType) ? kPremul_SkAlphaType
-                                                                : this->alphaType();
-
-    SkImageInfo ii = SkImageInfo::Make(this->dimensions(), targetCT, at, std::move(targetCS));
-
-    auto mm = requiredProps.fMipmapped ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
-    sk_sp<SkSurface> s = SkSurfaces::RenderTarget(recorder, ii, mm);
-    if (!s) {
-        return nullptr;
-    }
-
-    s->getCanvas()->drawImage(this, 0, 0);
-    return SkSurfaces::AsImage(s);
-}
-
-} // namespace skgpu::graphite
-
-using namespace skgpu::graphite;
-using SkImages::GraphitePromiseImageFulfillProc;
-using SkImages::GraphitePromiseTextureReleaseProc;
-
-sk_sp<TextureProxy> Image::MakePromiseImageLazyProxy(
-        const Caps* caps,
-        SkISize dimensions,
-        TextureInfo textureInfo,
-        Volatile isVolatile,
-        GraphitePromiseImageFulfillProc fulfillProc,
-        sk_sp<skgpu::RefCntedCallback> releaseHelper,
-        GraphitePromiseTextureReleaseProc textureReleaseProc) {
-    SkASSERT(!dimensions.isEmpty());
-    SkASSERT(releaseHelper);
-
-    if (!fulfillProc) {
-        return nullptr;
-    }
-
-    /**
-     * This class is the lazy instantiation callback for promise images. It manages calling the
-     * client's Fulfill, ImageRelease, and TextureRelease procs.
-     */
-    class PromiseLazyInstantiateCallback {
-    public:
-        PromiseLazyInstantiateCallback(GraphitePromiseImageFulfillProc fulfillProc,
-                                       sk_sp<skgpu::RefCntedCallback> releaseHelper,
-                                       GraphitePromiseTextureReleaseProc textureReleaseProc)
-                : fFulfillProc(fulfillProc)
-                , fReleaseHelper(std::move(releaseHelper))
-                , fTextureReleaseProc(textureReleaseProc) {
-        }
-        PromiseLazyInstantiateCallback(PromiseLazyInstantiateCallback&&) = default;
-        PromiseLazyInstantiateCallback(const PromiseLazyInstantiateCallback&) {
-            // Because we get wrapped in std::function we must be copyable. But we should never
-            // be copied.
-            SkASSERT(false);
-        }
-        PromiseLazyInstantiateCallback& operator=(PromiseLazyInstantiateCallback&&) = default;
-        PromiseLazyInstantiateCallback& operator=(const PromiseLazyInstantiateCallback&) {
-            SkASSERT(false);
-            return *this;
-        }
-
-        sk_sp<Texture> operator()(ResourceProvider* resourceProvider) {
-
-            auto [ backendTexture, textureReleaseCtx ] = fFulfillProc(fReleaseHelper->context());
-            if (!backendTexture.isValid()) {
-                SKGPU_LOG_W("FulFill Proc failed");
-                return nullptr;
-            }
-
-            sk_sp<RefCntedCallback> textureReleaseCB = RefCntedCallback::Make(fTextureReleaseProc,
-                                                                              textureReleaseCtx);
-
-            sk_sp<Texture> texture = resourceProvider->createWrappedTexture(backendTexture);
-            if (!texture) {
-                SKGPU_LOG_W("Texture creation failed");
-                return nullptr;
-            }
-
-            texture->setReleaseCallback(std::move(textureReleaseCB));
-            return texture;
-        }
-
-    private:
-        GraphitePromiseImageFulfillProc fFulfillProc;
-        sk_sp<skgpu::RefCntedCallback> fReleaseHelper;
-        GraphitePromiseTextureReleaseProc fTextureReleaseProc;
-
-    } callback(fulfillProc, std::move(releaseHelper), textureReleaseProc);
-
-    return TextureProxy::MakeLazy(caps,
-                                  dimensions,
-                                  textureInfo,
-                                  skgpu::Budgeted::kNo,  // This is destined for a user's SkImage
-                                  isVolatile,
-                                  std::move(callback));
 }
 
 #if defined(GRAPHITE_TEST_UTILS)
@@ -304,3 +168,5 @@ bool Image::onReadPixelsGraphite(Recorder* recorder,
     return false;
 }
 #endif
+
+} // namespace skgpu::graphite
