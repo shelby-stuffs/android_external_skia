@@ -89,13 +89,6 @@ public:
         return std::move(fProxy);
     }
 
-    static TextureProxyView Copy(Recorder*,
-                                 const SkColorInfo& srcColorInfo,
-                                 const TextureProxyView& srcView,
-                                 SkIRect srcRect,
-                                 Mipmapped,
-                                 SkBackingFit);
-
 private:
     sk_sp<TextureProxy> fProxy;
     Swizzle fSwizzle;

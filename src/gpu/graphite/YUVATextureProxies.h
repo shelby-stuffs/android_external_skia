@@ -20,7 +20,7 @@ public:
     YUVATextureProxies() = default;
 
     /** Assumes all planes are sampled with a default "rgba" swizzle. */
-    YUVATextureProxies(const Recorder*,
+    YUVATextureProxies(const Caps*,
                        const SkYUVAInfo&,
                        SkSpan<sk_sp<TextureProxy>>);
     /**
@@ -28,7 +28,7 @@ public:
      * pixmaps' channels are swizzled into the texture during upload. This will compute a swizzle
      * for each texture based on the original color types and the views' swizzles.
      */
-    YUVATextureProxies(const Recorder*,
+    YUVATextureProxies(const Caps*,
                        const SkYUVAInfo&,
                        SkSpan<TextureProxyView>);
 
@@ -44,6 +44,9 @@ public:
 
     // Overall set of YUVA proxies is mip mapped if each plane is mip mapped.
     Mipmapped mipmapped() const { return fMipmapped; }
+
+    // Overall set of YUVA proxies is protected if *any* plane is protected.
+    Protected isProtected() const { return fProtected; }
 
     TextureProxy* proxy(int i) const { return fProxies[i].get(); }
 
@@ -65,6 +68,7 @@ private:
     std::array<sk_sp<TextureProxy>, SkYUVAInfo::kMaxPlanes> fProxies;
     SkYUVAInfo fYUVAInfo;
     Mipmapped fMipmapped = Mipmapped::kNo;
+    Protected fProtected = Protected::kNo;
     SkYUVAInfo::YUVALocations fYUVALocations = {};
 };
 

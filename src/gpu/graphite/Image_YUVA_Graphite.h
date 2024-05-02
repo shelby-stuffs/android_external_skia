@@ -23,11 +23,16 @@ class Recorder;
 
 class Image_YUVA final : public Image_Base {
 public:
-    Image_YUVA(uint32_t uniqueID,
-               YUVATextureProxies proxies,
-               sk_sp<SkColorSpace>);
+    Image_YUVA(YUVATextureProxies proxies, sk_sp<SkColorSpace>);
 
-    ~Image_YUVA() override {}
+    ~Image_YUVA() override;
+
+    // Wraps the Graphite-backed Image planes into a YUV[A] image. The returned image shares
+    // textures as well as any links to Devices that might modify those textures.
+    static sk_sp<Image_YUVA> WrapImages(const Caps* caps,
+                                        const SkYUVAInfo& yuvaInfo,
+                                        SkSpan<const sk_sp<SkImage>> images,
+                                        sk_sp<SkColorSpace> imageColorSpace);
 
     SkImage_Base::Type type() const override { return SkImage_Base::Type::kGraphiteYUVA; }
 
@@ -35,10 +40,7 @@ public:
 
     bool onHasMipmaps() const override { return fYUVAProxies.mipmapped() == Mipmapped::kYes; }
 
-    bool onIsProtected() const override {
-        // TODO: add protected content support
-        return false;
-    }
+    bool onIsProtected() const override { return fYUVAProxies.isProtected() == Protected::kYes; }
 
     sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const override;
 
@@ -57,22 +59,16 @@ public:
             SkImages::GraphitePromiseTextureReleaseProc);
 
 private:
-    sk_sp<SkImage> makeTextureImage(Recorder*, RequiredProperties) const override {
-        return nullptr;
-    }
+    sk_sp<SkImage> makeTextureImage(Recorder*, RequiredProperties) const override;
     using Image_Base::onMakeSubset;
-    sk_sp<SkImage> onMakeSubset(Recorder*, const SkIRect&, RequiredProperties) const override {
-        return nullptr;
-    }
+    sk_sp<SkImage> onMakeSubset(Recorder*, const SkIRect&, RequiredProperties) const override;
     using Image_Base::onMakeColorTypeAndColorSpace;
     sk_sp<SkImage> makeColorTypeAndColorSpace(Recorder*,
                                               SkColorType targetCT,
                                               sk_sp<SkColorSpace> targetCS,
-                                              RequiredProperties) const override {
-        return nullptr;
-    }
+                                              RequiredProperties) const override;
 
-    mutable YUVATextureProxies fYUVAProxies;
+    YUVATextureProxies fYUVAProxies;
 };
 
 } // namespace skgpu::graphite

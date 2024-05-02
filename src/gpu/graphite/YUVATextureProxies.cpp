@@ -15,7 +15,7 @@
 
 namespace skgpu::graphite {
 
-YUVATextureProxies::YUVATextureProxies(const Recorder* recorder,
+YUVATextureProxies::YUVATextureProxies(const Caps* caps,
                                        const SkYUVAInfo& yuvaInfo,
                                        SkSpan<sk_sp<TextureProxy>> proxies)
         : fYUVAInfo(yuvaInfo) {
@@ -32,7 +32,7 @@ YUVATextureProxies::YUVATextureProxies(const Recorder* recorder,
             SkASSERT(!this->isValid());
             return;
         }
-        textureChannelMasks[i] = recorder->priv().caps()->channelMask(proxies[i]->textureInfo());
+        textureChannelMasks[i] = caps->channelMask(proxies[i]->textureInfo());
     }
     fYUVALocations = yuvaInfo.toYUVALocations(textureChannelMasks);
     if (fYUVALocations[0].fPlane < 0) {
@@ -41,16 +41,20 @@ YUVATextureProxies::YUVATextureProxies(const Recorder* recorder,
         return;
     }
     fMipmapped = Mipmapped::kYes;
+    fProtected = Protected::kNo;
     for (int i = 0; i < n; ++i) {
         if (proxies[i]->mipmapped() == Mipmapped::kNo) {
             fMipmapped = Mipmapped::kNo;
+        }
+        if (proxies[i]->isProtected()) {
+            fProtected = Protected::kYes;
         }
         fProxies[i] = std::move(proxies[i]);
     }
     SkASSERT(this->isValid());
 }
 
-YUVATextureProxies::YUVATextureProxies(const Recorder* recorder,
+YUVATextureProxies::YUVATextureProxies(const Caps* caps,
                                        const SkYUVAInfo& yuvaInfo,
                                        SkSpan<TextureProxyView> views)
         : fYUVAInfo(yuvaInfo) {
@@ -62,16 +66,19 @@ YUVATextureProxies::YUVATextureProxies(const Recorder* recorder,
         return;
     }
     fMipmapped = Mipmapped::kYes;
+    fProtected = Protected::kNo;
     for (int i = 0; i < n; ++i) {
         if (!views[i]) {
             *this = {};
             SkASSERT(!this->isValid());
             return;
         }
-        pixmapChannelMasks[i] =
-                recorder->priv().caps()->channelMask(views[i].proxy()->textureInfo());
+        pixmapChannelMasks[i] = caps->channelMask(views[i].proxy()->textureInfo());
         if (views[i].proxy()->mipmapped() == Mipmapped::kNo) {
             fMipmapped = Mipmapped::kNo;
+        }
+        if (views[i].proxy()->isProtected()) {
+            fProtected = Protected::kYes;
         }
     }
     // Initial locations refer to the CPU pixmap channels.

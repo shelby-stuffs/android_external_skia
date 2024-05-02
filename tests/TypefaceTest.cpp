@@ -36,6 +36,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cinttypes>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -96,7 +97,8 @@ static void TypefaceStyle_test(skiatest::Reporter* reporter,
     // Some back-ends (GDI) don't support width, ensure these always report 'normal'.
     REPORTER_ASSERT(
             reporter,
-            newStyle.width() == width || newStyle.width() == SkFontStyle::Width::kNormal_Width);
+            newStyle.width() == width || newStyle.width() == SkFontStyle::Width::kNormal_Width,
+            "newStyle.width(): %d width: %" PRIu16, newStyle.width(), width);
 }
 DEF_TEST(TypefaceStyle, reporter) {
     std::unique_ptr<SkStreamAsset> stream(GetResourceAsStream("fonts/Em.ttf"));
@@ -113,6 +115,60 @@ DEF_TEST(TypefaceStyle, reporter) {
     for (int width = SkFS::kUltraCondensed_Width; width <= SkFS::kUltraExpanded_Width; ++width) {
         TypefaceStyle_test(reporter, 400, width, data.get());
     }
+}
+
+DEF_TEST(TypefaceStyleVariable, reporter) {
+    using Variation = SkFontArguments::VariationPosition;
+    sk_sp<SkFontMgr> fm = ToolUtils::TestFontMgr();
+
+    std::unique_ptr<SkStreamAsset> stream(GetResourceAsStream("fonts/Variable.ttf"));
+    if (!stream) {
+        REPORT_FAILURE(reporter, "fonts/Variable.ttf", SkString("Cannot load resource"));
+        return;
+    }
+    sk_sp<SkTypeface> typeface(ToolUtils::TestFontMgr()->makeFromStream(stream->duplicate()));
+    if (!typeface) {
+        // Not all SkFontMgr can MakeFromStream().
+        return;
+    }
+
+    // Creating Variable.ttf without any extra parameters should have a normal font style.
+    SkFontStyle fs = typeface->fontStyle();
+    REPORTER_ASSERT(reporter, fs == SkFontStyle::Normal(),
+                    "fs: %d %d %d", fs.weight(), fs.width(), fs.slant());
+
+    // Ensure that the font supports variable stuff
+    Variation::Coordinate varPos[2];
+    int numAxes = typeface->getVariationDesignPosition(varPos, std::size(varPos));
+    if (numAxes <= 0) {
+        // Not all SkTypeface can get the variation.
+        return;
+    }
+    if (numAxes != 2) {
+        // Variable.ttf has two axes.
+        REPORTER_ASSERT(reporter, numAxes == 2);
+        return;
+    }
+
+    // If a fontmgr or typeface can do variations, ensure the variation affects the reported style.
+    const Variation::Coordinate nonDefaultPosition[] = {
+        { SkSetFourByteTag('w','g','h','t'), 200.0f },
+        { SkSetFourByteTag('w','d','t','h'), 75.0f },
+    };
+    const SkFontStyle expectedStyle(200, 3, SkFontStyle::kUpright_Slant);
+
+    SkFontArguments args;
+    args.setVariationDesignPosition(Variation{nonDefaultPosition, std::size(nonDefaultPosition)});
+
+    sk_sp<SkTypeface> nonDefaultTypeface = fm->makeFromStream(stream->duplicate(), args);
+    SkFontStyle ndfs = nonDefaultTypeface->fontStyle();
+    REPORTER_ASSERT(reporter, ndfs == expectedStyle,
+                    "ndfs: %d %d %d", ndfs.weight(), ndfs.width(), ndfs.slant());
+
+    sk_sp<SkTypeface> cloneTypeface = typeface->makeClone(args);
+    SkFontStyle cfs = cloneTypeface->fontStyle();
+    REPORTER_ASSERT(reporter, cfs == expectedStyle,
+                    "cfs: %d %d %d", cfs.weight(), cfs.width(), cfs.slant());
 }
 
 DEF_TEST(TypefacePostScriptName, reporter) {
@@ -335,7 +391,8 @@ DEF_TEST(TypefaceVariationIndex, reporter) {
         return;
     }
     REPORTER_ASSERT(reporter, positionRead[0].axis == SkSetFourByteTag('w','g','h','t'));
-    REPORTER_ASSERT(reporter, positionRead[0].value == 0.5);
+    REPORTER_ASSERT(reporter, positionRead[0].value == 0.5,
+                    "positionRead[0].value: %f", positionRead[0].value);
 }
 
 DEF_TEST(Typeface, reporter) {
