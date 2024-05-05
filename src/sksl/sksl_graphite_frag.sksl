@@ -379,12 +379,15 @@ $pure half4 sk_yuv_image_shader(float2 coords,
         coords = floor(coords) + 0.5;
     }
 
+    int tileModeX_UV = tileModeX == $kTileModeDecal ? $kTileModeClamp : tileModeX;
+    int tileModeY_UV = tileModeY == $kTileModeDecal ? $kTileModeClamp : tileModeY;
+
     half4 sampleColorY, sampleColorU, sampleColorV, sampleColorA;
     sampleColorY = $sample_image_subset(coords, invImgSizeY, subset, tileModeX, tileModeY,
                                         filterModeY, float2($kLinearInset), sY);
-    sampleColorU = $sample_image_subset(coords, invImgSizeUV, subset, tileModeX, tileModeY,
+    sampleColorU = $sample_image_subset(coords, invImgSizeUV, subset, tileModeX_UV, tileModeY_UV,
                                         filterModeUV, linearFilterUVInset, sU);
-    sampleColorV = $sample_image_subset(coords, invImgSizeUV, subset, tileModeX, tileModeY,
+    sampleColorV = $sample_image_subset(coords, invImgSizeUV, subset, tileModeX_UV, tileModeY_UV,
                                         filterModeUV, linearFilterUVInset, sV);
     if (channelSelectA == half4(1)) {
         sampleColorA = half4(0, 0, 0, 1);
@@ -415,12 +418,15 @@ $pure half4 sk_cubic_yuv_image_shader(float2 coords,
                                       sampler2D sU,
                                       sampler2D sV,
                                       sampler2D sA) {
+    int tileModeX_UV = tileModeX == $kTileModeDecal ? $kTileModeClamp : tileModeX;
+    int tileModeY_UV = tileModeY == $kTileModeDecal ? $kTileModeClamp : tileModeY;
+
     half4 sampleColorY, sampleColorU, sampleColorV, sampleColorA;
     sampleColorY = $cubic_filter_image(coords, invImgSizeY, subset, tileModeX, tileModeY,
                                        cubicCoeffs, sY);
-    sampleColorU = $cubic_filter_image(coords, invImgSizeUV, subset, tileModeX, tileModeY,
+    sampleColorU = $cubic_filter_image(coords, invImgSizeUV, subset, tileModeX_UV, tileModeY_UV,
                                        cubicCoeffs, sU);
-    sampleColorV = $cubic_filter_image(coords, invImgSizeUV, subset, tileModeX, tileModeY,
+    sampleColorV = $cubic_filter_image(coords, invImgSizeUV, subset, tileModeX_UV, tileModeY_UV,
                                        cubicCoeffs, sV);
     if (channelSelectA == half4(1)) {
         sampleColorA = half4(0, 0, 0, 1);
@@ -1475,6 +1481,19 @@ $pure half4 $rect_blur_coverage_fn(float2 coords,
     return half4(xCoverage * yCoverage);
 }
 
+$pure half4 $circle_blur_coverage_fn(float2 coords, float4 circle, sampler2D blurProfile) {
+    // We just want to compute "(length(vec) - solidRadius + 0.5) / textureRadius" but need to
+    // rearrange to avoid passing large values to length() that would overflow. We've precalculated
+    // "1 / textureRadius" and "(solidRadius - 0.5) / textureRadius" on the CPU as circle.z and
+    // circle.w, respectively.
+    float invTextureRadius = circle.z;
+    float normSolidRadius = circle.w;
+
+    half2 vec = half2((coords - circle.xy) * invTextureRadius);
+    float dist = length(vec) - normSolidRadius;
+    return sample(blurProfile, float2(dist, 0.5)).rrrr;
+}
+
 $pure half4 blur_coverage_fn(float2 coords,
                              float4 shapeData,
                              int shapeType,
@@ -1485,7 +1504,10 @@ $pure half4 blur_coverage_fn(float2 coords,
         case $kShapeTypeRect: {
             return $rect_blur_coverage_fn(coords, shapeData, isFast, invSixSigma, s);
         }
-        // TODO(b/238762890) Handle $kShapeTypeRRect and $kShapeTypeCircle.
+        case $kShapeTypeCircle: {
+            return $circle_blur_coverage_fn(coords, shapeData, s);
+        }
+        // TODO(b/238762890) Handle $kShapeTypeRRect.
     }
     return half4(0);
 }

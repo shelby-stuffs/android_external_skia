@@ -6,6 +6,10 @@ load(
     "skia_filegroup",
 )
 
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
 licenses(["notice"])
 
 exports_files_legacy(
@@ -19,6 +23,7 @@ IWYU_HDRS = [
     "SkBitmaskEnum.h",
     "SkEndian.h",
     "SkEnumBitMask.h",
+    "SkFloatBits.h",
     "SkLeanWindows.h",
     "SkMSAN.h",
     "SkNoDestructor.h",

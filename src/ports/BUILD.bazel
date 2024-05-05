@@ -9,6 +9,10 @@ load(
     "skia_objc_library",
 )
 
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
 licenses(["notice"])
 
 exports_files_legacy()
@@ -348,6 +352,7 @@ skia_cc_library(
         "SkFontMgr_android_parser.h",
         "//include/ports:android_fontmgr_hdrs",
     ],
+    defines = ["SK_FONTMGR_ANDROID_AVAILABLE"],
     visibility = ["//:__pkg__"],
     deps = [
         ":freetype_support",
@@ -414,7 +419,7 @@ skia_cc_library(
     ],
     defines = ["SK_FONTMGR_FREETYPE_DIRECTORY_AVAILABLE"],
     features = ["layering_check"],
-    visibility = ["//__pkg__"],
+    visibility = ["//:__pkg__"],
     deps = [
         ":freetype_support",
         "//:core",

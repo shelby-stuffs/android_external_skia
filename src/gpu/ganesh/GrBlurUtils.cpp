@@ -41,11 +41,11 @@
 #include "include/private/SkColorData.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkFixed.h"
-#include "include/private/base/SkFloatBits.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkMath.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkFloatBits.h"
 #include "src/base/SkTLazy.h"
 #include "src/core/SkBlurMaskFilterImpl.h"
 #include "src/core/SkDraw.h"
@@ -389,7 +389,7 @@ static bool can_filter_mask(const SkMaskFilterBase* maskFilter,
     }
 
     if (maskRect) {
-        float sigma3 = 3 * SkScalarToFloat(xformedSigma);
+        float sigma3 = 3 * xformedSigma;
 
         // Outset srcRect and clipRect by 3 * sigma, to compute affected blur area.
         SkIRect clipRect = clipBounds.makeOutset(sigma3, sigma3);
@@ -424,7 +424,7 @@ static std::unique_ptr<GrFragmentProcessor> create_profile_effect(GrRecordingCon
                                                                   float* solidRadius,
                                                                   float* textureRadius) {
     float circleR = circle.width() / 2.0f;
-    if (!sk_float_isfinite(circleR) || circleR < SK_ScalarNearlyZero) {
+    if (!SkIsFinite(circleR) || circleR < SK_ScalarNearlyZero) {
         return nullptr;
     }
 
@@ -485,7 +485,6 @@ static std::unique_ptr<GrFragmentProcessor> create_profile_effect(GrRecordingCon
         SkScalar scale = kProfileTextureWidth / *textureRadius;
         bm = skgpu::CreateCircleProfile(sigma * scale, circleR * scale, kProfileTextureWidth);
     }
-    bm.setImmutable();
 
     profileView = std::get<0>(GrMakeUncachedBitmapProxyView(rContext, bm));
     if (!profileView) {

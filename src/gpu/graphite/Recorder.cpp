@@ -167,10 +167,19 @@ std::unique_ptr<Recording> Recorder::snap() {
         }
     });
 
-    // TODO: fulfill all promise images in the TextureDataCache here
-    // TODO: create all the samplers needed in the TextureDataCache here
+    std::unique_ptr<Recording::LazyProxyData> targetProxyData;
+    if (fTargetProxyData) {
+        targetProxyData = std::move(fTargetProxyData);
+        fTargetProxyDevice.reset();
+        fTargetProxyCanvas.reset();
+    }
 
-    if (!fRootTaskList->prepareResources(fResourceProvider.get(), fRuntimeEffectDict.get())) {
+    // In both the "task failed" case and the "everything is discarded" case, there's no work that
+    // needs to be done in insertRecording(). However, we use nullptr as a failure signal, so
+    // kDiscard will return a non-null Recording that has no tasks in it.
+    if (fDrawBufferManager->hasMappingFailed() ||
+        fRootTaskList->prepareResources(fResourceProvider.get(),
+                                        fRuntimeEffectDict.get()) == Task::Status::kFail) {
         // Leaving 'fTrackedDevices' alone since they were flushed earlier and could still be
         // attached to extant SkSurfaces.
         fDrawBufferManager = std::make_unique<DrawBufferManager>(fResourceProvider.get(),
@@ -183,12 +192,6 @@ std::unique_ptr<Recording> Recorder::snap() {
         return nullptr;
     }
 
-    std::unique_ptr<Recording::LazyProxyData> targetProxyData;
-    if (fTargetProxyData) {
-        targetProxyData = std::move(fTargetProxyData);
-        fTargetProxyDevice.reset();
-        fTargetProxyCanvas.reset();
-    }
     std::unique_ptr<Recording> recording(new Recording(fNextRecordingID++,
                                                        fUniqueID,
                                                        std::move(nonVolatileLazyProxies),
