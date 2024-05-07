@@ -38,6 +38,7 @@ class Recorder;
 class Renderer;
 class Shape;
 class StrokeStyle;
+class Task;
 class TextureProxy;
 class TextureProxyView;
 
@@ -107,6 +108,9 @@ public:
     // tasks are fully organized in a graph and not automatically appended to the root task list,
     // this explicit instantiation will be responsible for moving the scratch tasks to the root list
     bool isScratchDevice() const;
+
+    // Only used for scratch devices.
+    sk_sp<Task> lastDrawTask() const;
 
     // SkCanvas only uses drawCoverageMask w/o this staging flag, so only enable
     // mask filters in clients that have finished migrating.
@@ -217,19 +221,18 @@ private:
     sk_sp<skif::Backend> createImageFilteringBackend(const SkSurfaceProps& surfaceProps,
                                                      SkColorType colorType) const override;
 
-    // DrawFlags alters the effects used by drawShape.
+    // DrawFlags alters the effects used by drawGeometry.
+    //
+    // There is no kIgnoreMaskFilter flag because the Device always ignores the mask filter -- the
+    // mask filter should be handled by the SkCanvas, either with an auto mask filter layer or
+    // being converted to an analytic blur draw.
     enum class DrawFlags : unsigned {
         kNone             = 0b000,
 
-        // Any SkMaskFilter on the SkPaint passed into drawGeometry() is ignored.
-        // - drawPaint, drawVertices, drawAtlas
-        // - drawShape after it's applied the mask filter.
-        kIgnoreMaskFilter = 0b001,
-
         // Any SkPathEffect on the SkPaint passed into drawGeometry() is ignored.
         // - drawPaint, drawImageLattice, drawImageRect, drawEdgeAAImageSet, drawVertices, drawAtlas
-        // - drawShape after it's applied the path effect.
-        kIgnorePathEffect = 0b010,
+        // - drawGeometry after it's applied the path effect.
+        kIgnorePathEffect = 0b001,
     };
     SK_DECL_BITMASK_OPS_FRIENDS(DrawFlags)
 
@@ -292,6 +295,12 @@ private:
     Recorder* fRecorder;
     SkDEBUGCODE(const intptr_t fPostRecorderSentinel;)
     sk_sp<DrawContext> fDC;
+    // Scratch devices hold on to their last snapped DrawTask so that they can be directly
+    // referenced when the device image is drawn into some other surface.
+    // NOTE: For now, this task is still added to the root task list when the Device is flushed, but
+    // in the long-term, these scratch draw tasks will only be executed if they are referenced by
+    // some other task chain that makes it to the root list.
+    sk_sp<Task> fLastTask;
 
     ClipStack fClip;
 

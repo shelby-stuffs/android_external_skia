@@ -453,6 +453,7 @@ func GenTasks(cfg *Config) {
 			"skia/.bazelrc",
 			"skia/.bazelversion",
 			"skia/BUILD.bazel",
+			"skia/LICENSE", // Referred to by default_applicable_licenses
 			"skia/WORKSPACE.bazel",
 			"skia/bazel",
 			"skia/defines.bzl",
@@ -566,8 +567,10 @@ func GenTasks(cfg *Config) {
 			"skia/.bazelrc",
 			"skia/.bazelversion",
 			"skia/BUILD.bazel",
+			"skia/LICENSE",
 			"skia/WORKSPACE.bazel",
 			"skia/bazel",
+			"skia/defines.bzl",
 			"skia/go_repositories.bzl",
 			"skia/include/config", // There's a WORKSPACE.bazel in here
 			"skia/requirements.txt",
@@ -1006,14 +1009,13 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 			} else if b.isLinux() {
 				gpu, ok := map[string]string{
 					// Intel drivers come from CIPD, so no need to specify the version here.
-					"IntelBayTrail": "8086:0f31",
-					"IntelHD2000":   "8086:0102",
-					"IntelHD405":    "8086:22b1",
-					"IntelIris640":  "8086:5926",
-					"QuadroP400":    "10de:1cb3-510.60.02",
-					"RTX3060":       "10de:2489-470.182.03",
-					"IntelIrisXe":   "8086:9a49",
-					"RadeonVega6":   "1002:1636",
+					"IntelHD2000":  "8086:0102",
+					"IntelHD405":   "8086:22b1",
+					"IntelIris640": "8086:5926",
+					"QuadroP400":   "10de:1cb3-510.60.02",
+					"RTX3060":      "10de:2489-470.182.03",
+					"IntelIrisXe":  "8086:9a49",
+					"RadeonVega6":  "1002:1636",
 				}[b.parts["cpu_or_gpu_value"]]
 				if !ok {
 					log.Fatalf("Entry %q not found in Ubuntu GPU mapping.", b.parts["cpu_or_gpu_value"])
@@ -2402,11 +2404,11 @@ func (b *jobBuilder) bazelTest() {
 			// the bazel-bin directory, which we receive a subset of as a CAS input.
 			command := strings.ReplaceAll(labelAndSavedOutputDir.label, "//", "")
 			command = strings.ReplaceAll(command, ":", "/")
-			command = filepath.Join(OUTPUT_BAZEL, command)
+			command = path.Join(OUTPUT_BAZEL, command)
 
 			// The test's working directory will be its runfiles directory, which simulates the behavior of
 			// the "bazel run" command.
-			commandWorkDir := filepath.Join(command+".runfiles", "skia")
+			commandWorkDir := path.Join(command+".runfiles", "skia")
 
 			cmd = append(cmd,
 				"--command="+command,

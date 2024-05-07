@@ -1,5 +1,9 @@
 load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup")
 
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
 licenses(["notice"])
 
 exports_files_legacy()
@@ -9,6 +13,7 @@ skia_filegroup(
     srcs = [
         "SkAlphaType.h",
         "SkAnnotation.h",
+        "SkArc.h",
         "SkBBHFactory.h",
         "SkBitmap.h",
         "SkBlendMode.h",
@@ -104,6 +109,7 @@ skia_filegroup(
     srcs = [
         "SkAlphaType.h",
         "SkAnnotation.h",
+        "SkArc.h",
         "SkBBHFactory.h",
         "SkBitmap.h",
         "SkBlendMode.h",
