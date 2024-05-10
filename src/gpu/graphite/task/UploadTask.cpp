@@ -329,10 +329,13 @@ UploadInstance UploadInstance::MakeCompressed(Recorder* recorder,
 }
 
 bool UploadInstance::prepareResources(ResourceProvider* resourceProvider) {
-    if (!fTextureProxy) {
-        SKGPU_LOG_E("No texture proxy specified for UploadTask");
-        return false;
-    }
+    // While most uploads are to already instantiated proxies (e.g. for client-created texture
+    // images) it is possible that writePixels() was issued as the first operation on a scratch
+    // Device, or that this is the first upload to the raster or text atlas proxies.
+    // TODO: Determine how to instantatiate textues in this case; atlas proxies shouldn't really be
+    // "scratch" because they aren't going to be reused for anything else in a Recording. At the
+    // same time, it could still go through the ScratchResourceManager and just never return them,
+    // which is no different from instantiating them directly with the ResourceProvider.
     if (!TextureProxy::InstantiateIfNotLazy(resourceProvider, fTextureProxy.get())) {
         SKGPU_LOG_E("Could not instantiate texture proxy for UploadTask!");
         return false;
@@ -444,6 +447,7 @@ UploadTask::UploadTask(UploadInstance instance) {
 UploadTask::~UploadTask() {}
 
 Task::Status UploadTask::prepareResources(ResourceProvider* resourceProvider,
+                                          ScratchResourceManager*,
                                           const RuntimeEffectDictionary*) {
     for (int i = 0; i < fInstances.size(); ++i) {
         // No upload should be invalidated before prepareResources() is called.

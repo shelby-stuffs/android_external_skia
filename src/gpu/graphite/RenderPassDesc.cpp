@@ -15,9 +15,9 @@ namespace {
 
 const char* to_str(LoadOp op) {
     switch (op) {
-        case LoadOp::kLoad:    return "kLoad";
-        case LoadOp::kClear:   return "kClear";
-        case LoadOp::kDiscard: return "kDiscard";
+        case LoadOp::kLoad:    return "load";
+        case LoadOp::kClear:   return "clear";
+        case LoadOp::kDiscard: return "discard";
     }
 
     SkUNREACHABLE;
@@ -25,8 +25,8 @@ const char* to_str(LoadOp op) {
 
 const char* to_str(StoreOp op) {
     switch (op) {
-        case StoreOp::kStore:   return "kStore";
-        case StoreOp::kDiscard: return "kDiscard";
+        case StoreOp::kStore:   return "store";
+        case StoreOp::kDiscard: return "discard";
     }
 
     SkUNREACHABLE;
@@ -105,11 +105,34 @@ RenderPassDesc RenderPassDesc::Make(const Caps* caps,
 }
 
 SkString RenderPassDesc::toString() const {
-    // This intentionally includes the fixed state that impacts pipeline compilation
-    return SkStringPrintf("RP(color: %s, resolve: %s, ds: %s, samples: %d, swizzle: %s)",
+    return SkStringPrintf("RP(color: %s, resolve: %s, ds: %s, samples: %u, swizzle: %s, "
+                          "clear: c(%f,%f,%f,%f), d(%f), s(0x%02x))",
                           fColorAttachment.toString().c_str(),
                           fColorResolveAttachment.toString().c_str(),
                           fDepthStencilAttachment.toString().c_str(),
+                          fSampleCount,
+                          fWriteSwizzle.asString().c_str(),
+                          fClearColor[0], fClearColor[1], fClearColor[2], fClearColor[3],
+                          fClearDepth,
+                          fClearStencil);
+}
+
+SkString RenderPassDesc::toPipelineLabel() const {
+    // This intentionally only includes the fixed state that impacts pipeline compilation.
+    // We include the load op of the color attachment when there is a resolve attachment because
+    // the load may trigger a different renderpass description.
+    const char* colorLoadStr = "";
+    if (fColorAttachment.fLoadOp == LoadOp::kLoad &&
+        (fColorResolveAttachment.fTextureInfo.isValid() || fSampleCount > 1)) {
+        colorLoadStr = " w/ msaa load";
+    }
+    // TODO: Remove `fSampleCount` in label when the Dawn backend manages its MSAA color attachments
+    // directly instead of relying on msaaRenderToSingleSampledSupport().
+    return SkStringPrintf("RP(color: %s%s, resolve: %s, ds: %s, samples: %u, swizzle: %s)",
+                          fColorAttachment.fTextureInfo.toRPAttachmentString().c_str(),
+                          colorLoadStr,
+                          fColorResolveAttachment.fTextureInfo.toRPAttachmentString().c_str(),
+                          fDepthStencilAttachment.fTextureInfo.toRPAttachmentString().c_str(),
                           fSampleCount,
                           fWriteSwizzle.asString().c_str());
 }
