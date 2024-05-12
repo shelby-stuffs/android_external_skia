@@ -93,6 +93,8 @@ DECODE_JPEG_FILES = [
     "SkJpegCodec.h",
     "SkJpegDecoderMgr.cpp",
     "SkJpegDecoderMgr.h",
+    "SkJpegMetadataDecoderImpl.cpp",
+    "SkJpegMetadataDecoderImpl.h",
     "SkJpegSourceMgr.cpp",
     "SkJpegSourceMgr.h",
     "SkJpegUtility.cpp",
@@ -329,6 +331,9 @@ skia_cc_library(
     hdrs = PRIVATE_CODEC_HEADERS,
     features = ["layering_check"],
     local_defines = ["SK_DISABLE_LEGACY_INIT_DECODERS"],
+    visibility = [
+        "//src/ports:__pkg__",
+    ],
     deps = [
         "//modules/skcms",
         "//src/base",
@@ -488,6 +493,8 @@ skia_cc_library(
         "SkJpegCodec.h",
         "SkJpegDecoderMgr.cpp",
         "SkJpegDecoderMgr.h",
+        "SkJpegMetadataDecoderImpl.cpp",
+        "SkJpegMetadataDecoderImpl.h",
         "SkJpegSourceMgr.cpp",
         "SkJpegSourceMgr.h",
         "SkJpegUtility.cpp",

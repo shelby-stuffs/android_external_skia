@@ -68,6 +68,7 @@ public:
 
     static sk_sp<TextureProxy> CreateCachedProxy(Recorder*,
                                                  const SkBitmap&,
+                                                 std::string_view label,
                                                  Mipmapped = skgpu::Mipmapped::kNo);
 
     uint32_t uniqueID() const { return fRecorder->fUniqueID; }
@@ -81,6 +82,7 @@ public:
 #if defined(GRAPHITE_TEST_UTILS)
     bool deviceIsRegistered(Device*) const;
     ResourceCache* resourceCache() { return fRecorder->fResourceProvider->resourceCache(); }
+    SharedContext* sharedContext() { return fRecorder->fSharedContext.get(); }
     // used by the Context that created this Recorder to set a back pointer
     void setContext(Context*);
     Context* context() { return fRecorder->fContext; }
