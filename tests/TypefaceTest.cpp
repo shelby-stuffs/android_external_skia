@@ -157,17 +157,25 @@ DEF_TEST(TypefaceStyleVariable, reporter) {
     };
     const SkFontStyle expectedStyle(200, 3, SkFontStyle::kUpright_Slant);
 
+    // On Mac10.15 and earlier, the wdth affected the style using the old gx ranges.
+    // On macOS 11 and later, the wdth affects the style using the new OpenType ranges.
+    // Allow old CoreText to report the wrong width values.
+#if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
+    SkFontStyle mac1015style(200, 9, SkFontStyle::kUpright_Slant);
+#else
+    SkFontStyle mac1015style = expectedStyle;
+#endif
     SkFontArguments args;
     args.setVariationDesignPosition(Variation{nonDefaultPosition, std::size(nonDefaultPosition)});
 
     sk_sp<SkTypeface> nonDefaultTypeface = fm->makeFromStream(stream->duplicate(), args);
     SkFontStyle ndfs = nonDefaultTypeface->fontStyle();
-    REPORTER_ASSERT(reporter, ndfs == expectedStyle,
+    REPORTER_ASSERT(reporter, ndfs == expectedStyle || ndfs == mac1015style,
                     "ndfs: %d %d %d", ndfs.weight(), ndfs.width(), ndfs.slant());
 
     sk_sp<SkTypeface> cloneTypeface = typeface->makeClone(args);
     SkFontStyle cfs = cloneTypeface->fontStyle();
-    REPORTER_ASSERT(reporter, cfs == expectedStyle,
+    REPORTER_ASSERT(reporter, cfs == expectedStyle || cfs == mac1015style,
                     "cfs: %d %d %d", cfs.weight(), cfs.width(), cfs.slant());
 }
 
@@ -284,10 +292,10 @@ DEF_TEST(TypefaceAxes, reporter) {
             }
             REPORTER_ASSERT(reporter, actualFound,
                 "Actual axis '%c%c%c%c' with value '%f' not expected",
-                (actual[actualIdx].axis >> 24) & 0xFF,
-                (actual[actualIdx].axis >> 16) & 0xFF,
-                (actual[actualIdx].axis >>  8) & 0xFF,
-                (actual[actualIdx].axis      ) & 0xFF,
+                (char)((actual[actualIdx].axis >> 24) & 0xFF),
+                (char)((actual[actualIdx].axis >> 16) & 0xFF),
+                (char)((actual[actualIdx].axis >>  8) & 0xFF),
+                (char)((actual[actualIdx].axis      ) & 0xFF),
                 SkScalarToDouble(actual[actualIdx].value));
         }
     };
@@ -487,10 +495,10 @@ DEF_TEST(TypefaceAxesParameters, reporter) {
             }
             REPORTER_ASSERT(reporter, actualFound,
                 "Actual axis '%c%c%c%c' with min %f max %f default %f hidden %s not expected",
-                (actual[actualIdx].tag >> 24) & 0xFF,
-                (actual[actualIdx].tag >> 16) & 0xFF,
-                (actual[actualIdx].tag >>  8) & 0xFF,
-                (actual[actualIdx].tag      ) & 0xFF,
+                (char)((actual[actualIdx].tag >> 24) & 0xFF),
+                (char)((actual[actualIdx].tag >> 16) & 0xFF),
+                (char)((actual[actualIdx].tag >>  8) & 0xFF),
+                (char)((actual[actualIdx].tag      ) & 0xFF),
                 actual[actualIdx].min,
                 actual[actualIdx].def,
                 actual[actualIdx].max,

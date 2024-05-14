@@ -6,6 +6,10 @@ load(
     "skia_filegroup",
 )
 
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
 licenses(["notice"])
 
 exports_files_legacy(
@@ -15,11 +19,11 @@ exports_files_legacy(
 
 # Headers with no corresponding .cpp files
 IWYU_HDRS = [
-    "SkASAN.h",
     "SkArenaAllocList.h",
     "SkBitmaskEnum.h",
     "SkEndian.h",
     "SkEnumBitMask.h",
+    "SkFloatBits.h",
     "SkLeanWindows.h",
     "SkMSAN.h",
     "SkNoDestructor.h",

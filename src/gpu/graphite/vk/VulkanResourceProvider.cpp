@@ -15,6 +15,7 @@
 #include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/ComputePipeline.h"
 #include "src/gpu/graphite/GraphicsPipeline.h"
+#include "src/gpu/graphite/RenderPassDesc.h"
 #include "src/gpu/graphite/Sampler.h"
 #include "src/gpu/graphite/Texture.h"
 #include "src/gpu/graphite/vk/VulkanBuffer.h"
@@ -123,8 +124,13 @@ sk_sp<Texture> VulkanResourceProvider::createTexture(SkISize size, const Texture
 
 sk_sp<Buffer> VulkanResourceProvider::createBuffer(size_t size,
                                                    BufferType type,
-                                                   AccessPattern accessPattern) {
-    return VulkanBuffer::Make(this->vulkanSharedContext(), size, type, accessPattern);
+                                                   AccessPattern accessPattern,
+                                                   std::string_view label) {
+    return VulkanBuffer::Make(this->vulkanSharedContext(),
+                              size,
+                              type,
+                              accessPattern,
+                              std::move(label));
 }
 
 sk_sp<Sampler> VulkanResourceProvider::createSampler(const SamplerDesc& samplerDesc) {
@@ -284,7 +290,7 @@ VkPipelineCache VulkanResourceProvider::pipelineCache() {
         createInfo.initialDataSize = 0;
         createInfo.pInitialData = nullptr;
         VkResult result;
-        VULKAN_CALL_RESULT(this->vulkanSharedContext()->interface(),
+        VULKAN_CALL_RESULT(this->vulkanSharedContext(),
                            result,
                            CreatePipelineCache(this->vulkanSharedContext()->device(),
                                                &createInfo,

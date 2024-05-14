@@ -33,6 +33,7 @@ class GraphicsPipelineDesc;
 class PaintParams;
 class PipelineDataGatherer;
 class Recorder;
+struct RenderPassDesc;
 class RenderStep;
 class RuntimeEffectDictionary;
 class ShaderNode;
@@ -42,12 +43,18 @@ struct ResourceBindingRequirements;
 
 struct VertSkSLInfo {
     std::string fSkSL;
+
+    std::string fLabel;
+
     int fRenderStepUniformsTotalBytes = 0;
 };
 
 struct FragSkSLInfo {
     std::string fSkSL;
     BlendInfo fBlendInfo;
+
+    std::string fLabel;
+
     bool fRequiresLocalCoords = false;
     int fNumTexturesAndSamplers = 0;
     int fNumPaintUniforms = 0;
@@ -88,6 +95,11 @@ FragSkSLInfo BuildFragmentSkSL(const Caps* caps,
                                UniquePaintParamsID paintID,
                                bool useStorageBuffers,
                                skgpu::Swizzle writeSwizzle);
+
+std::string GetPipelineLabel(const ShaderCodeDictionary*,
+                             const RenderPassDesc& renderPassDesc,
+                             const RenderStep* renderStep,
+                             UniquePaintParamsID paintID);
 
 std::string BuildComputeSkSL(const Caps*, const ComputeStep*);
 

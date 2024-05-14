@@ -38,7 +38,7 @@ constexpr bool BlurIsEffectivelyIdentity(float sigma) { return sigma <= 0.03f; }
 // Convert from a sigma Gaussian standard deviation to a pixel radius such that pixels outside the
 // radius would have an insignificant contribution to the final blurred value.
 inline int BlurSigmaRadius(float sigma) {
-    // sk_float_ceil is not constexpr
+    // sk_float_ceil2int is not constexpr
     return BlurIsEffectivelyIdentity(sigma) ? 0 : sk_float_ceil2int(3.f * sigma);
 }
 
@@ -147,6 +147,12 @@ SkBitmap CreateIntegralTable(float sixSigma);
 
 // Returns the width of an integral table we will create for the given 6*sigma.
 int ComputeIntegralTableWidth(float sixSigma);
+
+// Creates a profile of a blurred circle.
+SkBitmap CreateCircleProfile(float sigma, float radius, int profileWidth);
+
+// Creates a half plane approximation profile of a blurred circle.
+SkBitmap CreateHalfPlaneProfile(int profileWidth);
 
 } // namespace skgpu
 

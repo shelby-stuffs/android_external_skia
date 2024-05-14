@@ -395,7 +395,7 @@ SkTypeface_FreeType::FaceRec::Make(const SkTypeface_FreeType* typeface) {
         FT_Face rawFace;
         FT_Error err = FT_Open_Face(gFTLibrary->library(), &args, data->getIndex(), &rawFace);
         if (err) {
-            SK_TRACEFTR(err, "unable to open font '%x'", typeface->uniqueID());
+            SK_TRACEFTR(err, "unable to open font '%x'", (uint32_t)typeface->uniqueID());
             return nullptr;
         }
         rec->fFace.reset(rawFace);
@@ -1323,8 +1323,8 @@ SkScalerContext::GlyphMetrics SkScalerContext_FreeType::generateMetrics(const Sk
     if (this->isVertical()) {
         if (fDoLinearMetrics) {
             const SkScalar advanceScalar = SkFT_FixedToScalar(fFace->glyph->linearVertAdvance);
-            mx.advance.fX = SkScalarToFloat(fMatrix22Scalar.getSkewX() * advanceScalar);
-            mx.advance.fY = SkScalarToFloat(fMatrix22Scalar.getScaleY() * advanceScalar);
+            mx.advance.fX = fMatrix22Scalar.getSkewX() * advanceScalar;
+            mx.advance.fY = fMatrix22Scalar.getScaleY() * advanceScalar;
         } else {
             mx.advance.fX = -SkFDot6ToFloat(fFace->glyph->advance.x);
             mx.advance.fY =  SkFDot6ToFloat(fFace->glyph->advance.y);
@@ -1332,8 +1332,8 @@ SkScalerContext::GlyphMetrics SkScalerContext_FreeType::generateMetrics(const Sk
     } else {
         if (fDoLinearMetrics) {
             const SkScalar advanceScalar = SkFT_FixedToScalar(fFace->glyph->linearHoriAdvance);
-            mx.advance.fX = SkScalarToFloat(fMatrix22Scalar.getScaleX() * advanceScalar);
-            mx.advance.fY = SkScalarToFloat(fMatrix22Scalar.getSkewY() * advanceScalar);
+            mx.advance.fX = fMatrix22Scalar.getScaleX() * advanceScalar;
+            mx.advance.fY = fMatrix22Scalar.getSkewY() * advanceScalar;
         } else {
             mx.advance.fX =  SkFDot6ToFloat(fFace->glyph->advance.x);
             mx.advance.fY = -SkFDot6ToFloat(fFace->glyph->advance.y);
