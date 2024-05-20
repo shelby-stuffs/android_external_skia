@@ -317,9 +317,7 @@ static constexpr int kMaxGridSize = 32;
 
 Device::Device(Recorder* recorder, sk_sp<DrawContext> dc)
         : SkDevice(dc->imageInfo(), dc->surfaceProps())
-        SkDEBUGCODE(, fPreRecorderSentinel(reinterpret_cast<intptr_t>(recorder) - 1))
         , fRecorder(recorder)
-        SkDEBUGCODE(, fPostRecorderSentinel(reinterpret_cast<intptr_t>(recorder) + 1))
         , fDC(std::move(dc))
         , fClip(this)
         , fColorDepthBoundsManager(std::make_unique<HybridBoundsManager>(
@@ -736,8 +734,31 @@ void Device::drawRRect(const SkRRect& rr, const SkPaint& paint) {
 }
 
 void Device::drawPath(const SkPath& path, const SkPaint& paint, bool pathIsMutable) {
-    // TODO: If we do try to inspect the path, it should happen here and possibly after computing
-    // the path effect. Alternatively, all that should be handled in SkCanvas.
+    // Alternatively, we could move this analysis to SkCanvas. Also, we could consider applying the
+    // path effect, being careful about starting point and direction.
+    if (!paint.getPathEffect() && !path.isInverseFillType()) {
+        if (SkRect oval; path.isOval(&oval)) {
+            this->drawGeometry(this->localToDeviceTransform(),
+                               Geometry(Shape(SkRRect::MakeOval(oval))),
+                               paint,
+                               SkStrokeRec(paint));
+            return;
+        }
+        if (SkRRect rrect; path.isRRect(&rrect)) {
+            this->drawGeometry(this->localToDeviceTransform(),
+                               Geometry(Shape(rrect)),
+                               paint,
+                               SkStrokeRec(paint));
+            return;
+        }
+        if (SkRect rect; paint.getStyle() == SkPaint::kFill_Style && path.isRect(&rect)) {
+            this->drawGeometry(this->localToDeviceTransform(),
+                               Geometry(Shape(rect)),
+                               paint,
+                               SkStrokeRec(paint));
+            return;
+        }
+    }
     this->drawGeometry(this->localToDeviceTransform(), Geometry(Shape(path)),
                        paint, SkStrokeRec(paint));
 }
@@ -1351,8 +1372,7 @@ std::pair<const Renderer*, PathAtlas*> Device::chooseRenderer(const Transform& l
         // having to evaluate the entire clip stack before choosing the renderer as it will have to
         // get evaluated again if we fall back to a different renderer).
         Rect drawBounds = localToDevice.mapRect(shape.bounds());
-        drawBounds.intersect(fClip.conservativeBounds());
-        if (pathAtlas->isSuitableForAtlasing(drawBounds)) {
+        if (pathAtlas->isSuitableForAtlasing(drawBounds, fClip.conservativeBounds())) {
             return {nullptr, pathAtlas};
         }
     }
@@ -1410,29 +1430,12 @@ sk_sp<Task> Device::lastDrawTask() const {
     return fLastTask;
 }
 
-void Device::flushPendingWorkToRecorder(Recorder* recorder) {
+void Device::flushPendingWorkToRecorder() {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
-
-    // Confirm sentinels match the original values set from fRecorder
-    SkDEBUGCODE(intptr_t expected = reinterpret_cast<intptr_t>(recorder ? recorder : fRecorder);)
-    SkASSERT(fPreRecorderSentinel == expected - 1);
-    SkASSERT(fPostRecorderSentinel == expected + 1);
-
-    SkASSERT(recorder == nullptr || recorder == fRecorder);
-    if (recorder && recorder != fRecorder) {
-        // TODO(b/333073673): This should not happen but if the Device were corrupted exit now
-        // to avoid further access of Device's state.
-        return;
-    }
 
     // If this is a scratch device being flushed, it should only be flushing into the expected
     // next recording from when the Device was first created.
     SkASSERT(fRecorder);
-    // TODO(b/333073673):
-    // The only time flushPendingWorkToRecorder() is called with a non-null Recorder is from
-    // flushTrackedDevices(), so the scoped recording ID of the device should be 0 or it means a
-    // non-tracked device got added to the recorder or something has stomped the heap.
-    SkASSERT(!recorder || fScopedRecordingID == 0);
     SkASSERT(fScopedRecordingID == 0 || fScopedRecordingID == fRecorder->priv().nextRecordingID());
 
     // TODO(b/330864257):  flushPendingWorkToRecorder() can be recursively called if this Device
@@ -1572,7 +1575,7 @@ void Device::drawCoverageMask(const SkSpecialImage* mask,
     // from a scratch device to the current draw context. In this case, 'mask' is very likely to
     // be linked to a scratch device, but we must perform the same notifyInUse manually here because
     // the texture is consumed by the RenderStep and not part of the PaintParams.
-    static_cast<Image_Base*>(mask->asImage().get())->notifyInUse(fRecorder);
+    static_cast<Image_Base*>(mask->asImage().get())->notifyInUse(fRecorder, fDC.get());
 
     // 'mask' logically has 0 coverage outside of its pixels, which is equivalent to kDecal tiling.
     // However, since we draw geometry tightly fitting 'mask', we can use the better-supported
@@ -1585,7 +1588,7 @@ void Device::drawCoverageMask(const SkSpecialImage* mask,
     TextureDataBlock tdb;
     // NOTE: CoverageMaskRenderStep controls the final sampling options; this texture data block
     // serves only to keep the mask alive so the sampling passed to add() doesn't matter.
-    tdb.add(SkFilterMode::kLinear, kClamp, maskProxyView.refProxy());
+    tdb.add(fRecorder->priv().caps(), SkFilterMode::kLinear, kClamp, maskProxyView.refProxy());
     fRecorder->priv().textureDataCache()->insert(tdb);
 
     // CoverageMaskShape() wraps a Shape when it's used as a PathAtlas, but in this case the
