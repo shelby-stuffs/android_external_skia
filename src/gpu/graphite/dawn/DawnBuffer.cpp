@@ -304,7 +304,9 @@ void DawnBuffer::freeGpuData() {
 
 void DawnBuffer::setBackendLabel(char const* label) {
     SkASSERT(label);
-    fBuffer.SetLabel(label);
+    if (sharedContext()->caps()->setBackendLabels()) {
+        fBuffer.SetLabel(label);
+    }
 }
 
 } // namespace skgpu::graphite

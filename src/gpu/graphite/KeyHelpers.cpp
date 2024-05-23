@@ -11,6 +11,8 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImageInfo.h"
+#include "include/core/SkM44.h"
+#include "include/core/SkScalar.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/graphite/Surface.h"
 #include "src/base/SkHalf.h"
@@ -1457,8 +1459,9 @@ static void add_to_key(const KeyContext& keyContext,
 
     CoordClampShaderBlock::CoordClampData data(shader->subset());
 
+    KeyContextWithCoordClamp childContext(keyContext);
     CoordClampShaderBlock::BeginBlock(keyContext, builder, gatherer, data);
-        AddToKey(keyContext, builder, gatherer, shader->shader().get());
+    AddToKey(childContext, builder, gatherer, shader->shader().get());
     builder->endBlock();
 }
 static void notify_in_use(Recorder* recorder,
@@ -1657,9 +1660,11 @@ static void add_to_key(const KeyContext& keyContext,
         // DrawContext memory can be surprisingly high. b/338453542.
         // TODO (b/330864257): Once paint keys are extracted at draw time, AddToKey() will be
         // fully responsible for notifyInUse() calls and then we can simply always call this on
-        // `imageToDraw`.
+        // `imageToDraw`. The DrawContext that samples the image will also be available to AddToKey
+        // so we won't have to pass in nullptr.
         SkASSERT(as_IB(imageToDraw)->isGraphiteBacked());
-        static_cast<Image_Base*>(imageToDraw.get())->notifyInUse(keyContext.recorder());
+        static_cast<Image_Base*>(imageToDraw.get())->notifyInUse(keyContext.recorder(),
+                                                                 /*drawContext=*/nullptr);
     }
     if (as_IB(imageToDraw)->isYUVA()) {
         return add_yuv_image_to_key(keyContext,
@@ -1679,7 +1684,27 @@ static void add_to_key(const KeyContext& keyContext,
                                         view.proxy()->dimensions(),
                                         shader->subset(),
                                         ReadSwizzle::kRGBA);
-    imgData.fSampling = newSampling;
+
+    // Here we detect pixel aligned blit-like image draws. Some devices have low precision filtering
+    // and will produce degraded (blurry) images unexpectedly for sequential exact pixel blits when
+    // not using nearest filtering. This is common for canvas scrolling implementations. Forcing
+    // nearest filtering when possible can also be a minor perf/power optimization depending on the
+    // hardware.
+    bool samplingHasNoEffect = false;
+    // Cubic sampling is will not filter the same as nearest even when pixel aligned.
+    if (keyContext.optimizeSampling() == KeyContext::OptimizeSampling::kYes &&
+        !newSampling.useCubic) {
+        SkMatrix totalM = keyContext.local2Dev().asM33();
+        if (keyContext.localMatrix()) {
+            totalM.preConcat(*keyContext.localMatrix());
+        }
+        totalM.normalizePerspective();
+        // The matrix should be translation with only pixel aligned 2d translation.
+        samplingHasNoEffect = totalM.isTranslate() && SkScalarIsInt(totalM.getTranslateX()) &&
+                              SkScalarIsInt(totalM.getTranslateY());
+    }
+
+    imgData.fSampling = samplingHasNoEffect ? SkFilterMode::kNearest : newSampling;
     imgData.fTextureProxy = view.refProxy();
     skgpu::Swizzle readSwizzle = view.swizzle();
     // If the color type is alpha-only, propagate the alpha value to the other channels.
@@ -1712,7 +1737,7 @@ static void add_to_key(const KeyContext& keyContext,
     ImageShaderBlock::AddBlock(keyContext, builder, gatherer, imgData);
 }
 static void notify_in_use(Recorder* recorder,
-                          DrawContext*,
+                          DrawContext* drawContext,
                           const SkImageShader* shader) {
     auto image = as_IB(shader->image());
     if (!image->isGraphiteBacked()) {
@@ -1720,9 +1745,7 @@ static void notify_in_use(Recorder* recorder,
         return;
     }
 
-    // TODO(b/323887207): Once scratch devices are linked to special images and their use needs to
-    // be linked to specific draw contexts, that will be passed in here.
-    static_cast<Image_Base*>(image)->notifyInUse(recorder);
+    static_cast<Image_Base*>(image)->notifyInUse(recorder, drawContext);
 }
 
 static void add_to_key(const KeyContext& keyContext,
@@ -1871,11 +1894,6 @@ static void add_to_key(const KeyContext& keyContext,
     surface->getCanvas()->concat(info.matrixForDraw);
     surface->getCanvas()->drawPicture(shader->picture().get());
     sk_sp<SkImage> img = SkSurfaces::AsImage(std::move(surface));
-    if (!img) {
-        SKGPU_LOG_W("Couldn't create SkImage for PictureShader");
-        builder->addBlock(BuiltInCodeSnippetID::kError);
-        return;
-    }
     // TODO: 'img' did not exist when notify_in_use() was called, but ideally the DrawTask to render
     // into 'surface' would be a child of the current device. While we push all tasks to the root
     // list this works out okay, but will need to be addressed before we move off that system.
