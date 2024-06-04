@@ -82,13 +82,19 @@ const VulkanSharedContext* VulkanResourceProvider::vulkanSharedContext() const {
 }
 
 sk_sp<Texture> VulkanResourceProvider::createWrappedTexture(const BackendTexture& texture) {
-    return VulkanTexture::MakeWrapped(this->vulkanSharedContext(),
-                                      this,
-                                      texture.dimensions(),
-                                      texture.info(),
-                                      texture.getMutableState(),
-                                      texture.getVkImage(),
-                                      /*alloc=*/{}); // Skia does not own wrapped texture memory
+    sk_sp<Texture> wrappedTexture =
+            VulkanTexture::MakeWrapped(this->vulkanSharedContext(),
+                                       this,
+                                       texture.dimensions(),
+                                       texture.info(),
+                                       texture.getMutableState(),
+                                       texture.getVkImage(),
+                                       /*alloc=*/{}  // Skia does not own wrapped texture memory
+            );
+    if (wrappedTexture) {
+        wrappedTexture->setLabel("WrappedTexture");
+    }
+    return wrappedTexture;
 }
 
 sk_sp<Buffer> VulkanResourceProvider::refIntrinsicConstantBuffer() const {
@@ -117,20 +123,20 @@ sk_sp<ComputePipeline> VulkanResourceProvider::createComputePipeline(const Compu
     return nullptr;
 }
 
-sk_sp<Texture> VulkanResourceProvider::createTexture(SkISize size, const TextureInfo& info,
+sk_sp<Texture> VulkanResourceProvider::createTexture(SkISize size,
+                                                     const TextureInfo& info,
                                                      skgpu::Budgeted budgeted) {
-    return VulkanTexture::Make(this->vulkanSharedContext(), this, size, info, budgeted);
+    return VulkanTexture::Make(this->vulkanSharedContext(),
+                               this,
+                               size,
+                               info,
+                               budgeted);
 }
 
 sk_sp<Buffer> VulkanResourceProvider::createBuffer(size_t size,
                                                    BufferType type,
-                                                   AccessPattern accessPattern,
-                                                   std::string_view label) {
-    return VulkanBuffer::Make(this->vulkanSharedContext(),
-                              size,
-                              type,
-                              accessPattern,
-                              std::move(label));
+                                                   AccessPattern accessPattern) {
+    return VulkanBuffer::Make(this->vulkanSharedContext(), size, type, accessPattern);
 }
 
 sk_sp<Sampler> VulkanResourceProvider::createSampler(const SamplerDesc& samplerDesc) {
@@ -172,9 +178,9 @@ GraphiteResourceKey build_desc_set_key(const SkSpan<DescriptorData>& requestedDe
     for (int i = 1; i < num32DataCnt; i++) {
         const auto& currDesc = requestedDescriptors[i - 1];
         // TODO: Consider making the DescriptorData struct itself just use uint16_t.
-        uint16_t smallerCount = static_cast<uint16_t>(currDesc.count);
-        builder[i] = static_cast<uint8_t>(currDesc.type) << 24 |
-                     currDesc.bindingIndex << 16 |
+        uint16_t smallerCount = static_cast<uint16_t>(currDesc.fCount);
+        builder[i] = static_cast<uint8_t>(currDesc.fType) << 24 |
+                     currDesc.fBindingIndex << 16 |
                      smallerCount;
     }
     builder.finish();

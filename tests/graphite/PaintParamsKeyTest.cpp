@@ -53,6 +53,7 @@
 #include "src/gpu/graphite/RuntimeEffectDictionary.h"
 #include "src/gpu/graphite/ShaderCodeDictionary.h"
 #include "src/gpu/graphite/UniquePaintParamsID.h"
+#include "src/gpu/graphite/geom/Geometry.h"
 #include "src/shaders/SkImageShader.h"
 #include "tools/ToolUtils.h"
 #include "tools/fonts/FontToolUtils.h"
@@ -1338,6 +1339,7 @@ DEF_CONDITIONAL_GRAPHITE_TEST_FOR_ALL_CONTEXTS(PaintParamsKeyTest,
                                                             context->priv().resourceProvider(),
                                                             SkISize::Make(1, 1),
                                                             dstTexInfo,
+                                                            "PaintParamsKeyTestFakeDstTexture",
                                                             skgpu::Budgeted::kYes);
     constexpr SkIPoint kFakeDstOffset = SkIPoint::Make(0, 0);
 
@@ -1483,8 +1485,8 @@ void run_test(skiatest::Reporter* reporter,
     }
 
     PaintParamsKeyBuilder builder(dict);
-    PipelineDataGatherer paramsGatherer(Layout::kMetal);
-    PipelineDataGatherer precompileGatherer(Layout::kMetal);
+    PipelineDataGatherer paramsGatherer(recorder->priv().caps(), Layout::kMetal);
+    PipelineDataGatherer precompileGatherer(recorder->priv().caps(), Layout::kMetal);
 
     gNeedSKPPaintOption = false;
     auto [paint, paintOptions] = create_paint(&rand, recorder.get(), s, bm, cf, imageFilter);
@@ -1538,16 +1540,21 @@ void run_test(skiatest::Reporter* reporter,
                         SkColorFilters::Blend(0xFFFFFFFF, SkBlendMode::kSrcOut));
             }
 
-            auto [paintID, uData, tData] = ExtractPaintData(
-                    recorder.get(), &paramsGatherer, &builder, Layout::kMetal, {},
-                    PaintParams(paint,
-                                primitiveBlender,
-                                std::move(modifiedClipShader),
-                                dstReadReq,
-                                /* skipColorXform= */ false),
-                    curDst,
-                    precompileKeyContext.dstOffset(),
-                    precompileKeyContext.dstColorInfo());
+            auto [paintID, uData, tData] =
+                    ExtractPaintData(recorder.get(),
+                                     &paramsGatherer,
+                                     &builder,
+                                     Layout::kMetal,
+                                     {},
+                                     PaintParams(paint,
+                                                 primitiveBlender,
+                                                 std::move(modifiedClipShader),
+                                                 dstReadReq,
+                                                 /* skipColorXform= */ false),
+                                     {},
+                                     curDst,
+                                     precompileKeyContext.dstOffset(),
+                                     precompileKeyContext.dstColorInfo());
 
             paintOptions.setClipShaders({ clipShaderOption });
 

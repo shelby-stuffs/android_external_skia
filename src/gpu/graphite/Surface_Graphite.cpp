@@ -50,16 +50,11 @@ TextureProxyView Surface::readSurfaceView() const {
 SkCanvas* Surface::onNewCanvas() { return new SkCanvas(fDevice); }
 
 sk_sp<SkSurface> Surface::onNewSurface(const SkImageInfo& ii) {
-    return SkSurfaces::RenderTarget(fDevice->recorder(), ii, Mipmapped::kNo, &this->props());
+    return fDevice->makeSurface(ii, this->props());
 }
 
 sk_sp<SkImage> Surface::onNewImageSnapshot(const SkIRect* subset) {
-    TextureProxyView srcView = fDevice->readSurfaceView();
-    if (!srcView) {
-        return nullptr;
-    }
-
-    return this->makeImageCopy(subset, srcView.mipmapped());
+    return this->makeImageCopy(subset, fDevice->target()->mipmapped());
 }
 
 sk_sp<Image> Surface::asImage() const {
@@ -118,6 +113,7 @@ TextureProxy* Surface::backingTextureProxy() const { return fDevice->target(); }
 
 sk_sp<Surface> Surface::Make(Recorder* recorder,
                              const SkImageInfo& info,
+                             std::string_view label,
                              Budgeted budgeted,
                              Mipmapped mipmapped,
                              SkBackingFit backingFit,
@@ -131,16 +127,14 @@ sk_sp<Surface> Surface::Make(Recorder* recorder,
                                         backingFit,
                                         SkSurfacePropsCopyOrDefault(props),
                                         initialLoadOp,
+                                        std::move(label),
                                         registerWithRecorder);
     if (!device) {
         return nullptr;
     }
-    // TODO: This instantiation isn't necessary anymore when budgeted == kNo; there are some callers
-    // that pass in kYes that still rely on this instantiation for Surface objects and need to have
-    // their logic updated to work correctly with truly scratch textures.
-    if (!device->target()->instantiate(recorder->priv().resourceProvider())) {
-        return nullptr;
-    }
+    // A non-budgeted surface should be fully instantiated before we return it
+    // to the client.
+    SkASSERT(budgeted == Budgeted::kYes || device->target()->isInstantiated());
     return sk_make_sp<Surface>(std::move(device));
 }
 
@@ -220,8 +214,9 @@ sk_sp<SkSurface> RenderTarget(Recorder* recorder,
                               skgpu::Mipmapped mipmapped,
                               const SkSurfaceProps* props) {
     // The client is getting the ref on this surface so it must be unbudgeted.
-    return skgpu::graphite::Surface::Make(
-            recorder, info, skgpu::Budgeted::kNo, mipmapped, SkBackingFit::kExact, props);
+    return skgpu::graphite::Surface::Make(recorder, info, "SkSurfaceRenderTarget",
+                                          skgpu::Budgeted::kNo, mipmapped, SkBackingFit::kExact,
+                                          props);
 }
 
 sk_sp<SkSurface> WrapBackendTexture(Recorder* recorder,

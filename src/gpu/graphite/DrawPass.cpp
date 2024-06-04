@@ -33,7 +33,6 @@
 #include "src/gpu/graphite/Texture.h"
 #include "src/gpu/graphite/UniformManager.h"
 #include "src/gpu/graphite/geom/BoundsManager.h"
-#include "src/gpu/graphite/task/CopyTask.h"
 
 #include "src/base/SkMathPriv.h"
 #include "src/base/SkTBlockList.h"
@@ -412,33 +411,6 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-sk_sp<TextureProxy> add_copy_target_task(Recorder* recorder,
-                                         sk_sp<TextureProxy> target,
-                                         const SkImageInfo& targetInfo,
-                                         const SkIPoint& targetOffset) {
-    SkASSERT(recorder->priv().caps()->isTexturable(target->textureInfo()));
-    SkIRect dstSrcRect = SkIRect::MakePtSize(targetOffset, targetInfo.dimensions());
-    sk_sp<TextureProxy> copy = TextureProxy::Make(recorder->priv().caps(),
-                                                  recorder->priv().resourceProvider(),
-                                                  targetInfo.dimensions(),
-                                                  target->textureInfo(),
-                                                  skgpu::Budgeted::kYes);
-    if (!copy) {
-        SKGPU_LOG_W("Failed to create destination copy texture for dst read.");
-        return nullptr;
-    }
-
-    sk_sp<CopyTextureToTextureTask> copyTask = CopyTextureToTextureTask::Make(
-            std::move(target), dstSrcRect, copy, /*dstPoint=*/{0, 0});
-    if (!copyTask) {
-        SKGPU_LOG_W("Failed to create destination copy task for dst read.");
-        return nullptr;
-    }
-
-    recorder->priv().add(std::move(copyTask));
-    return copy;
-}
-
 DrawPass::DrawPass(sk_sp<TextureProxy> target,
                    std::pair<LoadOp, StoreOp> ops,
                    std::array<float, 4> clearColor)
@@ -454,7 +426,9 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
                                          sk_sp<TextureProxy> target,
                                          const SkImageInfo& targetInfo,
                                          std::pair<LoadOp, StoreOp> ops,
-                                         std::array<float, 4> clearColor) {
+                                         std::array<float, 4> clearColor,
+                                         sk_sp<TextureProxy> dstCopy,
+                                         SkIPoint dstCopyOffset) {
     // NOTE: This assert is here to ensure SortKey is as tightly packed as possible. Any change to
     // its size should be done with care and good reason. The performance of sorting the keys is
     // heavily tied to the total size.
@@ -489,6 +463,11 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
         SKGPU_LOG_W("Buffer mapping has already failed; dropping draw pass!");
         return nullptr;
     }
+    // Ensure there's a destination copy if required
+    if (!draws->dstCopyBounds().isEmptyNegativeOrNaN() && !dstCopy) {
+        SKGPU_LOG_W("Failed to copy destination for reading. Dropping draw pass!");
+        return nullptr;
+    }
 
     GraphicsPipelineCache pipelineCache;
 
@@ -508,23 +487,7 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
 
     // The initial layout we pass here is not important as it will be re-assigned when writing
     // shading and geometry uniforms below.
-    PipelineDataGatherer gatherer(uniformLayout);
-
-    // Copy of destination, if needed.
-    sk_sp<TextureProxy> dst;
-    SkIPoint dstOffset;
-    if (!draws->dstCopyBounds().isEmptyNegativeOrNaN()) {
-        TRACE_EVENT_INSTANT0("skia.gpu", "DrawPass requires dst copy", TRACE_EVENT_SCOPE_THREAD);
-
-        SkIRect dstCopyPixelBounds = draws->dstCopyBounds().makeRoundOut().asSkIRect();
-        dstOffset = dstCopyPixelBounds.topLeft();
-        dst = add_copy_target_task(
-                recorder, target, targetInfo.makeDimensions(dstCopyPixelBounds.size()), dstOffset);
-        if (!dst) {
-            SKGPU_LOG_W("Failed to copy destination for reading. Dropping draw pass!");
-            return nullptr;
-        }
-    }
+    PipelineDataGatherer gatherer(recorder->priv().caps(), uniformLayout);
 
     std::vector<SortKey> keys;
     keys.reserve(draws->renderStepCount());
@@ -539,7 +502,7 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
         if (draw.fPaintParams.has_value()) {
             sk_sp<TextureProxy> curDst =
                     draw.fPaintParams->dstReadRequirement() == DstReadRequirement::kTextureCopy
-                            ? dst
+                            ? dstCopy
                             : nullptr;
             std::tie(shaderID, shadingUniforms, paintTextures) =
                     ExtractPaintData(recorder,
@@ -548,8 +511,9 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
                                      uniformLayout,
                                      draw.fDrawParams.transform(),
                                      draw.fPaintParams.value(),
+                                     draw.fDrawParams.geometry(),
                                      curDst,
-                                     dstOffset,
+                                     dstCopyOffset,
                                      targetInfo.colorInfo());
         } // else depth-only
 
@@ -711,19 +675,17 @@ bool DrawPass::prepareResources(ResourceProvider* resourceProvider,
     // once we've created pipelines, so we drop the storage for them here.
     fPipelineDescs.clear();
 
+#if defined(SK_DEBUG)
     for (int i = 0; i < fSampledTextures.size(); ++i) {
-        // TODO: We need to remove this check once we are creating valid SkImages from things like
-        // snapshot, save layers, etc. Right now we only support SkImages directly made for graphite
-        // and all others have a TextureProxy with an invalid TextureInfo.
-        if (!fSampledTextures[i]->textureInfo().isValid()) {
-            SKGPU_LOG_W("Failed to validate sampled texture. Will not create renderpass!");
-            return false;
-        }
-        if (!TextureProxy::InstantiateIfNotLazy(resourceProvider, fSampledTextures[i].get())) {
-            SKGPU_LOG_W("Failed to instantiate sampled texture. Will not create renderpass!");
-            return false;
-        }
+        // It should not have been possible to draw an Image that has an invalid texture info
+        SkASSERT(fSampledTextures[i]->textureInfo().isValid());
+        // Tasks should have been ordered to instantiate any scratch textures already, or any
+        // client-owned image will have been instantiated at creation.
+        SkASSERTF(fSampledTextures[i]->isInstantiated() ||
+                  fSampledTextures[i]->isLazy(),
+                  "proxy label = %s", fSampledTextures[i]->label());
     }
+#endif
 
     fSamplers.reserve(fSamplers.size() + fSamplerDescs.size());
     for (int i = 0; i < fSamplerDescs.size(); ++i) {

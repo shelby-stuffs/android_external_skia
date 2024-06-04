@@ -250,6 +250,11 @@ static DEFINE_string2(match, m, nullptr,
 
 static DEFINE_string(pathstrategy, "default",
                      "Path renderer strategy to use. Allowed values are " PATHSTRATEGY_STR ".");
+#if defined(SK_DAWN)
+static DEFINE_bool(disable_tint_symbol_renaming,
+                   false,
+                   "Disable Tint WGSL symbol renaming when using Dawn");
+#endif
 #endif
 
 #if defined(SK_BUILD_FOR_ANDROID)
@@ -567,6 +572,9 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
 #if defined(SK_GRAPHITE)
     displayParams.fGraphiteContextOptions.fPriv.fPathRendererStrategy =
             get_path_renderer_strategy_type(FLAGS_pathstrategy[0]);
+#if defined(SK_DAWN)
+    displayParams.fDisableTintSymbolRenaming = FLAGS_disable_tint_symbol_renaming;
+#endif
 #endif
     fWindow->setRequestedDisplayParams(displayParams);
     fDisplay = fWindow->getRequestedDisplayParams();
@@ -1799,6 +1807,10 @@ void Viewer::drawSlide(SkSurface* surface) {
             fSlides[fCurrentSlide]->draw(slideCanvas);
         }
     }
+#if defined(SK_GRAPHITE)
+    // Finish flushing Tasks to Recorder
+    skgpu::graphite::Flush(slideSurface);
+#endif
     fStatsLayer.endTiming(fPaintTimer);
     slideCanvas->restoreToCount(count);
 
@@ -1812,7 +1824,12 @@ void Viewer::drawSlide(SkSurface* surface) {
 
     // Force a flush so we can time that, too
     fStatsLayer.beginTiming(fFlushTimer);
-    skgpu::FlushAndSubmit(slideSurface);
+#if defined(SK_GANESH)
+    skgpu::ganesh::FlushAndSubmit(slideSurface);
+#endif
+#if defined(SK_GRAPHITE)
+    fWindow->snapRecordingAndSubmit();
+#endif
     fStatsLayer.endTiming(fFlushTimer);
 
     // If we rendered offscreen, snap an image and push the results to the window's canvas

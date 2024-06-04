@@ -45,9 +45,7 @@ wgpu::RenderPipeline create_blit_render_pipeline(const DawnSharedContext* shared
                                                  wgpu::TextureFormat renderPassDepthStencilFormat,
                                                  int numSamples) {
     wgpu::RenderPipelineDescriptor descriptor;
-#if defined(SK_DEBUG)
     descriptor.label = label;
-#endif
     descriptor.layout = nullptr;
 
     wgpu::ColorTargetState colorTarget;
@@ -222,17 +220,25 @@ sk_sp<Texture> DawnResourceProvider::createWrappedTexture(const BackendTexture& 
         return {};
     }
 
+    sk_sp<Texture> wrappedTexture;
+    std::string_view label;
     if (dawnTexture) {
-        return DawnTexture::MakeWrapped(this->dawnSharedContext(),
-                                        texture.dimensions(),
-                                        texture.info(),
-                                        std::move(dawnTexture));
+        wrappedTexture = DawnTexture::MakeWrapped(this->dawnSharedContext(),
+                                                  texture.dimensions(),
+                                                  texture.info(),
+                                                  std::move(dawnTexture));
+        label = "WrappedTexture";
     } else {
-        return DawnTexture::MakeWrapped(this->dawnSharedContext(),
-                                        texture.dimensions(),
-                                        texture.info(),
-                                        std::move(dawnTextureView));
+        wrappedTexture = DawnTexture::MakeWrapped(this->dawnSharedContext(),
+                                                  texture.dimensions(),
+                                                  texture.info(),
+                                                  std::move(dawnTextureView));
+        label = "WrappedTextureView";
     }
+    if (wrappedTexture) {
+        wrappedTexture->setLabel(std::move(label));
+    }
+    return wrappedTexture;
 }
 
 sk_sp<DawnTexture> DawnResourceProvider::findOrCreateDiscardableMSAALoadTexture(
@@ -279,18 +285,16 @@ sk_sp<ComputePipeline> DawnResourceProvider::createComputePipeline(
 sk_sp<Texture> DawnResourceProvider::createTexture(SkISize dimensions,
                                                    const TextureInfo& info,
                                                    skgpu::Budgeted budgeted) {
-    return DawnTexture::Make(this->dawnSharedContext(), dimensions, info, budgeted);
+    return DawnTexture::Make(this->dawnSharedContext(),
+                             dimensions,
+                             info,
+                             budgeted);
 }
 
 sk_sp<Buffer> DawnResourceProvider::createBuffer(size_t size,
                                                  BufferType type,
-                                                 AccessPattern accessPattern,
-                                                 std::string_view label) {
-    return DawnBuffer::Make(this->dawnSharedContext(),
-                            size,
-                            type,
-                            accessPattern,
-                            std::move(label));
+                                                 AccessPattern accessPattern) {
+    return DawnBuffer::Make(this->dawnSharedContext(), size, type, accessPattern);
 }
 
 sk_sp<Sampler> DawnResourceProvider::createSampler(const SamplerDesc& samplerDesc) {
@@ -371,9 +375,9 @@ const wgpu::BindGroupLayout& DawnResourceProvider::getOrCreateUniformBuffersBind
     entries[2].buffer.minBindingSize = 0;
 
     wgpu::BindGroupLayoutDescriptor groupLayoutDesc;
-#if defined(SK_DEBUG)
-    groupLayoutDesc.label = "Uniform buffers bind group layout";
-#endif
+    if (fSharedContext->caps()->setBackendLabels()) {
+        groupLayoutDesc.label = "Uniform buffers bind group layout";
+    }
 
     groupLayoutDesc.entryCount = entries.size();
     groupLayoutDesc.entries = entries.data();
@@ -402,9 +406,9 @@ DawnResourceProvider::getOrCreateSingleTextureSamplerBindGroupLayout() {
     entries[1].texture.multisampled = false;
 
     wgpu::BindGroupLayoutDescriptor groupLayoutDesc;
-#if defined(SK_DEBUG)
-    groupLayoutDesc.label = "Single texture + sampler bind group layout";
-#endif
+    if (fSharedContext->caps()->setBackendLabels()) {
+        groupLayoutDesc.label = "Single texture + sampler bind group layout";
+    }
 
     groupLayoutDesc.entryCount = entries.size();
     groupLayoutDesc.entries = entries.data();
@@ -417,9 +421,9 @@ DawnResourceProvider::getOrCreateSingleTextureSamplerBindGroupLayout() {
 const wgpu::Buffer& DawnResourceProvider::getOrCreateNullBuffer() {
     if (!fNullBuffer) {
         wgpu::BufferDescriptor desc;
-#if defined(SK_DEBUG)
-        desc.label = "UnusedBufferSlot";
-#endif
+        if (fSharedContext->caps()->setBackendLabels()) {
+            desc.label = "UnusedBufferSlot";
+        }
         desc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Uniform |
                      wgpu::BufferUsage::Storage;
         desc.size = kBufferBindingSizeAlignment;

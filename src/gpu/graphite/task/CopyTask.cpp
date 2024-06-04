@@ -45,6 +45,7 @@ CopyBufferToBufferTask::CopyBufferToBufferTask(const Buffer* srcBuffer,
 CopyBufferToBufferTask::~CopyBufferToBufferTask() = default;
 
 Task::Status CopyBufferToBufferTask::prepareResources(ResourceProvider*,
+                                                      ScratchResourceManager*,
                                                       const RuntimeEffectDictionary*) {
     return Status::kSuccess;
 }
@@ -64,6 +65,9 @@ sk_sp<CopyTextureToBufferTask> CopyTextureToBufferTask::Make(sk_sp<TextureProxy>
                                                              sk_sp<Buffer> buffer,
                                                              size_t bufferOffset,
                                                              size_t bufferRowBytes) {
+    if (!textureProxy) {
+        return nullptr;
+    }
     return sk_sp<CopyTextureToBufferTask>(new CopyTextureToBufferTask(std::move(textureProxy),
                                                                       srcRect,
                                                                       std::move(buffer),
@@ -86,15 +90,15 @@ CopyTextureToBufferTask::CopyTextureToBufferTask(sk_sp<TextureProxy> textureProx
 CopyTextureToBufferTask::~CopyTextureToBufferTask() {}
 
 Task::Status CopyTextureToBufferTask::prepareResources(ResourceProvider* resourceProvider,
+                                                       ScratchResourceManager*,
                                                        const RuntimeEffectDictionary*) {
-    if (!fTextureProxy) {
-        SKGPU_LOG_E("No texture proxy specified for CopyTextureToBufferTask");
-        return Status::kFail;
-    }
-    if (!TextureProxy::InstantiateIfNotLazy(resourceProvider, fTextureProxy.get())) {
-        SKGPU_LOG_E("Could not instantiate texture proxy for CopyTextureToBufferTask!");
-        return Status::kFail;
-    }
+    // If the source texture hasn't been instantiated yet, it means there was no prior task that
+    // could have initialized its contents so a readback to a buffer does not make sense.
+    SkASSERT(fTextureProxy->isInstantiated() || fTextureProxy->isLazy());
+    // TODO: The copy is also a consumer of the source, so it should participate in returning
+    // scratch resources like RenderPassTask does. For now, though, all copy tasks side step reuse
+    // entirely and they cannot participate until they've been moved into scoping tasks like
+    // DrawTask first.
     return Status::kSuccess;
 }
 
@@ -121,6 +125,9 @@ sk_sp<CopyTextureToTextureTask> CopyTextureToTextureTask::Make(sk_sp<TextureProx
                                                                sk_sp<TextureProxy> dstProxy,
                                                                SkIPoint dstPoint,
                                                                int dstLevel) {
+    if (!srcProxy || !dstProxy) {
+        return nullptr;
+    }
     return sk_sp<CopyTextureToTextureTask>(new CopyTextureToTextureTask(std::move(srcProxy),
                                                                         srcRect,
                                                                         std::move(dstProxy),
@@ -142,19 +149,27 @@ CopyTextureToTextureTask::CopyTextureToTextureTask(sk_sp<TextureProxy> srcProxy,
 CopyTextureToTextureTask::~CopyTextureToTextureTask() {}
 
 Task::Status CopyTextureToTextureTask::prepareResources(ResourceProvider* resourceProvider,
+                                                        ScratchResourceManager*,
                                                         const RuntimeEffectDictionary*) {
-    if (!fSrcProxy) {
-        SKGPU_LOG_E("No src texture proxy specified for CopyTextureToTextureTask");
-        return Status::kFail;
-    }
-    if (!TextureProxy::InstantiateIfNotLazy(resourceProvider, fSrcProxy.get())) {
-        SKGPU_LOG_E("Could not instantiate src texture proxy for CopyTextureToTextureTask!");
-        return Status::kFail;
-    }
-    if (!fDstProxy) {
-        SKGPU_LOG_E("No dst texture proxy specified for CopyTextureToTextureTask");
-        return Status::kFail;
-    }
+    // Do not instantiate the src proxy. If the source texture hasn't been instantiated yet, it
+    // means there was no prior task that could have initialized its contents so propagating the
+    // undefined contents to the dst does not make sense.
+    // TODO(b/333729316): Assert that fSrcProxy is instantiated or lazy; right now it may not be
+    // instantatiated if this is a dst readback copy for a scratch Device. In that case, a
+    // RenderPassTask will immediately follow this copy task and instantiate the source proxy so
+    // that addCommands() has a texture to operate on. That said, the texture's contents will be
+    // undefined when the copy is executed ideally it just shouldn't happen.
+
+    // TODO: The copy is also a consumer of the source, so it should participate in returning
+    // scratch resources like RenderPassTask does. For now, though, all copy tasks side step reuse
+    // entirely and they cannot participate until they've been moved into scoping tasks like
+    // DrawTask first. In particular, for texture-to-texture copies, they should be scoped to not
+    // invoke pending listeners for a subsequent RenderPassTask.
+
+    // TODO: Use the scratch resource manager to instantiate fDstProxy, although the details of when
+    // that texture can be returned need to be worked out. While brittle, all current use cases
+    // of scratch texture-to-texture copies have the dst used immediately by the next task, so it
+    // could just add a pending listener that returns the texture w/o any read counting.
     if (!TextureProxy::InstantiateIfNotLazy(resourceProvider, fDstProxy.get())) {
         SKGPU_LOG_E("Could not instantiate dst texture proxy for CopyTextureToTextureTask!");
         return Status::kFail;
@@ -165,7 +180,9 @@ Task::Status CopyTextureToTextureTask::prepareResources(ResourceProvider* resour
 Task::Status CopyTextureToTextureTask::addCommands(Context*,
                                                    CommandBuffer* commandBuffer,
                                                    ReplayTargetData) {
-
+    // prepareResources() doesn't instantiate the source assuming that a prior task will have do so
+    // as part of initializing the texture contents.
+    SkASSERT(fSrcProxy->isInstantiated());
     if (commandBuffer->copyTextureToTexture(fSrcProxy->refTexture(),
                                             fSrcRect,
                                             fDstProxy->refTexture(),

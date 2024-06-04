@@ -43,7 +43,6 @@ skia_cc_library(
     name = "skia_public",
     srcs = [
         "//include:private_hdrs",
-        "//include:srcs",
         "//src:private_hdrs",
         "//src:srcs",
     ],
@@ -65,7 +64,6 @@ skia_cc_library(
 skia_cc_library(
     name = "skia_internal",
     srcs = [
-        "//include:srcs",
         "//src:srcs",
     ],
     hdrs = [
@@ -252,6 +250,12 @@ alias(
 )
 
 alias(
+    name = "fontmgr_directory_freetype",
+    actual = "//src/ports:fontmgr_directory_freetype",
+    visibility = ["//visibility:public"],
+)
+
+alias(
     name = "fontmgr_fontconfig_freetype",
     actual = "//src/ports:fontmgr_fontconfig_freetype",
     visibility = ["//visibility:public"],
@@ -307,9 +311,17 @@ alias(
 
 ###
 
+# Allows Skia to take an SVG in as an input
 alias(
     name = "svg_renderer",
     actual = "//modules/svg:svg_renderer",
+    visibility = ["//visibility:public"],
+)
+
+# Allows Skia to draw to an SVG
+alias(
+    name = "svg_writer",
+    actual = "//src/svg:svg",
     visibility = ["//visibility:public"],
 )
 

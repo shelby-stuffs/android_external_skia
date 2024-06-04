@@ -11,6 +11,8 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImageInfo.h"
+#include "include/core/SkM44.h"
+#include "include/core/SkScalar.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/graphite/Surface.h"
 #include "src/base/SkHalf.h"
@@ -35,6 +37,7 @@
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/DrawContext.h"
+#include "src/gpu/graphite/Image_Base_Graphite.h"
 #include "src/gpu/graphite/Image_Graphite.h"
 #include "src/gpu/graphite/Image_YUVA_Graphite.h"
 #include "src/gpu/graphite/KeyContext.h"
@@ -48,6 +51,7 @@
 #include "src/gpu/graphite/ResourceProvider.h"
 #include "src/gpu/graphite/RuntimeEffectDictionary.h"
 #include "src/gpu/graphite/ShaderCodeDictionary.h"
+#include "src/gpu/graphite/Surface_Graphite.h"
 #include "src/gpu/graphite/Texture.h"
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/TextureProxyView.h"
@@ -1247,7 +1251,8 @@ static void add_to_key(const KeyContext& keyContext,
     SkASSERT(filter);
 
     sk_sp<TextureProxy> proxy = RecorderPriv::CreateCachedProxy(keyContext.recorder(),
-                                                                filter->bitmap());
+                                                                filter->bitmap(),
+                                                                "TableColorFilterTexture");
     if (!proxy) {
         SKGPU_LOG_W("Couldn't create TableColorFilter's table");
 
@@ -1454,8 +1459,9 @@ static void add_to_key(const KeyContext& keyContext,
 
     CoordClampShaderBlock::CoordClampData data(shader->subset());
 
+    KeyContextWithCoordClamp childContext(keyContext);
     CoordClampShaderBlock::BeginBlock(keyContext, builder, gatherer, data);
-        AddToKey(keyContext, builder, gatherer, shader->shader().get());
+    AddToKey(childContext, builder, gatherer, shader->shader().get());
     builder->endBlock();
 }
 static void notify_in_use(Recorder* recorder,
@@ -1535,22 +1541,37 @@ static void add_yuv_image_to_key(const KeyContext& keyContext,
             // Consider a logical image pixel at the edge of the subset. When computing the logical
             // pixel color value we should use a blend of two values from the subsampled plane.
             // Depending on where the subset edge falls in actual subsampled plane, one of those
-            // values may come from outside the subset. Hence, we use this custom inset which
-            // applies the wrap mode to the subset but allows linear filtering to read pixels from
-            // that are just outside the subset. We only want to apply this offset in non-decal
-            // modes, or when the image view size is not a multiple of the UV subsampling factor.
-            if (imgData.fTileModes[0] != SkTileMode::kDecal ||
-                view.dimensions().width()*ssx > yuvaInfo.width()) {
-                imgData.fLinearFilterUVInset.fX = 1.f/(2*ssx);
-            }
-            if (imgData.fTileModes[1] != SkTileMode::kDecal ||
-                view.dimensions().height()*ssy > yuvaInfo.height()) {
-                imgData.fLinearFilterUVInset.fY = 1.f/(2*ssy);
-            }
+            // values may come from outside the subset. Hence, we will use the default inset
+            // in Y texel space of 1/2. This applies the wrap mode to the subset but allows
+            // linear filtering to read pixels that are just outside the subset.
+            imgData.fLinearFilterUVInset.fX = 0.5f;
+            imgData.fLinearFilterUVInset.fY = 0.5f;
+        } else if (imgData.fSampling.filter == SkFilterMode::kLinear) {
+            // We need to inset so that we aren't sampling outside the subset, but no farther.
+            // Start by mapping the subset to UV texel space
+            float scaleX = 1.f/ssx;
+            float scaleY = 1.f/ssy;
+            SkRect subsetUV = {imgData.fSubset.fLeft  *scaleX,
+                               imgData.fSubset.fTop   *scaleY,
+                               imgData.fSubset.fRight *scaleX,
+                               imgData.fSubset.fBottom*scaleY};
+            // Round to UV texel borders
+            SkIRect iSubsetUV = subsetUV.roundOut();
+            // Inset in UV and map back to Y texel space. This gives us the largest possible
+            // inset rectangle that will not sample outside of the subset texels in UV space.
+            SkRect insetRectUV = {(iSubsetUV.fLeft  +0.5f)*ssx,
+                                  (iSubsetUV.fTop   +0.5f)*ssy,
+                                  (iSubsetUV.fRight -0.5f)*ssx,
+                                  (iSubsetUV.fBottom-0.5f)*ssy};
+            // Compute intersection with original inset
+            SkRect insetRect = imgData.fSubset.makeOutset(-0.5f, -0.5f);
+            (void) insetRect.intersect(insetRectUV);
+            // Compute max inset values to ensure we always remain within the subset.
+            imgData.fLinearFilterUVInset = {std::max(insetRect.fLeft - imgData.fSubset.fLeft,
+                                                     imgData.fSubset.fRight - insetRect.fRight),
+                                            std::max(insetRect.fTop - imgData.fSubset.fTop,
+                                                     imgData.fSubset.fBottom - insetRect.fBottom)};
         }
-        // Need to scale this just like we scale the image size
-        imgData.fLinearFilterUVInset = {imgData.fLinearFilterUVInset.fX*ssx,
-                                        imgData.fLinearFilterUVInset.fY*ssy};
     }
 
     float yuvM[20];
@@ -1628,6 +1649,23 @@ static void add_to_key(const KeyContext& keyContext,
         builder->addBlock(BuiltInCodeSnippetID::kError);
         return;
     }
+    if (!as_IB(shader->image())->isGraphiteBacked()) {
+        // GetGraphiteBacked() created a new image (or fetched a cached image) from the client
+        // image provider. This image was not available when NotifyInUse() visited the shader tree,
+        // so call notify again. These images shouldn't really be producing new tasks since it's
+        // unlikely that a client will be fulfilling with a dynamic image that wraps a long-lived
+        // SkSurface. However, the images can be linked to a surface that rendered the initial
+        // content and not calling notifyInUse() prevents unlinking the image from the Device.
+        // If the client image provider then holds on to many of these images, the leaked Device and
+        // DrawContext memory can be surprisingly high. b/338453542.
+        // TODO (b/330864257): Once paint keys are extracted at draw time, AddToKey() will be
+        // fully responsible for notifyInUse() calls and then we can simply always call this on
+        // `imageToDraw`. The DrawContext that samples the image will also be available to AddToKey
+        // so we won't have to pass in nullptr.
+        SkASSERT(as_IB(imageToDraw)->isGraphiteBacked());
+        static_cast<Image_Base*>(imageToDraw.get())->notifyInUse(keyContext.recorder(),
+                                                                 /*drawContext=*/nullptr);
+    }
     if (as_IB(imageToDraw)->isYUVA()) {
         return add_yuv_image_to_key(keyContext,
                                       builder,
@@ -1646,7 +1684,27 @@ static void add_to_key(const KeyContext& keyContext,
                                         view.proxy()->dimensions(),
                                         shader->subset(),
                                         ReadSwizzle::kRGBA);
-    imgData.fSampling = newSampling;
+
+    // Here we detect pixel aligned blit-like image draws. Some devices have low precision filtering
+    // and will produce degraded (blurry) images unexpectedly for sequential exact pixel blits when
+    // not using nearest filtering. This is common for canvas scrolling implementations. Forcing
+    // nearest filtering when possible can also be a minor perf/power optimization depending on the
+    // hardware.
+    bool samplingHasNoEffect = false;
+    // Cubic sampling is will not filter the same as nearest even when pixel aligned.
+    if (keyContext.optimizeSampling() == KeyContext::OptimizeSampling::kYes &&
+        !newSampling.useCubic) {
+        SkMatrix totalM = keyContext.local2Dev().asM33();
+        if (keyContext.localMatrix()) {
+            totalM.preConcat(*keyContext.localMatrix());
+        }
+        totalM.normalizePerspective();
+        // The matrix should be translation with only pixel aligned 2d translation.
+        samplingHasNoEffect = totalM.isTranslate() && SkScalarIsInt(totalM.getTranslateX()) &&
+                              SkScalarIsInt(totalM.getTranslateY());
+    }
+
+    imgData.fSampling = samplingHasNoEffect ? SkFilterMode::kNearest : newSampling;
     imgData.fTextureProxy = view.refProxy();
     skgpu::Swizzle readSwizzle = view.swizzle();
     // If the color type is alpha-only, propagate the alpha value to the other channels.
@@ -1679,7 +1737,7 @@ static void add_to_key(const KeyContext& keyContext,
     ImageShaderBlock::AddBlock(keyContext, builder, gatherer, imgData);
 }
 static void notify_in_use(Recorder* recorder,
-                          DrawContext*,
+                          DrawContext* drawContext,
                           const SkImageShader* shader) {
     auto image = as_IB(shader->image());
     if (!image->isGraphiteBacked()) {
@@ -1687,9 +1745,7 @@ static void notify_in_use(Recorder* recorder,
         return;
     }
 
-    // TODO(b/323887207): Once scratch devices are linked to special images and their use needs to
-    // be linked to specific draw contexts, that will be passed in here.
-    static_cast<Image_Base*>(image)->notifyInUse(recorder);
+    static_cast<Image_Base*>(image)->notifyInUse(recorder, drawContext);
 }
 
 static void add_to_key(const KeyContext& keyContext,
@@ -1754,11 +1810,14 @@ static void add_to_key(const KeyContext& keyContext,
     std::unique_ptr<SkPerlinNoiseShader::PaintingData> paintingData = shader->getPaintingData();
     paintingData->generateBitmaps();
 
-    sk_sp<TextureProxy> perm = RecorderPriv::CreateCachedProxy(
-            keyContext.recorder(), paintingData->getPermutationsBitmap());
+    sk_sp<TextureProxy> perm =
+            RecorderPriv::CreateCachedProxy(keyContext.recorder(),
+                                            paintingData->getPermutationsBitmap(),
+                                            "PerlinNoisePermTable");
 
     sk_sp<TextureProxy> noise =
-            RecorderPriv::CreateCachedProxy(keyContext.recorder(), paintingData->getNoiseBitmap());
+            RecorderPriv::CreateCachedProxy(keyContext.recorder(), paintingData->getNoiseBitmap(),
+                                            "PerlinNoiseNoiseTable");
 
     if (!perm || !noise) {
         SKGPU_LOG_W("Couldn't create tables for PerlinNoiseShader");
@@ -1810,12 +1869,34 @@ static void add_to_key(const KeyContext& keyContext,
         return;
     }
 
+    // NOTE: While this is intended to be a "scratch" surface, we don't use MakeScratch() because
+    // the SkPicture could contain arbitrary operations that rely on the Recorder's atlases, which
+    // means the Surface's device has to participate in flushing when the atlas fills up.
+    // TODO: Can this be an approx-fit image that's generated?
     // TODO: right now we're explicitly not caching here. We could expand the ImageProvider
     // API to include already Graphite-backed images, add a Recorder-local cache or add
     // rendered-picture images to the global cache.
-    sk_sp<SkImage> img = info.makeImage(
-            SkSurfaces::RenderTarget(recorder, info.imageInfo, skgpu::Mipmapped::kNo, &info.props),
-            shader->picture().get());
+    sk_sp<Surface> surface = Surface::Make(recorder,
+                                           info.imageInfo,
+                                           "PictureShaderTexture",
+                                           Budgeted::kYes,
+                                           Mipmapped::kNo,
+                                           SkBackingFit::kExact,
+                                           &info.props);
+    if (!surface) {
+        SKGPU_LOG_W("Could not create surface to render PictureShader");
+        builder->addBlock(BuiltInCodeSnippetID::kError);
+        return;
+    }
+
+    // NOTE: Don't call CachedImageInfo::makeImage() since that uses the legacy makeImageSnapshot()
+    // API, which results in an extra texture copy on a Graphite Surface.
+    surface->getCanvas()->concat(info.matrixForDraw);
+    surface->getCanvas()->drawPicture(shader->picture().get());
+    sk_sp<SkImage> img = SkSurfaces::AsImage(std::move(surface));
+    // TODO: 'img' did not exist when notify_in_use() was called, but ideally the DrawTask to render
+    // into 'surface' would be a child of the current device. While we push all tasks to the root
+    // list this works out okay, but will need to be addressed before we move off that system.
     if (!img) {
         SKGPU_LOG_W("Couldn't create SkImage for PictureShader");
         builder->addBlock(BuiltInCodeSnippetID::kError);
@@ -2041,7 +2122,8 @@ static void add_gradient_to_key(const KeyContext& keyContext,
             shader->setCachedBitmap(colorsAndOffsetsBitmap);
         }
 
-        proxy = RecorderPriv::CreateCachedProxy(keyContext.recorder(), shader->cachedBitmap());
+        proxy = RecorderPriv::CreateCachedProxy(keyContext.recorder(), shader->cachedBitmap(),
+                                                "GradientTexture");
         if (!proxy) {
             SKGPU_LOG_W("Couldn't create GradientShader's color and offset bitmap proxy");
             builder->addBlock(BuiltInCodeSnippetID::kError);

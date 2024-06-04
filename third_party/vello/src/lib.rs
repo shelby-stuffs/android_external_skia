@@ -226,6 +226,7 @@ mod ffi {
         );
         fn begin_clip(self: &mut Encoding, transform: Affine, path_iter: Pin<&mut PathIterator>);
         fn end_clip(self: &mut Encoding);
+        fn append(self: &mut Encoding, other: &Encoding);
         fn prepare_render(
             self: &Encoding,
             width: u32,
@@ -233,7 +234,7 @@ mod ffi {
             background: &Color,
         ) -> Box<RenderConfiguration>;
 
-        /// The resolved scene encoding metadata that can be used to initiate pipeline dispatches.
+        /// Resolved scene encoding metadata that can be used to initiate pipeline dispatches.
         type RenderConfiguration;
         fn config_uniform_buffer_size(self: &RenderConfiguration) -> usize;
         fn scene_buffer_size(self: &RenderConfiguration) -> usize;

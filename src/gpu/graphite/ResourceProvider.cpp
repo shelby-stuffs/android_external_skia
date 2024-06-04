@@ -97,6 +97,7 @@ sk_sp<ComputePipeline> ResourceProvider::findOrCreateComputePipeline(
 
 sk_sp<Texture> ResourceProvider::findOrCreateScratchTexture(SkISize dimensions,
                                                             const TextureInfo& info,
+                                                            std::string_view label,
                                                             skgpu::Budgeted budgeted) {
     SkASSERT(info.isValid());
 
@@ -106,7 +107,11 @@ sk_sp<Texture> ResourceProvider::findOrCreateScratchTexture(SkISize dimensions,
     // Scratch textures are not shareable
     fSharedContext->caps()->buildKeyForTexture(dimensions, info, kType, Shareable::kNo, &key);
 
-    return this->findOrCreateTextureWithKey(dimensions, info, key, budgeted);
+    return this->findOrCreateTextureWithKey(dimensions,
+                                            info,
+                                            key,
+                                            std::move(label),
+                                            budgeted);
 }
 
 sk_sp<Texture> ResourceProvider::findOrCreateDepthStencilAttachment(SkISize dimensions,
@@ -121,7 +126,11 @@ sk_sp<Texture> ResourceProvider::findOrCreateDepthStencilAttachment(SkISize dime
     // stomping on each other's data.
     fSharedContext->caps()->buildKeyForTexture(dimensions, info, kType, Shareable::kYes, &key);
 
-    return this->findOrCreateTextureWithKey(dimensions, info, key, skgpu::Budgeted::kYes);
+    return this->findOrCreateTextureWithKey(dimensions,
+                                            info,
+                                            key,
+                                            "DepthStencilAttachment",
+                                            skgpu::Budgeted::kYes);
 }
 
 sk_sp<Texture> ResourceProvider::findOrCreateDiscardableMSAAAttachment(SkISize dimensions,
@@ -138,18 +147,24 @@ sk_sp<Texture> ResourceProvider::findOrCreateDiscardableMSAAAttachment(SkISize d
     // render pass.
     fSharedContext->caps()->buildKeyForTexture(dimensions, info, kType, Shareable::kYes, &key);
 
-    return this->findOrCreateTextureWithKey(dimensions, info, key, skgpu::Budgeted::kYes);
+    return this->findOrCreateTextureWithKey(dimensions,
+                                            info,
+                                            key,
+                                            "DiscardableMSAAAttachment",
+                                            skgpu::Budgeted::kYes);
 }
 
 sk_sp<Texture> ResourceProvider::findOrCreateTextureWithKey(SkISize dimensions,
                                                             const TextureInfo& info,
                                                             const GraphiteResourceKey& key,
+                                                            std::string_view label,
                                                             skgpu::Budgeted budgeted) {
     // If the resource is shareable it should be budgeted since it shouldn't be backing any client
     // owned object.
     SkASSERT(key.shareable() == Shareable::kNo || budgeted == skgpu::Budgeted::kYes);
 
     if (Resource* resource = fResourceCache->findAndRefResource(key, budgeted)) {
+        resource->setLabel(std::move(label));
         return sk_sp<Texture>(static_cast<Texture*>(resource));
     }
 
@@ -159,19 +174,20 @@ sk_sp<Texture> ResourceProvider::findOrCreateTextureWithKey(SkISize dimensions,
     }
 
     tex->setKey(key);
+    tex->setLabel(std::move(label));
     fResourceCache->insertResource(tex.get());
 
     return tex;
 }
 
-sk_sp<Sampler> ResourceProvider::findOrCreateCompatibleSampler(const SamplerDesc& desc) {
-    GraphiteResourceKey key = fSharedContext->caps()->makeSamplerKey(desc);
+sk_sp<Sampler> ResourceProvider::findOrCreateCompatibleSampler(const SamplerDesc& samplerDesc) {
+    GraphiteResourceKey key = fSharedContext->caps()->makeSamplerKey(samplerDesc);
 
     if (Resource* resource = fResourceCache->findAndRefResource(key, skgpu::Budgeted::kYes)) {
         return sk_sp<Sampler>(static_cast<Sampler*>(resource));
     }
 
-    sk_sp<Sampler> sampler = this->createSampler(desc);
+    sk_sp<Sampler> sampler = this->createSampler(samplerDesc);
     if (!sampler) {
         return nullptr;
     }
@@ -218,12 +234,13 @@ sk_sp<Buffer> ResourceProvider::findOrCreateBuffer(size_t size,
         resource->setLabel(std::move(label));
         return sk_sp<Buffer>(static_cast<Buffer*>(resource));
     }
-    auto buffer = this->createBuffer(size, type, accessPattern, std::move(label));
+    auto buffer = this->createBuffer(size, type, accessPattern);
     if (!buffer) {
         return nullptr;
     }
 
     buffer->setKey(key);
+    buffer->setLabel(std::move(label));
     fResourceCache->insertResource(buffer.get());
     return buffer;
 }
