@@ -155,7 +155,7 @@ sk_sp<Texture> VulkanTexture::Make(const VulkanSharedContext* sharedContext,
     if (!MakeVkImage(sharedContext, dimensions, info, &imageInfo)) {
         return nullptr;
     }
-    auto ycbcrConversion = resourceProvider->findOrCreateCompatibleSamplerYcbcrConversion(
+    auto ycbcrConversion = resourceProvider->findOrCreateCompatibleYcbcrConversion(
             info.vulkanTextureSpec().fYcbcrConversionInfo);
 
     return sk_sp<Texture>(new VulkanTexture(sharedContext,
@@ -176,7 +176,7 @@ sk_sp<Texture> VulkanTexture::MakeWrapped(const VulkanSharedContext* sharedConte
                                           sk_sp<MutableTextureState> mutableState,
                                           VkImage image,
                                           const VulkanAlloc& alloc) {
-    auto ycbcrConversion = resourceProvider->findOrCreateCompatibleSamplerYcbcrConversion(
+    auto ycbcrConversion = resourceProvider->findOrCreateCompatibleYcbcrConversion(
             info.vulkanTextureSpec().fYcbcrConversionInfo);
 
     return sk_sp<Texture>(new VulkanTexture(sharedContext,
@@ -194,6 +194,10 @@ VkImageAspectFlags vk_format_to_aspect_flags(VkFormat format) {
     switch (format) {
         case VK_FORMAT_S8_UINT:
             return VK_IMAGE_ASPECT_STENCIL_BIT;
+        case VK_FORMAT_D16_UNORM:
+            [[fallthrough]];
+        case VK_FORMAT_D32_SFLOAT:
+            return VK_IMAGE_ASPECT_DEPTH_BIT;
         case VK_FORMAT_D24_UNORM_S8_UINT:
             [[fallthrough]];
         case VK_FORMAT_D32_SFLOAT_S8_UINT:
@@ -312,11 +316,11 @@ VulkanTexture::VulkanTexture(const VulkanSharedContext* sharedContext,
                              const VulkanAlloc& alloc,
                              Ownership ownership,
                              skgpu::Budgeted budgeted,
-                             sk_sp<VulkanSamplerYcbcrConversion> ycbcrConversion)
+                             sk_sp<VulkanYcbcrConversion> ycbcrConversion)
         : Texture(sharedContext, dimensions, info, std::move(mutableState), ownership, budgeted)
         , fImage(image)
         , fMemoryAlloc(alloc)
-        , fSamplerYcbcrConversion(std::move(ycbcrConversion)) {}
+        , fYcbcrConversion(std::move(ycbcrConversion)) {}
 
 void VulkanTexture::freeGpuData() {
     // Need to delete any ImageViews first
@@ -417,7 +421,7 @@ const VulkanImageView* VulkanTexture::getImageView(VulkanImageView::Usage usage)
                                            vkTexInfo.fFormat,
                                            usage,
                                            miplevels,
-                                           fSamplerYcbcrConversion);
+                                           fYcbcrConversion);
     return fImageViews.push_back(std::move(imageView)).get();
 }
 

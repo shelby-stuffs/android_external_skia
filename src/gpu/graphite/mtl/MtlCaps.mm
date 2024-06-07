@@ -30,120 +30,11 @@ MtlCaps::MtlCaps(const id<MTLDevice> device, const ContextOptions& options)
     this->initCaps(device);
     this->initShaderCaps();
 
-    this->initFormatTable();
+    this->initFormatTable(device);
 
     // Metal-specific MtlCaps
 
     this->finishInitialization(options);
-}
-
-// translates from older MTLFeatureSet interface to MTLGPUFamily interface
-bool MtlCaps::GetGPUFamilyFromFeatureSet(id<MTLDevice> device, GPUFamily* gpuFamily, int* group) {
-// MTLFeatureSet is deprecated for newer versions of the SDK
-#if SKGPU_GRAPHITE_METAL_SDK_VERSION < 300
-
-#if defined(SK_BUILD_FOR_MAC)
-    // Apple Silicon is only available in later OSes
-    *gpuFamily = GPUFamily::kMac;
-    // Mac OSX 14
-    if (@available(macOS 10.14, *)) {
-        if ([device supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily2_v1]) {
-            *group = 2;
-            return true;
-        }
-        if ([device supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v4]) {
-            *group = 1;
-            return true;
-        }
-    }
-    // Mac OSX 13
-    if (@available(macOS 10.13, *)) {
-        if ([device supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v3]) {
-            *group = 1;
-            return true;
-        }
-    }
-    // Mac OSX 12
-    if (@available(macOS 10.12, *)) {
-        if ([device supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v2]) {
-            *group = 1;
-            return true;
-        }
-    }
-    // Mac OSX 11
-    if (@available(macOS 10.11, *)) {
-        if ([device supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v1]) {
-            *group = 1;
-            return true;
-        }
-    }
-#elif defined(SK_BUILD_FOR_IOS)
-    // TODO: support tvOS
-   *gpuFamily = GPUFamily::kApple;
-    // iOS 12
-    if (@available(iOS 12.0, tvOS 12.0, *)) {
-        if ([device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily5_v1]) {
-            *group = 5;
-            return true;
-        }
-        if ([device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily4_v2]) {
-            *group = 4;
-            return true;
-        }
-        if ([device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v4]) {
-            *group = 3;
-            return true;
-        }
-        if ([device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily2_v5]) {
-            *group = 2;
-            return true;
-        }
-        if ([device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily1_v5]) {
-            *group = 1;
-            return true;
-        }
-    }
-    // iOS 11
-    if (@available(iOS 11.0, tvOS 11.0, *)) {
-        if ([device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily4_v1]) {
-            *group = 4;
-            return true;
-        }
-        if ([device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v3]) {
-            *group = 3;
-            return true;
-        }
-        if ([device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily2_v4]) {
-            *group = 2;
-            return true;
-        }
-        if ([device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily1_v4]) {
-            *group = 1;
-            return true;
-        }
-    }
-    // iOS 10
-    if (@available(iOS 10.0, tvOS 10.0, *)) {
-        if ([device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v2]) {
-            *group = 3;
-            return true;
-        }
-        if ([device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily2_v3]) {
-            *group = 2;
-            return true;
-        }
-        if ([device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily1_v3]) {
-            *group = 1;
-            return true;
-        }
-    }
-    // We don't support earlier OSes
-#endif
-
-#endif // SKGPU_GRAPHITE_METAL_SDK_VERSION < 300
-
-    // No supported GPU families were found
-    return false;
 }
 
 bool MtlCaps::GetGPUFamily(id<MTLDevice> device, GPUFamily* gpuFamily, int* group) {
@@ -223,10 +114,6 @@ bool MtlCaps::GetGPUFamily(id<MTLDevice> device, GPUFamily* gpuFamily, int* grou
 void MtlCaps::initGPUFamily(id<MTLDevice> device) {
     if (@available(macOS 10.15, iOS 13.0, tvOS 13.0, *)) {
         if (GetGPUFamily(device, &fGPUFamily, &fFamilyGroup)) {
-            return;
-        }
-    } else {
-        if (GetGPUFamilyFromFeatureSet(device, &fGPUFamily, &fFamilyGroup)) {
             return;
         }
     }
@@ -359,7 +246,11 @@ static constexpr MTLPixelFormat kMtlFormats[] = {
     MTLPixelFormatRG16Float,
 
     MTLPixelFormatStencil8,
+    MTLPixelFormatDepth16Unorm,
     MTLPixelFormatDepth32Float,
+#ifdef SK_BUILD_FOR_MAC
+    MTLPixelFormatDepth24Unorm_Stencil8,
+#endif
     MTLPixelFormatDepth32Float_Stencil8,
 
     MTLPixelFormatInvalid,
@@ -389,7 +280,7 @@ size_t MtlCaps::GetFormatIndex(MTLPixelFormat pixelFormat) {
     return GetFormatIndex(MTLPixelFormatInvalid);
 }
 
-void MtlCaps::initFormatTable() {
+void MtlCaps::initFormatTable(const id<MTLDevice> device) {
     FormatInfo* info;
 
     if (@available(macOS 11.0, iOS 8.0, tvOS 9.0, *)) {
@@ -729,6 +620,16 @@ void MtlCaps::initFormatTable() {
         info->fColorTypeInfoCount = 0;
     }
 
+    // Format: Depth16Unorm
+    {
+        info = &fFormatTable[GetFormatIndex(MTLPixelFormatDepth16Unorm)];
+        info->fFlags = FormatInfo::kMSAA_Flag;
+        if (this->isMac() || fFamilyGroup >= 3) {
+            info->fFlags |= FormatInfo::kResolve_Flag;
+        }
+        info->fColorTypeInfoCount = 0;
+    }
+
     // Format: Depth32Float
     {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatDepth32Float)];
@@ -737,6 +638,17 @@ void MtlCaps::initFormatTable() {
             info->fFlags |= FormatInfo::kResolve_Flag;
         }
         info->fColorTypeInfoCount = 0;
+    }
+
+    // Format: Depth24Unorm_Stencil8
+    {
+#ifdef SK_BUILD_FOR_MAC
+        if (this->isMac() && [device isDepth24Stencil8PixelFormatSupported]) {
+            info = &fFormatTable[GetFormatIndex(MTLPixelFormatDepth24Unorm_Stencil8)];
+            info->fFlags = FormatInfo::kMSAA_Flag | FormatInfo::kResolve_Flag;
+            info->fColorTypeInfoCount = 0;
+        }
+#endif
     }
 
     // Format: Depth32Float_Stencil8
@@ -899,6 +811,28 @@ TextureInfo MtlCaps::getDefaultMSAATextureInfo(const TextureInfo& singleSampledI
     return info;
 }
 
+MTLPixelFormat MtlCaps::getFormatFromDepthStencilFlags(
+        SkEnumBitMask<DepthStencilFlags> mask) const {
+    // TODO: Decide if we want to change this to always return a combined depth and stencil format
+    // to allow more sharing of depth stencil allocations.
+    if (mask == DepthStencilFlags::kDepth) {
+        // Graphite only needs 16-bits for depth values, so save some memory. If needed for
+        // workarounds, MTLPixelFormatDepth32Float is also available.
+        return MTLPixelFormatDepth16Unorm;
+    } else if (mask == DepthStencilFlags::kStencil) {
+        return MTLPixelFormatStencil8;
+    } else if (mask == DepthStencilFlags::kDepthStencil) {
+#if defined(SK_BUILD_FOR_MAC)
+        if (SkToBool(this->getFormatInfo(MTLPixelFormatDepth24Unorm_Stencil8).fFlags)) {
+            return MTLPixelFormatDepth24Unorm_Stencil8;
+        }
+#endif
+        return MTLPixelFormatDepth32Float_Stencil8;
+    }
+    SkASSERT(false);
+    return MTLPixelFormatInvalid;
+}
+
 TextureInfo MtlCaps::getDefaultDepthStencilTextureInfo(
             SkEnumBitMask<DepthStencilFlags> depthStencilType,
             uint32_t sampleCount,
@@ -906,7 +840,7 @@ TextureInfo MtlCaps::getDefaultDepthStencilTextureInfo(
     MtlTextureInfo info;
     info.fSampleCount = sampleCount;
     info.fMipmapped = Mipmapped::kNo;
-    info.fFormat = MtlDepthStencilFlagsToFormat(depthStencilType);
+    info.fFormat = this->getFormatFromDepthStencilFlags(depthStencilType);
     info.fUsage = MTLTextureUsageRenderTarget;
     info.fStorageMode = this->getDefaultMSAAStorageMode(Discardable::kYes);
     info.fFramebufferOnly = false;
@@ -1021,8 +955,14 @@ bool MtlCaps::extractGraphicsDescs(const UniqueKey& key,
     // Recreate the RenderPassDesc
     SkASSERT(keyData.fColorSampleCount == keyData.fDSSampleCount);
 
-    SkEnumBitMask<DepthStencilFlags> dsFlags =
-            MtlFormatToDepthStencilFlags((MTLPixelFormat) keyData.fDSFormat);
+    MTLPixelFormat dsFormat = (MTLPixelFormat) keyData.fDSFormat;
+    SkEnumBitMask<DepthStencilFlags> dsFlags = DepthStencilFlags::kNone;
+    if (MtlFormatIsDepth(dsFormat)) {
+        dsFlags |= DepthStencilFlags::kDepth;
+    }
+    if (MtlFormatIsStencil(dsFormat)) {
+        dsFlags |= DepthStencilFlags::kStencil;
+    }
 
     MtlTextureInfo mtlInfo(keyData.fColorSampleCount,
                            skgpu::Mipmapped::kNo,
