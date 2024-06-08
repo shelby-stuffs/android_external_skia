@@ -27,7 +27,7 @@ class VulkanFramebuffer;
 class VulkanGraphicsPipeline;
 class VulkanRenderPass;
 class VulkanSharedContext;
-class VulkanSamplerYcbcrConversion;
+class VulkanYcbcrConversion;
 
 class VulkanResourceProvider final : public ResourceProvider {
 public:
@@ -43,13 +43,11 @@ public:
 
     ~VulkanResourceProvider() override;
 
-    sk_sp<Texture> createWrappedTexture(const BackendTexture&) override;
-
     sk_sp<Buffer> refIntrinsicConstantBuffer() const;
 
     const Buffer* loadMSAAVertexBuffer() const;
 
-    sk_sp<VulkanSamplerYcbcrConversion> findOrCreateCompatibleSamplerYcbcrConversion(
+    sk_sp<VulkanYcbcrConversion> findOrCreateCompatibleYcbcrConversion(
             const VulkanYcbcrConversionInfo& ycbcrInfo) const;
 
 private:
@@ -63,6 +61,7 @@ private:
     sk_sp<Texture> createTexture(SkISize,
                                  const TextureInfo&,
                                  skgpu::Budgeted) override;
+    sk_sp<Texture> onCreateWrappedTexture(const BackendTexture&) override;
     sk_sp<Buffer> createBuffer(size_t size, BufferType type, AccessPattern) override;
     sk_sp<Sampler> createSampler(const SamplerDesc&) override;
 

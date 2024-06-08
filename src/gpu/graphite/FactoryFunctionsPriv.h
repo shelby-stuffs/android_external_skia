@@ -24,24 +24,28 @@ SK_MAKE_BITMASK_OPS(PrecompileImageShaderFlags)
 
 //--------------------------------------------------------------------------------------------------
 namespace PrecompileShadersPriv {
-    sk_sp<PrecompileShader> Blur(sk_sp<PrecompileShader> child);
+    sk_sp<PrecompileShader> Blur(sk_sp<PrecompileShader> wrapped);
+
+    sk_sp<PrecompileShader> Lighting(sk_sp<PrecompileShader> wrapped);
+
+    sk_sp<PrecompileShader> LinearMorphology(sk_sp<PrecompileShader> wrapped);
+
+    sk_sp<PrecompileShader> SparseMorphology(sk_sp<PrecompileShader> wrapped);
 
     // TODO: This, technically, doesn't need to take an SkSpan since it is only called from
-    // PrecompileShader::makeWithCTM. Leaving it be for now in case the usage is revised.
+    // PaintOptions::setClipShaders with a single PrecompileShader. Leaving it be for now in case
+    // the usage is revised.
     sk_sp<PrecompileShader> CTM(SkSpan<const sk_sp<PrecompileShader>> wrapped);
 
     sk_sp<PrecompileShader> Image(SkEnumBitMask<PrecompileImageShaderFlags>);
 
-    // These factory variants should be used when the existence or non-existence of the local matrix
+    // This factory variant should be used when the existence or non-existence of the local matrix
     // is known. If 'withLM' is true only the LMShader-wrapped shader will be created while, when
     // 'withLM' is false, no LMShader will wrap the base shader.
-    sk_sp<PrecompileShader> LinearGradient(bool withLM);
-    sk_sp<PrecompileShader> RadialGradient(bool withLM);
-    sk_sp<PrecompileShader> TwoPointConicalGradient(bool withLM);
-    sk_sp<PrecompileShader> SweepGradient(bool withLM);
     sk_sp<PrecompileShader> Picture(bool withLM);
 
-    // TODO: this factory function should go away (c.f. b/336810091)
+    // TODO: this factory function should go away (it is only used by the PrecompileShaders::Picture
+    // entry point now).
     sk_sp<PrecompileShader> LocalMatrixBothVariants(SkSpan<const sk_sp<PrecompileShader>> wrapped);
 
 } // namespace PrecompileShadersPriv
