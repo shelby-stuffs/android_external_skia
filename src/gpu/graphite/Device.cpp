@@ -332,7 +332,8 @@ Device::Device(Recorder* recorder, sk_sp<DrawContext> dc)
         , fDisjointStencilSet(std::make_unique<IntersectionTreeSet>())
         , fCachedLocalToDevice(SkM44())
         , fCurrentDepth(DrawOrder::kClearDepth)
-        , fSDFTControl(recorder->priv().caps()->getSDFTControl(false)) {
+        , fSDFTControl(recorder->priv().caps()->getSDFTControl(
+                fDC->surfaceProps().isUseDeviceIndependentFonts())) {
     SkASSERT(SkToBool(fDC) && SkToBool(fRecorder));
     if (fRecorder->priv().caps()->defaultMSAASamplesCount() > 1) {
         if (fRecorder->priv().caps()->msaaRenderToSingleSampledSupport()) {
@@ -397,6 +398,13 @@ sk_sp<SkDevice> Device::createDevice(const CreateInfo& info, const SkPaint*) {
     // Skia's convention is to only clear a device if it is non-opaque.
     LoadOp initialLoadOp = info.fInfo.isOpaque() ? LoadOp::kDiscard : LoadOp::kClear;
 
+    std::string label = this->target()->label();
+    if (label.empty()) {
+        label = "ChildDevice";
+    } else {
+        label += "_ChildDevice";
+    }
+
     return Make(fRecorder,
                 info.fInfo,
                 skgpu::Budgeted::kYes,
@@ -404,7 +412,7 @@ sk_sp<SkDevice> Device::createDevice(const CreateInfo& info, const SkPaint*) {
                 SkBackingFit::kApprox,
                 props,
                 initialLoadOp,
-                "ChildDevice");
+                label);
 }
 
 sk_sp<SkSurface> Device::makeSurface(const SkImageInfo& ii, const SkSurfaceProps& props) {
@@ -427,8 +435,15 @@ sk_sp<Image> Device::makeImageCopy(const SkIRect& subset,
                 colorInfo.colorType(), this->target()->textureInfo());
         srcView = {sk_ref_sp(this->target()), readSwizzle};
     }
+    std::string label = this->target()->label();
+    if (label.empty()) {
+        label = "CopyDeviceTexture";
+    } else {
+        label += "_DeviceCopy";
+    }
+
     return Image::Copy(fRecorder, srcView, colorInfo, subset, budgeted, mipmapped, backingFit,
-                       "CopyDeviceTexture");
+                       label);
 }
 
 bool Device::onReadPixels(const SkPixmap& pm, int srcX, int srcY) {
@@ -949,6 +964,7 @@ void Device::drawAtlasSubRun(const sktext::gpu::AtlasSubRun* subRun,
                                                    glyphsRegenerated,
                                                    SkPaintPriv::ComputeLuminanceColor(subRunPaint),
                                                    useGammaCorrectDistanceTable,
+                                                   this->surfaceProps().pixelGeometry(),
                                                    fRecorder,
                                                    rendererData)),
                                subRunPaint,
@@ -1306,7 +1322,11 @@ std::pair<const Renderer*, PathAtlas*> Device::chooseRenderer(const Transform& l
         if (!rendererData.isSDF) {
             return {renderers->bitmapText(rendererData.isLCD), nullptr};
         }
-        return {renderers->sdfText(rendererData.isLCD), nullptr};
+        // Even though the SkPaint can request subpixel rendering, we still need to match
+        // this with the pixel geometry.
+        bool useLCD = rendererData.isLCD &&
+                      geometry.subRunData().pixelGeometry() != kUnknown_SkPixelGeometry;
+        return {renderers->sdfText(useLCD), nullptr};
     } else if (geometry.isVertices()) {
         SkVerticesPriv info(geometry.vertices()->priv());
         return {renderers->vertices(info.mode(), info.hasColors(), info.hasTexCoords()), nullptr};

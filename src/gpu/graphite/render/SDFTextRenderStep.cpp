@@ -36,16 +36,14 @@ constexpr int kNumSDFAtlasTextures = 4;
 
 }  // namespace
 
-SDFTextRenderStep::SDFTextRenderStep(bool isLCD)
+SDFTextRenderStep::SDFTextRenderStep()
         : RenderStep("SDFTextRenderStep",
-                     isLCD ? "565" : "A8",
-                     isLCD ? Flags::kPerformsShading | Flags::kHasTextures | Flags::kEmitsCoverage |
-                             Flags::kLCDCoverage
-                           : Flags::kPerformsShading | Flags::kHasTextures | Flags::kEmitsCoverage,
+                     "",
+                     Flags::kPerformsShading | Flags::kHasTextures | Flags::kEmitsCoverage,
                      /*uniforms=*/{{"subRunDeviceMatrix", SkSLType::kFloat4x4},
                                    {"deviceToLocal", SkSLType::kFloat4x4},
                                    {"atlasSizeInv", SkSLType::kFloat2},
-                                   {"distAdjust", SkSLType::kFloat}},
+                                   {"gammaParams", SkSLType::kHalf2}},
                      PrimitiveType::kTriangleStrip,
                      kDirectDepthGEqualPass,
                      /*vertexAttrs=*/ {},
@@ -60,9 +58,7 @@ SDFTextRenderStep::SDFTextRenderStep(bool isLCD)
                      /*varyings=*/
                      {{"unormTexCoords", SkSLType::kFloat2},
                       {"textureCoords", SkSLType::kFloat2},
-                      {"texIndex", SkSLType::kFloat}}) {
-    // TODO: store if it's A8 and adjust shader
-}
+                      {"texIndex", SkSLType::kFloat}}) {}
 
 SDFTextRenderStep::~SDFTextRenderStep() {}
 
@@ -112,7 +108,7 @@ const char* SDFTextRenderStep::fragmentCoverageSkSL() const {
                                                                       "sdf_atlas_1, "
                                                                       "sdf_atlas_2, "
                                                                       "sdf_atlas_3).r, "
-                                                 "half(distAdjust), "
+                                                 "gammaParams, "
                                                  "unormTexCoords);";
 }
 
@@ -148,7 +144,6 @@ void SDFTextRenderStep::writeUniformsAndTextures(const DrawParams& params,
                                    1.f/proxies[0]->dimensions().height()};
     gatherer->write(atlasDimensionsInverse);
 
-    static constexpr int kDistanceAdjustLumShift = 5;
     float gammaAdjustment = 0;
     // TODO: generate LCD adjustment
 #if defined(SK_GAMMA_APPLY_TO_A8)
@@ -156,10 +151,10 @@ void SDFTextRenderStep::writeUniformsAndTextures(const DrawParams& params,
     // TODO: don't do this for aliased text
     U8CPU lum = SkColorSpaceLuminance::computeLuminance(SK_GAMMA_EXPONENT,
                                                         subRunData.luminanceColor());
-    gammaAdjustment = dfAdjustTable->getAdjustment(lum >> kDistanceAdjustLumShift,
-                                                   subRunData.useGammaCorrectDistanceTable());
+    gammaAdjustment = dfAdjustTable->getAdjustment(lum, subRunData.useGammaCorrectDistanceTable());
 #endif
-    gatherer->write(gammaAdjustment);
+    SkV2 gammaParams = {gammaAdjustment, subRunData.useGammaCorrectDistanceTable() ? 1.f : 0.f};
+    gatherer->writeHalf(gammaParams);
 
     // write textures and samplers
     const SkSamplingOptions kSamplingOptions(SkFilterMode::kLinear);

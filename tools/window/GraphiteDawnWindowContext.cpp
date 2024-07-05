@@ -162,13 +162,17 @@ wgpu::Device GraphiteDawnWindowContext::createDevice(wgpu::BackendType type) {
     if (adapter.HasFeature(wgpu::FeatureName::R8UnormStorage)) {
         features.push_back(wgpu::FeatureName::R8UnormStorage);
     }
+    if (adapter.HasFeature(wgpu::FeatureName::DawnLoadResolveTexture)) {
+        features.push_back(wgpu::FeatureName::DawnLoadResolveTexture);
+    }
 
     wgpu::DeviceDescriptor deviceDescriptor;
     deviceDescriptor.requiredFeatures = features.data();
     deviceDescriptor.requiredFeatureCount = features.size();
     deviceDescriptor.deviceLostCallbackInfo.callback =
         [](WGPUDeviceImpl *const *, WGPUDeviceLostReason reason, const char* message, void*) {
-            if (reason != WGPUDeviceLostReason_Destroyed) {
+            if (reason != WGPUDeviceLostReason_Destroyed &&
+                reason != WGPUDeviceLostReason_InstanceDropped) {
                 SK_ABORT("Device lost: %s\n", message);
             }
         };
